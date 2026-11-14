@@ -39,9 +39,10 @@ describe('readLiveKitConfig', () => {
 describe('createVoiceCredentials', () => {
   const config = readLiveKitConfig(base)!
   const user: User = { id: 'socket-1', accountId: 'conta-1', name: 'Ana', tag: 'ana1', color: '#000', avatarUrl: null }
+  const all = { canSpeak: true, canShare: true }
 
   it('emite token assinado para a sala do canal com identidade = User.id', async () => {
-    const { url, token } = await createVoiceCredentials(config, user, 'canal-1')
+    const { url, token } = await createVoiceCredentials(config, user, 'canal-1', all)
     expect(url).toBe('ws://localhost:7880')
     const claims = await new TokenVerifier('k', base.LIVEKIT_API_SECRET).verify(token)
     expect(claims).toMatchObject({ sub: 'socket-1', name: 'Ana#ana1', attributes: { accountId: 'conta-1' } })
@@ -50,7 +51,7 @@ describe('createVoiceCredentials', () => {
   })
 
   it('token assinado com outro segredo não passa', async () => {
-    const { token } = await createVoiceCredentials(config, user, 'canal-1')
+    const { token } = await createVoiceCredentials(config, user, 'canal-1', all)
     await expect(new TokenVerifier('k', 'outro-segredo-com-mais-de-32-caracteres!!').verify(token)).rejects.toThrow()
   })
 })
