@@ -22,6 +22,7 @@ description: Como rodar, testar, gerar o build e empacotar o Concord, e como res
 | `npm run build` | typecheck + bundle em `out/` |
 | `npm start` | abre o build de `out/` |
 | `npm run dist` | build + instalador NSIS em `dist/` (config em `electron-builder.yml`) |
+| `npm test` | vitest uma vez (`vitest run`); `npm run test:watch` fica observando |
 
 Variáveis do servidor: `PORT`, `DATA_DIR` (padrão `server/data`, que está no `.gitignore`), `GOOGLE_CLIENT_ID` e
 `GOOGLE_CLIENT_SECRET`. O servidor lê `server/.env` sozinho ao iniciar (`server/env.ts`); o modelo está em
@@ -30,6 +31,41 @@ Variáveis do servidor: `PORT`, `DATA_DIR` (padrão `server/data`, que está no 
 Para zerar tudo (canais, mensagens, **contas e sessões**): apague `server/data/db.json` e `server/data/avatars/` com
 o servidor parado. Ele recria os canais padrão (`geral`, `off-topic`, `Sala de Voz`, `Jogos`). As sessões salvas nos
 apps deixam de valer e eles voltam para o login.
+
+## Infra local (Docker)
+
+Postgres e LiveKit rodam em containers definidos em `docker-compose.yml` (precisa do Docker Desktop no Windows).
+
+```bash
+docker compose up -d     # sobe postgres (5432) + livekit (7880, 7881/tcp, 7882/udp)
+docker compose ps        # os dois devem aparecer "running" (postgres "healthy")
+docker compose logs -f livekit
+docker compose down      # para; o banco fica no volume concord_pgdata
+docker compose down -v   # para e APAGA o banco (recria concord_test na próxima subida)
+```
+
+| Arquivo | Para quê |
+|---|---|
+| `docker-compose.yml` | serviços `postgres` (17-alpine, usuário/senha/banco `concord`) e `livekit` (versão fixa) |
+| `docker/postgres/init/*.sql` | roda só na criação do volume; cria o banco `concord_test` dos testes |
+| `livekit.yaml` | portas, chave `concord-dev` e segredo de dev, `empty_timeout` das salas |
+| `server/.env.example` | `DATABASE_URL`, `DATABASE_URL_TEST`, `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` (mesmos valores do compose) |
+
+- Copie `server/.env.example` para `server/.env` (ou acrescente as linhas novas ao seu `.env`).
+- **Voz pela rede local:** o LiveKit anuncia o IP de `LIVEKIT_NODE_IP` (padrão `127.0.0.1`, só funciona na mesma
+  máquina). Crie um `.env` na raiz com `LIVEKIT_NODE_IP=192.168.x.x`, rode `docker compose up -d` de novo, troque
+  `LIVEKIT_URL` no `server/.env` para `ws://192.168.x.x:7880` e libere 7880–7881/TCP e 7882/UDP no firewall.
+- Até as tasks A1 (Postgres) e B1 (LiveKit) entrarem, o servidor ainda usa `server/data/db.json` e a voz P2P; o
+  compose pode ficar desligado.
+
+## Testes (vitest)
+
+- `vitest.config.ts` na raiz: testes `*.test.ts(x)` ao lado do código em `server/`, `src/shared/` e `src/renderer/src/`;
+  aliases `@` e `@shared` iguais aos do renderer; ambiente `node`; carrega `server/.env` antes (via `server/env.ts`).
+- Importe explicitamente: `import { describe, it, expect } from 'vitest'` (sem globals).
+- Teste de banco usa `DATABASE_URL_TEST` (banco `concord_test`), nunca `DATABASE_URL`.
+- Teste que precisa de DOM: `// @vitest-environment jsdom` no topo do arquivo e `npm install -D jsdom`.
+- Antes de mergear: `npm run typecheck && npm test`.
 
 ## Contas no desenvolvimento
 
@@ -62,6 +98,10 @@ apps deixam de valer e eles voltam para o login.
 | Botão "Entrar com Google" desativado | `server/.env` sem `GOOGLE_CLIENT_ID`, ou o app aponta para outro servidor. Reinicie o servidor depois de editar o `.env`. |
 | "O Google recusou o login" | Client id/secret errados ou o cliente OAuth não é do tipo "App para computador". O motivo exato aparece no log do servidor (`[google] troca de código falhou`). |
 | Foto de perfil não aparece | Confira se `GET <servidor>/avatars/<accountId>` responde 200 e se a CSP libera `img-src` para o endereço do servidor. |
+| `docker: command not found` | Instale o Docker Desktop (WSL 2) e abra-o uma vez antes de usar `docker compose`. |
+| `port is already allocated` (5432/7880) | Outro Postgres/LiveKit já usa a porta. Pare o serviço local ou mude o lado esquerdo do mapeamento no `docker-compose.yml`. |
+| Voz LiveKit conecta mas não passa áudio | ICE não fecha: confira `LIVEKIT_NODE_IP` (IP alcançável pelo cliente) e a porta 7882/UDP no firewall; `docker compose logs livekit` mostra os candidatos. |
+| Banco `concord_test` não existe | O volume foi criado antes do script de init. `docker compose down -v && docker compose up -d` (apaga o banco de dev). |
 | Mudou `src/shared/types.ts` e o servidor não percebeu | O `tsx watch` acompanha os imports, mas reinicie o `npm run server` se precisar. |
 
 ## Notas de configuração

@@ -20,6 +20,8 @@ Gerenciador de pacotes: **npm** (não use pnpm/yarn; o projeto foi revertido do 
 | `src/renderer/src/lib/client.ts` | Conexão Socket.IO e **todas as ações** do app (conectar, enviar mensagem, criar canal, entrar na voz...). |
 | `src/renderer/src/lib/voice.ts` | `VoiceClient`: WebRTC em malha, mute/deafen e detecção de quem está falando. |
 | `src/renderer/src/components/ui/` | Componentes shadcn/ui (estilo new-york, importando de `radix-ui`). |
+| `docker-compose.yml`, `livekit.yaml` | Infra local: PostgreSQL 17 e LiveKit (SFU). Credenciais de dev espelhadas em `server/.env.example`. |
+| `vitest.config.ts` | Testes `*.test.ts(x)` ao lado do código (`npm test`). |
 | `src/renderer/src/components/` | Telas: `LoginScreen`, `ChannelSidebar`, `ChatView`, `VoiceView`, `MemberList`, `UserPanel`, `CreateChannelDialog`, `Toast`. |
 
 ## Comandos
@@ -29,6 +31,8 @@ npm install
 npm run dev:all     # servidor (porta 3001) + app Electron juntos
 npm run server      # só o servidor (tsx watch)
 npm run dev         # só o app
+docker compose up -d  # Postgres + LiveKit locais (ver concord-dev-workflow)
+npm test            # vitest
 npm run typecheck   # checagem de tipos (main/preload/server e renderer)
 npm run build       # typecheck + build em out/
 npm run dist        # instalador Windows em dist/

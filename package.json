@@ -15,7 +15,9 @@
     "build": "npm run typecheck && electron-vite build",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json --composite false && tsc --noEmit -p tsconfig.web.json --composite false",
-    "dist": "electron-vite build && electron-builder --win"
+    "dist": "electron-vite build && electron-builder --win",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@electron-toolkit/utils": "^4.0.0"
@@ -44,6 +46,7 @@
     "tw-animate-css": "^1.3.5",
     "typescript": "^5.8.3",
     "vite": "^7.0.4",
+    "vitest": "^5.1.0",
     "zustand": "^5.0.6"
   }
 }

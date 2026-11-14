@@ -1,0 +1,45 @@
+# Infra local do Concord: PostgreSQL + LiveKit (SFU de voz/tela).
+#   docker compose up -d      # sobe tudo em segundo plano
+#   docker compose ps         # confere se está "healthy"
+#   docker compose down       # para (os dados do Postgres ficam no volume)
+#   docker compose down -v    # para e APAGA o banco
+#
+# As credenciais abaixo são só para desenvolvimento. Os mesmos valores estão em server/.env.example.
+# Para testar voz pela rede local, defina LIVEKIT_NODE_IP com o IP da máquina (ex.: 192.168.0.10)
+# num arquivo .env na raiz do projeto ou no terminal antes do `docker compose up`.
+
+name: concord
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: concord
+      POSTGRES_PASSWORD: concord
+      POSTGRES_DB: concord
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Cria o banco concord_test (usado pelo vitest) na primeira inicialização do volume.
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U concord -d concord']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  livekit:
+    image: livekit/livekit-server:v1.13.11
+    restart: unless-stopped
+    command: --config /etc/livekit.yaml --node-ip ${LIVEKIT_NODE_IP:-127.0.0.1}
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro
+    ports:
+      - '7880:7880' # HTTP + WebSocket de sinalização (LIVEKIT_URL)
+      - '7881:7881' # WebRTC por TCP (fallback)
+      - '7882:7882/udp' # WebRTC por UDP (porta única multiplexada)
+
+volumes:
+  pgdata:
