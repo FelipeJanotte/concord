@@ -1,0 +1,126 @@
+import type { ReactNode } from 'react'
+import { HeadphoneOff, Headphones, Loader2, Mic, MicOff, PhoneOff, Volume2 } from 'lucide-react'
+import { useShallow } from 'zustand/react/shallow'
+import type { VoiceState } from '@shared/types'
+import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { joinVoice, leaveVoice, toggleDeafen, toggleMute } from '@/lib/client'
+import { cn } from '@/lib/utils'
+import { useApp } from '@/store'
+import { UserAvatar } from './UserAvatar'
+
+export function VoiceView({ channelId }: { channelId: string }) {
+  const channel = useApp((s) => s.channels.find((c) => c.id === channelId))
+  const members = useApp(useShallow((s) => s.voice.filter((v) => v.channelId === channelId)))
+  const connected = useApp((s) => s.myVoiceChannelId === channelId)
+  const joining = useApp((s) => s.joiningVoice)
+  const muted = useApp((s) => s.muted || s.noMic)
+  const deafened = useApp((s) => s.deafened)
+
+  if (!channel) return null
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col bg-rail">
+      <header className="flex h-12 shrink-0 items-center gap-2 px-4">
+        <Volume2 className="size-6 text-muted-foreground" />
+        <h1 className="font-semibold text-accent-foreground">{channel.name}</h1>
+      </header>
+
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        {members.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
+            <h2 className="text-2xl font-bold text-accent-foreground">{channel.name}</h2>
+            <p className="text-muted-foreground">Ninguém está aqui ainda.</p>
+          </div>
+        ) : (
+          <div className="grid content-center gap-4 [grid-template-columns:repeat(auto-fill,minmax(240px,1fr))]">
+            {members.map((m) => (
+              <ParticipantTile key={m.userId} state={m} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="flex shrink-0 items-center justify-center gap-3 pb-6">
+        {connected ? (
+          <>
+            <ControlButton label={muted ? 'Ativar microfone' : 'Silenciar'} onClick={toggleMute} off={muted}>
+              {muted ? <MicOff /> : <Mic />}
+            </ControlButton>
+            <ControlButton label={deafened ? 'Ativar áudio' : 'Desativar áudio'} onClick={toggleDeafen} off={deafened}>
+              {deafened ? <HeadphoneOff /> : <Headphones />}
+            </ControlButton>
+            <ControlButton label="Desconectar" onClick={leaveVoice} danger>
+              <PhoneOff />
+            </ControlButton>
+          </>
+        ) : (
+          <Button size="lg" onClick={() => void joinVoice(channelId)} disabled={joining} className="rounded-full bg-success px-8 hover:bg-success/90">
+            {joining && <Loader2 className="animate-spin" />}
+            Entrar na sala de voz
+          </Button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ParticipantTile({ state }: { state: VoiceState }) {
+  const user = useApp((s) => s.users.find((u) => u.id === state.userId))
+  const speaking = useApp((s) => !!s.speaking[state.userId])
+  const isSelf = useApp((s) => s.self?.id === state.userId)
+  if (!user) return null
+
+  return (
+    <div
+      className={cn(
+        'relative flex aspect-video items-center justify-center rounded-lg bg-background ring-2 ring-transparent transition-shadow',
+        speaking && 'ring-success'
+      )}
+    >
+      <UserAvatar user={user} size="xl" />
+      <div className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-md bg-black/50 px-2 py-0.5 text-sm text-white">
+        {state.deafened ? (
+          <HeadphoneOff className="size-3.5 text-destructive" />
+        ) : state.muted ? (
+          <MicOff className="size-3.5 text-destructive" />
+        ) : null}
+        {user.name}
+        {isSelf && <span className="text-white/60">(você)</span>}
+      </div>
+    </div>
+  )
+}
+
+function ControlButton({
+  label,
+  onClick,
+  off,
+  danger,
+  children
+}: {
+  label: string
+  onClick: () => void
+  off?: boolean
+  danger?: boolean
+  children: ReactNode
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          onClick={onClick}
+          aria-label={label}
+          className={cn(
+            'flex size-14 items-center justify-center rounded-full bg-secondary text-white transition-colors hover:bg-secondary/80 [&_svg]:size-6',
+            off && 'bg-white text-black hover:bg-white/90',
+            danger && 'bg-destructive hover:bg-destructive/90'
+          )}
+        >
+          {children}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  )
+}
