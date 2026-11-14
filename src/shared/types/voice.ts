@@ -19,7 +19,13 @@ export type SignalData =
   | { type: 'answer'; sdp: string }
   | { type: 'candidate'; candidate: IceCandidate }
 
-export type JoinVoiceResult = { ok: true; peers: string[] } | { ok: false; error: string }
+/**
+ * `canSpeak` false: entra só para ouvir (não envia o microfone).
+ * `canShare` false: sem compartilhar a tela. O servidor decide pelas permissões do canal.
+ */
+export type JoinVoiceResult =
+  | { ok: true; peers: string[]; canSpeak: boolean; canShare: boolean }
+  | { ok: false; error: string }
 
 // ---------- Eventos ----------
 

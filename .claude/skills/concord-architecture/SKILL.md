@@ -56,10 +56,14 @@ Contrato e regra de cálculo em `src/shared/types/permissions.ts` (`can`, `chann
 por canal (`channel_overrides`) ficam no banco; `server/access.ts` guarda o estado em memória e recarrega depois de
 cada mudança. A **dona** (primeira conta) pode tudo; o `@todos` (id fixo `EVERYONE_ROLE_ID`) vale para todo mundo e
 começa com as permissões de canal, sem as de administração (criar/apagar canal exige `manageChannels`).
-`hello`, `voice:state`, `message:new`, `typing` e `channel:created` só chegam a quem pode ver o canal. Mudou o acesso
-→ `access:updated` (estado inteiro, para todos), `channels:visible` (para quem ganhou/perdeu canais) e quem perdeu
-`connect` sai da voz. Pendente: permissões `speak`/`share` no token do LiveKit (depende da B1) e download de anexo
-de canal privado (`/files/<id>` ainda é só pelo id aleatório).
+`hello`, `voice:state`, `message:new`, `typing` e `channel:created` só chegam a quem pode ver o canal. O estado de
+acesso vem no `hello` (`state.access`) e no `access:updated`, sempre por `accessFor` (cargos e membros inteiros; regras
+só dos canais que a pessoa vê). Mudou o acesso → `access:updated`, `channels:visible` (para quem ganhou/perdeu canais) e
+`applyVoiceAccess` (em `modules/voice.ts`): quem perdeu `connect` sai da voz. `voice:join` devolve `canSpeak`/`canShare`;
+sem `speak` a pessoa aparece sempre silenciada. Ninguém concede permissão global que não tem (`canGrantPermissions`),
+e globais no @todos só a dona. Pendente: `speak`/`share` no token do LiveKit e atualização ao vivo pelo
+`RoomService.updateParticipant` dentro de `applyVoiceAccess` (B1), download de anexo de canal privado (`/files/<id>`
+ainda é só pelo id aleatório) e transferência de posse da comunidade.
 
 ## Banco (`server/db/`)
 

@@ -223,12 +223,16 @@ describe('voz', () => {
     const ch = await newChannel(a, 'voice')
     expect(await a.socket.emitWithAck('voice:join', { channelId: ch.id, muted: false, deafened: false })).toEqual({
       ok: true,
-      peers: []
+      peers: [],
+      canSpeak: true,
+      canShare: true
     })
     const state = waitFor(a.socket, 'voice:state', (s) => s.some((v) => v.userId === b.socket.id))
     expect(await b.socket.emitWithAck('voice:join', { channelId: ch.id, muted: true, deafened: false })).toEqual({
       ok: true,
-      peers: [a.socket.id]
+      peers: [a.socket.id],
+      canSpeak: true,
+      canShare: true
     })
     const [states] = await state
     expect(states.find((v) => v.userId === b.socket.id)).toEqual({

@@ -66,6 +66,59 @@ describe('estado de acesso', () => {
   })
 })
 
+describe('o que cada um recebe (revisão do Dev B)', () => {
+  it('o estado de acesso já vem no hello; regras de canal privado só para quem vê', async () => {
+    const vip = await createRole(owner, 'VIP hello', [], '#ff0088')
+    const ch = await server.createChannel('privado-hello')
+    await overrides(ch.id, [{ roleId: EVERYONE_ROLE_ID, deny: ['view'] }, { roleId: vip.id, allow: ['view'] }])
+
+    const z = await user('Zé')
+    expect(z.state.access.roles.some((r) => r.id === vip.id && r.color === '#ff0088')).toBe(true) // cores para todos
+    expect(z.state.access.overrides.some((o) => o.channelId === ch.id)).toBe(false) // não sabe que existe
+
+    const b = await user('Bia')
+    await setRoles(owner, b.account.id, [vip.id])
+    const fresh = await (await server.connect(b.token)).emitWithAck('hello')
+    expect(fresh.state.access.overrides.filter((o) => o.channelId === ch.id)).toHaveLength(2)
+    expect((await owner.socket.emitWithAck('access:get')).overrides.filter((o) => o.channelId === ch.id)).toHaveLength(2)
+  })
+
+  it('access:updated também vem filtrado por pessoa', async () => {
+    const z = await user('Zé')
+    const ch = await server.createChannel('privado-update')
+    const update = waitFor(z.socket, 'access:updated')
+    await overrides(ch.id, [{ roleId: EVERYONE_ROLE_ID, deny: ['view'] }])
+    const [state] = await update
+    expect(state.overrides.some((o) => o.channelId === ch.id)).toBe(false)
+  })
+
+  it('quem gerencia cargos não dá permissão de administração ao @todos (só a dona)', async () => {
+    const admin = await createRole(owner, 'Admin @todos', ['manageRoles', 'manageMembers'])
+    const c = await user('Carla')
+    await setRoles(owner, c.account.id, [admin.id])
+    expect(
+      await c.socket.emitWithAck('role:update', { id: EVERYONE_ROLE_ID, permissions: ['view', 'send', 'manageMembers'] })
+    ).toEqual({ ok: false, error: 'Só a dona pode dar permissões de administração ao @todos' })
+    // permissões de canal no @todos ela pode
+    expect((await c.socket.emitWithAck('role:update', { id: EVERYONE_ROLE_ID, permissions: ['view', 'send'] })).ok).toBe(true)
+  })
+
+  it('voice:join diz se pode falar e compartilhar; sem "falar" aparece silenciado', async () => {
+    const b = await user()
+    const room = await server.createChannel('Ouvintes', 'voice')
+    await overrides(room.id, [{ roleId: EVERYONE_ROLE_ID, deny: ['speak'] }])
+    const res = await b.socket.emitWithAck('voice:join', { channelId: room.id, muted: false, deafened: false })
+    expect(res).toMatchObject({ ok: true, canSpeak: false, canShare: true })
+
+    const stillMuted = waitFor(owner.socket, 'voice:state', (s) =>
+      s.some((v) => v.userId === b.socket.id && v.muted && v.deafened)
+    )
+    b.socket.emit('voice:update', { muted: false, deafened: true }) // tenta se dessilenciar
+    await stillMuted
+    b.socket.emit('voice:leave')
+  })
+})
+
 describe('canal privado', () => {
   it('quem não pode ver: some da lista, não recebe mensagens nem "digitando" e não lê o histórico', async () => {
     const b = await user('Bia')

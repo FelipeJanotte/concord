@@ -2,8 +2,8 @@
  * Salas de voz: quem está em qual sala e repasse da sinalização WebRTC
  * (o áudio vai direto de um usuário para o outro). Skill `concord-voice`.
  */
-import { can, type VoiceState } from '../../src/shared/types'
-import { accessSnapshot, allowed } from '../access'
+import { can, channelPermissions, type AccessState, type VoiceState } from '../../src/shared/types'
+import { accessSnapshot, allowed, currentAccess } from '../access'
 import { guard, type AppServer, type AppSocket, type ServerModule } from '../context'
 import { findChannel } from '../repo/channels'
 
@@ -28,15 +28,19 @@ export function emitVoice(io: AppServer): void {
   }
 }
 
-/** Tira uma conexão da sala de voz (ex.: perdeu a permissão de entrar). */
-export function removeFromVoice(io: AppServer, socketId: string): void {
-  const socket = io.sockets.sockets.get(socketId)
-  if (socket) leaveVoice(io, socket)
-}
-
-/** Conexões em sala de voz (para revisar permissões depois de uma mudança de cargos). */
-export function voiceMembers(): { socketId: string; channelId: string }[] {
-  return voiceStates().map((v) => ({ socketId: v.userId, channelId: v.channelId }))
+/**
+ * Ponto único chamado depois de qualquer mudança de cargos/membros/regras (A4):
+ * quem perdeu `view`/`connect` na sala sai; no fim, cada um recebe o `voice:state`
+ * das salas que pode ver. Com o LiveKit (B1), quem perdeu `speak`/`share` deve ter
+ * as permissões atualizadas aqui (`RoomService.updateParticipant`).
+ */
+export function applyVoiceAccess(io: AppServer, access: AccessState): void {
+  for (const state of voiceStates()) {
+    const socket = io.sockets.sockets.get(state.userId)
+    const accountId = socket?.data.user?.accountId
+    if (socket && accountId && !can(access, accountId, 'connect', state.channelId)) leaveVoice(io, socket)
+  }
+  emitVoice(io)
 }
 
 function leaveVoice(io: AppServer, socket: AppSocket): void {
@@ -72,6 +76,9 @@ export const voiceModule: ServerModule = {
         if (!(await allowed(user.accountId, 'connect', channel.id))) {
           return ack({ ok: false, error: 'Você não tem permissão para entrar nesta sala' })
         }
+        // Sem `speak`, o app entra só para ouvir (e os outros veem silenciado); sem `share`, sem tela.
+        const perms = channelPermissions(await currentAccess(), user.accountId, channel.id)
+        const canSpeak = perms.has('speak')
         if (!socket.connected) return
         leaveVoice(io, socket)
         const peers = voiceStates()
@@ -80,12 +87,12 @@ export const voiceModule: ServerModule = {
         voice.set(socket.id, {
           userId: socket.id,
           channelId: channel.id,
-          muted: !!payload.muted,
+          muted: !!payload.muted || !canSpeak,
           deafened: !!payload.deafened
         })
         socket.join(voiceRoom(channel.id))
         // Quem entra inicia a conexão WebRTC com cada pessoa que já está na sala.
-        ack({ ok: true, peers })
+        ack({ ok: true, peers, canSpeak, canShare: perms.has('share') })
         emitVoice(io)
       })
     })
@@ -94,8 +101,10 @@ export const voiceModule: ServerModule = {
 
     socket.on('voice:update', (payload) => {
       const state = voice.get(socket.id)
-      if (!state) return
-      state.muted = !!payload?.muted
+      const accountId = socket.data.user?.accountId
+      if (!state || !accountId) return
+      // quem não pode falar continua aparecendo silenciado
+      state.muted = !!payload?.muted || !can(accessSnapshot(), accountId, 'speak', state.channelId)
       state.deafened = !!payload?.deafened
       emitVoice(io)
     })

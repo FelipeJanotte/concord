@@ -12,11 +12,12 @@
  */
 import { randomUUID } from 'node:crypto'
 import {
+  accessFor,
   can,
+  canGrantPermissions,
   CHANNEL_PERMISSIONS,
   EVERYONE_ROLE_ID,
   GLOBAL_PERMISSIONS,
-  globalPermissions,
   highestPosition,
   type AccessState,
   type ChannelPermission,
@@ -37,7 +38,7 @@ import {
   updateRole
 } from '../repo/permissions'
 import { isUuid } from '../repo/util'
-import { emitVoice, removeFromVoice, voiceMembers } from './voice'
+import { applyVoiceAccess } from './voice'
 
 const MAX_ROLES = 50
 const NAME_MAX = 32
@@ -75,34 +76,24 @@ function canManageRole(access: AccessState, actorId: string, role: Role): boolea
   return role.id === EVERYONE_ROLE_ID ? mine > 0 : role.position < mine
 }
 
-/** Não dá permissão global que não tem (a dona tem todas). */
-function canGrant(access: AccessState, actorId: string, permissions: Permission[]): boolean {
-  if (isOwner(access, actorId)) return true
-  const mine = globalPermissions(access, actorId)
-  return permissions.every((p) => CHANNEL_SET.has(p) || mine.has(p as never))
-}
-
 // ---------- aplicar mudanças ----------
 
 /** Recarrega o acesso e avisa quem precisa saber. `before` = estado antes da mudança. */
 export async function applyAccessChange(io: AppServer, before: AccessState): Promise<AccessState> {
   const after = await reloadAccess()
-  io.emit('access:updated', after)
-
   const channels = await listChannels()
+  const channelIds = channels.map((c) => c.id)
   for (const socket of io.sockets.sockets.values()) {
     const user = socket.data.user
     if (!user) continue
+    // cada um recebe só as regras dos canais que vê
+    socket.emit('access:updated', accessFor(after, user.accountId, channelIds))
     const was = visibleChannels(before, user.accountId, channels).map((c) => c.id).join()
     const now = visibleChannels(after, user.accountId, channels)
     if (now.map((c) => c.id).join() !== was) socket.emit('channels:visible', now)
   }
-
-  for (const { socketId, channelId } of voiceMembers()) {
-    const accountId = io.sockets.sockets.get(socketId)?.data.user?.accountId
-    if (accountId && !can(after, accountId, 'connect', channelId)) removeFromVoice(io, socketId)
-  }
-  emitVoice(io) // quem vê quais salas pode ter mudado
+  // sai da sala quem perdeu acesso; todos recebem o voice:state das salas que veem
+  applyVoiceAccess(io, after)
   return after
 }
 
@@ -119,8 +110,10 @@ export const permissionsModule: ServerModule = {
     socket.on('access:get', (ack) => {
       if (typeof ack !== 'function') return
       void guard('access:get', async () => {
-        if (!actor()) return ack({ ownerAccountId: '', roles: [], members: [], overrides: [] })
-        ack(await currentAccess())
+        const me = actor()
+        if (!me) return ack({ ownerAccountId: '', roles: [], members: [], overrides: [] })
+        const channels = await listChannels()
+        ack(accessFor(await currentAccess(), me, channels.map((c) => c.id)))
       })
     })
 
@@ -137,7 +130,8 @@ export const permissionsModule: ServerModule = {
         if (color === undefined) return ack(fail('Cor inválida'))
         const permissions = cleanPermissions<Permission>(payload?.permissions ?? [], ALL_PERMISSIONS)
         if (!permissions) return ack(fail('Permissões inválidas'))
-        if (!canGrant(access, me, permissions)) return ack(fail('Você não pode dar permissões que não tem'))
+        // cargo novo nunca é o @todos; a regra é a do contrato
+        if (!canGrantPermissions(access, me, '', permissions)) return ack(fail('Você não pode dar permissões que não tem'))
         if (access.roles.length >= MAX_ROLES) return ack(fail('Limite de cargos atingido'))
 
         let position: number
@@ -184,7 +178,15 @@ export const permissionsModule: ServerModule = {
         if (payload.permissions !== undefined) {
           const permissions = cleanPermissions<Permission>(payload.permissions, ALL_PERMISSIONS)
           if (!permissions) return ack(fail('Permissões inválidas'))
-          if (!canGrant(access, me, permissions)) return ack(fail('Você não pode dar permissões que não tem'))
+          if (!canGrantPermissions(access, me, role.id, permissions)) {
+            return ack(
+              fail(
+                role.id === EVERYONE_ROLE_ID && !isOwner(access, me)
+                  ? 'Só a dona pode dar permissões de administração ao @todos'
+                  : 'Você não pode dar permissões que não tem'
+              )
+            )
+          }
           patch.permissions = permissions
         }
         const updated = (await updateRole(role.id, patch)) ?? role
