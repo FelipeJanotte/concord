@@ -5,7 +5,12 @@
  *
  * A API pública (`join`, `leave`, `setMuted`, `setDeafened`, `teardown`) é a mesma
  * da versão P2P, então `lib/actions/voice.ts` e a interface não mudaram.
- * Identidade na sala = `socket.id` = `VoiceState.userId` = chave de `speaking`.
+ * Identidade na sala = `socket.id` = `VoiceState.userId` = chave de `speaking` e de `screens`.
+ *
+ * Tela (B3): `startScreenShare` publica a tela pelo LiveKit (no Electron, a fonte foi
+ * escolhida antes no ScreenPicker; ver src/main/screen-share.ts). As telas dos outros
+ * (e a própria, como prévia) ficam em `store.screens`; a UI liga cada uma num <video>
+ * com `attachScreen`.
  */
 import {
   createLocalAudioTrack,
@@ -14,14 +19,19 @@ import {
   RoomEvent,
   Track,
   type LocalAudioTrack,
+  type LocalTrackPublication,
   type Participant,
-  type RemoteTrack
+  type RemoteTrack,
+  type RemoteTrackPublication
 } from 'livekit-client'
 import type { JoinVoiceResult } from '@shared/types'
 import { useApp } from '@/store'
 import type { AppSocket } from './core'
 
 const AUDIO_CAPTURE = { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+
+/** Tela em 1080p a 15 fps: texto legível sem pesar demais na rede. */
+const SCREEN_CAPTURE = { resolution: { width: 1920, height: 1080, frameRate: 15 }, contentHint: 'detail' as const }
 
 /** O que o VoiceClient usa de fora; os testes trocam por versões falsas. */
 export interface VoiceDeps {
@@ -65,9 +75,13 @@ export class VoiceClient {
   private deafened = false
   /** ids que o LiveKit diz estarem falando (antes do filtro de mute/deafen) */
   private activeSpeakers: string[] = []
+  /** identidade → faixa de vídeo da tela (remota ou a própria, como prévia) */
+  private screens = new Map<string, Track>()
 
   /** Chamado quando a sala cai sem a pessoa ter pedido (removida, servidor de voz fora do ar...). */
   onUnexpectedDisconnect: ((message: string) => void) | null = null
+  /** Chamado quando a própria tela para sem ser pelo app (janela fechada, "parar" do sistema...). */
+  onScreenShareEnded: (() => void) | null = null
 
   constructor(private readonly deps: VoiceDeps = defaultDeps) {}
 
@@ -149,6 +163,8 @@ export class VoiceClient {
     this.mic = null
     this.activeSpeakers = []
     if (Object.keys(useApp.getState().speaking).length) useApp.setState({ speaking: {} })
+    this.screens.clear()
+    this.publishScreens()
   }
 
   setMuted(muted: boolean): void {
@@ -163,19 +179,54 @@ export class VoiceClient {
     this.publishSpeaking()
   }
 
+  // ---------- tela ----------
+
+  /** Publica a tela. A fonte (no Electron) já foi escolhida pelo ScreenPicker. */
+  async startScreenShare(audio: boolean): Promise<void> {
+    const room = this.room
+    if (!room) throw new Error('Entre numa sala de voz para compartilhar a tela')
+    await room.localParticipant.setScreenShareEnabled(true, { ...SCREEN_CAPTURE, audio, systemAudio: audio ? 'include' : 'exclude' })
+  }
+
+  async stopScreenShare(): Promise<void> {
+    await this.room?.localParticipant.setScreenShareEnabled(false)
+  }
+
+  /** Liga a tela de `userId` num <video>. Devolve a função que desliga. */
+  attachScreen(userId: string, el: HTMLVideoElement): () => void {
+    const track = this.screens.get(userId)
+    if (!track) return () => {}
+    track.attach(el)
+    return () => void track.detach(el)
+  }
+
   // ---------- internos ----------
 
   private bindRoom(room: Room): void {
     room
-      .on(RoomEvent.TrackSubscribed, (track) => {
-        if (track.kind !== Track.Kind.Audio) return // vídeo/tela: B3
+      .on(RoomEvent.TrackSubscribed, (track: RemoteTrack, _pub: RemoteTrackPublication, participant: Participant) => {
+        if (track.kind === Track.Kind.Video) {
+          if (track.source === Track.Source.ScreenShare) this.addScreen(participant.identity, track)
+          return
+        }
+        // Áudio: microfone e áudio da tela de cada um.
         const el = track.attach()
         el.muted = this.deafened
         this.remoteAudio.add(track)
       })
-      .on(RoomEvent.TrackUnsubscribed, (track) => {
+      .on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack, _pub: RemoteTrackPublication, participant: Participant) => {
+        if (track.kind === Track.Kind.Video) return this.removeScreen(participant.identity, track)
         if (!this.remoteAudio.delete(track)) return
         track.detach().forEach((el) => el.remove())
+      })
+      .on(RoomEvent.LocalTrackPublished, (pub: LocalTrackPublication, participant: Participant) => {
+        if (pub.source === Track.Source.ScreenShare && pub.track) this.addScreen(participant.identity, pub.track)
+      })
+      .on(RoomEvent.LocalTrackUnpublished, (pub: LocalTrackPublication, participant: Participant) => {
+        if (pub.source !== Track.Source.ScreenShare) return
+        if (pub.track) this.removeScreen(participant.identity, pub.track)
+        else if (this.screens.delete(participant.identity)) this.publishScreens()
+        this.onScreenShareEnded?.()
       })
       .on(RoomEvent.ActiveSpeakersChanged, (speakers: Participant[]) => {
         this.activeSpeakers = speakers.map((p) => p.identity)
@@ -190,6 +241,24 @@ export class VoiceClient {
         this.leave()
         this.onUnexpectedDisconnect?.(describeDisconnect(reason))
       })
+  }
+
+  private addScreen(identity: string, track: Track): void {
+    this.screens.set(identity, track)
+    this.publishScreens()
+  }
+
+  private removeScreen(identity: string, track: Track): void {
+    if (this.screens.get(identity) !== track) return
+    this.screens.delete(identity)
+    this.publishScreens()
+  }
+
+  /** `store.screens` = quem tem tela disponível agora (só muda a store se mudou). */
+  private publishScreens(): void {
+    const next = [...this.screens.keys()]
+    const prev = useApp.getState().screens
+    if (prev.length !== next.length || next.some((id, i) => prev[i] !== id)) useApp.setState({ screens: next })
   }
 
   /** Atualiza `store.speaking` (só quando muda, para não re-renderizar à toa). */

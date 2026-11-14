@@ -7,6 +7,8 @@ export interface VoiceState {
   channelId: string
   muted: boolean
   deafened: boolean
+  /** está compartilhando a tela (indicador "ao vivo"; a imagem em si vai pelo LiveKit) */
+  sharing: boolean
 }
 
 /** Como conectar na sala do LiveKit (sala = id do canal, identidade = `User.id`). */
@@ -33,4 +35,6 @@ export interface VoiceClientEvents {
   ) => void
   'voice:leave': () => void
   'voice:update': (payload: { muted: boolean; deafened: boolean }) => void
+  /** começou/parou de compartilhar a tela (só vale para quem está numa sala) */
+  'voice:sharing': (sharing: boolean) => void
 }

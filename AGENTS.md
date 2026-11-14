@@ -23,8 +23,9 @@ Gerenciador de pacotes: **npm** (não use pnpm/yarn; o projeto foi revertido do 
 | `server/auth.ts` | Contas: cadastro e-mail+senha (scrypt), login, sessões por token (30 dias), login com Google, perfil `nome#id` e foto. O id é único e imutável (o nome pode mudar). |
 | `src/shared/types/` | **Contrato** entre app e servidor: um arquivo por domínio (tipos + `<Dominio>ClientEvents`/`<Dominio>ServerEvents`); `index.ts` compõe `ServerToClientEvents` / `ClientToServerEvents`. Importe sempre de `@shared/types`. |
 | `src/main/index.ts` | Processo principal do Electron: janela, permissão de microfone e IPC `google-sign-in`. |
+| `src/main/screen-share.ts` | Compartilhar tela: IPC `screen-sources`/`screen-select` e `setDisplayMediaRequestHandler` (entrega a fonte escolhida no seletor). |
 | `src/main/google-auth.ts` | Login com Google: navegador do sistema + loopback 127.0.0.1 + PKCE; devolve o código para o servidor trocar. |
-| `src/preload/` | Ponte `contextBridge` (`window.api.platform` e `window.api.googleSignIn`). |
+| `src/preload/` | Ponte `contextBridge` (`window.api.platform`, `window.api.googleSignIn` e `window.api.screen`; tipos da tela em `src/shared/screen.ts`). |
 | `src/renderer/src/store/` | Estado global zustand (`useApp`), um slice por domínio composto em `index.ts`. Só dados, sem ações. |
 | `src/renderer/src/lib/client.ts` | Login/sessão e conexão Socket.IO; chama os `bind<Dominio>Events` e **reexporta todas as ações**. Componentes importam ações daqui. |
 | `src/renderer/src/lib/actions/` | Ações e listeners por domínio (`account`, `channels`, `messages`, `presence`, `uploads`, `voice`). `uploads.ts`: rascunho de anexos por canal, envio com progresso (`transport.send`, XHR). |
@@ -34,7 +35,7 @@ Gerenciador de pacotes: **npm** (não use pnpm/yarn; o projeto foi revertido do 
 | `src/renderer/src/components/ui/` | Componentes shadcn/ui (estilo new-york, importando de `radix-ui`). |
 | `docker-compose.yml`, `livekit.yaml` | Infra local: PostgreSQL 17 e LiveKit (SFU). Credenciais de dev espelhadas em `server/.env.example`. |
 | `vitest.config.ts` | Testes `*.test.ts(x)` ao lado do código (`npm test`). |
-| `src/renderer/src/components/` | Telas: `LoginScreen`, `ChannelSidebar`, `ChatView`, `VoiceView`, `MemberList`, `UserPanel`, `CreateChannelDialog`, `Toast`. |
+| `src/renderer/src/components/` | Telas: `LoginScreen`, `ChannelSidebar`, `ChatView`, `VoiceView`, `MemberList`, `UserPanel`, `CreateChannelDialog`, `Toast`; `voice/` tem `VoiceGrid`, `ScreenTile` e `ScreenPicker` (tela compartilhada). |
 
 ## Comandos
 
@@ -76,5 +77,5 @@ Leia a skill certa antes de mexer em cada área (ficam em `.claude/skills/<nome>
 - `concord-architecture` — visão completa: fluxo de dados, todos os eventos, estado, ciclo de conexão.
 - `concord-add-feature` — passo a passo para adicionar uma funcionalidade de ponta a ponta, com exemplo.
 - `concord-accounts` — contas: cadastro/login com e-mail e senha, sessões, login com Google, perfil `nome#id` e foto, regra do id único e imutável.
-- `concord-voice` — como a voz funciona (LiveKit no servidor, token por sala), limites e depuração.
+- `concord-voice` — como a voz funciona (LiveKit no servidor, token por sala), compartilhamento de tela, limites e depuração.
 - `concord-dev-workflow` — rodar, testar com vários usuários, build e solução de problemas conhecidos.

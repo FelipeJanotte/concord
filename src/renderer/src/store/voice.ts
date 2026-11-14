@@ -11,6 +11,12 @@ export interface VoiceSliceState {
   /** na sala de voz sem microfone (só ouvindo) */
   noMic: boolean
   speaking: Record<string, boolean>
+  /** estou compartilhando a tela */
+  sharing: boolean
+  /** quem tem tela disponível para assistir na sala atual (ids de conexão; inclui a própria, como prévia) */
+  screens: string[]
+  /** seletor de tela/janela aberto */
+  screenPickerOpen: boolean
 }
 
 export const voiceInitial: VoiceSliceState = {
@@ -20,5 +26,8 @@ export const voiceInitial: VoiceSliceState = {
   muted: false,
   deafened: false,
   noMic: false,
-  speaking: {}
+  speaking: {},
+  sharing: false,
+  screens: [],
+  screenPickerOpen: false
 }

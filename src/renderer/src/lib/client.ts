@@ -14,7 +14,7 @@ import { bindChannelEvents, firstTextView } from './actions/channels'
 import { bindLimitEvents } from './actions/limits'
 import { bindMessageEvents, loadHistory } from './actions/messages'
 import { bindPresenceEvents } from './actions/presence'
-import { bindVoiceEvents } from './actions/voice'
+import { bindVoiceEvents, OUT_OF_VOICE } from './actions/voice'
 import { clearAllDrafts } from './actions/uploads'
 import { baseUrl, get, getSocket, notify, SERVER_KEY, set, setSocket, TOKEN_KEY, type AppSocket } from './core'
 import { voice } from './voice'
@@ -174,7 +174,7 @@ export function connect(url: string, token: string): Promise<void> {
     s.on('disconnect', () => {
       if (getSocket() !== s) return
       voice.teardown()
-      set({ status: 'reconnecting', myVoiceChannelId: null, speaking: {}, noMic: false })
+      set({ status: 'reconnecting', ...OUT_OF_VOICE })
     })
   })
 }
