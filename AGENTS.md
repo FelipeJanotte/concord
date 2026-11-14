@@ -38,6 +38,7 @@ Gerenciador de pacotes: **npm** (não use pnpm/yarn; o projeto foi revertido do 
 | `src/renderer/src/lib/core.ts` | Socket atual (`getSocket`/`requireSocket`), `set`/`get` da store e `notify`. Usado pelas ações. |
 | `src/renderer/src/lib/voice.ts` | `VoiceClient` sobre `livekit-client`: conecta na sala com o token do servidor, mute/deafen, quem está falando (`ActiveSpeakersChanged`). |
 | `src/renderer/src/lib/sounds/` | Sons da interface gerados pela Web Audio (`ChimePlayer`) e `roomChanges` (quem entrou/saiu da minha sala). Ligados em `lib/actions/voice-sounds.ts`. |
+| `src/renderer/src/lib/noise/` | Supressão de ruído automática: `NoiseDecider` (quando ligar o filtro forte), `AutoNoiseProcessor` (processador do microfone no LiveKit) e o motor RNNoise (WASM empacotado). |
 | `src/renderer/src/components/ui/` | Componentes shadcn/ui (estilo new-york, importando de `radix-ui`). |
 | `docker-compose.yml`, `livekit.yaml` | Infra local: PostgreSQL 17 e LiveKit (SFU). Credenciais de dev espelhadas em `server/.env.example`. |
 | `vitest.config.ts` | Testes `*.test.ts(x)` ao lado do código (`npm test`). |

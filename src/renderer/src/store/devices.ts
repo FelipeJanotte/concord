@@ -13,6 +13,10 @@ export interface DevicesState {
   voiceSoundsEnabled: boolean
   /** volume desses sons, de 0 a 1 */
   voiceSoundsVolume: number
+  /** supressão de ruído automática ligada (B13); desligada = microfone cru */
+  noiseSuppression: boolean
+  /** o que a supressão está fazendo agora; 'off' = desligada; null = fora de sala */
+  noiseMode: 'off' | 'light' | 'advanced' | 'light-fallback' | null
   /** diálogo "Configurações de voz" aberto */
   deviceSettingsOpen: boolean
 }
@@ -24,5 +28,7 @@ export const devicesInitial: DevicesState = {
   userMuted: {},
   voiceSoundsEnabled: true,
   voiceSoundsVolume: 0.5,
+  noiseSuppression: true,
+  noiseMode: null,
   deviceSettingsOpen: false
 }

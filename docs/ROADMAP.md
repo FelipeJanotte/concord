@@ -142,7 +142,7 @@ depende: B1, B2, B3, B4 e A2 já estão na `main`.
 
 | Ideia | Tasks | Depende de | Tamanho |
 |---|---|---|---|
-| Supressão de ruído automática | B13 | B4 (na `main`) | médio (spike + modo automático) |
+| Supressão de ruído automática ✅ | B13 | B4 (na `main`) | médio (spike + modo automático) |
 | Sons de entrar/sair ✅ | B16 | B4 (na `main`) | pequeno |
 | Efeitos sonoros (soundboard) | A10 + B17 | A2 (na `main`); permissão opcional da v2 | médio |
 | Overlay em jogos | B15 | B2 (na `main`) | médio |
@@ -152,7 +152,7 @@ depende: B1, B2, B3, B4 e A2 já estão na `main`.
 
 | Task | Dev | O que faz | Arquivos (dono) |
 |---|---|---|---|
-| **B13 Supressão de ruído automática** | B | Tirar teclado, ventilador, cachorro latindo etc. do microfone **antes de enviar**, **sem a pessoa precisar escolher nada**: vem ligada e o próprio app decide o filtro conforme o ruído do ambiente e a capacidade do PC. Roda no **app de quem fala** (processador na faixa do microfone, `LocalAudioTrack.setProcessor()` do `livekit-client`), então todo mundo ouve limpo sem mudar nada no servidor. | `lib/noise/**`, `lib/voice.ts` (só o `setProcessor`), `lib/actions/devices.ts`, `components/voice/DeviceSettings.tsx` |
+| **B13 Supressão de ruído automática** ✅ (branch `extras/b13-supressao-ruido`; motor: RNNoise) | B | Tirar teclado, ventilador, cachorro latindo etc. do microfone **antes de enviar**, **sem a pessoa precisar escolher nada**: vem ligada e o próprio app decide o filtro conforme o ruído do ambiente e a capacidade do PC. Roda no **app de quem fala** (processador na faixa do microfone, `LocalAudioTrack.setProcessor()` do `livekit-client`), então todo mundo ouve limpo sem mudar nada no servidor. | `lib/noise/**`, `lib/voice.ts` (só o `setProcessor`), `lib/actions/devices.ts`, `components/voice/DeviceSettings.tsx` |
 
 **Como o modo automático decide** (tudo no app, a cada entrada na sala e durante a conversa):
 
@@ -185,6 +185,10 @@ depende: B1, B2, B3, B4 e A2 já estão na `main`.
    detectar "pesado demais" de forma confiável (atraso do AudioWorklet).
 2. Implementar o modo automático (passos 1 a 4 acima) com o vencedor do spike.
 3. Os arquivos WASM/modelo vão empacotados no app (sem baixar de CDN em tempo de execução; a CSP não libera).
+
+**Feito:** motor **RNNoise** (leve, MIT); a troca por GTCRN/DeepFilterNet3 continua possível depois do teste de
+qualidade (`NoiseEngineLoader`). O "se adapta ao PC" ficou por núcleos (≥ 3) e por erro no AudioWorklet; medir o
+atraso real do processamento fica como melhoria. CSP ganhou `'wasm-unsafe-eval'`.
 
 **Pronto quando:** sem mexer em nada, quem ouve não escuta teclado nem ventilador de quem fala; em ambiente silencioso o
 filtro avançado não fica ligado à toa; num PC que não aguenta (simulado nos testes) o app cai para o filtro nativo sem
