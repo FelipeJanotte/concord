@@ -18,7 +18,8 @@ export interface RelationWithAccount extends Relation {
   account: FriendAccount
 }
 
-const toAccount = (a: typeof accounts.$inferSelect): FriendAccount => ({
+/** Dados públicos de uma conta (também usados pelas conversas privadas). */
+export const toFriendAccount = (a: typeof accounts.$inferSelect): FriendAccount => ({
   id: a.id,
   name: a.name,
   tag: a.tag,
@@ -45,7 +46,7 @@ export async function listRelations(me: string): Promise<RelationWithAccount[]> 
     .from(friendships)
     .innerJoin(accounts, eq(accounts.id, friendships.otherId))
     .where(eq(friendships.accountId, me))
-  return rows.map(({ f, a }) => ({ status: f.status as FriendStatus, since: f.since.getTime(), account: toAccount(a) }))
+  return rows.map(({ f, a }) => ({ status: f.status as FriendStatus, since: f.since.getTime(), account: toFriendAccount(a) }))
 }
 
 /** Relação de `me` com `other` já com os dados da outra conta. */
@@ -137,5 +138,28 @@ export async function unblock(me: string, other: string): Promise<boolean> {
 /** Conta pelo id (tag), sem diferenciar maiúsculas — para o pedido por `nome#id` (usa o índice de `lower(tag)`). */
 export async function findAccountByTag(tag: string): Promise<FriendAccount | undefined> {
   const [a] = await db().select().from(accounts).where(sql`lower(${accounts.tag}) = lower(${tag})`).limit(1)
-  return a && toAccount(a)
+  return a && toFriendAccount(a)
+}
+
+/** Algum dos dois bloqueou o outro? (usado pelas conversas privadas: bloqueio fecha a conversa) */
+export async function blockedBetween(a: string, b: string): Promise<boolean> {
+  if (!isUuid(a) || !isUuid(b)) return false
+  const rows = await db()
+    .select({ id: friendships.accountId })
+    .from(friendships)
+    .where(
+      and(
+        eq(friendships.status, 'blocked'),
+        or(and(eq(friendships.accountId, a), eq(friendships.otherId, b)), and(eq(friendships.accountId, b), eq(friendships.otherId, a)))
+      )
+    )
+    .limit(1)
+  return rows.length > 0
+}
+
+/** Conta pelo id interno (dados públicos). */
+export async function findFriendAccount(id: string): Promise<FriendAccount | undefined> {
+  if (!isUuid(id)) return undefined
+  const [a] = await db().select().from(accounts).where(eq(accounts.id, id)).limit(1)
+  return a && toFriendAccount(a)
 }
