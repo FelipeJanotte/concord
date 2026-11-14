@@ -1,4 +1,4 @@
-// "Configurações de voz": microfone, saída de áudio (B4) e sons de entrar/sair da sala (B16). O volume de cada pessoa fica no botão direito sobre ela.
+// "Configurações de voz": microfone, saída de áudio (B4), supressão de ruído automática (B13) e sons de entrar/sair da sala (B16). O volume de cada pessoa fica no botão direito sobre ela.
 import { useCallback, useEffect, useState } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -10,6 +10,7 @@ import {
   previewVoiceSound,
   selectAudioInput,
   selectAudioOutput,
+  setNoiseSuppression,
   setVoiceSounds,
   type AudioDevice
 } from '@/lib/client'
@@ -79,6 +80,8 @@ export function DeviceSettings() {
           )}
         </div>
 
+        <NoiseSuppression />
+
         <JoinLeaveSounds />
 
         <p className="text-xs text-muted-foreground">
@@ -86,6 +89,36 @@ export function DeviceSettings() {
         </p>
       </DialogContent>
     </Dialog>
+  )
+}
+
+const NOISE_TEXT = {
+  off: 'Desligada: o microfone vai sem filtro.',
+  light: 'Ambiente silencioso: usando o filtro leve.',
+  advanced: 'Ruído detectado: filtro avançado ativo.',
+  'light-fallback': 'Filtro avançado indisponível neste computador: usando o filtro leve.'
+} as const
+
+/** Supressão de ruído automática (B13): só liga/desliga; o modo o app escolhe sozinho. */
+function NoiseSuppression() {
+  const enabled = useApp((s) => s.noiseSuppression)
+  const mode = useApp((s) => s.noiseMode)
+  const status = !enabled ? NOISE_TEXT.off : mode && mode !== 'off' ? NOISE_TEXT[mode] : 'Começa a funcionar quando você entrar numa sala de voz.'
+  return (
+    <div className="space-y-1 border-t border-border pt-4">
+      <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => void setNoiseSuppression(e.target.checked)}
+          className="size-4 accent-primary"
+        />
+        Supressão de ruído automática
+      </label>
+      <p className="pl-6 text-xs text-muted-foreground" aria-live="polite">
+        {status}
+      </p>
+    </div>
   )
 }
 
