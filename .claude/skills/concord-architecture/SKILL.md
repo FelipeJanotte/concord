@@ -106,6 +106,8 @@ Cliente → servidor (`ClientToServerEvents`):
 | `sound:list` | — | `Sound[]` | coleção de efeitos sonoros (links assinados para quem pede) — skill `concord-sounds` |
 | `sound:play` | `{ channelId, soundId }` | `SoundResult` | exige estar na sala e `speak`; `sound:played` só para quem está nela; não toca por cima do próprio som anterior |
 | `sound:delete` | `soundId` | `SoundResult` | o autor ou `manageMessages`; `sound:deleted` para todos |
+| `preferences:get` | — | `Preferences` | tema ativo e temas salvos da conta (padrão se nada salvo) — skill `concord-themes` |
+| `preferences:update` | `{ theme?, savedThemes? }` | `PreferencesResult` | valida com `validateTheme`; `preferences:updated` para as outras janelas da mesma conta |
 | `message:send` | `{ channelId, content }` | — | valida (canal de texto, até 2000 caracteres); `message:new` para todos |
 | `voice:join` | `{ channelId, muted, deafened }` | `JoinVoiceResult` (`url`, `token` do LiveKit) | exige LiveKit configurado; sai da sala anterior (também no LiveKit), entra na nova; `voice:state` |
 | `voice:leave` | — | — | tira da sala no LiveKit (`RemoveParticipant`) + `voice:state` |
@@ -116,7 +118,7 @@ Cliente → servidor (`ClientToServerEvents`):
 Servidor → cliente (`ServerToClientEvents`): `channel:created`, `channel:deleted`, `user:joined`, `user:left`,
 `user:updated` (por `accountId`), `message:new`, `voice:state` (sempre a **lista completa** das salas que a pessoa
 vê), `typing`, `rate:limited`, `access:updated` e `channels:visible` (v2), `sound:created`, `sound:deleted` e
-`sound:played` (soundboard; o último só para a sala).
+`sound:played` (soundboard; o último só para a sala) e `preferences:updated` (outras janelas da mesma conta).
 
 ## Estado do renderer (`store/`)
 

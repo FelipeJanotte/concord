@@ -72,6 +72,8 @@ export const LIMITS = {
   channel: { capacity: 5, perSecond: 1 / 60 },
   /** mudanças de perfil por conta: 10 seguidas, depois 1 a cada 30 s */
   profile: { capacity: 10, perSecond: 1 / 30 },
+  /** preferências (tema): 20 seguidas (arrastar o seletor de cor), depois 1 por segundo (v5) */
+  preferences: { capacity: 20, perSecond: 1 },
   /** efeitos sonoros tocados por conta: 1 a cada 3 s (A10) */
   sound: { capacity: 1, perSecond: 1 / 3 },
   /** "digitando" por conexão (o app já manda no máximo 1 a cada 2,5 s) */

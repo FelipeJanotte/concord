@@ -57,7 +57,9 @@ describe('nomes, lista e rotação', () => {
   })
 })
 
-describe('backup e restauração', () => {
+// Abrir um PGlite em disco (com todas as migrations), fazer dump e restaurar é pesado: sozinho leva
+// poucos segundos, mas com a suíte inteira em paralelo passa dos 15 s padrão. Não é lentidão do backup.
+describe('backup e restauração', { timeout: 60_000 }, () => {
   it('sem banco aberto (ou Postgres) não faz backup', async () => {
     expect(await backupPglite(join(dir, 'b'), 7)).toBeNull()
   })

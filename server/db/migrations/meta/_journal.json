@@ -29,6 +29,13 @@
       "when": 1794683449729,
       "tag": "0003_sounds",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794684170622,
+      "tag": "0004_preferences",
+      "breakpoints": true
     }
   ]
 }

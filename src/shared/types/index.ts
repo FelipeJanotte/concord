@@ -10,6 +10,7 @@ import type { ChannelClientEvents, ChannelServerEvents } from './channel'
 import type { LimitsServerEvents } from './limits'
 import type { MessageClientEvents, MessageServerEvents } from './message'
 import type { PermissionsClientEvents, PermissionsServerEvents } from './permissions'
+import type { PreferencesClientEvents, PreferencesServerEvents } from './preferences'
 import type { PresenceClientEvents, PresenceServerEvents } from './presence'
 import type { SoundsClientEvents, SoundsServerEvents } from './sounds'
 import type { VoiceClientEvents, VoiceServerEvents } from './voice'
@@ -20,8 +21,10 @@ export * from './channel'
 export * from './limits'
 export * from './message'
 export * from './permissions'
+export * from './preferences'
 export * from './presence'
 export * from './sounds'
+export * from './theme'
 export * from './voice'
 
 export interface ServerToClientEvents
@@ -30,6 +33,7 @@ export interface ServerToClientEvents
     LimitsServerEvents,
     MessageServerEvents,
     PermissionsServerEvents,
+    PreferencesServerEvents,
     PresenceServerEvents,
     SoundsServerEvents,
     VoiceServerEvents {}
@@ -39,6 +43,7 @@ export interface ClientToServerEvents
     ChannelClientEvents,
     MessageClientEvents,
     PermissionsClientEvents,
+    PreferencesClientEvents,
     PresenceClientEvents,
     SoundsClientEvents,
     VoiceClientEvents {}
