@@ -54,7 +54,8 @@ export async function createVoiceCredentials(
   config: LiveKitConfig,
   user: User,
   channelId: string,
-  permissions: VoicePermissions = { canSpeak: true, canShare: true }
+  /** obrigatório: esquecer não pode liberar tudo (revisão do #10) */
+  permissions: VoicePermissions
 ): Promise<VoiceCredentials> {
   const sources = publishSources(permissions)
   const at = new AccessToken(config.apiKey, config.apiSecret, {
