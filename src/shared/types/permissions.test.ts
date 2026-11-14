@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  accessFor,
   can,
+  canGrantPermissions,
   channelPermissions,
+  displayColor,
   CHANNEL_PERMISSIONS,
   DEFAULT_EVERYONE_PERMISSIONS,
   EVERYONE_ROLE_ID,
@@ -54,6 +57,10 @@ const override = (channelId: string, roleId: string, allow: ChannelOverride['all
 const sorted = (s: Set<string>) => [...s].sort()
 
 describe('globais', () => {
+  it('existe a permissão de moderar mensagens (B6)', () => {
+    expect(GLOBAL_PERMISSIONS).toContain('manageMessages')
+  })
+
   it('a dona tem todas; quem não tem cargo não tem nenhuma', () => {
     expect(sorted(globalPermissions(access(), 'dona'))).toEqual([...GLOBAL_PERMISSIONS].sort())
     expect(globalPermissions(access(), 'zé')).toEqual(new Set())
@@ -132,6 +139,61 @@ describe('hierarquia', () => {
     expect(highestPosition(access(), 'dona')).toBe(Number.POSITIVE_INFINITY)
     expect(highestPosition(access(), 'caio')).toBe(2)
     expect(highestPosition(access(), 'zé')).toBe(0)
+  })
+})
+
+describe('conceder permissões (contra escalada de privilégio)', () => {
+  it('a dona concede qualquer coisa, inclusive ao @todos', () => {
+    expect(canGrantPermissions(access(), 'dona', EVERYONE_ROLE_ID, ['manageRoles', 'manageChannels'])).toBe(true)
+  })
+
+  it('ninguém concede permissão global que não tem', () => {
+    // caio tem manageMembers (mod), mas não manageChannels
+    expect(canGrantPermissions(access(), 'caio', 'vip', ['manageMembers'])).toBe(true)
+    expect(canGrantPermissions(access(), 'caio', 'vip', ['manageChannels'])).toBe(false)
+  })
+
+  it('permissão de canal pode; global no @todos só a dona', () => {
+    expect(canGrantPermissions(access(), 'ana', EVERYONE_ROLE_ID, ['view', 'send'])).toBe(true)
+    expect(canGrantPermissions(access(), 'ana', EVERYONE_ROLE_ID, ['manageRoles'])).toBe(false)
+  })
+})
+
+describe('displayColor', () => {
+  it('cor do cargo mais alto que tem cor; sem cor nenhuma, null', () => {
+    const a = access({
+      roles: [everyone(), { ...role('azul', 1), color: '#0000ff' }, role('sem-cor', 5), { ...role('verde', 3), color: '#00ff00' }],
+      members: [
+        { accountId: 'bia', roleIds: ['azul', 'sem-cor', 'verde'] },
+        { accountId: 'caio', roleIds: ['sem-cor'] }
+      ]
+    })
+    expect(displayColor(a, 'bia')).toBe('#00ff00')
+    expect(displayColor(a, 'caio')).toBeNull()
+    expect(displayColor(a, 'zé')).toBeNull()
+  })
+})
+
+describe('accessFor (o que cada um recebe)', () => {
+  const withPrivate = () =>
+    access({
+      overrides: [
+        override('segredo', EVERYONE_ROLE_ID, [], ['view']),
+        override('segredo', 'vip', ['view'], []),
+        override('anuncios', EVERYONE_ROLE_ID, [], ['send'])
+      ]
+    })
+
+  it('quem não vê o canal privado não recebe as regras dele (nem sabe que existe)', () => {
+    const forZe = accessFor(withPrivate(), 'zé', ['geral', 'segredo', 'anuncios'])
+    expect(forZe.overrides.map((o) => o.channelId)).toEqual(['anuncios'])
+    expect(forZe.roles).toEqual(withPrivate().roles) // cargos e membros vão inteiros (cores)
+  })
+
+  it('quem vê recebe; dona e quem gerencia canais recebem tudo', () => {
+    expect(accessFor(withPrivate(), 'bia', ['segredo', 'anuncios']).overrides).toHaveLength(3)
+    expect(accessFor(withPrivate(), 'dona', []).overrides).toHaveLength(3)
+    expect(accessFor(withPrivate(), 'ana', []).overrides).toHaveLength(3)
   })
 })
 
