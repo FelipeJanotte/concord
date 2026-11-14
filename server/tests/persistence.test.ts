@@ -15,8 +15,7 @@ afterAll(async () => {
 describe('persistência', () => {
   it('contas, sessões, canais, mensagens e perfil continuam depois de reiniciar', async () => {
     const a = await server.newUser('Persistente')
-    const created = await a.socket.emitWithAck('channel:create', { name: 'guardado', type: 'text' })
-    if (!created.ok) throw new Error(created.error)
+    const created = { channel: await server.createChannel('guardado') }
     const msg = waitFor(a.socket, 'message:new', (m) => m.channelId === created.channel.id)
     a.socket.emit('message:send', { channelId: created.channel.id, content: 'não me perca' })
     await msg
@@ -47,10 +46,9 @@ describe('persistência', () => {
 
   it('canal apagado continua apagado depois de reiniciar', async () => {
     const a = await server.newUser()
-    const created = await a.socket.emitWithAck('channel:create', { name: 'temporario', type: 'text' })
-    if (!created.ok) throw new Error(created.error)
+    const created = { channel: await server.createChannel('temporario') }
     const deleted = waitFor(a.socket, 'channel:deleted')
-    a.socket.emit('channel:delete', created.channel.id)
+    ;(await server.asOwner()).socket.emit('channel:delete', created.channel.id)
     await deleted
     a.socket.close()
 

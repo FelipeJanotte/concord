@@ -24,6 +24,9 @@ Siga sempre esta ordem, porque o TypeScript acusa o que falta a cada passo:
 3. **Servidor** em `server/modules/<dominio>.ts`, que exporta um `ServerModule` (`socket(io, socket)` e/ou `http(req, res, path)`):
    - exija `socket.data.user` (existe depois do `hello`); `socket.data.accountId` diz de quem é o socket;
    - para "quem é dono de quê", compare `accountId`, nunca `user.id` (é o `socket.id` e muda a cada conexão);
+   - **permissões (v2):** confira `await allowed(user.accountId, '<perm>', channelId)` de `server/access.ts`
+     (sem `view`, responda como se o canal não existisse) e emita eventos de canal com `emitToViewers(io, channelId, ...)`;
+     ação administrativa nova ganha uma permissão no contrato `src/shared/types/permissions.ts`;
    - valide o payload em tempo de execução (`typeof`, tamanho, se o canal existe e é do tipo certo);
    - se houver ack, confira `typeof ack === 'function'` **antes** do `guard`;
    - todo trabalho async vai dentro de `void guard('evento', async () => { ... })` (de `server/context.ts`);

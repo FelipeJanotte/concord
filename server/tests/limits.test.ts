@@ -12,7 +12,7 @@ describe('limites por conta', () => {
   let b: TestUser
 
   beforeAll(async () => {
-    server = await TestServer.start({ env: REAL_LIMITS })
+    server = await TestServer.start({ env: REAL_LIMITS, owner: false }) // "a" é a primeira conta (a dona)
     // cada cadastro gasta do limite por IP (5): aqui só 2
     a = await server.newUser('Apressada')
     b = await server.newUser('Observador')
@@ -95,7 +95,7 @@ describe('limites por IP (cadastro e login)', () => {
   let server: TestServer
 
   beforeAll(async () => {
-    server = await TestServer.start({ env: REAL_LIMITS })
+    server = await TestServer.start({ env: REAL_LIMITS, owner: false }) // conta os cadastros por IP
   })
 
   afterAll(async () => {

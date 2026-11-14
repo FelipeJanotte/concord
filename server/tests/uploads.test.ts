@@ -32,10 +32,9 @@ async function user(): Promise<TestUser> {
   return u
 }
 
-async function textChannel(u: TestUser): Promise<Channel> {
-  const res = await u.socket.emitWithAck('channel:create', { name: `anexos-${randomUUID().slice(0, 8)}`, type: 'text' })
-  if (!res.ok) throw new Error(res.error)
-  return res.channel
+/** Canal novo, criado pela dona (só quem tem manageChannels cria). */
+async function textChannel(_u: TestUser): Promise<Channel> {
+  return server.createChannel(`anexos-${randomUUID().slice(0, 8)}`)
 }
 
 async function uploadOk(u: TestUser, data: Uint8Array | string, opts?: { name?: string; type?: string }): Promise<Attachment> {
@@ -257,7 +256,7 @@ describe('GET /files', () => {
     expect(existsSync(file)).toBe(true)
 
     const deleted = waitFor(u.socket, 'channel:deleted', (id) => id === ch.id)
-    u.socket.emit('channel:delete', ch.id)
+    ;(await server.asOwner()).socket.emit('channel:delete', ch.id)
     await deleted
     await sleep(100)
     expect(existsSync(file)).toBe(false)

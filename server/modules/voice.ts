@@ -2,7 +2,8 @@
  * Salas de voz: quem está em qual sala e repasse da sinalização WebRTC
  * (o áudio vai direto de um usuário para o outro). Skill `concord-voice`.
  */
-import type { VoiceState } from '../../src/shared/types'
+import { can, type VoiceState } from '../../src/shared/types'
+import { accessSnapshot, allowed } from '../access'
 import { guard, type AppServer, type AppSocket, type ServerModule } from '../context'
 import { findChannel } from '../repo/channels'
 
@@ -13,8 +14,29 @@ const voiceRoom = (channelId: string): string => `voice:${channelId}`
 
 export const voiceStates = (): VoiceState[] => [...voice.values()]
 
+/** Estado de voz que a conta pode ver (quem está em sala privada não aparece para quem não vê a sala). */
+export function voiceStatesFor(accountId: string): VoiceState[] {
+  const access = accessSnapshot()
+  return voiceStates().filter((v) => can(access, accountId, 'view', v.channelId))
+}
+
+/** `voice:state` (sempre a lista completa que cada conexão pode ver). */
 export function emitVoice(io: AppServer): void {
-  io.emit('voice:state', voiceStates())
+  for (const socket of io.sockets.sockets.values()) {
+    const user = socket.data.user
+    if (user) socket.emit('voice:state', voiceStatesFor(user.accountId))
+  }
+}
+
+/** Tira uma conexão da sala de voz (ex.: perdeu a permissão de entrar). */
+export function removeFromVoice(io: AppServer, socketId: string): void {
+  const socket = io.sockets.sockets.get(socketId)
+  if (socket) leaveVoice(io, socket)
+}
+
+/** Conexões em sala de voz (para revisar permissões depois de uma mudança de cargos). */
+export function voiceMembers(): { socketId: string; channelId: string }[] {
+  return voiceStates().map((v) => ({ socketId: v.userId, channelId: v.channelId }))
 }
 
 function leaveVoice(io: AppServer, socket: AppSocket): void {
@@ -40,9 +62,16 @@ export const voiceModule: ServerModule = {
     socket.on('voice:join', (payload, ack) => {
       if (typeof ack !== 'function') return
       void guard('voice:join', async () => {
-        if (!socket.data.user) return ack({ ok: false, error: 'Não autenticado' })
+        const user = socket.data.user
+        if (!user) return ack({ ok: false, error: 'Não autenticado' })
         const channel = typeof payload?.channelId === 'string' ? await findChannel(payload.channelId, 'voice') : undefined
-        if (!channel) return ack({ ok: false, error: 'Canal de voz não encontrado' })
+        // Sem permissão de ver, responde como se o canal não existisse (não revela salas privadas).
+        if (!channel || !(await allowed(user.accountId, 'view', channel.id))) {
+          return ack({ ok: false, error: 'Canal de voz não encontrado' })
+        }
+        if (!(await allowed(user.accountId, 'connect', channel.id))) {
+          return ack({ ok: false, error: 'Você não tem permissão para entrar nesta sala' })
+        }
         if (!socket.connected) return
         leaveVoice(io, socket)
         const peers = voiceStates()

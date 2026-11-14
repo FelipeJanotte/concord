@@ -12,26 +12,39 @@ export function firstTextView(channels: Channel[]): View | null {
   return channel ? { kind: 'text', channelId: channel.id } : null
 }
 
+/**
+ * Troca a lista de canais e limpa o que era dos canais que saíram (apagados ou
+ * que a pessoa deixou de poder ver): rascunho, histórico, não lidos, voz e a tela aberta.
+ */
+function replaceChannels(next: Channel[]): void {
+  const keep = new Set(next.map((c) => c.id))
+  const gone = get()
+    .channels.map((c) => c.id)
+    .filter((id) => !keep.has(id))
+  if (gone.includes(get().myVoiceChannelId ?? '')) leaveVoice()
+  for (const id of gone) clearDraft(id)
+  set((st) => {
+    const drop = <T>(record: Record<string, T>): Record<string, T> => gone.reduce((r, id) => omit(r, id), record)
+    return {
+      channels: next,
+      messages: drop(st.messages),
+      hasMoreHistory: drop(st.hasMoreHistory),
+      loadingOlder: drop(st.loadingOlder),
+      unread: drop(st.unread),
+      view: st.view && !keep.has(st.view.channelId) ? firstTextView(next) : st.view
+    }
+  })
+  const view = get().view
+  if (view?.kind === 'text') void loadHistory(view.channelId)
+}
+
 export function bindChannelEvents(s: AppSocket): void {
   s.on('channel:created', (channel) => set((st) => ({ channels: [...st.channels, channel] })))
 
-  s.on('channel:deleted', (channelId) => {
-    if (get().myVoiceChannelId === channelId) leaveVoice()
-    clearDraft(channelId)
-    set((st) => {
-      const channels = st.channels.filter((c) => c.id !== channelId)
-      return {
-        channels,
-        messages: omit(st.messages, channelId),
-        hasMoreHistory: omit(st.hasMoreHistory, channelId),
-        loadingOlder: omit(st.loadingOlder, channelId),
-        unread: omit(st.unread, channelId),
-        view: st.view?.channelId === channelId ? firstTextView(channels) : st.view
-      }
-    })
-    const view = get().view
-    if (view?.kind === 'text') void loadHistory(view.channelId)
-  })
+  s.on('channel:deleted', (channelId) => replaceChannels(get().channels.filter((c) => c.id !== channelId)))
+
+  // permissões mudaram: canais que a pessoa pode ver agora (v2)
+  s.on('channels:visible', (channels) => replaceChannels(channels))
 }
 
 export function selectTextChannel(channelId: string): void {

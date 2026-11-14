@@ -24,10 +24,9 @@ async function user(name?: string): Promise<TestUser> {
   return u
 }
 
-async function newChannel(u: TestUser, type: 'text' | 'voice'): Promise<Channel> {
-  const res = await u.socket.emitWithAck('channel:create', { name: `c ${Math.random().toString(36).slice(2, 8)}`, type })
-  if (!res.ok) throw new Error(res.error)
-  return res.channel
+/** Canal novo, criado pela dona (só quem tem manageChannels cria). */
+async function newChannel(_u: TestUser, type: 'text' | 'voice'): Promise<Channel> {
+  return server.createChannel(`c ${Math.random().toString(36).slice(2, 8)}`, type)
 }
 
 describe('presença', () => {
@@ -88,7 +87,7 @@ describe('presença', () => {
 
 describe('canais', () => {
   it('cria canal de texto normalizando o nome e avisa todos', async () => {
-    const a = await user()
+    const a = await server.asOwner()
     const b = await user()
     const created = waitFor(b.socket, 'channel:created', (c) => c.name === 'meu-canal-novo')
     const res = await a.socket.emitWithAck('channel:create', { name: '  Meu   Canal Novo ', type: 'text' })
@@ -96,20 +95,32 @@ describe('canais', () => {
     await created
   })
 
-  it('canal de voz mantém maiúsculas e espaços simples', async () => {
+  it('quem não tem "gerenciar canais" não cria nem apaga canal', async () => {
     const a = await user()
+    expect(await a.socket.emitWithAck('channel:create', { name: 'nao-pode', type: 'text' })).toEqual({
+      ok: false,
+      error: 'Você não tem permissão para criar canais'
+    })
+    const geral = a.state.channels.find((c) => c.name === 'geral')!
+    const silent = expectNoEvent(a.socket, 'channel:deleted')
+    a.socket.emit('channel:delete', geral.id)
+    await silent
+  })
+
+  it('canal de voz mantém maiúsculas e espaços simples', async () => {
+    const a = await server.asOwner()
     const res = await a.socket.emitWithAck('channel:create', { name: 'Sala  Dos Amigos', type: 'voice' })
     expect(res.ok && res.channel.name).toBe('Sala Dos Amigos')
   })
 
   it('corta o nome em 32 caracteres', async () => {
-    const a = await user()
+    const a = await server.asOwner()
     const res = await a.socket.emitWithAck('channel:create', { name: 'x'.repeat(50), type: 'text' })
     expect(res.ok && res.channel.name).toHaveLength(32)
   })
 
   it('recusa nome vazio e nome repetido no mesmo tipo', async () => {
-    const a = await user()
+    const a = await server.asOwner()
     expect(await a.socket.emitWithAck('channel:create', { name: '   ', type: 'text' })).toEqual({
       ok: false,
       error: 'Dê um nome ao canal'
@@ -121,7 +132,7 @@ describe('canais', () => {
   })
 
   it('apagar canal remove mensagens, tira todos da voz e avisa', async () => {
-    const a = await user()
+    const a = await server.asOwner()
     const b = await user()
     const text = await newChannel(a, 'text')
     a.socket.emit('message:send', { channelId: text.id, content: 'oi' })
@@ -140,7 +151,7 @@ describe('canais', () => {
   })
 
   it('apagar canal inexistente não faz nada', async () => {
-    const a = await user()
+    const a = await server.asOwner()
     const silent = expectNoEvent(a.socket, 'channel:deleted')
     a.socket.emit('channel:delete', 'nao-existe')
     await silent

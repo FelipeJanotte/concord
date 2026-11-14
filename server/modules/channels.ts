@@ -1,6 +1,7 @@
 // Canais: criar e apagar.
 import { randomUUID } from 'node:crypto'
 import type { Channel, ChannelType } from '../../src/shared/types'
+import { allowed, emitToViewers, reloadAccess } from '../access'
 import { guard, type ServerModule } from '../context'
 import { limiters, retryText } from '../middleware/rate-limit'
 import { channelNameExists, countChannels, deleteChannel, insertChannel } from '../repo/channels'
@@ -25,6 +26,9 @@ export const channelsModule: ServerModule = {
       if (typeof ack !== 'function') return
       void guard('channel:create', async () => {
         if (!socket.data.user) return ack({ ok: false, error: 'Não autenticado' })
+        if (!(await allowed(socket.data.user.accountId, 'manageChannels'))) {
+          return ack({ ok: false, error: 'Você não tem permissão para criar canais' })
+        }
         const type: ChannelType = payload?.type === 'voice' ? 'voice' : 'text'
         const name = normalizeChannelName(payload?.name, type)
         if (!name) return ack({ ok: false, error: 'Dê um nome ao canal' })
@@ -40,18 +44,22 @@ export const channelsModule: ServerModule = {
           if (err instanceof DuplicateError) return ack({ ok: false, error: 'Já existe um canal com esse nome' })
           throw err
         }
-        io.emit('channel:created', channel)
+        // canal novo não tem regras: aparece para quem o @todos (ou um cargo) deixa ver
+        await emitToViewers(io, channel.id, 'channel:created', channel)
         ack({ ok: true, channel })
       })
     })
 
     socket.on('channel:delete', (channelId) => {
-      if (!socket.data.user || typeof channelId !== 'string') return
+      const user = socket.data.user
+      if (!user || typeof channelId !== 'string') return
       void guard('channel:delete', async () => {
+        if (!(await allowed(user.accountId, 'manageChannels'))) return
         const files = await attachmentIdsInChannel(channelId)
         if (!(await deleteChannel(channelId))) return
         // os registros dos anexos saíram junto (cascade); os arquivos, apagamos aqui
         for (const id of files) await storage.remove(id)
+        await reloadAccess() // as regras do canal também saíram (cascade)
         clearVoiceChannel(io, channelId)
         io.emit('channel:deleted', channelId)
         emitVoice(io)

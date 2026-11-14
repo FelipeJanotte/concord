@@ -3,7 +3,16 @@ import { get, getSocket, notify, set, type AppSocket } from '../core'
 import { voice } from '../voice'
 
 export function bindVoiceEvents(s: AppSocket): void {
-  s.on('voice:state', (states) => set({ voice: states }))
+  s.on('voice:state', (states) => {
+    set({ voice: states })
+    // O servidor tirou esta conexão da sala (ex.: perdeu a permissão de entrar): sai localmente.
+    const { myVoiceChannelId, joiningVoice, self } = get()
+    if (myVoiceChannelId && !joiningVoice && self && !states.some((v) => v.userId === self.id)) {
+      voice.teardown()
+      set({ myVoiceChannelId: null, speaking: {}, noMic: false })
+      notify('Você saiu da sala de voz.', 'info')
+    }
+  })
   s.on('voice:signal', (payload) => void voice.handleSignal(payload))
   s.on('voice:peer-left', (userId) => voice.removePeer(userId))
 }

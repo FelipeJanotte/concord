@@ -49,6 +49,18 @@ cadastro/login (antes de existir socket) e **Socket.IO** para o resto. Detalhes 
 - `Message { id, channelId, author: User, content, createdAt }`: o banco guarda `author_id` (conta) e o histórico junta com a conta, então mostra nome/foto **atuais**. Em `message:new`, `author.id` é o socket de quem enviou; no histórico é o id da conta. Identifique a pessoa sempre por `author.accountId`.
 - Histórico paginado: `message:history { channelId, before? }` → `{ messages, hasMore }`, 50 por página (`HISTORY_PAGE_SIZE`), da mais antiga para a mais nova. A ordem vem da coluna `seq` (ordem de chegada). Sem limite de mensagens guardadas.
 
+## Permissões (v2)
+
+Contrato e regra de cálculo em `src/shared/types/permissions.ts` (`can`, `channelPermissions`, `globalPermissions`,
+`highestPosition`), usados pelo servidor e pela tela. Cargos (`roles`), cargos de cada conta (`member_roles`) e regras
+por canal (`channel_overrides`) ficam no banco; `server/access.ts` guarda o estado em memória e recarrega depois de
+cada mudança. A **dona** (primeira conta) pode tudo; o `@todos` (id fixo `EVERYONE_ROLE_ID`) vale para todo mundo e
+começa com as permissões de canal, sem as de administração (criar/apagar canal exige `manageChannels`).
+`hello`, `voice:state`, `message:new`, `typing` e `channel:created` só chegam a quem pode ver o canal. Mudou o acesso
+→ `access:updated` (estado inteiro, para todos), `channels:visible` (para quem ganhou/perdeu canais) e quem perdeu
+`connect` sai da voz. Pendente: permissões `speak`/`share` no token do LiveKit (depende da B1) e download de anexo
+de canal privado (`/files/<id>` ainda é só pelo id aleatório).
+
 ## Banco (`server/db/`)
 
 Anexos: o app envia o arquivo por HTTP (`POST /uploads`, corpo = bytes, `Authorization: Bearer <token>`,
