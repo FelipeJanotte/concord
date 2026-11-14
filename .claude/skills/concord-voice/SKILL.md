@@ -108,6 +108,10 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
 - **Grade** (`components/voice/VoiceGrid.tsx`): sem telas, grade de participantes; com telas, a de **outra pessoa**
   em destaque (a própria só se for a única), miniaturas clicáveis embaixo e botão de tela cheia.
 - `sharing` no servidor é só indicador (o cliente avisa); quem pode publicar a tela é decidido pelo token do LiveKit.
+- **Testes:** `src/main/screen-share.test.ts` (controlador, sem Electron), `lib/voice.test.ts` (bloco "tela"),
+  `lib/actions/screen.test.ts` (botão, seletor, erros, aviso único ao servidor), `components/voice/voice.test.tsx`
+  (jsdom: seletor, tile e grade) e `server/tests/voice.test.ts` (`voice:sharing`). À mão: duas janelas na mesma
+  sala com o LiveKit rodando; uma compartilha, a outra vê a tela e o "ao vivo" some ao parar.
 
 ## Limites e evolução
 
