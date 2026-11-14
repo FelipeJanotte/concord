@@ -15,6 +15,9 @@
  * Dispositivos (B4): microfone e saída escolhidos (`setInputDevice`/`setOutputDevice`), volume por pessoa
  * (`setUserVolume`) e silenciar alguém só para mim (`setUserMuted`, que guarda o volume para quando voltar).
  * Tudo por conta, porque a identidade muda a cada conexão.
+ *
+ * Supressão de ruído automática (B13): `lib/noise/processor.ts` entra como processador do microfone
+ * (`setProcessor`) antes de publicar; `setNoiseSuppression(false)` manda o áudio cru.
  */
 import {
   createLocalAudioTrack,
@@ -29,6 +32,8 @@ import {
   type RemoteTrackPublication
 } from 'livekit-client'
 import type { JoinVoiceResult } from '@shared/types'
+import { loadRnnoiseEngine } from './noise/engine'
+import { AutoNoiseProcessor, type NoiseMode } from './noise/processor'
 import { useApp } from '@/store'
 import type { AppSocket } from './core'
 
@@ -40,8 +45,12 @@ const SCREEN_CAPTURE = { resolution: { width: 1920, height: 1080, frameRate: 15 
 /** O que o VoiceClient usa de fora; os testes trocam por versões falsas. */
 export interface VoiceDeps {
   createRoom: (opts: { outputDeviceId: string | null }) => Room
-  /** `deviceId` null = microfone padrão do sistema */
-  createMicTrack: (deviceId: string | null) => Promise<LocalAudioTrack>
+  /** `deviceId` null = microfone padrão do sistema; `noiseSuppression` = supressão nativa do WebRTC */
+  createMicTrack: (deviceId: string | null, opts?: { noiseSuppression: boolean }) => Promise<LocalAudioTrack>
+  /** processador da supressão automática; avisa o modo atual */
+  createNoiseProcessor: (onMode: (mode: NoiseMode) => void) => AutoNoiseProcessor
+  /** AudioContext a 48 kHz (o RNNoise só trabalha nessa taxa) */
+  createAudioContext: () => AudioContext
   listDevices: (kind: 'audioinput' | 'audiooutput') => Promise<MediaDeviceInfo[]>
 }
 
@@ -57,7 +66,24 @@ const defaultDeps: VoiceDeps = {
       adaptiveStream: true,
       dynacast: true
     }),
-  createMicTrack: (deviceId) => createLocalAudioTrack(deviceId ? { ...AUDIO_CAPTURE, deviceId } : AUDIO_CAPTURE),
+  createMicTrack: (deviceId, opts) =>
+    createLocalAudioTrack({
+      ...AUDIO_CAPTURE,
+      noiseSuppression: opts?.noiseSuppression ?? true,
+      ...(deviceId ? { deviceId } : {})
+    }),
+  createNoiseProcessor: (onMode) =>
+    new AutoNoiseProcessor(
+      {
+        loadEngine: loadRnnoiseEngine,
+        cores: () => navigator.hardwareConcurrency || 4,
+        now: () => Date.now(),
+        setInterval: (fn, ms) => window.setInterval(fn, ms),
+        clearInterval: (id) => window.clearInterval(id as number)
+      },
+      onMode
+    ),
+  createAudioContext: () => new AudioContext({ sampleRate: 48000 }),
   // false = não pede permissão só para listar (sem permissão, os nomes vêm vazios).
   listDevices: (kind) => Room.getLocalDevices(kind, false)
 }
@@ -101,6 +127,10 @@ export class VoiceClient {
   onUnexpectedDisconnect: ((message: string) => void) | null = null
   /** Chamado quando a própria tela para sem ser pelo app (janela fechada, "parar" do sistema...). */
   onScreenShareEnded: (() => void) | null = null
+  /** Estado da supressão de ruído: modo atual, 'off' (desligada pela pessoa) ou null (fora de sala). */
+  onNoiseModeChange: ((mode: NoiseMode | 'off' | null) => void) | null = null
+  private noiseEnabled = true
+  private audioContext: AudioContext | null = null
 
   private readonly deps: VoiceDeps
 
@@ -154,6 +184,8 @@ export class VoiceClient {
     try {
       await room.connect(res.url, res.token, { autoSubscribe: true })
       if (this.room !== room) return { micError } // saiu (ou trocou de sala) enquanto conectava
+      // O filtro entra antes de publicar: ninguém chega a ouvir o áudio cru.
+      if (mic && this.noiseEnabled) await this.attachNoise(mic)
       if (mic) await room.localParticipant.publishTrack(mic, { source: Track.Source.Microphone })
       // O Electron libera autoplay, mas no navegador (npm run dev em localhost:5173) isso destrava o áudio.
       void room.startAudio().catch(() => {})
@@ -184,7 +216,8 @@ export class VoiceClient {
     for (const track of this.remoteAudio) track.detach().forEach((el) => el.remove())
     this.remoteAudio.clear()
     this.voices.clear()
-    this.mic?.stop()
+    this.mic?.stop() // o LiveKit destrói o processador junto com a faixa
+    this.onNoiseModeChange?.(null)
     this.mic = null
     this.activeSpeakers = []
     if (Object.keys(useApp.getState().speaking).length) useApp.setState({ speaking: {} })
@@ -238,13 +271,51 @@ export class VoiceClient {
   }
 
   /** Abre o microfone escolhido; se ele sumiu (desconectado), cai para o padrão do sistema. */
-  private async openMic(): Promise<LocalAudioTrack> {
-    if (!this.inputDeviceId) return this.deps.createMicTrack(null)
+  // ---------- supressão de ruído (B13) ----------
+
+  /** Liga/desliga a supressão automática (na hora, se estiver numa sala). Desligada = áudio cru. */
+  async setNoiseSuppression(enabled: boolean): Promise<void> {
+    this.noiseEnabled = enabled
+    const mic = this.mic
+    if (!mic || !this.room) return
+    if (enabled) {
+      await this.setNative(mic, true)
+      await this.attachNoise(mic)
+    } else {
+      await mic.stopProcessor()
+      await this.setNative(mic, false)
+      this.onNoiseModeChange?.('off')
+    }
+  }
+
+  /** Põe o processador automático no microfone. Se falhar, fica a supressão nativa. */
+  private async attachNoise(mic: LocalAudioTrack): Promise<void> {
     try {
-      return await this.deps.createMicTrack(this.inputDeviceId)
+      this.audioContext ??= this.deps.createAudioContext()
+      await mic.setAudioContext(this.audioContext)
+      await mic.setProcessor(this.deps.createNoiseProcessor((mode) => this.onNoiseModeChange?.(mode)))
+    } catch (err) {
+      console.warn('[ruído] não foi possível ligar o filtro automático:', err)
+      this.onNoiseModeChange?.('light-fallback')
+    }
+  }
+
+  private async setNative(mic: LocalAudioTrack, on: boolean): Promise<void> {
+    try {
+      await mic.mediaStreamTrack.applyConstraints({ noiseSuppression: on })
+    } catch {
+      // nem todo dispositivo deixa trocar com a faixa aberta
+    }
+  }
+
+  private async openMic(): Promise<LocalAudioTrack> {
+    const opts = { noiseSuppression: this.noiseEnabled }
+    if (!this.inputDeviceId) return this.deps.createMicTrack(null, opts)
+    try {
+      return await this.deps.createMicTrack(this.inputDeviceId, opts)
     } catch (err) {
       console.warn('[voz] microfone escolhido indisponível, usando o padrão:', err)
-      return this.deps.createMicTrack(null)
+      return this.deps.createMicTrack(null, opts)
     }
   }
 

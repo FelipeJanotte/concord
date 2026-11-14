@@ -6,6 +6,9 @@
 import { get, notify, set } from '../core'
 import { voice } from '../voice'
 
+// O que a supressão de ruído está fazendo agora (aparece em Configurações de voz).
+voice.onNoiseModeChange = (mode) => set({ noiseMode: mode })
+
 const STORAGE_KEY = 'concord:audio'
 
 export interface AudioDevice {
@@ -21,10 +24,19 @@ interface SavedAudio {
   muted: string[]
   /** sons de entrar/sair da sala (B16) */
   sounds: { enabled: boolean; volume: number }
+  /** supressão de ruído automática (B13) */
+  noise: boolean
 }
 
 function readSaved(): SavedAudio {
-  const empty: SavedAudio = { input: null, output: null, volumes: {}, muted: [], sounds: { enabled: true, volume: 0.5 } }
+  const empty: SavedAudio = {
+    input: null,
+    output: null,
+    volumes: {},
+    muted: [],
+    sounds: { enabled: true, volume: 0.5 },
+    noise: true
+  }
   try {
     const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null
     if (!raw) return empty
@@ -44,7 +56,8 @@ function readSaved(): SavedAudio {
           typeof data.sounds?.volume === 'number' && data.sounds.volume >= 0 && data.sounds.volume <= 1
             ? data.sounds.volume
             : empty.sounds.volume
-      }
+      },
+      noise: typeof data.noise === 'boolean' ? data.noise : empty.noise
     }
   } catch {
     return empty
@@ -52,7 +65,7 @@ function readSaved(): SavedAudio {
 }
 
 function save(): void {
-  const { audioInputId, audioOutputId, userVolumes, userMuted, voiceSoundsEnabled, voiceSoundsVolume } = get()
+  const { audioInputId, audioOutputId, userVolumes, userMuted, voiceSoundsEnabled, voiceSoundsVolume, noiseSuppression } = get()
   try {
     localStorage.setItem(
       STORAGE_KEY,
@@ -61,7 +74,8 @@ function save(): void {
         output: audioOutputId,
         volumes: userVolumes,
         muted: Object.keys(userMuted),
-        sounds: { enabled: voiceSoundsEnabled, volume: voiceSoundsVolume }
+        sounds: { enabled: voiceSoundsEnabled, volume: voiceSoundsVolume },
+        noise: noiseSuppression
       })
     )
   } catch {
@@ -80,8 +94,10 @@ export function loadAudioPreferences(): void {
     userVolumes: saved.volumes,
     userMuted,
     voiceSoundsEnabled: saved.sounds.enabled,
-    voiceSoundsVolume: saved.sounds.volume
+    voiceSoundsVolume: saved.sounds.volume,
+    noiseSuppression: saved.noise
   })
+  void voice.setNoiseSuppression(saved.noise)
   void voice.setInputDevice(saved.input)
   void voice.setOutputDevice(saved.output)
   for (const [accountId, v] of Object.entries(saved.volumes)) voice.setUserVolume(accountId, v)
@@ -165,6 +181,18 @@ export function setVoiceSounds(change: { enabled?: boolean; volume?: number }): 
   }
   set(patch)
   save()
+}
+
+/** Liga/desliga a supressão de ruído automática (B13). Desligada = microfone cru. */
+export async function setNoiseSuppression(enabled: boolean): Promise<void> {
+  set({ noiseSuppression: enabled })
+  save()
+  try {
+    await voice.setNoiseSuppression(enabled)
+  } catch (err) {
+    console.error('[ruído] não foi possível trocar:', err)
+    notify('Não foi possível mudar a supressão de ruído.')
+  }
 }
 
 export function openDeviceSettings(): void {
