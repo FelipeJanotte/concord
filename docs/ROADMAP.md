@@ -138,12 +138,12 @@ Ordem: contrato → (A9) em paralelo com (B11 → B12). B12 funciona com o tema 
 ## Extras de voz e comunidade (independentes)
 
 Ideias sem versão fixa, para puxar quando sobrar tempo, em paralelo com qualquer versão. Cada uma diz do que
-depende: B1, B2, B3 e A2 já estão na `main`; a B4 está no PR #14.
+depende: B1, B2, B3, B4 e A2 já estão na `main`.
 
 | Ideia | Tasks | Depende de | Tamanho |
 |---|---|---|---|
-| Supressão de ruído | B13 | B4 (PR #14) | médio (spike + 3 níveis) |
-| Sons de entrar/sair | B16 | B4 (PR #14) | pequeno |
+| Supressão de ruído | B13 | B4 (na `main`) | médio (spike + 3 níveis) |
+| Sons de entrar/sair ✅ | B16 | B4 (na `main`) | pequeno |
 | Efeitos sonoros (soundboard) | A10 + B17 | A2 (na `main`); permissão opcional da v2 | médio |
 | Overlay em jogos | B15 | B2 (na `main`) | médio |
 | Bot de música | A11 + B14 | B1 (na `main`); **decisão sobre termos de uso** | grande |
@@ -181,7 +181,7 @@ níveis vale sem sair da sala; a escolha volta depois de reiniciar o app. Testes
 
 | Task | Dev | O que faz | Arquivos (dono) |
 |---|---|---|---|
-| **B16 Sons de entrar/sair** | B | Um som curto quando alguém **entra** na sala de voz em que estou e outro quando alguém **sai** (inclusive eu mesmo entrando/saindo, como no Discord). Só cliente: compara o `voice:state` anterior com o novo na minha sala. Toca pela saída escolhida na B4, respeita o deafen e tem interruptor + volume em Configurações de voz (salvo em `concord:audio`). Não toca na carga inicial (`hello`), nem em reconexão, nem em rajada (várias pessoas entrando juntas = um som só). Sons próprios (licença livre, ex.: CC0) empacotados no app. | `lib/sounds/**`, `assets/sounds/**`, `lib/actions/devices.ts`, `components/voice/DeviceSettings.tsx` |
+| **B16 Sons de entrar/sair** ✅ (branch `extras/b16-sons-entrada-saida`) | B | Um som curto quando alguém **entra** na sala de voz em que estou e outro quando alguém **sai** (inclusive eu mesmo entrando/saindo, como no Discord). Só cliente: compara o `voice:state` anterior com o novo na minha sala. Toca pela saída escolhida na B4, respeita o deafen e tem interruptor + volume + "Testar" em Configurações de voz (salvo em `concord:audio`). Não toca na carga inicial (`hello`) nem em rajada (várias mudanças juntas = um som de cada tipo). Os sons são **gerados na hora pela Web Audio** (sem arquivos de áudio: nada para baixar nem licença para conferir). | `lib/sounds/**`, `lib/actions/voice-sounds.ts`, `lib/actions/devices.ts`, `components/voice/DeviceSettings.tsx` |
 
 Pequena e sem dependências: boa para puxar logo. **Testes:** detecção de entrada/saída a partir de dois `voice:state`, sem som no `hello`, rajada agrupada, deafen e interruptor desligado silenciam (áudio falso).
 

@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 // Diálogo "Configurações de voz" (B4): microfone e saída de áudio.
-import { act, cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { User, VoiceState } from '@shared/types'
+import { chimes } from '@/lib/actions/voice-sounds'
 import { voice } from '@/lib/voice'
 import { initialState, useApp } from '@/store'
 import { DeviceSettings } from './DeviceSettings'
@@ -98,7 +99,22 @@ describe('DeviceSettings', () => {
 
   it('o volume das pessoas não fica mais aqui: aponta para o botão direito', async () => {
     await openDialog()
-    expect(screen.queryByRole('slider')).toBeNull()
+    expect(screen.queryByRole('slider', { name: /^Volume de / })).toBeNull()
     expect(screen.getByText(/clique com o botão direito na pessoa/)).toBeTruthy()
+  })
+
+  it('sons de entrar/sair: interruptor, volume e Testar', async () => {
+    const play = vi.spyOn(chimes, 'play').mockReturnValue(true)
+    await openDialog()
+    const toggle = screen.getByRole('checkbox', { name: /som quando alguém entra ou sai/ }) as HTMLInputElement
+    expect(toggle.checked).toBe(true)
+    fireEvent.change(screen.getByRole('slider', { name: 'Volume dos sons de entrada e saída' }), { target: { value: '30' } })
+    expect(useApp.getState().voiceSoundsVolume).toBe(0.3)
+    expect(screen.getByText('30%')).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: 'Testar' }))
+    expect(play).toHaveBeenCalledWith('join', { volume: 0.3, outputId: null })
+    await userEvent.click(toggle)
+    expect(useApp.getState().voiceSoundsEnabled).toBe(false)
+    expect((screen.getByRole('slider', { name: 'Volume dos sons de entrada e saída' }) as HTMLInputElement).disabled).toBe(true)
   })
 })

@@ -19,10 +19,12 @@ interface SavedAudio {
   volumes: Record<string, number>
   /** contas silenciadas */
   muted: string[]
+  /** sons de entrar/sair da sala (B16) */
+  sounds: { enabled: boolean; volume: number }
 }
 
 function readSaved(): SavedAudio {
-  const empty: SavedAudio = { input: null, output: null, volumes: {}, muted: [] }
+  const empty: SavedAudio = { input: null, output: null, volumes: {}, muted: [], sounds: { enabled: true, volume: 0.5 } }
   try {
     const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null
     if (!raw) return empty
@@ -35,7 +37,14 @@ function readSaved(): SavedAudio {
       input: typeof data.input === 'string' && data.input ? data.input : null,
       output: typeof data.output === 'string' && data.output ? data.output : null,
       volumes,
-      muted: Array.isArray(data.muted) ? data.muted.filter((id): id is string => typeof id === 'string' && !!id) : []
+      muted: Array.isArray(data.muted) ? data.muted.filter((id): id is string => typeof id === 'string' && !!id) : [],
+      sounds: {
+        enabled: typeof data.sounds?.enabled === 'boolean' ? data.sounds.enabled : empty.sounds.enabled,
+        volume:
+          typeof data.sounds?.volume === 'number' && data.sounds.volume >= 0 && data.sounds.volume <= 1
+            ? data.sounds.volume
+            : empty.sounds.volume
+      }
     }
   } catch {
     return empty
@@ -43,11 +52,17 @@ function readSaved(): SavedAudio {
 }
 
 function save(): void {
-  const { audioInputId, audioOutputId, userVolumes, userMuted } = get()
+  const { audioInputId, audioOutputId, userVolumes, userMuted, voiceSoundsEnabled, voiceSoundsVolume } = get()
   try {
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ input: audioInputId, output: audioOutputId, volumes: userVolumes, muted: Object.keys(userMuted) })
+      JSON.stringify({
+        input: audioInputId,
+        output: audioOutputId,
+        volumes: userVolumes,
+        muted: Object.keys(userMuted),
+        sounds: { enabled: voiceSoundsEnabled, volume: voiceSoundsVolume }
+      })
     )
   } catch {
     // modo privado / armazenamento bloqueado: vale só até fechar o app
@@ -59,7 +74,14 @@ export function loadAudioPreferences(): void {
   const saved = readSaved()
   const userMuted: Record<string, true> = {}
   for (const id of saved.muted) userMuted[id] = true
-  set({ audioInputId: saved.input, audioOutputId: saved.output, userVolumes: saved.volumes, userMuted })
+  set({
+    audioInputId: saved.input,
+    audioOutputId: saved.output,
+    userVolumes: saved.volumes,
+    userMuted,
+    voiceSoundsEnabled: saved.sounds.enabled,
+    voiceSoundsVolume: saved.sounds.volume
+  })
   void voice.setInputDevice(saved.input)
   void voice.setOutputDevice(saved.output)
   for (const [accountId, v] of Object.entries(saved.volumes)) voice.setUserVolume(accountId, v)
@@ -132,6 +154,17 @@ export function setUserMuted(accountId: string, muted: boolean): void {
   })
   save()
   voice.setUserMuted(accountId, muted)
+}
+
+/** Liga/desliga e ajusta o volume dos sons de entrar/sair da sala (B16). */
+export function setVoiceSounds(change: { enabled?: boolean; volume?: number }): void {
+  const patch: { voiceSoundsEnabled?: boolean; voiceSoundsVolume?: number } = {}
+  if (typeof change.enabled === 'boolean') patch.voiceSoundsEnabled = change.enabled
+  if (typeof change.volume === 'number' && Number.isFinite(change.volume)) {
+    patch.voiceSoundsVolume = Math.min(1, Math.max(0, change.volume))
+  }
+  set(patch)
+  save()
 }
 
 export function openDeviceSettings(): void {
