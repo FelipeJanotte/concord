@@ -9,18 +9,21 @@ import { create } from 'zustand'
 import { channelsInitial, type ChannelsState } from './channels'
 import { messagesInitial, type MessagesState } from './messages'
 import { sessionInitial, type SessionState } from './session'
+import { uploadsInitial, type UploadsState } from './uploads'
 import { voiceInitial, type VoiceSliceState } from './voice'
 
 export type { View } from './channels'
 export type { TypingEntry } from './messages'
 export type { ConnectionStatus, Notice } from './session'
+export type { PendingUpload } from './uploads'
 
-export interface AppState extends SessionState, ChannelsState, MessagesState, VoiceSliceState {}
+export interface AppState extends SessionState, ChannelsState, MessagesState, UploadsState, VoiceSliceState {}
 
 export const initialState: AppState = {
   ...sessionInitial,
   ...channelsInitial,
   ...messagesInitial,
+  ...uploadsInitial,
   ...voiceInitial
 }
 

@@ -14,13 +14,12 @@ import { bindChannelEvents, firstTextView } from './actions/channels'
 import { bindMessageEvents, loadHistory } from './actions/messages'
 import { bindPresenceEvents } from './actions/presence'
 import { bindVoiceEvents } from './actions/voice'
-import { baseUrl, get, getSocket, notify, set, setSocket, type AppSocket } from './core'
+import { clearAllDrafts } from './actions/uploads'
+import { baseUrl, get, getSocket, notify, SERVER_KEY, set, setSocket, TOKEN_KEY, type AppSocket } from './core'
 import { voice } from './voice'
 
 // ---------- Contas (HTTP) ----------
 
-const SERVER_KEY = 'concord:server'
-const TOKEN_KEY = 'concord:token'
 export const DEFAULT_SERVER = 'http://localhost:3001'
 
 export function savedServerUrl(): string {
@@ -182,6 +181,7 @@ export function disconnect(): void {
   setSocket(null)
   voice.teardown()
   voice.setSocket(null)
+  clearAllDrafts()
   if (s) {
     s.removeAllListeners()
     s.disconnect()
@@ -196,4 +196,6 @@ export type { AppSocket } from './core'
 export * from './actions/account'
 export * from './actions/channels'
 export * from './actions/messages'
+export * from './actions/uploads'
 export * from './actions/voice'
+export { resolveServerUrl } from './core'

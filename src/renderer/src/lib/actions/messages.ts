@@ -2,6 +2,7 @@
 import type { Message } from '@shared/types'
 import { omit } from '../utils'
 import { get, getSocket, notify, requireSocket, set, type AppSocket } from '../core'
+import { clearDraft, isUploading, readyAttachmentIds } from './uploads'
 
 export function bindMessageEvents(s: AppSocket): void {
   s.on('message:new', (message) =>
@@ -80,11 +81,22 @@ function mergeMessages(older: Message[], newer: Message[]): Message[] {
 
 let lastTypingAt = 0
 
-export function sendMessage(channelId: string, content: string): void {
+/**
+ * Envia o texto e os anexos prontos do rascunho do canal. Devolve false (sem
+ * enviar) se não houver nada ou se ainda houver arquivo subindo.
+ */
+export function sendMessage(channelId: string, content: string): boolean {
   const text = content.trim()
-  if (!text) return
-  requireSocket().emit('message:send', { channelId, content: text })
+  if (isUploading(channelId)) return false
+  const attachmentIds = readyAttachmentIds(channelId)
+  if (!text && attachmentIds.length === 0) return false
+  requireSocket().emit(
+    'message:send',
+    attachmentIds.length ? { channelId, content: text, attachmentIds } : { channelId, content: text }
+  )
+  clearDraft(channelId, { cancel: false })
   lastTypingAt = 0
+  return true
 }
 
 export function notifyTyping(channelId: string): void {

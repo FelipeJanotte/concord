@@ -45,6 +45,22 @@ async function uploadOk(u: TestUser, data: Uint8Array | string, opts?: { name?: 
 }
 
 describe('POST /uploads', () => {
+  it('o preflight de CORS libera os cabeçalhos que o app usa no envio', async () => {
+    const res = await fetch(server.url + '/uploads', {
+      method: 'OPTIONS',
+      headers: {
+        origin: 'http://localhost:5173',
+        'access-control-request-method': 'POST',
+        'access-control-request-headers': 'authorization,content-type,x-file-name'
+      }
+    })
+    expect(res.status).toBe(204)
+    expect(res.headers.get('access-control-allow-origin')).toBe('*')
+    expect(res.headers.get('access-control-allow-methods')).toContain('POST')
+    const allowed = (res.headers.get('access-control-allow-headers') ?? '').split(',').map((h) => h.trim())
+    expect(allowed).toEqual(expect.arrayContaining(['authorization', 'content-type', 'x-file-name']))
+  })
+
   it('guarda a imagem, confirma o tipo pelos bytes e lê as dimensões', async () => {
     const u = await user()
     const a = await uploadOk(u, PNG_1PX, { name: 'foto do gato.png', type: 'image/png' })
