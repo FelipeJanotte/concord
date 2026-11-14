@@ -61,6 +61,11 @@ com cor, ou null).
 5. `manageChannels` sempre ganha `view` (admin não se tranca para fora).
 6. Dependências: sem `view` → nada; sem `send` → sem `attach`; sem `connect` → sem `speak` e `share`.
 
+**Conversas privadas (canal `dm`, v3) não seguem esta regra**: `server/access.ts` guarda os membros de cada DM
+(`dmMembersOf`) e, nelas, só os dois membros veem (nem a dona); as outras permissões de canal também exigem que
+ninguém tenha bloqueado. Regras por canal não se aplicam (`channel:set-overrides` responde "Canal não encontrado").
+Detalhes na skill `concord-dms`.
+
 Consequência que confunde: tornar um canal privado (`deny view` no @todos) também esconde o canal de moderadores
 sem `manageChannels`, a menos que o cargo deles tenha `allow view` nesse canal.
 

@@ -72,6 +72,14 @@ export const LIMITS = {
   channel: { capacity: 5, perSecond: 1 / 60 },
   /** mudanças de perfil por conta: 10 seguidas, depois 1 a cada 30 s */
   profile: { capacity: 10, perSecond: 1 / 30 },
+  /** pedidos de amizade por conta: 10 seguidos, depois 1 a cada 10 s (v3) */
+  friend: { capacity: 10, perSecond: 1 / 10 },
+  /** abrir conversa privada por conta: 20 seguidas, depois 1 por segundo (v3) */
+  dm: { capacity: 20, perSecond: 1 },
+  /** sorteios das ferramentas do grupo por conta: 5 seguidos, depois 1 a cada 3 s (v4) */
+  tool: { capacity: 5, perSecond: 1 / 3 },
+  /** preferências (tema): 20 seguidas (arrastar o seletor de cor), depois 1 por segundo (v5) */
+  preferences: { capacity: 20, perSecond: 1 },
   /** efeitos sonoros tocados por conta: 1 a cada 3 s (A10) */
   sound: { capacity: 1, perSecond: 1 / 3 },
   /** "digitando" por conexão (o app já manda no máximo 1 a cada 2,5 s) */

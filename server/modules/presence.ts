@@ -8,6 +8,7 @@ import { guard, users, type ServerModule } from '../context'
 import { listChannels } from '../repo/channels'
 import type { Account } from '../repo/types'
 import { currentAccess, visibleChannels } from '../access'
+import { announcePresence, isOnline } from './friends'
 import { voiceStatesFor } from './voice'
 
 function userFor(socketId: string, a: Account): User {
@@ -30,6 +31,7 @@ export const presenceModule: ServerModule = {
         // Desconectou enquanto esperava o banco: não registra um usuário fantasma.
         if (!socket.connected) return
         const isNew = !socket.data.user
+        const wasOnline = isOnline(account.id) // outra janela da mesma conta já estava conectada?
         const user = userFor(socket.id, account)
         socket.data.user = user
         users.set(socket.id, user)
@@ -44,6 +46,8 @@ export const presenceModule: ServerModule = {
           }
         })
         if (isNew) socket.broadcast.emit('user:joined', user)
+        // amigos ficam sabendo quando a conta fica online (só na primeira janela)
+        if (!wasOnline) void guard('friend:presence', () => announcePresence(io, account.id, true))
         console.log(`[+] ${account.name}#${account.tag} conectou (${users.size} online)`)
       })
     })
@@ -52,6 +56,8 @@ export const presenceModule: ServerModule = {
       const user = socket.data.user
       if (users.delete(socket.id)) {
         io.emit('user:left', socket.id)
+        // última janela da conta fechou: amigos veem offline
+        if (user && !isOnline(user.accountId)) void guard('friend:presence', () => announcePresence(io, user.accountId, false))
         console.log(`[-] ${user?.name}#${user?.tag} saiu (${users.size} online)`)
       }
     })

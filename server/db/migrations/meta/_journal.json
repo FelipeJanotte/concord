@@ -29,6 +29,34 @@
       "when": 1794683449729,
       "tag": "0003_sounds",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794684170622,
+      "tag": "0004_preferences",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794684714226,
+      "tag": "0005_friends",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794685298754,
+      "tag": "0006_dms",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794686092457,
+      "tag": "0007_tools",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,4 @@
-// Mensagens dos canais de texto e "digitando".
+// Mensagens dos canais de texto e das conversas privadas, e "digitando".
 import { randomUUID } from 'node:crypto'
 import { ATTACHMENTS_PER_MESSAGE, MESSAGE_MAX_LENGTH, type Message } from '../../src/shared/types'
 import { allowed, emitToViewers } from '../access'
@@ -51,8 +51,9 @@ export const messagesModule: ServerModule = {
       const { channelId } = payload
       queue = queue.then(() =>
         guard('message:send', async () => {
-          const channel = await findChannel(channelId, 'text')
-          if (!channel) return
+          // canal de texto da comunidade ou conversa privada (v3); voz não tem chat
+          const channel = await findChannel(channelId)
+          if (!channel || channel.type === 'voice') return
           // Sem permissão a mensagem é ignorada (a tela já esconde o campo de quem não pode enviar).
           if (!(await allowed(user.accountId, 'send', channel.id))) return
           if (attachmentIds.length > 0 && !(await allowed(user.accountId, 'attach', channel.id))) return

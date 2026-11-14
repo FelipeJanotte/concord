@@ -1,11 +1,14 @@
-// Canais de texto e de voz.
+// Canais de texto e de voz (e, na v3, conversas privadas).
 
+/** Tipos de canal da comunidade (os únicos que dá para criar com `channel:create`). */
 export type ChannelType = 'text' | 'voice'
+/** Todos os tipos: `dm` é a conversa privada entre duas contas (v3, skill `concord-dms`). */
+export type ChannelKind = ChannelType | 'dm'
 
 export interface Channel {
   id: string
   name: string
-  type: ChannelType
+  type: ChannelKind
   createdAt: number
 }
 
