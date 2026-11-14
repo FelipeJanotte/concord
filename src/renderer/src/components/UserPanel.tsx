@@ -38,7 +38,7 @@ export function VoiceStatusPanel() {
 
 export function UserPanel() {
   const self = useApp((s) => s.self)
-  const muted = useApp((s) => s.muted || s.noMic)
+  const muted = useApp((s) => s.muted || s.noMic || (!!s.myVoiceChannelId && !s.voiceCanSpeak))
   const deafened = useApp((s) => s.deafened)
   const speaking = useApp((s) => (s.self ? !!s.speaking[s.self.id] : false))
   const [profileOpen, setProfileOpen] = useState(false)

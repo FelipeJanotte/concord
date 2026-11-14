@@ -31,7 +31,8 @@ import {
   type RemoteTrack,
   type RemoteTrackPublication
 } from 'livekit-client'
-import type { JoinVoiceResult } from '@shared/types'
+import type { JoinVoiceResult, VoicePermissions } from '@shared/types'
+import { permissionsFrom } from './voice-permissions'
 import { loadRnnoiseEngine } from './noise/engine'
 import { AutoNoiseProcessor, type NoiseMode } from './noise/processor'
 import { useApp } from '@/store'
@@ -92,7 +93,7 @@ const defaultDeps: VoiceDeps = {
  * Resultado de `join`. `cancelled` = a entrada foi interrompida antes de terminar (a pessoa saiu,
  * trocou de sala ou a conexão com o Concord caiu): não houve erro, mas ela NÃO está na sala.
  */
-export interface JoinOutcome {
+export interface JoinOutcome extends VoicePermissions {
   micError: unknown
   cancelled: boolean
 }
@@ -140,6 +141,11 @@ export class VoiceClient {
   private mutedUsers = new Set<string>()
   /** faixa do microfone de cada pessoa → conta dela (para aplicar o volume) */
   private voices = new Map<RemoteTrack, string>()
+
+  /** O que esta conexão pode publicar na sala atual (v2): microfone com `speak`, tela com `share`. */
+  private permissions: VoicePermissions = { canSpeak: true, canShare: true }
+  /** Chamado quando as permissões mudam com a pessoa na sala (cargo/regra mudou). */
+  onPermissionsChange: ((permissions: VoicePermissions) => void) | null = null
 
   /** Chamado quando a sala cai sem a pessoa ter pedido (removida, servidor de voz fora do ar...). */
   onUnexpectedDisconnect: ((message: string) => void) | null = null
@@ -200,10 +206,17 @@ export class VoiceClient {
       this.endSwitch(false)
       throw new Error(res.error)
     }
+    // Sem `speak` o LiveKit recusaria o microfone (403): entra só para ouvir, sem nem capturar.
+    const permissions: VoicePermissions = { canSpeak: res.canSpeak !== false, canShare: res.canShare !== false }
+    if (!permissions.canSpeak && mic) {
+      mic.stop()
+      mic = null
+    }
 
     // O servidor já nos tirou da sala anterior: agora sim fecha a conexão antiga.
     this.endSwitch(true)
     this.teardown()
+    this.permissions = permissions
     const room = this.deps.createRoom({ outputDeviceId: this.outputDeviceId })
     this.room = room
     this.connecting = room
@@ -213,7 +226,7 @@ export class VoiceClient {
       await room.connect(res.url, res.token, { autoSubscribe: true })
       this.connecting = null
       // Saiu, trocou de sala ou a conexão com o Concord caiu enquanto conectava: não é sucesso.
-      if (this.room !== room) return { micError, cancelled: true }
+      if (this.room !== room) return { micError, cancelled: true, ...permissions }
       // O filtro entra antes de publicar: ninguém chega a ouvir o áudio cru.
       if (mic && this.noiseEnabled) await this.attachNoise(mic)
       if (mic) await room.localParticipant.publishTrack(mic, { source: Track.Source.Microphone })
@@ -222,13 +235,13 @@ export class VoiceClient {
     } catch (err) {
       if (this.connecting === room) this.connecting = null
       // Saiu enquanto conectava: o `teardown` já limpou tudo e não há erro para mostrar.
-      if (this.room !== room) return { micError, cancelled: true }
+      if (this.room !== room) return { micError, cancelled: true, ...permissions }
       console.error('[voz] não foi possível conectar ao LiveKit:', err)
       // O servidor do Concord já nos colocou na sala: desfaz para os outros não verem um fantasma.
       this.leave()
       throw new Error('Não foi possível conectar ao servidor de voz. Confira se o LiveKit está rodando (docker compose up -d).')
     }
-    return { micError, cancelled: false }
+    return { micError, cancelled: false, ...permissions }
   }
 
   /**
@@ -288,6 +301,42 @@ export class VoiceClient {
     this.deafened = deafened
     for (const track of this.remoteAudio) track.attachedElements.forEach((el) => (el.muted = deafened))
     this.publishSpeaking()
+  }
+
+  // ---------- permissões (v2) ----------
+
+  /** Permissões na sala atual. */
+  get currentPermissions(): VoicePermissions {
+    return this.permissions
+  }
+
+  /**
+   * O cargo/regra mudou com a pessoa na sala: o LiveKit já trocou o que ela pode publicar.
+   * Perdeu `speak`: libera o microfone (o LiveKit já parou de repassar). Recuperou: abre e publica
+   * de novo. Perdeu `share`: o LiveKit despublica a tela e o `LocalTrackUnpublished` avisa o app.
+   */
+  private async applyPermissions(room: Room, next: VoicePermissions): Promise<void> {
+    const prev = this.permissions
+    if (prev.canSpeak === next.canSpeak && prev.canShare === next.canShare) return
+    this.permissions = next
+    if (prev.canSpeak && !next.canSpeak && this.mic) {
+      const mic = this.mic
+      this.mic = null
+      await room.localParticipant.unpublishTrack(mic).catch(() => {})
+      mic.stop()
+    } else if (!prev.canSpeak && next.canSpeak && !this.mic) {
+      try {
+        const mic = await this.openMic()
+        if (this.room !== room) return void mic.stop()
+        if (this.muted) await mic.mute()
+        this.mic = mic
+        if (this.noiseEnabled) await this.attachNoise(mic)
+        await room.localParticipant.publishTrack(mic, { source: Track.Source.Microphone })
+      } catch (err) {
+        console.warn('[voz] não foi possível ligar o microfone depois de ganhar permissão:', err)
+      }
+    }
+    if (this.room === room) this.onPermissionsChange?.(next)
   }
 
   // ---------- dispositivos ----------
@@ -431,6 +480,10 @@ export class VoiceClient {
         if (pub.track) this.removeScreen(participant.identity, pub.track)
         else if (this.screens.delete(participant.identity)) this.publishScreens()
         this.onScreenShareEnded?.()
+      })
+      .on(RoomEvent.ParticipantPermissionsChanged, (_prev: unknown, participant: Participant) => {
+        if (this.room !== room || participant !== room.localParticipant) return
+        void this.applyPermissions(room, permissionsFrom(room.localParticipant.permissions))
       })
       .on(RoomEvent.ActiveSpeakersChanged, (speakers: Participant[]) => {
         this.activeSpeakers = speakers.map((p) => p.identity)

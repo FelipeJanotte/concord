@@ -108,6 +108,30 @@ clica na sala ─► createLocalAudioTrack(echoCancellation/noiseSuppression/aut
 - Dependências injetáveis (`new VoiceClient({ createRoom, createMicTrack })`): os testes em
   `lib/voice.test.ts` usam Room, microfone e faixas falsos.
 
+## Permissões de voz no app (v2)
+
+O servidor decide `canSpeak` (`speak`) e `canShare` (`share`) e o token do LiveKit já sai com elas (seção do
+servidor acima). O app acompanha:
+
+- **Entrar sem `speak`:** o `join` lê `canSpeak`/`canShare` do ack (ausentes = `true`, servidor antigo) e, sem
+  `speak`, descarta o microfone antes de conectar. Publicar mesmo assim faria o `livekit-client` lançar
+  `PublishTrackError ... insufficient permissions (403)` e a entrada falharia. A pessoa entra **só ouvindo**:
+  `store.voiceCanSpeak = false`, aviso "Você não tem permissão para falar nesta sala: entrou só para ouvir.", botão de
+  microfone cortado e que só avisa (o deafen ainda pode ser tirado). O `voice:update` sempre vai com `muted: true`.
+- **Sem `share`:** `store.voiceCanShare = false`, o botão "Compartilhar a tela" some e o `toggleScreenShare` só avisa.
+- **Mudança com a pessoa na sala:** o servidor troca as permissões no LiveKit (`UpdateParticipant`), e o app recebe
+  `RoomEvent.ParticipantPermissionsChanged` (só o da própria conexão conta). `permissionsFrom`
+  (`lib/voice-permissions.ts`) aplica a mesma regra do `hasPermissionsToPublish` do `livekit-client`: precisa de
+  `canPublish` e a fonte na lista; lista vazia = qualquer fonte; `MICROPHONE` = 2 e `SCREEN_SHARE` = 3 no protocolo.
+  Ao **perder `speak`**: despublica e libera o microfone. Ao **recuperar**: abre o microfone de novo (mudo se estava
+  mudo), liga a supressão de ruído e publica. O `voice.onPermissionsChange` atualiza a store, avisa a pessoa e reenvia
+  o `voice:update` (o servidor mantém silenciado quem não pode falar). Ao **perder `share`** compartilhando: o LiveKit
+  despublica a tela, e o "ao vivo" é desligado.
+- **Saída forçada** (`voice:state` sem a própria conexão, ex.: perdeu `connect`): sai localmente, zera o estado e toca
+  o som de saída (B16).
+- **Testes:** `lib/voice-permissions.test.ts`, `lib/voice.test.ts` (bloco "permissões de voz (v2)"),
+  `lib/actions/voice-permissions.test.ts` e `components/VoiceView.test.tsx`.
+
 ## Compartilhar a tela (B3)
 
 ```
