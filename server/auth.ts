@@ -21,8 +21,9 @@ import {
   type ProfileUpdateResult,
   type RegisterRequest
 } from '../src/shared/types'
-import { AVATAR_DIR } from './db'
+import { AVATAR_DIR } from './config'
 import {
+  avatarUrl,
   findAccount,
   findAccountByEmail,
   findAccountByGoogleId,
@@ -32,8 +33,9 @@ import {
 } from './repo/accounts'
 import { deleteSession, findValidSession, insertSession } from './repo/sessions'
 import type { Account } from './repo/types'
+import { DuplicateError } from './repo/util'
 
-export { findAccount }
+export { avatarUrl, findAccount }
 
 const scryptAsync = promisify(scrypt) as (password: string, salt: Buffer, keylen: number) => Promise<Buffer>
 
@@ -51,8 +53,12 @@ function colorFor(seed: string): string {
   return COLORS[h % COLORS.length]
 }
 
-export function avatarUrl(a: Account): string | null {
-  return a.avatarType ? `/avatars/${a.id}?v=${a.avatarVersion}` : null
+/** Mensagem para quando o banco recusa um valor repetido (corrida entre dois pedidos iguais). */
+function duplicateMessage(err: unknown, tag: string): string | null {
+  if (!(err instanceof DuplicateError)) return null
+  if (err.field === 'email') return 'Este e-mail já está cadastrado'
+  if (err.field === 'tag') return `O id #${tag} já está em uso. Escolha outro.`
+  return 'Esta conta já existe'
 }
 
 export function toAccountInfo(a: Account): AccountInfo {
@@ -201,19 +207,26 @@ export async function register(req: Partial<RegisterRequest>): Promise<AuthResul
   if (await isTagTaken(tag)) return { ok: false, error: `O id #${tag} já está em uso. Escolha outro.` }
 
   const id = randomUUID()
-  const account = await insertAccount({
-    id,
-    email,
-    name,
-    tag,
-    tagLocked: true,
-    color: colorFor(id),
-    passwordHash: await hashPassword(password),
-    googleId: null,
-    avatarType: null,
-    avatarVersion: 0,
-    createdAt: Date.now()
-  })
+  let account: Account
+  try {
+    account = await insertAccount({
+      id,
+      email,
+      name,
+      tag,
+      tagLocked: true,
+      color: colorFor(id),
+      passwordHash: await hashPassword(password),
+      googleId: null,
+      avatarType: null,
+      avatarVersion: 0,
+      createdAt: Date.now()
+    })
+  } catch (err) {
+    const message = duplicateMessage(err, tag)
+    if (message) return { ok: false, error: message }
+    throw err
+  }
   console.log(`[conta] criada: ${name}#${tag}`)
   return success(account)
 }
@@ -334,7 +347,14 @@ export async function googleLogin(req: Partial<GoogleLoginRequest>): Promise<Aut
       createdAt: Date.now()
     }
     const picture = claims.picture ? await downloadGooglePicture(draft, claims.picture) : null
-    account = await insertAccount({ ...draft, ...picture })
+    try {
+      account = await insertAccount({ ...draft, ...picture })
+    } catch (err) {
+      // Dois logins simultâneos da mesma conta Google: usa a que acabou de ser criada.
+      if (!(err instanceof DuplicateError)) throw err
+      account = (await findAccountByGoogleId(claims.sub)) ?? (await findAccountByEmail(email))
+      if (!account) return { ok: false, error: 'Não foi possível criar a conta. Tente de novo.' }
+    }
     console.log(`[conta] criada via Google: ${account.name}#${account.tag}`)
   }
   return success(account)
@@ -368,7 +388,14 @@ export async function updateProfile(account: Account, payload: Partial<ProfileUp
   if (avatar) Object.assign(patch, writeAvatar(account, avatar.bytes, avatar.type))
   else if (payload.avatar === null && account.avatarType) Object.assign(patch, removeAvatar(account))
 
-  const updated = await updateAccount(account.id, patch)
+  let updated: Account | undefined
+  try {
+    updated = await updateAccount(account.id, patch)
+  } catch (err) {
+    const message = duplicateMessage(err, tag ?? account.tag)
+    if (message) return { ok: false, error: message }
+    throw err
+  }
   if (!updated) return { ok: false, error: 'Conta não encontrada' }
   return { ok: true, account: toAccountInfo(updated) }
 }

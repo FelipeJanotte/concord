@@ -14,8 +14,13 @@ Siga sempre esta ordem, porque o TypeScript acusa o que falta a cada passo:
 1. **Contrato** em `src/shared/types/<dominio>.ts`: tipos novos e eventos em `<Dominio>ClientEvents` /
    `<Dominio>ServerEvents`. Use callback de ack como último argumento quando o cliente precisar de resposta.
    ★ Domínio novo: `export *` e os dois `extends` em `src/shared/types/index.ts`.
-2. **Dados** em `server/repo/<dominio>.ts`: funções **async** que devolvem cópias (`findX`, `insertX`, `updateX`...).
-   Só o repo importa `server/db.ts`. Isso deixa a troca para Postgres restrita a essa pasta.
+2. **Dados**:
+   - tabela/coluna nova em `server/db/schema/<dominio>.ts` (Drizzle; restrições como `check`/`uniqueIndex` ficam no
+     banco), depois `npm run db:generate` **só depois do rebase na main** e confira o SQL em `server/db/migrations/`;
+     ★ tabela de domínio novo: exporte em `server/db/schema/index.ts`;
+   - funções **async** em `server/repo/<dominio>.ts` (`findX`, `insertX`, `updateX`...) usando `db()` de
+     `server/db/client.ts`. Só o repo importa `server/db/`. Ids vindos do cliente passam por `isUuid` (senão o
+     Postgres dá erro); violação de unicidade vira `DuplicateError` (veja `uniqueViolation`).
 3. **Servidor** em `server/modules/<dominio>.ts`, que exporta um `ServerModule` (`socket(io, socket)` e/ou `http(req, res, path)`):
    - exija `socket.data.user` (existe depois do `hello`); `socket.data.accountId` diz de quem é o socket;
    - para "quem é dono de quê", compare `accountId`, nunca `user.id` (é o `socket.id` e muda a cada conexão);
@@ -50,20 +55,25 @@ Siga sempre esta ordem, porque o TypeScript acusa o que falta a cada passo:
 //   MessageClientEvents ganha: 'message:edit': (p: { messageId: string; content: string }) => void
 //   MessageServerEvents ganha: 'message:updated': (m: Message) => void
 
-// 2. server/repo/messages.ts
-export async function findMessage(id: string): Promise<Message | undefined> { /* ... */ }
-export async function updateMessage(id: string, patch: Partial<Message>): Promise<Message | undefined> { /* ... */ }
+// 2. server/db/schema/messages.ts ganha:  editedAt: timestamp('edited_at', { withTimezone: true })
+//    npm run db:generate  → server/db/migrations/000N_<nome>.sql
+//    server/repo/messages.ts:
+export async function findMessage(id: string): Promise<Message | undefined> {
+  if (!isUuid(id)) return undefined
+  /* db().select().from(messages).leftJoin(accounts, ...).where(eq(messages.id, id)) ... */
+}
+export async function updateMessageContent(id: string, content: string): Promise<Message | undefined> { /* db().update(...) */ }
 
 // 3. server/modules/messages.ts, dentro de socket(io, socket):
 socket.on('message:edit', (payload) => {
   const user = socket.data.user
   if (!user || !payload || typeof payload.messageId !== 'string') return
-  const content = typeof payload.content === 'string' ? payload.content.trim().slice(0, MAX_MESSAGE_LENGTH) : ''
+  const content = typeof payload.content === 'string' ? payload.content.trim().slice(0, MESSAGE_MAX_LENGTH) : ''
   if (!content) return
   void guard('message:edit', async () => {
     const msg = await findMessage(payload.messageId)
     if (!msg || msg.author.accountId !== user.accountId) return // só o autor edita (vale entre conexões)
-    const updated = await updateMessage(msg.id, { content, editedAt: Date.now() })
+    const updated = await updateMessageContent(msg.id, content)
     if (updated) io.emit('message:updated', updated)
   })
 })

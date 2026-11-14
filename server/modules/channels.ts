@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import type { Channel, ChannelType } from '../../src/shared/types'
 import { guard, type ServerModule } from '../context'
 import { channelNameExists, countChannels, deleteChannel, insertChannel } from '../repo/channels'
+import { DuplicateError } from '../repo/util'
 import { clearVoiceChannel, emitVoice } from './voice'
 
 const MAX_CHANNELS = 100
@@ -27,7 +28,13 @@ export const channelsModule: ServerModule = {
         if ((await countChannels()) >= MAX_CHANNELS) return ack({ ok: false, error: 'Limite de canais atingido' })
         if (await channelNameExists(type, name)) return ack({ ok: false, error: 'Já existe um canal com esse nome' })
         const channel: Channel = { id: randomUUID(), name, type, createdAt: Date.now() }
-        await insertChannel(channel)
+        try {
+          await insertChannel(channel)
+        } catch (err) {
+          // Dois pedidos iguais ao mesmo tempo: o banco recusa o segundo.
+          if (err instanceof DuplicateError) return ack({ ok: false, error: 'Já existe um canal com esse nome' })
+          throw err
+        }
         io.emit('channel:created', channel)
         ack({ ok: true, channel })
       })

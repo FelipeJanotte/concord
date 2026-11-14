@@ -29,9 +29,29 @@ Variáveis do servidor: `PORT`, `DATA_DIR` (padrão `server/data`, que está no 
 `GOOGLE_CLIENT_SECRET`. O servidor lê `server/.env` sozinho ao iniciar (`server/env.ts`); o modelo está em
 `server/.env.example` e o `server/.env` está no `.gitignore`.
 
-Para zerar tudo (canais, mensagens, **contas e sessões**): apague `server/data/db.json` e `server/data/avatars/` com
-o servidor parado. Ele recria os canais padrão (`geral`, `off-topic`, `Sala de Voz`, `Jogos`). As sessões salvas nos
-apps deixam de valer e eles voltam para o login.
+## Banco de dados (PostgreSQL + Drizzle)
+
+- **Com `DATABASE_URL`** (no `server/.env`): usa o Postgres do `docker compose` (ou de produção).
+- **Sem `DATABASE_URL`**: usa o **PGlite** (o Postgres compilado em WebAssembly, dentro do Node) em
+  `DATA_DIR/pgdata`. Nada para instalar. O PGlite aceita **um processo por vez**: não rode dois servidores, nem o
+  `db:import-json`, sobre o mesmo `pgdata`.
+- O log de inicialização mostra `Banco: PostgreSQL ...` ou `Banco: PGlite em ...`.
+- As migrations (`server/db/migrations/`) são aplicadas sozinhas ao iniciar.
+- **Banco vazio:** se existir `DATA_DIR/db.json` (versões antigas), ele é importado automaticamente (contas, sessões
+  válidas, canais, mensagens; quem estava logado continua logado). Senão, cria os canais padrão. Para importar à mão:
+  `npm run db:import-json [arquivo]` (idempotente).
+
+**Mudar o schema:** edite `server/db/schema/<dominio>.ts` → `npm run db:generate` → confira o SQL gerado em
+`server/db/migrations/` → commit junto. Gere a migration **só depois do rebase na `main`** (se o outro dev mergeou
+uma migration antes, apague a sua e gere de novo) e nunca edite uma migration já mergeada.
+
+**Zerar tudo** (canais, mensagens, **contas e sessões**), com o servidor parado:
+- PGlite: apague `server/data/pgdata/` (e `server/data/avatars/`). Se `server/data/db.json` ainda existir, ele será
+  importado de novo; apague-o também para começar vazio.
+- Docker: `docker compose down -v && docker compose up -d`.
+
+Ele recria os canais padrão (`geral`, `off-topic`, `Sala de Voz`, `Jogos`). As sessões salvas nos apps deixam de
+valer e eles voltam para o login.
 
 ## Infra local (Docker)
 
@@ -56,15 +76,19 @@ docker compose down -v   # para e APAGA o banco (recria concord_test na próxima
 - **Voz pela rede local:** o LiveKit anuncia o IP de `LIVEKIT_NODE_IP` (padrão `127.0.0.1`, só funciona na mesma
   máquina). Crie um `.env` na raiz com `LIVEKIT_NODE_IP=192.168.x.x`, rode `docker compose up -d` de novo, troque
   `LIVEKIT_URL` no `server/.env` para `ws://192.168.x.x:7880` e libere 7880–7881/TCP e 7882/UDP no firewall.
-- Até as tasks A1 (Postgres) e B1 (LiveKit) entrarem, o servidor ainda usa `server/data/db.json` e a voz P2P; o
-  compose pode ficar desligado.
+- O servidor usa o Postgres do compose quando `DATABASE_URL` está no `server/.env`; sem ela, usa o PGlite (o
+  compose pode ficar desligado). Até a task B1 (LiveKit) entrar, a voz continua P2P.
 
 ## Testes (vitest)
 
 - `vitest.config.ts` na raiz: testes `*.test.ts(x)` ao lado do código em `server/`, `src/shared/` e `src/renderer/src/`;
   aliases `@` e `@shared` iguais aos do renderer; ambiente `node`; carrega `server/.env` antes (via `server/env.ts`).
 - Importe explicitamente: `import { describe, it, expect } from 'vitest'` (sem globals).
-- Teste de banco usa `DATABASE_URL_TEST` (banco `concord_test`), nunca `DATABASE_URL`.
+- Teste de banco usa `DATABASE_URL_TEST` (banco `concord_test`), nunca `DATABASE_URL`: cada arquivo de teste cria
+  e apaga um banco temporário a partir dela (`server/tests/database.ts`). Sem `DATABASE_URL_TEST`, os testes usam
+  PGlite (em memória nos testes do repo; dentro do DATA_DIR temporário nos de integração). Rode a suíte **nos dois
+  modos** antes de mergear mudança de banco quando puder (com e sem o compose ligado).
+- Testes do repo (`server/repo/repo.test.ts`) abrem o banco no próprio processo com `openTestDatabase()`.
 - Teste que precisa de DOM: `// @vitest-environment jsdom` no topo do arquivo e `npm install -D jsdom`.
 - **Integração do servidor** em `server/tests/<dominio>.test.ts`: `TestServer.start()` (`server/tests/helpers.ts`)
   sobe o servidor real (`node --import tsx server/index.ts`) em porta livre e DATA_DIR temporário, sem tocar em

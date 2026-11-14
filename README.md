@@ -44,7 +44,8 @@ O instalador sai na pasta `dist/`.
 ```
 server/index.ts               monta HTTP + Socket.IO e registra os módulos
 server/modules/               um módulo por domínio (contas, canais, mensagens, voz, presença)
-server/repo/                  acesso a dados (hoje sobre server/data/db.json)
+server/repo/                  acesso a dados
+server/db/                    PostgreSQL + Drizzle (schema, migrations; PGlite embutido sem DATABASE_URL)
 src/shared/types/             tipos e eventos compartilhados entre app e servidor, um arquivo por domínio
 src/main/index.ts             processo principal do Electron (janela, permissão de microfone)
 src/preload/index.ts          ponte segura main ↔ renderer
@@ -72,4 +73,3 @@ maiores, o caminho é trocar por um SFU, como LiveKit ou mediasoup.
 - Vários servidores/comunidades na barra da esquerda
 - Mensagens diretas, edição/remoção de mensagens, anexos e emojis
 - Compartilhamento de tela (WebRTC `getDisplayMedia`)
-- Banco de dados de verdade (SQLite/Postgres) no lugar do `server/data/db.json`

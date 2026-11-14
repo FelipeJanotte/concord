@@ -2,27 +2,50 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState, type KeyboardEv
 import { Hash, Loader2, SendHorizontal } from 'lucide-react'
 import type { Channel, Message } from '@shared/types'
 import { Button } from '@/components/ui/button'
-import { notifyTyping, sendMessage } from '@/lib/client'
+import { loadOlderMessages, notifyTyping, sendMessage } from '@/lib/client'
 import { cn, formatDay, formatTime, formatTimestamp } from '@/lib/utils'
 import { useApp } from '@/store'
 import { UserAvatar } from './UserAvatar'
 
 const GROUP_WINDOW_MS = 5 * 60 * 1000
 
+/** A esta distância do topo (px), começa a buscar mensagens mais antigas. */
+const LOAD_OLDER_THRESHOLD = 200
+
 export function ChatView({ channelId }: { channelId: string }) {
   const channel = useApp((s) => s.channels.find((c) => c.id === channelId))
   const messages = useApp((s) => s.messages[channelId])
+  const hasMore = useApp((s) => !!s.hasMoreHistory[channelId])
+  const loadingOlder = useApp((s) => !!s.loadingOlder[channelId])
   const scrollRef = useRef<HTMLDivElement>(null)
   const stickToBottom = useRef(true)
+  /** distância até o fim antes de entrar uma página antiga (para não pular a leitura) */
+  const restoreFromBottom = useRef<number | null>(null)
 
   useEffect(() => {
     stickToBottom.current = true
+    restoreFromBottom.current = null
   }, [channelId])
 
   useLayoutEffect(() => {
     const el = scrollRef.current
-    if (el && stickToBottom.current) el.scrollTop = el.scrollHeight
-  }, [messages, channelId])
+    if (!el) return
+    if (restoreFromBottom.current !== null) {
+      el.scrollTop = el.scrollHeight - restoreFromBottom.current
+      restoreFromBottom.current = null
+    } else if (stickToBottom.current) {
+      el.scrollTop = el.scrollHeight
+    }
+    // Página curta que nem enche a tela: não há como rolar, então já busca a próxima.
+    if (hasMore && !loadingOlder && el.scrollHeight <= el.clientHeight) requestOlder()
+  }, [messages, channelId, hasMore, loadingOlder])
+
+  function requestOlder(): void {
+    const el = scrollRef.current
+    if (!el || !hasMore || loadingOlder) return
+    restoreFromBottom.current = el.scrollHeight - el.scrollTop
+    void loadOlderMessages(channelId)
+  }
 
   if (!channel) return null
 
@@ -38,6 +61,7 @@ export function ChatView({ channelId }: { channelId: string }) {
         onScroll={(e) => {
           const el = e.currentTarget
           stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+          if (el.scrollTop < LOAD_OLDER_THRESHOLD) requestOlder()
         }}
         className="min-h-0 flex-1 overflow-y-auto select-text"
       >
@@ -47,7 +71,13 @@ export function ChatView({ channelId }: { channelId: string }) {
           </div>
         ) : (
           <div className="flex min-h-full flex-col justify-end pb-4">
-            <ChannelWelcome channel={channel} />
+            {hasMore ? (
+              <div className="flex h-12 shrink-0 items-center justify-center text-muted-foreground">
+                {loadingOlder && <Loader2 className="size-5 animate-spin" aria-label="Carregando mensagens antigas" />}
+              </div>
+            ) : (
+              <ChannelWelcome channel={channel} />
+            )}
             {messages.map((m, i) => {
               const prev = messages[i - 1]
               const newDay = !prev || new Date(prev.createdAt).toDateString() !== new Date(m.createdAt).toDateString()

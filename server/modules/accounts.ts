@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import type { AuthConfig } from '../../src/shared/types'
 import { findAccount, GOOGLE_CLIENT_ID, googleLogin, login, register, revokeSession, updateProfile } from '../auth'
 import { guard, users, type ServerModule } from '../context'
-import { AVATAR_DIR } from '../db'
+import { AVATAR_DIR } from '../config'
 import { readJson, sendJson } from '../http'
 
 export const accountsModule: ServerModule = {

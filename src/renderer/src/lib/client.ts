@@ -137,6 +137,8 @@ export function connect(url: string, token: string): Promise<void> {
           users: state.users,
           voice: state.voice,
           messages: {},
+          hasMoreHistory: {},
+          loadingOlder: {},
           unread: {},
           typing: {},
           speaking: {},
