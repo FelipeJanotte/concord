@@ -7,7 +7,14 @@ import { eq } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { Message, User } from '../../src/shared/types'
 import { db } from '../db/client'
-import { messages, sessions } from '../db/schema'
+import { attachments, messages, sessions } from '../db/schema'
+import {
+  attachmentIdsInChannel,
+  deleteStaleUnattached,
+  existingAttachmentIds,
+  findPublishedAttachment,
+  insertAttachment
+} from './attachments'
 import { DEFAULT_CHANNELS, ensureInitialData, importLegacyJson } from '../db/seed'
 import { openTestDatabase } from '../tests/database'
 import {
@@ -65,7 +72,7 @@ function authorOf(a: Account, socketId = 'socket-1'): User {
 }
 
 function msg(channelId: string, author: User, content: string, createdAt = Date.now()): Message {
-  return { id: randomUUID(), channelId, author, content, createdAt }
+  return { id: randomUUID(), channelId, author, content, attachments: [], createdAt }
 }
 
 describe('contas', () => {
@@ -196,6 +203,7 @@ describe('mensagens', () => {
           id: m.id,
           channelId: ch.id,
           content: 'oi',
+          attachments: [],
           createdAt: m.createdAt,
           author: { id: a.id, accountId: a.id, name: 'Depois', tag: a.tag, color: a.color, avatarUrl: `/avatars/${a.id}?v=2` }
         }
@@ -253,12 +261,90 @@ describe('mensagens', () => {
     expect(await listMessages(randomUUID())).toEqual(empty)
   })
 
-  it('o banco recusa mensagem vazia ou com mais de 2000 caracteres', async () => {
+  it('o banco recusa mais de 2000 caracteres (vazio é permitido para mensagem só com anexos)', async () => {
     const a = await insertAccount(newAccount())
     const ch = await newTextChannel()
-    await expect(insertMessage(msg(ch.id, authorOf(a), ''))).rejects.toThrow()
     await expect(insertMessage(msg(ch.id, authorOf(a), 'x'.repeat(2001)))).rejects.toThrow()
-    await expect(insertMessage(msg(ch.id, authorOf(a), 'x'.repeat(2000)))).resolves.toBeUndefined()
+    await expect(insertMessage(msg(ch.id, authorOf(a), 'x'.repeat(2000)))).resolves.toMatchObject({ attachments: [] })
+    await expect(insertMessage(msg(ch.id, authorOf(a), ''))).resolves.toBeTruthy()
+  })
+})
+
+describe('anexos', () => {
+  async function upload(owner: Account, name = 'f.txt', createdAt?: Date) {
+    const id = randomUUID()
+    const a = await insertAttachment({ id, uploaderId: owner.id, name, contentType: 'text/plain', size: 3, width: null, height: null })
+    if (createdAt) await db().update(attachments).set({ createdAt }).where(eq(attachments.id, id))
+    return a
+  }
+
+  it('prende os anexos na mensagem na ordem dada e o histórico devolve junto', async () => {
+    const a = await insertAccount(newAccount())
+    const ch = await newTextChannel()
+    const f1 = await upload(a, 'um.txt')
+    const f2 = await upload(a, 'dois.txt')
+    const saved = await insertMessage(msg(ch.id, authorOf(a), ''), [f2.id, f1.id])
+    expect(saved?.attachments).toEqual([f2, f1])
+    expect((await listMessages(ch.id)).messages[0].attachments).toEqual([f2, f1])
+    expect(await findPublishedAttachment(f1.id)).toEqual(f1)
+  })
+
+  it('tudo ou nada: anexo de outra pessoa ou já usado cancela a mensagem inteira', async () => {
+    const a = await insertAccount(newAccount())
+    const b = await insertAccount(newAccount())
+    const ch = await newTextChannel()
+    const mine = await upload(a)
+    const theirs = await upload(b)
+    const m = msg(ch.id, authorOf(a), 'não deve existir')
+    expect(await insertMessage(m, [mine.id, theirs.id])).toBeNull()
+    expect((await listMessages(ch.id)).messages).toEqual([])
+    expect(await findPublishedAttachment(mine.id)).toBeUndefined() // continua solto
+
+    expect(await insertMessage(msg(ch.id, authorOf(a), 'ok'), [mine.id])).toBeTruthy()
+    expect(await insertMessage(msg(ch.id, authorOf(a), 'reuso'), [mine.id])).toBeNull()
+    expect(await insertMessage(msg(ch.id, authorOf(a), 'id ruim'), ['nao-uuid'])).toBeNull()
+  })
+
+  it('autor sem conta não anexa nada', async () => {
+    const a = await insertAccount(newAccount())
+    const ch = await newTextChannel()
+    const f = await upload(a)
+    const ghost = { id: 's', accountId: 's', name: 'X', tag: '', color: '#000', avatarUrl: null }
+    expect(await insertMessage(msg(ch.id, ghost, 'x'), [f.id])).toBeNull()
+  })
+
+  it('apaga só os soltos mais antigos que o prazo', async () => {
+    const a = await insertAccount(newAccount())
+    const ch = await newTextChannel()
+    const old = await upload(a, 'velho.txt', new Date(Date.now() - 2 * 3600_000))
+    const recent = await upload(a, 'novo.txt')
+    const usedOld = await upload(a, 'usado.txt', new Date(Date.now() - 2 * 3600_000))
+    await insertMessage(msg(ch.id, authorOf(a), ''), [usedOld.id])
+    const deleted = await deleteStaleUnattached(new Date(Date.now() - 3600_000))
+    expect(deleted).toContain(old.id)
+    expect(deleted).not.toContain(recent.id)
+    expect(deleted).not.toContain(usedOld.id)
+    const left = await existingAttachmentIds([old.id, recent.id, usedOld.id, 'lixo'])
+    expect([...left].sort()).toEqual([recent.id, usedOld.id].sort())
+  })
+
+  it('lista os arquivos de um canal e o canal apagado leva os registros junto', async () => {
+    const a = await insertAccount(newAccount())
+    const ch = await newTextChannel()
+    const f = await upload(a)
+    await insertMessage(msg(ch.id, authorOf(a), ''), [f.id])
+    expect(await attachmentIdsInChannel(ch.id)).toEqual([f.id])
+    expect(await attachmentIdsInChannel('nao-uuid')).toEqual([])
+    await deleteChannel(ch.id)
+    expect(await existingAttachmentIds([f.id])).toEqual(new Set())
+  })
+
+  it('o banco recusa tamanho zero, acima de 25 MB e nome vazio', async () => {
+    const a = await insertAccount(newAccount())
+    const base = { uploaderId: a.id, contentType: 'x/y', width: null, height: null }
+    await expect(insertAttachment({ ...base, id: randomUUID(), name: 'a', size: 0 })).rejects.toThrow()
+    await expect(insertAttachment({ ...base, id: randomUUID(), name: 'a', size: 25 * 1024 * 1024 + 1 })).rejects.toThrow()
+    await expect(insertAttachment({ ...base, id: randomUUID(), name: '', size: 1 })).rejects.toThrow()
   })
 })
 

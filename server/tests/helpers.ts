@@ -16,6 +16,7 @@ import type {
   ClientToServerEvents,
   ServerState,
   ServerToClientEvents,
+  UploadResult,
   User
 } from '../../src/shared/types'
 import { createTestDatabase, type TestDatabase } from './database'
@@ -42,17 +43,21 @@ export class TestServer {
 
   constructor(
     readonly dataDir: string,
-    private readonly database: TestDatabase
+    private readonly database: TestDatabase,
+    private readonly extraEnv: Record<string, string> = {}
   ) {}
 
   /**
    * Cria um servidor com DATA_DIR e banco novos e vazios. `prepare` roda antes
-   * de subir (ex.: escrever um db.json antigo no DATA_DIR para testar a importação).
+   * de subir (ex.: escrever um db.json antigo no DATA_DIR para testar a importação);
+   * `env` acrescenta variáveis de ambiente ao servidor.
    */
-  static async start(opts: { prepare?: (dataDir: string) => void } = {}): Promise<TestServer> {
+  static async start(
+    opts: { prepare?: (dataDir: string) => void; env?: Record<string, string> } = {}
+  ): Promise<TestServer> {
     const dataDir = mkdtempSync(join(tmpdir(), 'concord-test-'))
     opts.prepare?.(dataDir)
-    const server = new TestServer(dataDir, await createTestDatabase())
+    const server = new TestServer(dataDir, await createTestDatabase(), opts.env)
     try {
       await server.boot()
     } catch (err) {
@@ -75,7 +80,8 @@ export class TestServer {
         // Sem DATABASE_URL_TEST, o servidor usa PGlite dentro do DATA_DIR temporário.
         DATABASE_URL: this.database.url ?? '',
         GOOGLE_CLIENT_ID: '',
-        GOOGLE_CLIENT_SECRET: ''
+        GOOGLE_CLIENT_SECRET: '',
+        ...this.extraEnv
       },
       stdio: ['ignore', 'pipe', 'pipe']
     })
@@ -138,6 +144,18 @@ export class TestServer {
       body: JSON.stringify(body)
     })
     return (await res.json()) as T
+  }
+
+  /** Envia um arquivo como o app faz (`POST /uploads`). Devolve status HTTP e corpo. */
+  async upload(
+    token: string | null,
+    data: Uint8Array | string,
+    { name = 'arquivo.bin', type = 'application/octet-stream' }: { name?: string; type?: string } = {}
+  ): Promise<{ status: number; body: UploadResult }> {
+    const headers: Record<string, string> = { 'content-type': type, 'x-file-name': encodeURIComponent(name) }
+    if (token) headers.authorization = `Bearer ${token}`
+    const res = await fetch(this.url + '/uploads', { method: 'POST', headers, body: data })
+    return { status: res.status, body: (await res.json()) as UploadResult }
   }
 
   register(body: { email: string; password: string; name: string; tag: string }): Promise<AuthResult> {
