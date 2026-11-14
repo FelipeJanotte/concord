@@ -4,9 +4,10 @@
  */
 import { existsSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { asc } from 'drizzle-orm'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Roda antes dos imports: db.ts lê DATA_DIR e auth.ts lê GOOGLE_CLIENT_ID ao carregar.
+// Roda antes dos imports: config.ts lê DATA_DIR e auth.ts lê GOOGLE_CLIENT_ID ao carregar.
 const env = await vi.hoisted(async () => {
   // vi.hoisted roda antes dos imports estáticos, então importa o que precisa por conta própria.
   const { mkdtempSync } = await import('node:fs')
@@ -19,20 +20,34 @@ const env = await vi.hoisted(async () => {
   return { dataDir }
 })
 
-// Persistência desligada: os testes trabalham só no objeto `db` em memória.
-vi.mock('./db', async (importOriginal) => ({ ...(await importOriginal<typeof import('./db')>()), save: vi.fn() }))
-
 import type { AuthResult, ProfileUpdate, ProfileUpdateResult } from '../src/shared/types'
 import { accountFromToken, findAccount, googleLogin, login, register, revokeSession, updateProfile } from './auth'
-import { AVATAR_DIR, db } from './db'
+import { AVATAR_DIR } from './config'
+import { db } from './db/client'
+import { accounts, sessions } from './db/schema'
+import { updateAccount } from './repo/accounts'
 import type { Account } from './repo/types'
+import { openTestDatabase } from './tests/database'
 
 /** O registro salvo da conta (o repo devolve cópias; aqui olhamos o que ficou gravado). */
-function stored(id: string): Account {
-  const account = db.accounts.find((a) => a.id === id)
+async function stored(id: string): Promise<Account> {
+  const account = await findAccount(id)
   if (!account) throw new Error(`conta ${id} não existe`)
   return account
 }
+
+/** O que está gravado nas tabelas de contas e sessões. */
+async function tables() {
+  return {
+    accounts: await db().select().from(accounts).orderBy(asc(accounts.createdAt)),
+    sessions: await db().select().from(sessions)
+  }
+}
+
+let closeDb: () => Promise<void>
+beforeAll(async () => {
+  closeDb = await openTestDatabase()
+})
 
 /** Como o servidor faz: busca a conta atual e aplica a alteração. */
 async function update(id: string, payload: Partial<ProfileUpdate>): Promise<ProfileUpdateResult> {
@@ -57,13 +72,14 @@ function errorOf(r: AuthResult | ProfileUpdateResult): string {
   return r.error
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.spyOn(console, 'log').mockImplementation(() => {})
-  db.accounts = []
-  db.sessions = []
+  await db().delete(sessions)
+  await db().delete(accounts)
 })
 
-afterAll(() => {
+afterAll(async () => {
+  await closeDb?.()
   rmSync(env.dataDir, { recursive: true, force: true })
 })
 
@@ -85,8 +101,8 @@ describe('register', () => {
       avatarUrl: null
     })
     expect(r.account).not.toHaveProperty('passwordHash')
-    expect(db.accounts[0].passwordHash).toMatch(/^scrypt\$/)
-    expect(db.accounts[0].passwordHash).not.toContain('senha-segura')
+    expect((await tables()).accounts[0].passwordHash).toMatch(/^scrypt\$/)
+    expect((await tables()).accounts[0].passwordHash).not.toContain('senha-segura')
   })
 
   it.each([
@@ -101,7 +117,7 @@ describe('register', () => {
     [{ tag: 'a-b' }, 'O id precisa ter de 1 a 5 letras ou números']
   ])('rejeita dados inválidos %o', async (override, error) => {
     expect(errorOf(await newAccount(override))).toBe(error)
-    expect(db.accounts).toHaveLength(0)
+    expect((await tables()).accounts).toHaveLength(0)
   })
 
   it('ignora tipos errados vindos do cliente', async () => {
@@ -129,7 +145,7 @@ describe('register', () => {
   it('permite nomes iguais com ids diferentes', async () => {
     ok(await newAccount({ name: 'Mesmo Nome', tag: 'a1' }))
     ok(await newAccount({ name: 'Mesmo Nome', tag: 'a2' }))
-    expect(db.accounts).toHaveLength(2)
+    expect((await tables()).accounts).toHaveLength(2)
   })
 })
 
@@ -171,7 +187,7 @@ describe('login', () => {
 
   it('conta só do Google pede para usar o Google', async () => {
     const created = ok(await newAccount({ email: 'g@exemplo.test' }))
-    stored(created.account.id).passwordHash = null
+    await updateAccount(created.account.id, { passwordHash: null })
     expect(errorOf(await login({ email: 'g@exemplo.test', password: 'senha-segura' }))).toBe(
       'Esta conta foi criada com o Google. Use "Entrar com Google".'
     )
@@ -186,8 +202,8 @@ describe('sessões', () => {
   it('o token identifica a conta; o banco guarda só o hash', async () => {
     const r = ok(await newAccount())
     expect((await accountFromToken(r.token))?.id).toBe(r.account.id)
-    expect(db.sessions[0].tokenHash).not.toBe(r.token)
-    expect(db.sessions[0].tokenHash).toMatch(/^[0-9a-f]{64}$/)
+    expect((await tables()).sessions[0].tokenHash).not.toBe(r.token)
+    expect((await tables()).sessions[0].tokenHash).toMatch(/^[0-9a-f]{64}$/)
   })
 
   it.each([null, undefined, '', 123, 'token-inventado'])('token inválido (%o) não acha conta', async (token) => {
@@ -202,7 +218,7 @@ describe('sessões', () => {
     expect((await accountFromToken(b.token))?.id).toBe(a.account.id)
     await revokeSession(42)
     await revokeSession('inexistente')
-    expect(db.sessions).toHaveLength(1)
+    expect((await tables()).sessions).toHaveLength(1)
   })
 
   it('expira em 30 dias e sessões vencidas são limpas no próximo login', async () => {
@@ -213,7 +229,7 @@ describe('sessões', () => {
     vi.setSystemTime(Date.now() + 2 * 24 * 60 * 60 * 1000)
     expect(await accountFromToken(r.token)).toBeUndefined()
     ok(await login({ email: 'exp@exemplo.test', password: 'senha-segura' }))
-    expect(db.sessions).toHaveLength(1)
+    expect((await tables()).sessions).toHaveLength(1)
   })
 })
 
@@ -230,51 +246,51 @@ describe('updateProfile', () => {
     const id = await account()
     const r = ok(await update(id, { name: '  Novo   Nome ' }))
     expect(r.account.name).toBe('Novo Nome')
-    expect(stored(id).name).toBe('Novo Nome')
+    expect((await stored(id)).name).toBe('Novo Nome')
   })
 
   it('rejeita nome inválido sem mudar nada', async () => {
     const id = await account()
     expect(errorOf(await update(id, { name: 'x' }))).toBe('O nome precisa ter pelo menos 2 caracteres (sem "#")')
-    expect(stored(id).name).toBe('Pessoa Teste')
+    expect((await stored(id)).name).toBe('Pessoa Teste')
   })
 
   it('o id travado não muda (mas reenviar o mesmo id é aceito)', async () => {
     const id = await account()
     expect(errorOf(await update(id, { name: 'Ok Ok', tag: 'outro' }))).toBe('O id não pode ser alterado')
     ok(await update(id, { name: 'Ok Ok', tag: 'perf' }))
-    expect(stored(id).tag).toBe('perf')
+    expect((await stored(id)).tag).toBe('perf')
   })
 
   it('id provisório (Google) pode ser escolhido uma única vez', async () => {
     ok(await newAccount({ tag: 'usado' }))
     const id = await account()
-    stored(id).tagLocked = false
+    await updateAccount(id, { tagLocked: false })
     expect(errorOf(await update(id, { name: 'Ok Ok', tag: 'USADO' }))).toBe('O id #USADO já está em uso. Escolha outro.')
     expect(errorOf(await update(id, { name: 'Ok Ok', tag: 'inválido!' }))).toBe('O id precisa ter de 1 a 5 letras ou números')
-    expect(stored(id).tagLocked).toBe(false)
+    expect((await stored(id)).tagLocked).toBe(false)
     ok(await update(id, { name: 'Ok Ok', tag: 'meu' }))
-    expect(stored(id)).toMatchObject({ tag: 'meu', tagLocked: true })
+    expect(await stored(id)).toMatchObject({ tag: 'meu', tagLocked: true })
     expect(errorOf(await update(id, { name: 'Ok Ok', tag: 'outro' }))).toBe('O id não pode ser alterado')
   })
 
   it('confirmar o id provisório sem trocar também trava', async () => {
     const id = await account()
-    stored(id).tagLocked = false
-    ok(await update(id, { name: 'Ok Ok', tag: stored(id).tag }))
-    expect(stored(id).tagLocked).toBe(true)
+    await updateAccount(id, { tagLocked: false })
+    ok(await update(id, { name: 'Ok Ok', tag: (await stored(id)).tag }))
+    expect((await stored(id)).tagLocked).toBe(true)
   })
 
   it('salva e remove a foto, mudando a versão da URL', async () => {
     const id = await account()
     const withPhoto = ok(await update(id, { name: 'Ok Ok', avatar: PNG_1PX }))
     expect(withPhoto.account.avatarUrl).toBe(`/avatars/${id}?v=1`)
-    expect(stored(id).avatarType).toBe('image/png')
+    expect((await stored(id)).avatarType).toBe('image/png')
     expect(existsSync(join(AVATAR_DIR, id))).toBe(true)
 
     const removed = ok(await update(id, { name: 'Ok Ok', avatar: null }))
     expect(removed.account.avatarUrl).toBeNull()
-    expect(stored(id).avatarVersion).toBe(2)
+    expect((await stored(id)).avatarVersion).toBe(2)
     expect(existsSync(join(AVATAR_DIR, id))).toBe(false)
   })
 
@@ -285,7 +301,7 @@ describe('updateProfile', () => {
   ])('rejeita foto inválida: %s', async (_caso, avatar) => {
     const id = await account()
     expect(errorOf(await update(id, { name: 'Ok Ok', avatar }))).toBe('Imagem inválida ou grande demais')
-    expect(stored(id).avatarType).toBeNull()
+    expect((await stored(id)).avatarType).toBeNull()
   })
 })
 
@@ -339,7 +355,7 @@ describe('googleLogin', () => {
     const first = ok(await googleLogin(req))
     const second = ok(await googleLogin(req))
     expect(second.account.id).toBe(first.account.id)
-    expect(db.accounts).toHaveLength(1)
+    expect((await tables()).accounts).toHaveLength(1)
   })
 
   it('vincula a uma conta de e-mail existente com o mesmo e-mail verificado', async () => {
@@ -367,7 +383,7 @@ describe('googleLogin', () => {
   ])('rejeita id_token inválido: %s', async (_caso, claims) => {
     mockGoogle(claims)
     expect(errorOf(await googleLogin(req))).toBe('Resposta inválida do Google')
-    expect(db.accounts).toHaveLength(0)
+    expect((await tables()).accounts).toHaveLength(0)
   })
 
   it('exige e-mail verificado', async () => {
@@ -379,7 +395,7 @@ describe('googleLogin', () => {
     ok(await newAccount({ email: 'gente@gmail.test' }))
     mockGoogle({ email_verified: false })
     errorOf(await googleLogin(req))
-    expect(db.accounts[0].googleId).toBeNull()
+    expect((await tables()).accounts[0].googleId).toBeNull()
   })
 
   it('erro do Google na troca do código', async () => {

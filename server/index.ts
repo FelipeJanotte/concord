@@ -15,6 +15,8 @@ import { networkInterfaces } from 'node:os'
 import { Server } from 'socket.io'
 import { accountFromToken, GOOGLE_CLIENT_ID } from './auth'
 import { users, type AppServer, type ServerModule } from './context'
+import { closeDatabase, databaseConfigFromEnv, describeDatabase, openDatabase } from './db/client'
+import { ensureInitialData } from './db/seed'
 import { sendJson } from './http'
 import { accountsModule } from './modules/accounts'
 import { channelsModule } from './modules/channels'
@@ -89,7 +91,15 @@ io.on('connection', (socket) => {
   for (const mod of modules) mod.socket?.(io, socket)
 })
 
-httpServer.listen(PORT, () => {
+// ---------- Inicialização ----------
+
+async function main(): Promise<void> {
+  // O banco abre (e aplica as migrations) antes de aceitar qualquer conexão.
+  await openDatabase(databaseConfigFromEnv())
+  const seeded = await ensureInitialData()
+  if (seeded) console.log(`[banco] ${seeded}`)
+
+  await new Promise<void>((resolve) => httpServer.listen(PORT, resolve))
   console.log(`\nConcord server rodando na porta ${PORT}`)
   console.log(`  Local:  http://localhost:${PORT}`)
   for (const list of Object.values(networkInterfaces())) {
@@ -97,6 +107,25 @@ httpServer.listen(PORT, () => {
       if (iface.family === 'IPv4' && !iface.internal) console.log(`  Rede:   http://${iface.address}:${PORT}`)
     }
   }
+  console.log(`  Banco: ${describeDatabase()}`)
   console.log(`  Login com Google: ${GOOGLE_CLIENT_ID ? 'ativado' : 'desativado (configure server/.env)'}`)
   console.log('')
+}
+
+let stopping = false
+async function shutdown(signal: string): Promise<void> {
+  if (stopping) return
+  stopping = true
+  console.log(`\n[${signal}] encerrando...`)
+  io.close()
+  await closeDatabase().catch((err) => console.error('[banco] erro ao fechar:', err))
+  process.exit(0)
+}
+process.on('SIGINT', () => void shutdown('SIGINT'))
+process.on('SIGTERM', () => void shutdown('SIGTERM'))
+
+main().catch(async (err) => {
+  console.error('[inicialização] falhou:', err)
+  await closeDatabase().catch(() => {})
+  process.exit(1)
 })

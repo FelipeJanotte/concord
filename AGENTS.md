@@ -12,9 +12,10 @@ Gerenciador de pacotes: **npm** (não use pnpm/yarn; o projeto foi revertido do 
 | `server/index.ts` | Bootstrap do servidor Node: HTTP + Socket.IO, middleware que exige token de sessão e a **lista de módulos**. Sem lógica de domínio. |
 | `server/modules/` | Um arquivo por domínio (`accounts`, `channels`, `messages`, `voice`, `presence`), cada um exporta um `ServerModule` (`http?` e `socket?`). |
 | `server/context.ts` | Tipos `AppServer`/`AppSocket`/`ServerModule`, mapa `users` (online) e `guard()` para handlers async. `socket.data.user` existe depois do `hello`. |
-| `server/repo/` | **Único acesso a dados** (funções async que devolvem cópias): `accounts`, `sessions`, `channels`, `messages`. Hoje sobre o JSON; na v1 vira Postgres. |
+| `server/repo/` | **Único acesso a dados** (funções async sobre o Drizzle): `accounts`, `sessions`, `channels`, `messages`. Ids inválidos viram "não existe" (`isUuid`); valor repetido recusado pelo banco vira `DuplicateError`. |
+| `server/db/` | PostgreSQL + Drizzle: `client.ts` (conexão: `DATABASE_URL` → Postgres; sem ela → PGlite em `DATA_DIR/pgdata`), `schema/<dominio>.ts`, `migrations/` (geradas, aplicadas no boot) e `seed.ts` (canais padrão / importa o `db.json` antigo). |
+| `server/config.ts` | `DATA_DIR`, pasta das fotos (`avatars/`), do PGlite e do `db.json` antigo. |
 | `server/auth.ts` | Contas: cadastro e-mail+senha (scrypt), login, sessões por token (30 dias), login com Google, perfil `nome#id` e foto. O id é único e imutável (o nome pode mudar). |
-| `server/db.ts` | Armazenamento JSON em `server/data/db.json`, usado **só** por `server/repo/`; fotos em `server/data/avatars/`. |
 | `src/shared/types/` | **Contrato** entre app e servidor: um arquivo por domínio (tipos + `<Dominio>ClientEvents`/`<Dominio>ServerEvents`); `index.ts` compõe `ServerToClientEvents` / `ClientToServerEvents`. Importe sempre de `@shared/types`. |
 | `src/main/index.ts` | Processo principal do Electron: janela, permissão de microfone e IPC `google-sign-in`. |
 | `src/main/google-auth.ts` | Login com Google: navegador do sistema + loopback 127.0.0.1 + PKCE; devolve o código para o servidor trocar. |
@@ -40,6 +41,8 @@ docker compose up -d  # Postgres + LiveKit locais (ver concord-dev-workflow)
 npm run typecheck   # checagem de tipos (main/preload/server, renderer e testes)
 npm test            # todos os testes automatizados (vitest)
 npm run test:watch  # testes em modo watch
+npm run db:generate # gera a migration depois de mudar server/db/schema (ver concord-dev-workflow)
+npm run db:import-json [arquivo]  # importa um db.json antigo para o banco
 npm run build       # typecheck + build em out/
 npm run dist        # instalador Windows em dist/
 ```
@@ -49,7 +52,7 @@ npm run dist        # instalador Windows em dist/
 1. **Todo evento novo começa em `src/shared/types/<dominio>.ts`.** Depois `server/modules/`, depois `lib/actions/`, depois UI.
 2. Componentes **leem** estado com `useApp(selector)` e **agem** chamando funções de `@/lib/client`. Não use o socket direto em componentes.
 3. **Arquivos de registro** (`shared/types/index.ts`, `server/index.ts`, `lib/client.ts`, `store/index.ts`) só recebem linhas de registro de um domínio novo, nunca lógica. Isso evita conflito entre os dois devs (ver `docs/ROADMAP.md`).
-4. Módulos do servidor **não importam `server/db.ts`**: leem e gravam pelo `server/repo/`.
+4. Módulos do servidor **não importam `server/db/`**: leem e gravam pelo `server/repo/`. Mudou o schema → `npm run db:generate` (só depois do rebase na `main`) e nunca edite uma migration já mergeada.
 5. **Toda tarefa vem com testes automatizados** (vitest, `*.test.ts` ao lado do código). Uma tarefa só está completa quando `npm test` **e** `npm run typecheck` passam por completo. Testes de integração do servidor ficam em `server/tests/<dominio>.test.ts` e sobem o servidor de verdade (`server/tests/helpers.ts`); ações do app são testadas com o socket falso (`src/renderer/src/test/fake-socket.ts`).
 6. Handlers async do servidor rodam dentro de `guard('evento', async () => { ... })` (erro não derruba o processo).
 7. Seletores que retornam arrays/objetos novos (ex.: `filter`) usam `useShallow` de `zustand/react/shallow`.

@@ -1,4 +1,5 @@
 // Histórico, envio de mensagens e "digitando".
+import type { Message } from '@shared/types'
 import { omit } from '../utils'
 import { get, getSocket, notify, requireSocket, set, type AppSocket } from '../core'
 
@@ -28,18 +29,53 @@ export function bindMessageEvents(s: AppSocket): void {
 
 const loadingHistory = new Set<string>()
 
+/** Carrega a página mais recente do canal (uma vez; depois as novas chegam por `message:new`). */
 export async function loadHistory(channelId: string): Promise<void> {
   const socket = getSocket()
   if (!socket || get().messages[channelId] || loadingHistory.has(channelId)) return
   loadingHistory.add(channelId)
   try {
-    const messages = await socket.emitWithAck('message:history', channelId)
-    set((st) => ({ messages: { ...st.messages, [channelId]: messages } }))
+    const page = await socket.emitWithAck('message:history', { channelId })
+    set((st) => ({
+      // mensagens que chegaram enquanto a página vinha não se perdem
+      messages: { ...st.messages, [channelId]: mergeMessages(page.messages, st.messages[channelId] ?? []) },
+      hasMoreHistory: { ...st.hasMoreHistory, [channelId]: page.hasMore }
+    }))
   } catch {
     notify('Não foi possível carregar as mensagens')
   } finally {
     loadingHistory.delete(channelId)
   }
+}
+
+/** Busca a página anterior à mensagem mais antiga carregada (rolar até o topo do chat). */
+export async function loadOlderMessages(channelId: string): Promise<void> {
+  const socket = getSocket()
+  const st = get()
+  const current = st.messages[channelId]
+  if (!socket || !current?.length || !st.hasMoreHistory[channelId] || st.loadingOlder[channelId]) return
+  set((s) => ({ loadingOlder: { ...s.loadingOlder, [channelId]: true } }))
+  try {
+    const page = await socket.emitWithAck('message:history', { channelId, before: current[0].id })
+    set((s) => {
+      const list = s.messages[channelId]
+      if (!list) return {} // canal apagado enquanto carregava
+      return {
+        messages: { ...s.messages, [channelId]: mergeMessages(page.messages, list) },
+        hasMoreHistory: { ...s.hasMoreHistory, [channelId]: page.hasMore }
+      }
+    })
+  } catch {
+    notify('Não foi possível carregar as mensagens antigas')
+  } finally {
+    set((s) => ({ loadingOlder: omit(s.loadingOlder, channelId) }))
+  }
+}
+
+/** Junta `older` antes de `newer`, sem repetir mensagens. */
+function mergeMessages(older: Message[], newer: Message[]): Message[] {
+  const seen = new Set(newer.map((m) => m.id))
+  return [...older.filter((m) => !seen.has(m.id)), ...newer]
 }
 
 let lastTypingAt = 0

@@ -21,6 +21,8 @@ export function bindChannelEvents(s: AppSocket): void {
       return {
         channels,
         messages: omit(st.messages, channelId),
+        hasMoreHistory: omit(st.hasMoreHistory, channelId),
+        loadingOlder: omit(st.loadingOlder, channelId),
         unread: omit(st.unread, channelId),
         view: st.view?.channelId === channelId ? firstTextView(channels) : st.view
       }
