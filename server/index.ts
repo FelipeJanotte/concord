@@ -22,20 +22,28 @@ import { accountsModule } from './modules/accounts'
 import { channelsModule } from './modules/channels'
 import { messagesModule } from './modules/messages'
 import { presenceModule } from './modules/presence'
+import { uploadsModule } from './modules/uploads'
 import { voiceModule } from './modules/voice'
 
 const PORT = Number(process.env.PORT ?? 3001)
 
 // Módulo novo: crie o arquivo em server/modules/ e acrescente aqui.
 // A ordem importa só no `disconnect`: a voz sai antes da presença.
-const modules: ServerModule[] = [accountsModule, channelsModule, messagesModule, voiceModule, presenceModule]
+const modules: ServerModule[] = [
+  accountsModule,
+  uploadsModule,
+  channelsModule,
+  messagesModule,
+  voiceModule,
+  presenceModule
+]
 
 // ---------- HTTP ----------
 
 async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
   // O app roda em file:// (build) ou localhost:5173 (dev), então liberamos CORS.
   res.setHeader('access-control-allow-origin', '*')
-  res.setHeader('access-control-allow-headers', 'content-type')
+  res.setHeader('access-control-allow-headers', 'content-type, authorization, x-file-name')
   res.setHeader('access-control-allow-methods', 'GET, POST, OPTIONS')
   if (req.method === 'OPTIONS') {
     res.writeHead(204).end()
@@ -98,6 +106,7 @@ async function main(): Promise<void> {
   await openDatabase(databaseConfigFromEnv())
   const seeded = await ensureInitialData()
   if (seeded) console.log(`[banco] ${seeded}`)
+  for (const mod of modules) await mod.init?.(io)
 
   await new Promise<void>((resolve) => httpServer.listen(PORT, resolve))
   console.log(`\nConcord server rodando na porta ${PORT}`)

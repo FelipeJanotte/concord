@@ -1,9 +1,10 @@
 // Mensagens dos canais de texto e "digitando".
 import { randomUUID } from 'node:crypto'
-import { MESSAGE_MAX_LENGTH, type Message } from '../../src/shared/types'
+import { ATTACHMENTS_PER_MESSAGE, MESSAGE_MAX_LENGTH, type Message } from '../../src/shared/types'
 import { guard, type ServerModule } from '../context'
 import { findChannel } from '../repo/channels'
 import { insertMessage, listMessages } from '../repo/messages'
+import { isUuid } from '../repo/util'
 
 export const messagesModule: ServerModule = {
   socket(io, socket) {
@@ -24,7 +25,16 @@ export const messagesModule: ServerModule = {
       const user = socket.data.user
       if (!user || !payload || typeof payload.channelId !== 'string') return
       const content = typeof payload.content === 'string' ? payload.content.trim().slice(0, MESSAGE_MAX_LENGTH) : ''
-      if (!content) return
+      const attachmentIds = payload.attachmentIds ?? []
+      if (
+        !Array.isArray(attachmentIds) ||
+        attachmentIds.length > ATTACHMENTS_PER_MESSAGE ||
+        !attachmentIds.every(isUuid) ||
+        new Set(attachmentIds).size !== attachmentIds.length
+      ) {
+        return
+      }
+      if (!content && attachmentIds.length === 0) return
       const { channelId } = payload
       queue = queue.then(() =>
         guard('message:send', async () => {
@@ -35,10 +45,12 @@ export const messagesModule: ServerModule = {
             channelId: channel.id,
             author: { ...user },
             content,
+            attachments: [],
             createdAt: Date.now()
           }
-          await insertMessage(message)
-          io.emit('message:new', message)
+          // null = algum anexo não é desta pessoa ou já foi usado: nada é gravado.
+          const saved = await insertMessage(message, attachmentIds)
+          if (saved) io.emit('message:new', saved)
         })
       )
     })

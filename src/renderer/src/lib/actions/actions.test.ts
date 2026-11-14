@@ -26,6 +26,7 @@ const message = (id: string, channelId: string, author: User): Message => ({
   channelId,
   author,
   content: `msg ${id}`,
+  attachments: [],
   createdAt: 0
 })
 

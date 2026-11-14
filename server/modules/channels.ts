@@ -4,6 +4,8 @@ import type { Channel, ChannelType } from '../../src/shared/types'
 import { guard, type ServerModule } from '../context'
 import { channelNameExists, countChannels, deleteChannel, insertChannel } from '../repo/channels'
 import { DuplicateError } from '../repo/util'
+import { attachmentIdsInChannel } from '../repo/attachments'
+import { storage } from '../storage'
 import { clearVoiceChannel, emitVoice } from './voice'
 
 const MAX_CHANNELS = 100
@@ -43,7 +45,10 @@ export const channelsModule: ServerModule = {
     socket.on('channel:delete', (channelId) => {
       if (!socket.data.user || typeof channelId !== 'string') return
       void guard('channel:delete', async () => {
+        const files = await attachmentIdsInChannel(channelId)
         if (!(await deleteChannel(channelId))) return
+        // os registros dos anexos saíram junto (cascade); os arquivos, apagamos aqui
+        for (const id of files) await storage.remove(id)
         clearVoiceChannel(io, channelId)
         io.emit('channel:deleted', channelId)
         emitVoice(io)

@@ -23,7 +23,8 @@ export const messages = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
   },
   (t) => [
-    check('messages_content_check', sql`char_length(${t.content}) between 1 and 2000`),
+    // Vazio é permitido para mensagem só com anexos (o servidor exige texto ou anexo).
+    check('messages_content_check', sql`char_length(${t.content}) <= 2000`),
     index('messages_channel_seq_idx').on(t.channelId, t.seq.desc()),
     index('messages_author_id_idx').on(t.authorId)
   ]

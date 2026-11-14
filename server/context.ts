@@ -23,6 +23,8 @@ export interface ServerModule {
   http?: (req: IncomingMessage, res: ServerResponse, path: string) => Promise<boolean>
   /** Registra os handlers de um socket recém-conectado (já autenticado). */
   socket?: (io: AppServer, socket: AppSocket) => void
+  /** Roda uma vez no boot, com o banco já aberto (ex.: tarefas periódicas). */
+  init?: (io: AppServer) => void | Promise<void>
 }
 
 /** Quem está online: socket.id → usuário (uma conta pode ter várias conexões). */

@@ -12,6 +12,7 @@ import type { PresenceClientEvents, PresenceServerEvents } from './presence'
 import type { VoiceClientEvents, VoiceServerEvents } from './voice'
 
 export * from './account'
+export * from './attachment'
 export * from './channel'
 export * from './message'
 export * from './presence'
