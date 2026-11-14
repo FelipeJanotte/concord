@@ -74,6 +74,8 @@ export const LIMITS = {
   profile: { capacity: 10, perSecond: 1 / 30 },
   /** pedidos de amizade por conta: 10 seguidos, depois 1 a cada 10 s (v3) */
   friend: { capacity: 10, perSecond: 1 / 10 },
+  /** abrir conversa privada por conta: 20 seguidas, depois 1 por segundo (v3) */
+  dm: { capacity: 20, perSecond: 1 },
   /** preferências (tema): 20 seguidas (arrastar o seletor de cor), depois 1 por segundo (v5) */
   preferences: { capacity: 20, perSecond: 1 },
   /** efeitos sonoros tocados por conta: 1 a cada 3 s (A10) */

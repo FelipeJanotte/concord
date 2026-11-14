@@ -35,7 +35,8 @@ export function isOnline(accountId: string): boolean {
 
 type Event = keyof ServerToClientEvents
 
-function emitToAccount<E extends Event>(io: AppServer, accountId: string, event: E, payload: Parameters<ServerToClientEvents[E]>[0]): void {
+/** Emite para todas as conexões de uma conta. */
+export function emitToAccount<E extends Event>(io: AppServer, accountId: string, event: E, payload: Parameters<ServerToClientEvents[E]>[0]): void {
   for (const socket of io.sockets.sockets.values()) {
     if (socket.data.user?.accountId === accountId) (socket.emit as (ev: string, data: unknown) => boolean)(event, payload)
   }

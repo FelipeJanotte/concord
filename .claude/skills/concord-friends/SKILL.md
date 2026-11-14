@@ -49,7 +49,7 @@ Mensagens de erro pensadas para não vazar informação: quem foi bloqueado rece
 ## Pendente
 
 - Tela "Amigos" (Online, Todos, Pendentes, Adicionar) no casco da Home (B7, Dev B) e o slice/ações do app.
-- A7 (DMs) usa a amizade para decidir quem pode abrir conversa.
+- A7 (DMs, skill `concord-dms`): conversa nova só entre amigos; bloqueio (`blockedBetween`) fecha a conversa.
 
 ## Testes
 

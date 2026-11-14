@@ -20,6 +20,7 @@ Gerenciador de pacotes: **npm** (não use pnpm/yarn; o projeto foi revertido do 
 | `server/access.ts` | Cache do estado de acesso (cargos/membros/regras) e as verificações: `allowed(accountId, perm, channelId?)`, `visibleChannels`, `emitToViewers` (emite só para quem vê o canal). Regra de cálculo: `can()` em `src/shared/types/permissions.ts`. |
 | `server/modules/sounds.ts` | Efeitos sonoros (A10): `POST /sounds` (até 512 KB e 5 s), `GET /sounds/<id>` assinado, `sound:list/play/delete`; bytes em `DATA_DIR/sounds`. Tipo e duração em `server/storage/audio.ts`; dados em `server/repo/sounds.ts`. |
 | `server/modules/friends.ts` | Amizades (v3, A6): pedido por `nome#id`, aceitar/recusar/desfazer, bloquear (cada lado com seu estado) e online só para amigos (`friend:*`). Dados em `server/repo/friends.ts`. |
+| `server/modules/dms.ts` | Conversas privadas (v3, A7): `dm:list`, `dm:open` (só amigos ou conversa existente; bloqueio fecha), `dm:created`. Um DM é um canal `dm` com 2 linhas em `channel_members`; o acesso (só membros) fica em `server/access.ts`. Dados em `server/repo/dms.ts`. |
 | `server/modules/preferences.ts` | Preferências da conta (v5): tema ativo e até 10 temas salvos (`preferences:get/update`, sincroniza as janelas da mesma conta). Contrato do tema e funções puras em `src/shared/types/theme.ts`. |
 | `server/files-signing.ts` | Links de download de anexo assinados por pessoa (HMAC, validade 24 h); o download confere se a conta ainda vê o canal. |
 | `server/modules/permissions.ts` | Eventos de cargos (`access:get`, `role:*`, `member:set-roles`, `channel:set-overrides`), hierarquia e `applyAccessChange` (avisa `access:updated`/`channels:visible` e tira da voz quem perdeu `connect`). |
@@ -108,6 +109,7 @@ Leia a skill certa antes de mexer em cada área (ficam em `.claude/skills/<nome>
 - `concord-accounts` — contas: cadastro/login com e-mail e senha, sessões, login com Google, perfil `nome#id` e foto, regra do id único e imutável.
 - `concord-permissions` — cargos e permissões (v2): regra de cálculo compartilhada, @todos, dona, regras por canal, hierarquia, eventos `role:*` e o que cada handler bloqueia.
 - `concord-friends` — amizades (v3): pedidos por `nome#id`, bloqueio, online só para amigos e os eventos `friend:*`.
+- `concord-dms` — conversas privadas (v3): canal `dm` com dois membros, quem pode abrir, acesso só dos membros, bloqueio e os eventos `dm:*`.
 - `concord-themes` — temas personalizáveis (v5): `ThemeConfig`, `validateTheme`, código de compartilhamento e preferências da conta no servidor.
 - `concord-sounds` — efeitos sonoros (soundboard): envio por `POST /sounds`, tipo e duração pelos bytes, tocar só para a sala, sobreposição e quem apaga.
 - `concord-attachments` — anexos: envio por `POST /uploads`, download por `GET /files`, tipo pelos bytes, storage, limpeza e a interface (clipe, colar, arrastar, prévia).

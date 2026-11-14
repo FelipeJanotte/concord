@@ -7,6 +7,7 @@
  */
 import type { AccountClientEvents, AccountServerEvents } from './account'
 import type { ChannelClientEvents, ChannelServerEvents } from './channel'
+import type { DmsClientEvents, DmsServerEvents } from './dms'
 import type { FriendsClientEvents, FriendsServerEvents } from './friends'
 import type { LimitsServerEvents } from './limits'
 import type { MessageClientEvents, MessageServerEvents } from './message'
@@ -19,6 +20,7 @@ import type { VoiceClientEvents, VoiceServerEvents } from './voice'
 export * from './account'
 export * from './attachment'
 export * from './channel'
+export * from './dms'
 export * from './friends'
 export * from './limits'
 export * from './message'
@@ -32,6 +34,7 @@ export * from './voice'
 export interface ServerToClientEvents
   extends AccountServerEvents,
     ChannelServerEvents,
+    DmsServerEvents,
     FriendsServerEvents,
     LimitsServerEvents,
     MessageServerEvents,
@@ -44,6 +47,7 @@ export interface ServerToClientEvents
 export interface ClientToServerEvents
   extends AccountClientEvents,
     ChannelClientEvents,
+    DmsClientEvents,
     FriendsClientEvents,
     MessageClientEvents,
     PermissionsClientEvents,
