@@ -30,6 +30,7 @@ import { preferencesModule } from './modules/preferences'
 import { presenceModule } from './modules/presence'
 import { uploadsModule } from './modules/uploads'
 import { soundsModule } from './modules/sounds'
+import { toolsModule } from './modules/tools'
 import { voiceModule } from './modules/voice'
 
 const PORT = Number(process.env.PORT ?? 3001)
@@ -48,6 +49,7 @@ const modules: ServerModule[] = [
   preferencesModule,
   friendsModule,
   dmsModule,
+  toolsModule,
   presenceModule,
   backupModule
 ]
