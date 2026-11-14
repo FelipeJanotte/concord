@@ -14,7 +14,7 @@ import { randomUUID } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { Readable } from 'node:stream'
 import {
-  SOUND_EMOJI_MAX,
+  cleanSoundEmoji,
   SOUND_MAX_BYTES,
   SOUND_MAX_DURATION_MS,
   SOUND_NAME_MAX,
@@ -58,12 +58,6 @@ function cleanName(raw: string): string | null {
   return name.length >= 1 && name.length <= SOUND_NAME_MAX ? name : null
 }
 
-/** Emoji opcional: vazio = sem emoji; até 8 caracteres (um emoji pode ocupar vários). */
-function cleanEmoji(raw: string): string | null | undefined {
-  const emoji = raw.replace(/[\u0000-\u001f\u007f]/g, '').trim()
-  if (!emoji) return null
-  return [...emoji].length <= SOUND_EMOJI_MAX && emoji.length <= SOUND_EMOJI_MAX ? emoji : undefined
-}
 
 class TooLarge extends Error {}
 
@@ -124,7 +118,7 @@ async function handleUpload(io: AppServer, req: IncomingMessage, res: ServerResp
 
   const name = cleanName(decodeHeader(req.headers['x-sound-name']))
   if (!name) return reply(res, 400, { ok: false, error: `Dê um nome ao som (até ${SOUND_NAME_MAX} caracteres)` })
-  const emoji = cleanEmoji(decodeHeader(req.headers['x-sound-emoji']))
+  const emoji = cleanSoundEmoji(decodeHeader(req.headers['x-sound-emoji']))
   if (emoji === undefined) return reply(res, 400, { ok: false, error: 'Emoji inválido' })
   if (data.length === 0) return reply(res, 400, { ok: false, error: 'O arquivo está vazio' })
 
