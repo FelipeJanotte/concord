@@ -108,6 +108,7 @@ Cliente → servidor (`ClientToServerEvents`):
 | `sound:delete` | `soundId` | `SoundResult` | o autor ou `manageMessages`; `sound:deleted` para todos |
 | `preferences:get` | — | `Preferences` | tema ativo e temas salvos da conta (padrão se nada salvo) — skill `concord-themes` |
 | `preferences:update` | `{ theme?, savedThemes? }` | `PreferencesResult` | valida com `validateTheme`; `preferences:updated` para as outras janelas da mesma conta |
+| `friend:list` / `friend:request` / `friend:accept` / `friend:decline` / `friend:remove` / `friend:block` / `friend:unblock` | `"nome#id"` ou `accountId` | `FriendEntry[]` / `FriendResult` | amizades (v3) — skill `concord-friends` |
 | `message:send` | `{ channelId, content }` | — | valida (canal de texto, até 2000 caracteres); `message:new` para todos |
 | `voice:join` | `{ channelId, muted, deafened }` | `JoinVoiceResult` (`url`, `token` do LiveKit) | exige LiveKit configurado; sai da sala anterior (também no LiveKit), entra na nova; `voice:state` |
 | `voice:leave` | — | — | tira da sala no LiveKit (`RemoveParticipant`) + `voice:state` |
@@ -118,7 +119,7 @@ Cliente → servidor (`ClientToServerEvents`):
 Servidor → cliente (`ServerToClientEvents`): `channel:created`, `channel:deleted`, `user:joined`, `user:left`,
 `user:updated` (por `accountId`), `message:new`, `voice:state` (sempre a **lista completa** das salas que a pessoa
 vê), `typing`, `rate:limited`, `access:updated` e `channels:visible` (v2), `sound:created`, `sound:deleted` e
-`sound:played` (soundboard; o último só para a sala) e `preferences:updated` (outras janelas da mesma conta).
+`sound:played` (soundboard; o último só para a sala) `preferences:updated` (outras janelas da mesma conta), `friend:updated`, `friend:removed` e `friend:presence` (amizades; online só para amigos).
 
 ## Estado do renderer (`store/`)
 

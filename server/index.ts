@@ -24,6 +24,7 @@ import { backupModule } from './modules/backup'
 import { channelsModule } from './modules/channels'
 import { messagesModule } from './modules/messages'
 import { permissionsModule } from './modules/permissions'
+import { friendsModule } from './modules/friends'
 import { preferencesModule } from './modules/preferences'
 import { presenceModule } from './modules/presence'
 import { uploadsModule } from './modules/uploads'
@@ -44,6 +45,7 @@ const modules: ServerModule[] = [
   voiceModule,
   soundsModule,
   preferencesModule,
+  friendsModule,
   presenceModule,
   backupModule
 ]
