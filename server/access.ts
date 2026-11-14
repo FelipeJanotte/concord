@@ -54,18 +54,24 @@ export function visibleChannels(access: AccessState, accountId: string, channels
 
 type Event = keyof ServerToClientEvents
 
-/** Emite só para as conexões que podem ver o canal (opcionalmente menos uma). */
+type Payload<E extends Event> = Parameters<ServerToClientEvents[E]>[0]
+
+/**
+ * Emite só para as conexões que podem ver o canal (opcionalmente menos uma).
+ * `forAccount` adapta o payload para cada conta (ex.: links de anexo assinados por pessoa).
+ */
 export async function emitToViewers<E extends Event>(
   io: AppServer,
   channelId: string,
   event: E,
-  payload: Parameters<ServerToClientEvents[E]>[0],
-  exceptSocketId?: string
+  payload: Payload<E>,
+  { exceptSocketId, forAccount }: { exceptSocketId?: string; forAccount?: (payload: Payload<E>, accountId: string) => Payload<E> } = {}
 ): Promise<void> {
   const access = await currentAccess()
   for (const socket of io.sockets.sockets.values()) {
     const user = socket.data.user
     if (!user || socket.id === exceptSocketId || !can(access, user.accountId, 'view', channelId)) continue
-    ;(socket.emit as (ev: string, data: unknown) => boolean)(event, payload)
+    const data = forAccount ? forAccount(payload, user.accountId) : payload
+    ;(socket.emit as (ev: string, data: unknown) => boolean)(event, data)
   }
 }

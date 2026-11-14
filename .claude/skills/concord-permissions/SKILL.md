@@ -74,7 +74,8 @@ do seu cargo mais alto. **Ninguém dá permissão global que não tem** e **glob
 |---|---|
 | `hello` | devolve só os canais com `view` e só o `voice:state` dessas salas |
 | `channel:create` / `channel:delete` | `manageChannels`; `channel:created` só para quem pode ver o canal novo |
-| `message:history` | sem `view` = lista vazia (igual canal inexistente) |
+| `message:history` | sem `view` = lista vazia (igual canal inexistente); links de anexo assinados para a conta |
+| `GET /files/<id>` | link assinado para uma conta (`server/files-signing.ts`); confere de novo se ela vê o canal da mensagem — perdeu o acesso, o link para |
 | `message:send` | `send`; com anexos, também `attach`; `message:new` só para quem tem `view` |
 | `typing` | `send`; vai só para quem tem `view` (menos quem digita) |
 | `voice:join` | sem `view` → "Canal de voz não encontrado" (não revela sala privada); sem `connect` → "Você não tem permissão para entrar nesta sala"; ok devolve `canSpeak`/`canShare` |
@@ -99,8 +100,6 @@ dele saem por cascade).
 
 - **Modo "só ouvir" quando `canSpeak` é false** no `VoiceClient` (B2): o servidor já não deixa publicar o microfone
   (token e `UpdateParticipant`), mas o app ainda tenta e só recebe o erro do LiveKit.
-- **Download de anexo (`GET /files`) não checa `view`** do canal da mensagem (vale só o id aleatório; ver a parte de
-  anexos em `concord-architecture`).
 - Sem transferência de posse da comunidade.
 - A tela de administração (B5) e o tratamento de `access:updated`/`state.access` no app ainda não existem.
 

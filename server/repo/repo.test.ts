@@ -298,7 +298,7 @@ describe('anexos', () => {
     const saved = await insertMessage(msg(ch.id, authorOf(a), ''), [f2.id, f1.id])
     expect(saved?.attachments).toEqual([f2, f1])
     expect((await listMessages(ch.id)).messages[0].attachments).toEqual([f2, f1])
-    expect(await findPublishedAttachment(f1.id)).toEqual(f1)
+    expect(await findPublishedAttachment(f1.id)).toEqual({ attachment: f1, channelId: ch.id })
   })
 
   it('tudo ou nada: anexo de outra pessoa ou já usado cancela a mensagem inteira', async () => {

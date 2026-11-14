@@ -63,9 +63,9 @@ acesso vem no `hello` (`state.access`) e no `access:updated`, sempre por `access
 só dos canais que a pessoa vê). Mudou o acesso → `access:updated`, `channels:visible` (para quem ganhou/perdeu canais) e
 `applyVoiceAccess` (em `modules/voice.ts`): quem perdeu `connect` sai da voz. `voice:join` devolve `canSpeak`/`canShare`;
 sem `speak` a pessoa aparece sempre silenciada. Ninguém concede permissão global que não tem (`canGrantPermissions`),
-e globais no @todos só a dona. Pendente: `speak`/`share` no token do LiveKit e atualização ao vivo pelo
-`RoomService.updateParticipant` dentro de `applyVoiceAccess` (B1), download de anexo de canal privado (`/files/<id>`
-ainda é só pelo id aleatório) e transferência de posse da comunidade.
+e globais no @todos só a dona. O token do LiveKit sai com microfone só se `speak` e tela só se `share`, e
+`applyVoiceAccess` atualiza isso ao vivo (`RoomService.UpdateParticipant`). Links de anexo são assinados por pessoa e o
+download confere `view` (`server/files-signing.ts`). Pendente: transferência de posse da comunidade.
 
 ## Banco (`server/db/`)
 

@@ -37,7 +37,8 @@ aparecem no chat; o resto vira um cartão de download.
 - **`message:send`** `{ channelId, content, attachmentIds? }`: até 10 ids (uuid, sem repetir). Texto pode ser vazio
   se houver anexo. Mensagem chega em `message:new` com `attachments: Attachment[]` na ordem enviada.
 - **`GET /files/<id>/<nome>`**: devolve o arquivo. O `<nome>` é só cosmético; quem manda é o `<id>`.
-- `Attachment.url` é um **caminho** (`/files/<id>/<nome>`); o app monta o endereço com `resolveServerUrl(url, serverUrl)`.
+- `Attachment.url` é um **caminho** (`/files/<id>/<nome>?a=…&e=…&s=…`, assinado para quem recebe); o app monta o
+  endereço com `resolveServerUrl(url, serverUrl)` e nunca precisa mexer na query.
 
 ## Fluxo
 
@@ -67,8 +68,13 @@ app: PendingUpload 'done' ─► Enter ─► sendMessage espera não haver 'upl
   corta em 200 caracteres preservando a extensão.
 - **Dono e uso único:** `insertMessage` só aceita anexos do **próprio autor** que ainda não estão em mensagem
   nenhuma; se algum falhar, a mensagem inteira é descartada (nada gravado, nada emitido).
-- **Download só de anexo publicado:** anexo solto (ainda não enviado numa mensagem) dá 404. O id é um uuid
-  aleatório; **ainda não há checagem de permissão por canal** no download (pendente da v2, ver `concord-permissions`).
+- **Download só de anexo publicado e só por link assinado (v2):** anexo solto dá 404. Cada pessoa recebe o
+  `Attachment.url` com `?a=<conta>&e=<validade>&s=<assinatura>` (`server/files-signing.ts`: HMAC de
+  id|conta|validade; `signMessage` no `message:new` — por pessoa, via `emitToViewers({ forAccount })` — e no
+  `message:history`). No `GET /files` o servidor confere assinatura, validade (`FILE_URL_TTL_MS`, 24 h) e se **essa
+  conta ainda vê o canal** da mensagem: perdeu o acesso, o link para na hora. Falha = 404. O segredo vem de
+  `FILES_SIGNING_SECRET` (sem ela, sorteado no boot: links antigos param ao reiniciar e o app recebe novos ao
+  reconectar). A resposta de `POST /uploads` traz o caminho sem assinatura (anexo solto não baixa mesmo).
 - **Limite de requisições:** `limiters.upload` (10 de rajada, 1 a cada 6 s por conta) em
   `server/middleware/rate-limit.ts`; as mensagens seguem o limite `message`.
 - **Limpeza:** anexo solto há mais de `UPLOAD_ORPHAN_TTL_MS` (1 h) é apagado a cada `UPLOAD_SWEEP_INTERVAL_MS`
@@ -102,6 +108,6 @@ Ctrl+V, arrastar 11 arquivos (aceita 10), reiniciar o servidor e conferir o hist
 | "Arquivo maior que 25 MB" com arquivo menor | Proxy na frente do servidor alterando o corpo, ou `ATTACHMENT_MAX_BYTES` diferente entre app e servidor. |
 | "Muitos envios seguidos" | `limiters.upload`. Em testes, `RATE_LIMIT_MULTIPLIER` relaxa os limites. |
 | Imagem aparece como cartão de download | Os bytes não são PNG/JPEG/GIF/WebP de verdade (ex.: HEIC, AVIF, SVG). É o esperado. |
-| Imagem quebrada no chat | `GET <servidor>/files/<id>/<nome>` deve dar 200; confira o `img-src` da CSP em `src/renderer/index.html` para o endereço do servidor. |
+| Imagem quebrada no chat | O link assinado (com a query) deve dar 200; 404 = assinatura/validade inválida ou a pessoa não vê mais o canal (links também param se o servidor reiniciou sem `FILES_SIGNING_SECRET` — reconectar traz links novos). Confira o `img-src` da CSP em `src/renderer/index.html`. |
 | Mensagem com anexo "sumiu" ao enviar | O servidor recusou o conjunto (anexo de outra pessoa, já usado ou apagado pela limpeza depois de 1 h solto). Nada é emitido; envie o arquivo de novo. |
 | Arquivos acumulando em `DATA_DIR/uploads` | A limpeza roda no boot e a cada 10 min; veja `[uploads] ... apagado(s)` no log. `.part` são envios interrompidos. |

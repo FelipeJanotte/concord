@@ -35,11 +35,16 @@ export async function insertAttachment(a: NewAttachment): Promise<Attachment> {
   return toAttachment(row)
 }
 
-/** Anexo que já está numa mensagem (só esses podem ser baixados). */
-export async function findPublishedAttachment(id: string): Promise<Attachment | undefined> {
+/** Anexo que já está numa mensagem (só esses podem ser baixados) e o canal dela (para conferir `view`). */
+export async function findPublishedAttachment(id: string): Promise<{ attachment: Attachment; channelId: string } | undefined> {
   if (!isUuid(id)) return undefined
-  const [row] = await db().select().from(attachments).where(eq(attachments.id, id)).limit(1)
-  return row && row.messageId ? toAttachment(row) : undefined
+  const [row] = await db()
+    .select({ a: attachments, channelId: messages.channelId })
+    .from(attachments)
+    .innerJoin(messages, eq(messages.id, attachments.messageId))
+    .where(eq(attachments.id, id))
+    .limit(1)
+  return row && { attachment: toAttachment(row.a), channelId: row.channelId }
 }
 
 /** Anexos das mensagens, agrupados por mensagem e na ordem de envio. */

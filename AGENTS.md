@@ -18,6 +18,7 @@ Gerenciador de pacotes: **npm** (não use pnpm/yarn; o projeto foi revertido do 
 | `server/config.ts` | `DATA_DIR`, pastas das fotos (`avatars/`), dos anexos (`uploads/`), do PGlite e do `db.json` antigo; prazos da limpeza de anexos. |
 | `server/modules/uploads.ts` | Anexos: `POST /uploads` (até 25 MB, `Authorization: Bearer`), `GET /files/<id>/<nome>` (só publicados; só imagem confirmada é inline) e limpeza de anexos soltos. |
 | `server/access.ts` | Cache do estado de acesso (cargos/membros/regras) e as verificações: `allowed(accountId, perm, channelId?)`, `visibleChannels`, `emitToViewers` (emite só para quem vê o canal). Regra de cálculo: `can()` em `src/shared/types/permissions.ts`. |
+| `server/files-signing.ts` | Links de download de anexo assinados por pessoa (HMAC, validade 24 h); o download confere se a conta ainda vê o canal. |
 | `server/modules/permissions.ts` | Eventos de cargos (`access:get`, `role:*`, `member:set-roles`, `channel:set-overrides`), hierarquia e `applyAccessChange` (avisa `access:updated`/`channels:visible` e tira da voz quem perdeu `connect`). |
 | `server/tests/` | Testes de integração e helpers: `helpers.ts` (`TestServer` com a dona: `asOwner()`, `createChannel()`), `database.ts` (banco de teste), `fake-livekit.ts` (LiveKit falso: `FakeLiveKit`, `liveKitEnv`). |
 | `server/middleware/rate-limit.ts` | Limite de requisições (balde de fichas) por conta/IP: mensagens, uploads, canais, perfil, "digitando", cadastro e login. Regras em `LIMITS`. |

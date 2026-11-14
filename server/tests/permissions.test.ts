@@ -264,6 +264,20 @@ describe('regras de enviar, anexar e entrar', () => {
     await reads
   })
 
+  it('perder o acesso ao canal invalida na hora o link do anexo que a pessoa já tinha', async () => {
+    const b = await user()
+    const ch = await server.createChannel('fotos-privadas')
+    const up = await server.upload(owner.token, Buffer.from('conteudo'), { name: 'foto.txt' })
+    if (!up.body.ok) throw new Error('upload falhou')
+    const got = waitFor(b.socket, 'message:new', (m) => m.channelId === ch.id)
+    owner.socket.emit('message:send', { channelId: ch.id, content: '', attachmentIds: [up.body.attachment.id] })
+    const link = (await got)[0].attachments[0].url
+    expect((await fetch(server.url + link)).status).toBe(200)
+
+    await overrides(ch.id, [{ roleId: EVERYONE_ROLE_ID, deny: ['view'] }])
+    expect((await fetch(server.url + link)).status).toBe(404)
+  })
+
   it('sem "anexar": texto passa, mensagem com anexo é ignorada', async () => {
     const b = await user()
     const ch = await server.createChannel('so-texto')

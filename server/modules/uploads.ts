@@ -7,8 +7,8 @@
  * - o tipo de imagem vem dos bytes (sniff). Só PNG/JPEG/GIF/WebP confirmados são
  *   servidos "inline"; todo o resto vai como `application/octet-stream` + download,
  *   então um .html ou .svg enviado nunca roda no app;
- * - só arquivos que já estão numa mensagem podem ser baixados (o id é um uuid
- *   aleatório; permissão por canal entra na v2).
+ * - só arquivos que já estão numa mensagem podem ser baixados, e só por link assinado
+ *   para uma conta que ainda pode ver o canal da mensagem (`server/files-signing.ts`, v2).
  */
 import { randomUUID } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -22,6 +22,8 @@ import {
 import { accountFromToken } from '../auth'
 import { UPLOAD_ORPHAN_TTL_MS, UPLOAD_SWEEP_INTERVAL_MS } from '../config'
 import type { ServerModule } from '../context'
+import { allowed } from '../access'
+import { FILE_URL_TTL_MS, verifyFileQuery } from '../files-signing'
 import { sendJson } from '../http'
 import { limiters, retryText } from '../middleware/rate-limit'
 import {
@@ -166,13 +168,18 @@ async function handleUpload(req: IncomingMessage, res: ServerResponse): Promise<
   }
 }
 
-async function handleDownload(res: ServerResponse, id: string): Promise<void> {
-  const attachment = await findPublishedAttachment(id)
-  const file = attachment ? await storage.open(attachment.id) : null
-  if (!attachment || !file) {
+async function handleDownload(res: ServerResponse, id: string, query: URLSearchParams): Promise<void> {
+  // Link assinado para uma conta (v2): confere assinatura, validade e se ela ainda vê o canal.
+  // Qualquer falha responde 404, igual a anexo inexistente (não revela que o arquivo existe).
+  const accountId = verifyFileQuery(id, query)
+  const found = accountId ? await findPublishedAttachment(id) : undefined
+  const canSee = !!found && !!accountId && (await allowed(accountId, 'view', found.channelId))
+  const file = canSee ? await storage.open(found.attachment.id) : null
+  if (!found || !file) {
     res.writeHead(404).end()
     return
   }
+  const { attachment } = found
   const inline = isInlineImage(attachment.contentType)
   res.writeHead(200, {
     'content-type': inline ? attachment.contentType : 'application/octet-stream',
@@ -180,7 +187,8 @@ async function handleDownload(res: ServerResponse, id: string): Promise<void> {
     'content-disposition': `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(attachment.name)}`,
     'x-content-type-options': 'nosniff',
     'content-security-policy': "default-src 'none'; sandbox",
-    'cache-control': 'private, max-age=31536000, immutable'
+    // o conteúdo nunca muda, mas o link assinado expira: o cache vale até a validade dele
+    'cache-control': `private, max-age=${Math.floor(FILE_URL_TTL_MS / 1000)}`
   })
   file.stream.pipe(res)
   file.stream.on('error', () => res.destroy())
@@ -210,7 +218,7 @@ export const uploadsModule: ServerModule = {
     }
     const match = /^\/files\/([^/]+)(?:\/.*)?$/.exec(path)
     if (req.method === 'GET' && match) {
-      await handleDownload(res, match[1])
+      await handleDownload(res, match[1], new URL(req.url ?? '/', 'http://x').searchParams)
       return true
     }
     return false
