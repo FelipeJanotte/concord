@@ -19,7 +19,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
-    "db:import-json": "tsx server/scripts/import-json.ts"
+    "db:import-json": "tsx server/scripts/import-json.ts",
+    "db:restore": "tsx server/scripts/restore-pglite.ts"
   },
   "dependencies": {
     "@electron-toolkit/utils": "^4.0.0"

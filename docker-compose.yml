@@ -30,6 +30,31 @@ services:
       timeout: 3s
       retries: 10
 
+  # Backup diário do Postgres (pg_dump compactado) em server/data/backups-pg; mantém os 7 mais novos.
+  # Restaurar: gunzip -c server/data/backups-pg/<arquivo>.sql.gz | psql "postgres://concord:concord@localhost:5432/concord"
+  pg-backup:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGUSER: concord
+      PGPASSWORD: concord
+      PGDATABASE: concord
+    volumes:
+      - ./server/data/backups-pg:/backups
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - |
+        while true; do
+          f="/backups/concord-$$(date -u +%Y-%m-%dT%H-%M-%SZ).sql.gz"
+          if pg_dump --no-owner | gzip > "$$f.part"; then mv "$$f.part" "$$f"; echo "backup: $$f"; else rm -f "$$f.part"; echo "backup falhou"; fi
+          ls -1t /backups/concord-*.sql.gz 2>/dev/null | tail -n +8 | xargs -r rm -f
+          sleep 86400
+        done
+
   livekit:
     image: livekit/livekit-server:v1.13.11
     restart: unless-stopped

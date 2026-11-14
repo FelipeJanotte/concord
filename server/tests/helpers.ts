@@ -81,6 +81,9 @@ export class TestServer {
         DATABASE_URL: this.database.url ?? '',
         GOOGLE_CLIENT_ID: '',
         GOOGLE_CLIENT_SECRET: '',
+        // Os testes fazem muitas ações seguidas; o limite em si é testado em rate-limit.test.ts
+        // (que passa RATE_LIMIT_MULTIPLIER=1).
+        RATE_LIMIT_MULTIPLIER: '1000',
         ...this.extraEnv
       },
       stdio: ['ignore', 'pipe', 'pipe']

@@ -19,6 +19,7 @@ import { closeDatabase, databaseConfigFromEnv, describeDatabase, openDatabase } 
 import { ensureInitialData } from './db/seed'
 import { sendJson } from './http'
 import { accountsModule } from './modules/accounts'
+import { backupModule } from './modules/backup'
 import { channelsModule } from './modules/channels'
 import { messagesModule } from './modules/messages'
 import { presenceModule } from './modules/presence'
@@ -35,7 +36,8 @@ const modules: ServerModule[] = [
   channelsModule,
   messagesModule,
   voiceModule,
-  presenceModule
+  presenceModule,
+  backupModule
 ]
 
 // ---------- HTTP ----------

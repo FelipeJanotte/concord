@@ -46,6 +46,23 @@ e `UPLOAD_SWEEP_INTERVAL_MS` (intervalo da limpeza; padrão 10 min). O servidor 
 `server/db/migrations/` → commit junto. Gere a migration **só depois do rebase na `main`** (se o outro dev mergeou
 uma migration antes, apague a sua e gere de novo) e nunca edite uma migration já mergeada.
 
+**Backup:**
+- PGlite: o próprio servidor grava `DATA_DIR/backups/concord-<data>.tar.gz` quando o último backup tem mais de
+  `BACKUP_INTERVAL_MS` (padrão 24 h) e mantém `BACKUP_KEEP` (padrão 7). Reiniciar não gera backup extra.
+  Restaurar (servidor **parado**): `npm run db:restore [arquivo]` (sem arquivo = o mais novo); o banco atual vira
+  `pgdata.antes-<data>`.
+- Postgres: serviço `pg-backup` do compose (`pg_dump` diário em `server/data/backups-pg`, mantém 7). Restaurar:
+  `gunzip -c <arquivo>.sql.gz | psql "$DATABASE_URL"`.
+
+**Privilégio mínimo (produção):** `DATABASE_URL` com o usuário `concord_app` (só lê/grava dados, criado por
+`docker/postgres/init/02-app-role.sql`) e `DATABASE_MIGRATE_URL` com o dono (`concord`), usada só para as
+migrations. Volume já existente: rode o `.sql` uma vez com `psql`.
+
+**Limite de requisições:** regras em `LIMITS` (`server/middleware/rate-limit.ts`), em memória. Ações com ack
+recebem o erro ("Tente de novo em N s."); `message:send` gera `rate:limited`; HTTP responde 429 com
+`Retry-After`. Atrás de proxy, `TRUST_PROXY=1` para usar o `X-Forwarded-For`. Nos testes, o `TestServer` sobe com
+`RATE_LIMIT_MULTIPLIER=1000`; `server/tests/limits.test.ts` usa `1` para testar os valores reais.
+
 **Zerar tudo** (canais, mensagens, **contas e sessões**), com o servidor parado:
 - PGlite: apague `server/data/pgdata/` (e `server/data/avatars/` e `server/data/uploads/`). Se `server/data/db.json` ainda existir, ele será
   importado de novo; apague-o também para começar vazio.

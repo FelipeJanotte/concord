@@ -124,5 +124,5 @@ Servidor → cliente (`ServerToClientEvents`): `channel:created`, `channel:delet
 
 - Contas com e-mail+senha ou Google, mas sem papéis: qualquer pessoa logada exclui qualquer canal. Sem recuperação de senha.
 - Um único "servidor/comunidade" (a barra da esquerda é decorativa).
-- Sem backup automático nem limite de requisições ainda (task A5 do `docs/ROADMAP.md`).
+- Limites de requisição ficam em memória (reiniciar zera; com vários processos do servidor, cada um teria os seus).
 - A voz em malha aguenta bem até umas 8 pessoas por sala (ver `concord-voice`).

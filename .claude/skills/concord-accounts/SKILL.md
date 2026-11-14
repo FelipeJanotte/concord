@@ -141,4 +141,5 @@ A `MemberList` deduplica por `accountId` (a mesma conta pode estar em duas janel
 - Sem recuperação ou troca de senha, sem verificação de e-mail no cadastro com senha, sem excluir conta.
 - Conta só com Google não ganha senha; conta com senha ganha Google automaticamente ao entrar com o mesmo e-mail.
 - Sem papéis: qualquer pessoa logada exclui qualquer canal.
-- Sessões expiradas só são apagadas quando alguém faz login (sem limpeza periódica ainda; task A5).
+- Limites: 5 cadastros e 20 logins por IP (além dos 10 erros por e-mail), 10 alterações de perfil seguidas por conta
+  (`server/middleware/rate-limit.ts`). Sessões vencidas são apagadas a cada hora.

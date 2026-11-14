@@ -23,7 +23,12 @@ import * as schema from './schema'
 export type Database = PgDatabase<PgQueryResultHKT, typeof schema>
 
 export type DatabaseConfig =
-  | { kind: 'postgres'; url: string }
+  /**
+   * `migrateUrl`: conexão usada só para aplicar as migrations (dono do schema).
+   * Assim o app pode rodar com um usuário sem permissão de alterar tabelas
+   * (veja docker/postgres/init/02-app-role.sql). Ausente = usa `url` para tudo.
+   */
+  | { kind: 'postgres'; url: string; migrateUrl?: string }
   /** `dir` ausente = banco só em memória (testes) */
   | { kind: 'pglite'; dir?: string }
 
@@ -32,10 +37,28 @@ const MIGRATIONS = join(__dirname, 'migrations')
 /** `DATABASE_URL` definido → Postgres; senão PGlite em DATA_DIR/pgdata. */
 export function databaseConfigFromEnv(): DatabaseConfig {
   const url = process.env.DATABASE_URL?.trim()
-  return url ? { kind: 'postgres', url } : { kind: 'pglite', dir: PGLITE_DIR }
+  const migrateUrl = process.env.DATABASE_MIGRATE_URL?.trim()
+  if (!url) return { kind: 'pglite', dir: PGLITE_DIR }
+  return migrateUrl ? { kind: 'postgres', url, migrateUrl } : { kind: 'postgres', url }
 }
 
-let current: { db: Database; close: () => Promise<void>; description: string } | null = null
+let current: {
+  db: Database
+  close: () => Promise<void>
+  description: string
+  /** presente só no PGlite (backup por dump do diretório) */
+  pglite?: PGlite
+} | null = null
+
+/** Dump compactado (.tar.gz) do banco PGlite aberto; null se o banco for Postgres. */
+export async function dumpPglite(): Promise<Blob | null> {
+  if (!current?.pglite) return null
+  return current.pglite.dumpDataDir('gzip')
+}
+
+export function isPglite(): boolean {
+  return !!current?.pglite
+}
 
 /** O banco aberto. Lança erro se `openDatabase` ainda não rodou. */
 export function db(): Database {
@@ -53,10 +76,19 @@ export async function openDatabase(config: DatabaseConfig): Promise<void> {
   if (current) await closeDatabase()
 
   if (config.kind === 'postgres') {
+    if (config.migrateUrl) {
+      // migrations com o dono do schema; o app usa a conexão com menos privilégio
+      const owner = new Pool({ connectionString: config.migrateUrl, max: 1 })
+      try {
+        await migratePg(drizzlePg(owner, { schema }), { migrationsFolder: MIGRATIONS })
+      } finally {
+        await owner.end()
+      }
+    }
     const pool = new Pool({ connectionString: config.url, max: 10 })
     const database = drizzlePg(pool, { schema })
     try {
-      await migratePg(database, { migrationsFolder: MIGRATIONS })
+      if (!config.migrateUrl) await migratePg(database, { migrationsFolder: MIGRATIONS })
     } catch (err) {
       await pool.end()
       throw err
@@ -82,7 +114,8 @@ export async function openDatabase(config: DatabaseConfig): Promise<void> {
   current = {
     db: database as unknown as Database,
     close: () => client.close(),
-    description: config.dir ? `PGlite em ${config.dir}` : 'PGlite em memória'
+    description: config.dir ? `PGlite em ${config.dir}` : 'PGlite em memória',
+    pglite: client
   }
 }
 
