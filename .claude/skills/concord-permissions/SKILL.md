@@ -96,10 +96,14 @@ microfone só se `speak` e tela só se `share` (`publishSources` em `server/live
 tela aberta dos canais que sumiram, e sai da voz se a sala sumiu. Apagar canal também recarrega o acesso (as regras
 dele saem por cascade).
 
+## No app (voz)
+
+O `VoiceClient` usa o `canSpeak`/`canShare` do `voice:join` e o `ParticipantPermissionsChanged` do LiveKit
+(detalhes na `concord-voice`, seção "Permissões de voz no app"): sem `speak` entra só ouvindo e o botão de microfone
+só avisa; sem `share` o botão de tela some; mudanças com a pessoa na sala tiram ou devolvem o microfone na hora.
+
 ## Pendências conhecidas
 
-- **Modo "só ouvir" quando `canSpeak` é false** no `VoiceClient` (B2): o servidor já não deixa publicar o microfone
-  (token e `UpdateParticipant`), mas o app ainda tenta e só recebe o erro do LiveKit.
 - Sem transferência de posse da comunidade.
 - A tela de administração (B5) e o tratamento de `access:updated`/`state.access` no app ainda não existem.
 

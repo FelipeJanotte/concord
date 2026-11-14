@@ -9,7 +9,9 @@ export const OUT_OF_VOICE = {
   speaking: {},
   noMic: false,
   sharing: false,
-  screenPickerOpen: false
+  screenPickerOpen: false,
+  voiceCanSpeak: true,
+  voiceCanShare: true
 } as const
 
 // A sala do LiveKit caiu sem a pessoa pedir (removida, sala encerrada, servidor de voz fora do ar).
@@ -22,6 +24,19 @@ voice.onUnexpectedDisconnect = (message) => {
 // A tela parou sem ser pelo botão (janela compartilhada fechada, "parar" do sistema...).
 voice.onScreenShareEnded = () => setSharing(false)
 
+// Cargo/regra mudou com a pessoa na sala (v2): o LiveKit já trocou o que ela pode publicar.
+voice.onPermissionsChange = ({ canSpeak, canShare }) => {
+  const was = get()
+  set({ voiceCanSpeak: canSpeak, voiceCanShare: canShare })
+  if (was.voiceCanSpeak && !canSpeak) notify('Você não pode mais falar nesta sala.', 'info')
+  if (!was.voiceCanSpeak && canSpeak) notify('Agora você pode falar nesta sala.', 'info')
+  if (!canShare && was.sharing) setSharing(false)
+  // O servidor deixa quem não pode falar sempre silenciado; ao recuperar, avisa o estado real.
+  if (was.voiceCanSpeak !== canSpeak && was.myVoiceChannelId) {
+    getSocket()?.emit('voice:update', { muted: was.muted || was.noMic || !canSpeak, deafened: was.deafened })
+  }
+}
+
 export function bindVoiceEvents(s: AppSocket): void {
   s.on('voice:state', (states) => {
     const prev = get().voice
@@ -32,6 +47,7 @@ export function bindVoiceEvents(s: AppSocket): void {
     if (myVoiceChannelId && !joiningVoice && self && !states.some((v) => v.userId === self.id)) {
       voice.teardown()
       set({ ...OUT_OF_VOICE })
+      leftVoiceRoom()
       notify('Você saiu da sala de voz.', 'info')
     }
   })
@@ -52,15 +68,21 @@ export async function joinVoice(channelId: string): Promise<void> {
   if (st.myVoiceChannelId === channelId || st.joiningVoice) return
   set({ joiningVoice: true })
   try {
-    const { micError, cancelled } = await voice.join(channelId)
+    const { micError, cancelled, canSpeak, canShare } = await voice.join(channelId)
     // Interrompida no meio (saiu, trocou de sala, conexão caiu): não grava a sala.
     if (cancelled) return
     // Trocar de sala encerra a tela (o servidor também zera o "ao vivo").
-    set({ myVoiceChannelId: channelId, noMic: micError !== null, sharing: false, screenPickerOpen: false })
+    set({
+      myVoiceChannelId: channelId,
+      noMic: canSpeak && micError !== null,
+      sharing: false,
+      screenPickerOpen: false,
+      voiceCanSpeak: canSpeak,
+      voiceCanShare: canShare
+    })
     enteredVoiceRoom(channelId)
-    if (micError !== null) {
-      notify(`${describeMediaError(micError)} Você entrou só para ouvir.`, 'info')
-    }
+    if (!canSpeak) notify('Você não tem permissão para falar nesta sala: entrou só para ouvir.', 'info')
+    else if (micError !== null) notify(`${describeMediaError(micError)} Você entrou só para ouvir.`, 'info')
   } catch (err) {
     // Troca recusada pelo servidor: a sala antiga continua de pé e o estado também.
     // Falha depois de aceita (LiveKit fora do ar): o VoiceClient já saiu de tudo; o estado acompanha.
@@ -84,12 +106,18 @@ function applyAudio(muted: boolean, deafened: boolean): void {
   set({ muted, deafened })
   voice.setMuted(muted)
   voice.setDeafened(deafened)
-  // Sem microfone, os outros sempre veem o usuário como silenciado.
-  if (get().myVoiceChannelId) getSocket()?.emit('voice:update', { muted: muted || get().noMic, deafened })
+  // Sem microfone ou sem permissão de falar, os outros sempre veem o usuário como silenciado.
+  const { noMic, voiceCanSpeak } = get()
+  if (get().myVoiceChannelId) getSocket()?.emit('voice:update', { muted: muted || noMic || !voiceCanSpeak, deafened })
 }
 
 export function toggleMute(): void {
-  const { muted, deafened, noMic } = get()
+  const { muted, deafened, noMic, voiceCanSpeak, myVoiceChannelId } = get()
+  if (myVoiceChannelId && !voiceCanSpeak) {
+    if (deafened) applyAudio(muted, false)
+    else notify('Você não tem permissão para falar nesta sala.', 'info')
+    return
+  }
   if (noMic) {
     if (deafened) applyAudio(muted, false)
     else notify('Nenhum microfone disponível. Saia e entre de novo na sala depois de conectá-lo.', 'info')
@@ -134,6 +162,7 @@ export function closeScreenPicker(): void {
 export function toggleScreenShare(): void {
   const { sharing, myVoiceChannelId } = get()
   if (!myVoiceChannelId) return notify('Entre numa sala de voz para compartilhar a tela.', 'info')
+  if (!get().voiceCanShare) return notify('Você não tem permissão para compartilhar a tela nesta sala.', 'info')
   if (sharing) return void stopScreenShare()
   if (screenBridge()) set({ screenPickerOpen: true })
   else void startScreenShare(null, false)

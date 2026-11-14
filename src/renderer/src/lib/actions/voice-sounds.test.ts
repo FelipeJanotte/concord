@@ -27,7 +27,7 @@ beforeEach(() => {
   socket = new FakeSocket()
   setSocket(socket.asSocket())
   bindVoiceEvents(socket.asSocket())
-  vi.spyOn(voice, 'join').mockResolvedValue({ micError: null, cancelled: false })
+  vi.spyOn(voice, 'join').mockResolvedValue({ micError: null, cancelled: false, canSpeak: true, canShare: true })
   vi.spyOn(voice, 'leave').mockImplementation(() => {})
   play = vi.spyOn(chimes, 'play').mockReturnValue(true)
 })

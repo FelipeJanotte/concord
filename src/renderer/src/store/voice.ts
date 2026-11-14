@@ -17,6 +17,10 @@ export interface VoiceSliceState {
   screens: string[]
   /** seletor de tela/janela aberto */
   screenPickerOpen: boolean
+  /** pode falar na sala atual (v2, `speak`); sem isso entra só para ouvir */
+  voiceCanSpeak: boolean
+  /** pode compartilhar a tela na sala atual (v2, `share`) */
+  voiceCanShare: boolean
 }
 
 export const voiceInitial: VoiceSliceState = {
@@ -29,5 +33,7 @@ export const voiceInitial: VoiceSliceState = {
   speaking: {},
   sharing: false,
   screens: [],
-  screenPickerOpen: false
+  screenPickerOpen: false,
+  voiceCanSpeak: true,
+  voiceCanShare: true
 }
