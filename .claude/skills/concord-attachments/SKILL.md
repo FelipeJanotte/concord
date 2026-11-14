@@ -48,6 +48,8 @@ escolhe/cola/arrasta ─► addFiles(channelId, files)
    ─► transport.send (XHR, progresso em upload.onprogress) ─► POST /uploads
 servidor: token ─► limite 'upload' ─► Content-Length > 25 MB? 413
    ─► stream: LimitAndPeek conta bytes (413 se passar) e guarda os 256 KB iniciais
+   (depois do 413 o resto do corpo é descartado com `discardBody`, até 2× o limite, para o app ler a resposta;
+    com teto menor, 25 MB + 1 byte derrubava a conexão no último byte e o app via "fetch failed")
    ─► storage.save(id) grava em <id>.part e renomeia no fim (queda no meio = nada salvo)
    ─► sniffImage(começo) ─► insertAttachment (message_id null) ─► { ok, attachment }
 app: PendingUpload 'done' ─► Enter ─► sendMessage espera não haver 'uploading'

@@ -1,6 +1,7 @@
 import type { IncomingMessage } from 'node:http'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { clientIp } from './http'
+import { PassThrough } from 'node:stream'
+import { clientIp, discardBody } from './http'
 
 const req = (remoteAddress: string | undefined, forwarded?: string | string[]): IncomingMessage =>
   ({ socket: { remoteAddress }, headers: forwarded ? { 'x-forwarded-for': forwarded } : {} }) as unknown as IncomingMessage
@@ -23,5 +24,27 @@ describe('clientIp', () => {
 
   it('sem endereço nenhum', () => {
     expect(clientIp(req(undefined))).toBe('desconhecido')
+  })
+})
+
+describe('discardBody', () => {
+  async function feed(maxDiscard: number, sizes: number[]): Promise<boolean> {
+    const body = new PassThrough()
+    const destroy = vi.spyOn(body, 'destroy')
+    discardBody(body as unknown as IncomingMessage, maxDiscard)
+    for (const n of sizes) body.write(Buffer.alloc(n))
+    await new Promise((r) => setImmediate(r))
+    return destroy.mock.calls.length > 0
+  }
+
+  it('descarta até o teto sem fechar; passou do teto, fecha', async () => {
+    expect(await feed(10, [4, 6])).toBe(false)
+    expect(await feed(10, [4, 6, 1])).toBe(true)
+  })
+
+  it('upload com 25 MB + 1 declarado cabe no teto usado pelo /uploads (2× o limite)', async () => {
+    const max = 25 * 1024 * 1024
+    expect(await feed(max * 2, [max, 1])).toBe(false)
+    expect(await feed(max, [max, 1])).toBe(true) // o teto antigo: a conexão caía no último byte
   })
 })
