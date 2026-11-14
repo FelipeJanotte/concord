@@ -13,7 +13,7 @@ cargos atribuídos; cada canal pode **liberar** ou **negar** permissões por car
 
 | Arquivo | Papel |
 |---|---|
-| `src/shared/types/permissions.ts` | Contrato: permissões, `Role`, `ChannelOverride`, `MemberRoles`, `AccessState`, eventos, e a regra (`can`, `channelPermissions`, `globalPermissions`, `highestPosition`). `PERMISSION_LABELS` em pt-BR. |
+| `src/shared/types/permissions.ts` | Contrato: permissões, `Role`, `ChannelOverride`, `MemberRoles`, `AccessState`, eventos, e as funções puras (`can`, `channelPermissions`, `globalPermissions`, `highestPosition`, `canGrantPermissions`, `displayColor`, `accessFor`). `PERMISSION_LABELS` em pt-BR. Decisões da revisão no topo do arquivo. |
 | `server/access.ts` | Estado de acesso **em memória** (recarregado do banco a cada mudança) + `allowed()`, `visibleChannels()`, `emitToViewers()`, `accessSnapshot()`. Único jeito de os módulos consultarem permissão. |
 | `server/modules/permissions.ts` | Eventos `access:get`, `role:create/update/delete/reorder`, `member:set-roles`, `channel:set-overrides`; validação, hierarquia e `applyAccessChange()`. É o **primeiro** módulo em `server/index.ts` (carrega o acesso no boot). |
 | `server/repo/permissions.ts` | `ensureEveryoneRole`, `loadAccess` (dona = conta mais antiga), `insertRole`, `updateRole`, `deleteRole`, `setRolePositions`, `setMemberRoles`, `setChannelOverrides`. |
@@ -24,7 +24,8 @@ cargos atribuídos; cada canal pode **liberar** ou **negar** permissões por car
 ## Contrato
 
 - **Globais:** `manageChannels` (criar/apagar canal, editar regras de canal; **sempre vê** todos os canais),
-  `manageRoles` (cargos abaixo do seu), `manageMembers` (atribuir cargos abaixo do seu).
+  `manageRoles` (cargos abaixo do seu), `manageMembers` (atribuir cargos abaixo do seu; silenciar/expulsar da voz na
+  B6), `manageMessages` (apagar mensagem de outras pessoas, B6).
 - **Por canal:** `view`, `send`, `attach`, `connect`, `speak`, `share`.
 - **@todos:** id fixo `EVERYONE_ROLE_ID` (`00000000-…`), posição 0, sempre existe, não pode ser apagado nem
   renomeado (só mudam as permissões). Numa comunidade nova tem todas as permissões **de canal** e nenhuma global.
@@ -34,7 +35,7 @@ cargos atribuídos; cada canal pode **liberar** ou **negar** permissões por car
 
 | Evento (cliente → servidor) | Exige | Observações |
 |---|---|---|
-| `access:get` → `AccessState` | estar logado | o app pede depois do `hello` |
+| `access:get` → `AccessState` | estar logado | o inicial já vem no `hello` (`state.access`); serve para recarregar |
 | `role:create {name, color, permissions}` → `RoleResult` | `manageRoles` + ter um cargo | entra logo abaixo do seu cargo mais alto (a dona cria no topo); até 50 cargos; nome até 32 (não pode ser "@todos"); cor `#rrggbb` ou null |
 | `role:update {id, name?, color?, permissions?}` → `RoleResult` | `manageRoles` + cargo abaixo do seu | @todos: só `permissions` (e só quem tem algum cargo) |
 | `role:delete roleId` → `OkResult` | `manageRoles` + cargo abaixo do seu | @todos nunca |
@@ -42,8 +43,13 @@ cargos atribuídos; cada canal pode **liberar** ou **negar** permissões por car
 | `member:set-roles {accountId, roleIds}` → `OkResult` | `manageMembers` | só dá/tira cargos abaixo do seu; não mexe em quem tem cargo igual ou acima, nem na dona |
 | `channel:set-overrides {channelId, overrides[]}` → `OkResult` | `manageChannels` | **substitui** todas as regras do canal; um cargo por regra; a mesma permissão não pode estar em `allow` e `deny` |
 
-Servidor → cliente: `access:updated` (estado inteiro, para todos) e `channels:visible` (lista de canais que **aquela
-conexão** pode ver, só para quem mudou).
+Servidor → cliente: `access:updated` (para cada conexão, o estado de `accessFor`) e `channels:visible` (lista de
+canais que **aquela conexão** pode ver, só para quem mudou).
+
+**O que cada um recebe (`accessFor`):** cargos e membros inteiros (a lista de membros precisa das cores), mas só as
+regras dos canais que a pessoa vê; dona e quem tem `manageChannels` recebem tudo. Assim ninguém descobre que existe
+um canal privado. Vale para `hello`, `access:get` e `access:updated`. Cor do nome: `displayColor` (cargo mais alto
+com cor, ou null).
 
 ## Regra de cálculo (`channelPermissions`)
 
@@ -59,7 +65,8 @@ Consequência que confunde: tornar um canal privado (`deny view` no @todos) tamb
 sem `manageChannels`, a menos que o cargo deles tenha `allow view` nesse canal.
 
 **Hierarquia** (`highestPosition`): dona = infinito, sem cargo = 0. Só se gerencia cargo com posição **menor** que a
-do seu cargo mais alto. **Ninguém dá permissão global que não tem** (`canGrant`); permissões de canal podem ser dadas.
+do seu cargo mais alto. **Ninguém dá permissão global que não tem** e **globais no @todos só a dona dá**
+(`canGrantPermissions`, a mesma função no servidor e na tela); permissões de canal podem ser dadas.
 
 ## O que cada handler bloqueia
 
@@ -70,7 +77,8 @@ do seu cargo mais alto. **Ninguém dá permissão global que não tem** (`canGra
 | `message:history` | sem `view` = lista vazia (igual canal inexistente) |
 | `message:send` | `send`; com anexos, também `attach`; `message:new` só para quem tem `view` |
 | `typing` | `send`; vai só para quem tem `view` (menos quem digita) |
-| `voice:join` | sem `view` → "Canal de voz não encontrado" (não revela sala privada); sem `connect` → "Você não tem permissão para entrar nesta sala" |
+| `voice:join` | sem `view` → "Canal de voz não encontrado" (não revela sala privada); sem `connect` → "Você não tem permissão para entrar nesta sala"; ok devolve `canSpeak`/`canShare` |
+| `voice:update` | sem `speak` continua `muted: true` (não dá para se dessilenciar) |
 | `voice:state` | cada conexão recebe só as salas que pode ver (`voiceStatesFor`) |
 
 Para um handler novo: `await allowed(user.accountId, 'perm', channelId)` antes de agir e `emitToViewers(io,
@@ -78,30 +86,31 @@ channelId, evento, payload)` no lugar de `io.emit` quando o evento é de um cana
 
 ## Quando o acesso muda (`applyAccessChange`)
 
-Depois de qualquer evento acima: recarrega o estado → `access:updated` para todos → `channels:visible` para cada
-conexão cuja lista mudou → quem perdeu `connect` na sala em que está **sai da voz** (`removeFromVoice`, que também
-tira do LiveKit) → `voice:state` filtrado de novo. No app, `replaceChannels` limpa rascunho, histórico, não lidos e a
+Depois de qualquer evento acima: recarrega o estado → `access:updated` (por `accessFor`) para cada conexão →
+`channels:visible` para cada conexão cuja lista mudou → `applyVoiceAccess(io, access)` em `server/modules/voice.ts`:
+quem perdeu `connect` na sala em que está **sai da voz** e todos recebem o `voice:state` filtrado de novo. Com o
+LiveKit (B1), é dentro de `applyVoiceAccess` que entra a atualização de `speak`/`share` de quem continua na sala. No app, `replaceChannels` limpa rascunho, histórico, não lidos e a
 tela aberta dos canais que sumiram, e sai da voz se a sala sumiu. Apagar canal também recarrega o acesso (as regras
 dele saem por cascade).
 
 ## Pendências conhecidas
 
-- **Token do LiveKit ainda não usa `speak`/`share`**: hoje quem tem `connect` recebe microfone e tela. Proposta
-  combinada no PR #8: `canPublishSources` = microfone se `speak`, tela + áudio da tela se `share`; e atualizar as
-  permissões no LiveKit quando mudarem com a pessoa na sala (`server/livekit.ts`, Dev B).
-- **Download de anexo (`GET /files`) não checa `view`** do canal da mensagem (ver `concord-attachments`).
-- O estado vai por `access:get`; a revisão pediu para vir dentro do `hello` (evita a tela piscar).
-- Ainda em discussão no PR #8: `displayColor(access, accountId)` (cor do cargo mais alto), permissão para apagar
-  mensagem de outra pessoa (B6) e se as regras por canal vão para todos ou só para quem tem `manageChannels`.
-- A tela de administração (B5) e o tratamento de `access:updated` no app ainda não existem.
+- **Token do LiveKit ainda não usa `speak`/`share`** (depende do #9): combinado no PR #8 — `canPublishSources` =
+  microfone se `speak`, tela + áudio da tela se `share`, `canPublish` = um ou outro; e atualizar no LiveKit
+  (`RoomService.updateParticipant`) dentro de `applyVoiceAccess` quando mudar com a pessoa na sala (Dev B).
+- **Modo "só ouvir" quando `canSpeak` é false** no `VoiceClient` (B2).
+- **Download de anexo (`GET /files`) não checa `view`** do canal da mensagem (vale só o id aleatório; ver a parte de
+  anexos em `concord-architecture`).
+- Sem transferência de posse da comunidade.
+- A tela de administração (B5) e o tratamento de `access:updated`/`state.access` no app ainda não existem.
 
 ## Testes
 
 | Arquivo | Cobre |
 |---|---|
-| `src/shared/types/permissions.test.ts` | Regra de cálculo pura: globais, canal privado, liberar vence negar, regra de cargo × @todos, dependências, `manageChannels` sempre vê, dona, hierarquia, textos pt-BR. |
+| `src/shared/types/permissions.test.ts` | Regra de cálculo pura: globais, canal privado, liberar vence negar, regra de cargo × @todos, dependências, `manageChannels` sempre vê, dona, hierarquia, `canGrantPermissions`, `displayColor`, `accessFor`, textos pt-BR. |
 | `server/repo/permissions.test.ts` | @todos criado no boot, dona = conta mais antiga, gravar cargos/membros/regras e cascades. |
-| `server/tests/permissions.test.ts` | Servidor real: estado de acesso, canal privado (não aparece no `hello`, não recebe `message:new`/`typing`/`voice:state`, não entra na voz), regras de enviar/anexar/entrar (inclusive no @todos), hierarquia (criar abaixo do seu, não dar permissão que não tem, reordenar só a lista exata) e validação de nome, cor, permissões e regras; saída da voz ao perder o acesso. |
+| `server/tests/permissions.test.ts` | Servidor real: estado de acesso, canal privado (não aparece no `hello`, não recebe `message:new`/`typing`/`voice:state`, não entra na voz), regras de enviar/anexar/entrar (inclusive no @todos), hierarquia (criar abaixo do seu, não dar permissão que não tem, reordenar só a lista exata) e validação de nome, cor, permissões e regras; saída da voz ao perder o acesso; estado no `hello` e `access:updated` filtrados por pessoa; escalada no @todos; `canSpeak`/`canShare`. |
 | `src/renderer/src/lib/actions/access.test.ts` | App: `channels:visible` (limpa o que saiu, sai da voz) e `voice:state` sem a própria pessoa. |
 
 À mão: conta A (dona) cria cargo "Mod" e um canal privado liberado só para "Mod"; conta B sem cargo não vê o canal
