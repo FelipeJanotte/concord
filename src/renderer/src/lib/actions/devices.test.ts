@@ -9,7 +9,8 @@ import {
   selectAudioInput,
   selectAudioOutput,
   setUserMuted,
-  setUserVolume
+  setUserVolume,
+  setVoiceSounds
 } from './devices'
 
 class MemoryStorage {
@@ -77,7 +78,7 @@ describe('escolher dispositivo', () => {
     await selectAudioInput('mic-usb')
     await selectAudioOutput('fone')
     expect(useApp.getState()).toMatchObject({ audioInputId: 'mic-usb', audioOutputId: 'fone' })
-    expect(saved()).toEqual({ input: 'mic-usb', output: 'fone', volumes: {}, muted: [] })
+    expect(saved()).toEqual({ input: 'mic-usb', output: 'fone', volumes: {}, muted: [], sounds: { enabled: true, volume: 0.5 } })
     expect(voice.setInputDevice).toHaveBeenCalledWith('mic-usb')
     expect(voice.setOutputDevice).toHaveBeenCalledWith('fone')
 
@@ -170,5 +171,35 @@ describe('silenciar alguém', () => {
     expect(useApp.getState().userMuted).toEqual({ 'acc-ana': true })
     expect(voice.setUserMuted).toHaveBeenCalledWith('acc-ana', true)
     expect(voice.setUserMuted).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('sons de entrar/sair (B16)', () => {
+  it('começa ligado em 50%', () => {
+    loadAudioPreferences()
+    expect(useApp.getState()).toMatchObject({ voiceSoundsEnabled: true, voiceSoundsVolume: 0.5 })
+  })
+
+  it('liga/desliga e ajusta o volume, salvando', () => {
+    setVoiceSounds({ enabled: false })
+    setVoiceSounds({ volume: 0.2 })
+    expect(useApp.getState()).toMatchObject({ voiceSoundsEnabled: false, voiceSoundsVolume: 0.2 })
+    expect(saved()).toMatchObject({ sounds: { enabled: false, volume: 0.2 } })
+  })
+
+  it('corrige volume fora de 0–1 e ignora valores inválidos', () => {
+    setVoiceSounds({ volume: 3 })
+    expect(useApp.getState().voiceSoundsVolume).toBe(1)
+    setVoiceSounds({ volume: Number.NaN, enabled: 'sim' as unknown as boolean })
+    expect(useApp.getState()).toMatchObject({ voiceSoundsEnabled: true, voiceSoundsVolume: 1 })
+  })
+
+  it('volta como estava depois de reabrir; dados ruins voltam ao padrão', () => {
+    storage.setItem('concord:audio', JSON.stringify({ sounds: { enabled: false, volume: 0.7 } }))
+    loadAudioPreferences()
+    expect(useApp.getState()).toMatchObject({ voiceSoundsEnabled: false, voiceSoundsVolume: 0.7 })
+    storage.setItem('concord:audio', JSON.stringify({ sounds: { enabled: 'não', volume: 9 } }))
+    loadAudioPreferences()
+    expect(useApp.getState()).toMatchObject({ voiceSoundsEnabled: true, voiceSoundsVolume: 0.5 })
   })
 })

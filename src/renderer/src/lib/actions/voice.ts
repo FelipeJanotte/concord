@@ -1,6 +1,7 @@
 // Entrar/sair da sala de voz, mute, deafen e compartilhar a tela. A conexão com o LiveKit fica em `lib/voice.ts`.
 import { get, getSocket, notify, set, type AppSocket } from '../core'
 import { voice } from '../voice'
+import { enteredVoiceRoom, handleVoiceStateChange, leftVoiceRoom } from './voice-sounds'
 
 /** Estado de quem não está em nenhuma sala (sair, cair, perder a conexão). */
 export const OUT_OF_VOICE = {
@@ -14,6 +15,7 @@ export const OUT_OF_VOICE = {
 // A sala do LiveKit caiu sem a pessoa pedir (removida, sala encerrada, servidor de voz fora do ar).
 voice.onUnexpectedDisconnect = (message) => {
   set({ ...OUT_OF_VOICE })
+  leftVoiceRoom()
   notify(message)
 }
 
@@ -21,7 +23,11 @@ voice.onUnexpectedDisconnect = (message) => {
 voice.onScreenShareEnded = () => setSharing(false)
 
 export function bindVoiceEvents(s: AppSocket): void {
-  s.on('voice:state', (states) => set({ voice: states }))
+  s.on('voice:state', (states) => {
+    const prev = get().voice
+    set({ voice: states })
+    handleVoiceStateChange(prev, states)
+  })
 }
 
 function describeMediaError(err: unknown): string {
@@ -42,6 +48,7 @@ export async function joinVoice(channelId: string): Promise<void> {
     const { micError } = await voice.join(channelId)
     // Trocar de sala encerra a tela (o servidor também zera o "ao vivo").
     set({ myVoiceChannelId: channelId, noMic: micError !== null, sharing: false, screenPickerOpen: false })
+    enteredVoiceRoom(channelId)
     if (micError !== null) {
       notify(`${describeMediaError(micError)} Você entrou só para ouvir.`, 'info')
     }
@@ -55,6 +62,7 @@ export async function joinVoice(channelId: string): Promise<void> {
 export function leaveVoice(): void {
   voice.leave()
   set({ ...OUT_OF_VOICE })
+  leftVoiceRoom()
 }
 
 function applyAudio(muted: boolean, deafened: boolean): void {
