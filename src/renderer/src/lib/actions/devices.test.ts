@@ -9,6 +9,7 @@ import {
   selectAudioInput,
   selectAudioOutput,
   setUserMuted,
+  setNoiseSuppression,
   setUserVolume,
   setVoiceSounds
 } from './devices'
@@ -78,7 +79,7 @@ describe('escolher dispositivo', () => {
     await selectAudioInput('mic-usb')
     await selectAudioOutput('fone')
     expect(useApp.getState()).toMatchObject({ audioInputId: 'mic-usb', audioOutputId: 'fone' })
-    expect(saved()).toEqual({ input: 'mic-usb', output: 'fone', volumes: {}, muted: [], sounds: { enabled: true, volume: 0.5 } })
+    expect(saved()).toEqual({ input: 'mic-usb', output: 'fone', volumes: {}, muted: [], sounds: { enabled: true, volume: 0.5 }, noise: true })
     expect(voice.setInputDevice).toHaveBeenCalledWith('mic-usb')
     expect(voice.setOutputDevice).toHaveBeenCalledWith('fone')
 
@@ -201,5 +202,45 @@ describe('sons de entrar/sair (B16)', () => {
     storage.setItem('concord:audio', JSON.stringify({ sounds: { enabled: 'não', volume: 9 } }))
     loadAudioPreferences()
     expect(useApp.getState()).toMatchObject({ voiceSoundsEnabled: true, voiceSoundsVolume: 0.5 })
+  })
+})
+
+describe('supressão de ruído (B13)', () => {
+  it('começa ligada e aplica no VoiceClient ao carregar', () => {
+    const apply = vi.spyOn(voice, 'setNoiseSuppression').mockResolvedValue()
+    loadAudioPreferences()
+    expect(useApp.getState().noiseSuppression).toBe(true)
+    expect(apply).toHaveBeenCalledWith(true)
+  })
+
+  it('desligar salva e avisa o VoiceClient; volta desligada depois de reabrir', async () => {
+    const apply = vi.spyOn(voice, 'setNoiseSuppression').mockResolvedValue()
+    await setNoiseSuppression(false)
+    expect(useApp.getState().noiseSuppression).toBe(false)
+    expect(saved()).toMatchObject({ noise: false })
+    expect(apply).toHaveBeenLastCalledWith(false)
+    useApp.setState({ noiseSuppression: true })
+    loadAudioPreferences()
+    expect(useApp.getState().noiseSuppression).toBe(false)
+  })
+
+  it('valor inválido salvo volta ao padrão (ligada)', () => {
+    vi.spyOn(voice, 'setNoiseSuppression').mockResolvedValue()
+    storage.setItem('concord:audio', JSON.stringify({ noise: 'sim' }))
+    loadAudioPreferences()
+    expect(useApp.getState().noiseSuppression).toBe(true)
+  })
+
+  it('falha ao trocar vira aviso', async () => {
+    vi.spyOn(voice, 'setNoiseSuppression').mockRejectedValue(new Error('falhou'))
+    await setNoiseSuppression(false)
+    expect(useApp.getState().notice?.text).toBe('Não foi possível mudar a supressão de ruído.')
+  })
+
+  it('o modo informado pelo VoiceClient vai para a store', () => {
+    voice.onNoiseModeChange?.('advanced')
+    expect(useApp.getState().noiseMode).toBe('advanced')
+    voice.onNoiseModeChange?.(null)
+    expect(useApp.getState().noiseMode).toBeNull()
   })
 })

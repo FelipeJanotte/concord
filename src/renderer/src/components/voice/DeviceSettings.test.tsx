@@ -117,4 +117,21 @@ describe('DeviceSettings', () => {
     expect(useApp.getState().voiceSoundsEnabled).toBe(false)
     expect((screen.getByRole('slider', { name: 'Volume dos sons de entrada e saída' }) as HTMLInputElement).disabled).toBe(true)
   })
+
+  it('supressão de ruído: interruptor e o que o filtro está fazendo agora', async () => {
+    const apply = vi.spyOn(voice, 'setNoiseSuppression').mockResolvedValue()
+    await openDialog()
+    const toggle = screen.getByRole('checkbox', { name: 'Supressão de ruído automática' }) as HTMLInputElement
+    expect(toggle.checked).toBe(true)
+    expect(screen.getByText('Começa a funcionar quando você entrar numa sala de voz.')).toBeTruthy()
+    act(() => useApp.setState({ noiseMode: 'advanced' }))
+    expect(screen.getByText('Ruído detectado: filtro avançado ativo.')).toBeTruthy()
+    act(() => useApp.setState({ noiseMode: 'light' }))
+    expect(screen.getByText('Ambiente silencioso: usando o filtro leve.')).toBeTruthy()
+    act(() => useApp.setState({ noiseMode: 'light-fallback' }))
+    expect(screen.getByText(/indisponível neste computador/)).toBeTruthy()
+    await userEvent.click(toggle)
+    expect(apply).toHaveBeenCalledWith(false)
+    expect(screen.getByText('Desligada: o microfone vai sem filtro.')).toBeTruthy()
+  })
 })
