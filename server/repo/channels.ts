@@ -1,6 +1,6 @@
-// Canais de texto e voz.
-import { and, asc, count, eq, sql } from 'drizzle-orm'
-import type { Channel, ChannelType } from '../../src/shared/types'
+// Canais de texto e voz (as conversas privadas, tipo dm, ficam em repo/dms.ts).
+import { and, asc, count, eq, ne, sql } from 'drizzle-orm'
+import type { Channel, ChannelKind, ChannelType } from '../../src/shared/types'
 import { db, uniqueViolation } from '../db/client'
 import { channels } from '../db/schema'
 import { DuplicateError, isUuid } from './util'
@@ -10,24 +10,26 @@ type Row = typeof channels.$inferSelect
 const toChannel = (row: Row): Channel => ({
   id: row.id,
   name: row.name,
-  type: row.type as ChannelType,
+  type: row.type as ChannelKind,
   createdAt: row.createdAt.getTime()
 })
 
+/** Canais da comunidade (sem as conversas privadas). */
 export async function listChannels(): Promise<Channel[]> {
-  const rows = await db().select().from(channels).orderBy(asc(channels.createdAt), asc(channels.id))
+  const rows = await db().select().from(channels).where(ne(channels.type, 'dm')).orderBy(asc(channels.createdAt), asc(channels.id))
   return rows.map(toChannel)
 }
 
-export async function findChannel(id: string, type?: ChannelType): Promise<Channel | undefined> {
+export async function findChannel(id: string, type?: ChannelKind): Promise<Channel | undefined> {
   if (!isUuid(id)) return undefined
   const where = type ? and(eq(channels.id, id), eq(channels.type, type)) : eq(channels.id, id)
   const [row] = await db().select().from(channels).where(where).limit(1)
   return row && toChannel(row)
 }
 
+/** Quantos canais da comunidade existem (conversas privadas não contam no limite). */
 export async function countChannels(): Promise<number> {
-  const [row] = await db().select({ n: count() }).from(channels)
+  const [row] = await db().select({ n: count() }).from(channels).where(ne(channels.type, 'dm'))
   return Number(row?.n ?? 0)
 }
 
@@ -53,9 +55,15 @@ export async function insertChannel(channel: Channel): Promise<void> {
   }
 }
 
-/** Apaga o canal (as mensagens vão junto, por cascade). Devolve false se não existia. */
+/**
+ * Apaga um canal da comunidade (as mensagens vão junto, por cascade). Devolve false se não existia.
+ * Conversas privadas (dm) nunca são apagadas por aqui (nem por quem tem `manageChannels`).
+ */
 export async function deleteChannel(id: string): Promise<boolean> {
   if (!isUuid(id)) return false
-  const rows = await db().delete(channels).where(eq(channels.id, id)).returning({ id: channels.id })
+  const rows = await db()
+    .delete(channels)
+    .where(and(eq(channels.id, id), ne(channels.type, 'dm')))
+    .returning({ id: channels.id })
   return rows.length > 0
 }

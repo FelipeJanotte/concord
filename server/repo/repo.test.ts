@@ -181,7 +181,7 @@ describe('canais', () => {
 
   it('o banco recusa tipo inválido e nome vazio ou longo', async () => {
     const base = { id: randomUUID(), createdAt: Date.now() }
-    await expect(insertChannel({ ...base, name: 'x', type: 'dm' as never })).rejects.toThrow()
+    await expect(insertChannel({ ...base, name: 'x', type: 'grupo' as never })).rejects.toThrow()
     await expect(insertChannel({ ...base, id: randomUUID(), name: '', type: 'text' })).rejects.toThrow()
     await expect(insertChannel({ ...base, id: randomUUID(), name: 'x'.repeat(33), type: 'text' })).rejects.toThrow()
   })
