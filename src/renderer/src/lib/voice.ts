@@ -118,6 +118,13 @@ export class VoiceClient {
   private mic: LocalAudioTrack | null = null
   /** sala cujo `connect` ainda não terminou */
   private connecting: Room | null = null
+  /**
+   * Sala que estou deixando numa troca: o servidor, ao aceitar a nova, me tira dela no LiveKit
+   * (`RemoveParticipant`), então o fim dessa conexão é esperado e não pode virar "queda".
+   */
+  private switchingFrom: Room | null = null
+  /** a sala antiga caiu durante a troca (só importa se a troca for recusada) */
+  private switchDropped = false
   private remoteAudio = new Set<RemoteTrack>()
   private muted = false
   private deafened = false
@@ -182,15 +189,21 @@ export class VoiceClient {
     }
     const stopMic = (): void => mic?.stop()
 
+    // Troca de sala: daqui até fechar a antiga, o "removido" dela é esperado (ver `switchingFrom`).
+    this.switchingFrom = this.room
+    this.switchDropped = false
     let res: JoinVoiceResult
     try {
       res = await socket.emitWithAck('voice:join', { channelId, muted: this.muted || !mic, deafened: this.deafened })
     } catch (err) {
       stopMic()
+      this.endSwitch(false)
       throw err
     }
     if (!res.ok) {
       stopMic()
+      // Troca recusada: o servidor me manteve na antiga. Se ela caiu nesse meio-tempo, aí sim é queda.
+      this.endSwitch(false)
       throw new Error(res.error)
     }
     // Sem `speak` o LiveKit recusaria o microfone (403): entra só para ouvir, sem nem capturar.
@@ -201,6 +214,7 @@ export class VoiceClient {
     }
 
     // O servidor já nos tirou da sala anterior: agora sim fecha a conexão antiga.
+    this.endSwitch(true)
     this.teardown()
     this.permissions = permissions
     const room = this.deps.createRoom({ outputDeviceId: this.outputDeviceId })
@@ -230,6 +244,21 @@ export class VoiceClient {
     return { micError, cancelled: false, ...permissions }
   }
 
+  /**
+   * Fim da janela de troca. `accepted`: o servidor aceitou a sala nova (a antiga vai ser fechada).
+   * Recusada e a antiga caiu nesse meio-tempo: trata como a queda que foi.
+   */
+  private endSwitch(accepted: boolean): void {
+    const old = this.switchingFrom
+    const dropped = this.switchDropped
+    this.switchingFrom = null
+    this.switchDropped = false
+    if (!accepted && dropped && old && this.room === old) {
+      this.leave()
+      this.onUnexpectedDisconnect?.(describeDisconnect(undefined))
+    }
+  }
+
   /** Está numa sala do LiveKit (ou conectando a uma)? */
   get inRoom(): boolean {
     return this.room !== null
@@ -244,6 +273,8 @@ export class VoiceClient {
   teardown(): void {
     const room = this.room
     this.room = null
+    this.switchingFrom = null
+    this.switchDropped = false
     if (room) {
       room.removeAllListeners()
       void room.disconnect()
@@ -465,6 +496,11 @@ export class VoiceClient {
         if (this.room !== room) return
         // Ainda conectando: quem trata a falha é o `join` (com a mensagem certa), não o aviso de queda.
         if (this.connecting === room) return
+        // Trocando de sala: o servidor me tira da antiga ao aceitar a nova. Esperado; o `join` decide.
+        if (this.switchingFrom === room) {
+          this.switchDropped = true
+          return
+        }
         console.warn('[voz] desconectado do LiveKit:', reason)
         this.leave()
         this.onUnexpectedDisconnect?.(describeDisconnect(reason))
