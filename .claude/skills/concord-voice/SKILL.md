@@ -1,6 +1,6 @@
 ---
 name: concord-voice
-description: Como funcionam os canais de voz do Concord — LiveKit (SFU) com token emitido pelo servidor, livekit-client no app, estado das salas via Socket.IO, mute/deafen, quem está falando, limites e depuração. Use ao mexer em server/livekit.ts, server/modules/voice.ts, src/renderer/src/lib/voice.ts, nos eventos voice:* ou ao investigar áudio que não chega, token recusado, eco ou falha de conexão.
+description: Como funcionam os canais de voz do Concord — LiveKit (SFU) com token emitido pelo servidor, livekit-client no app, estado das salas via Socket.IO, mute/deafen, quem está falando, compartilhar a tela, escolha de microfone/saída e volume por pessoa, limites e depuração. Use ao mexer em server/livekit.ts, server/modules/voice.ts, src/renderer/src/lib/voice.ts, nos eventos voice:* ou ao investigar áudio que não chega, token recusado, eco ou falha de conexão.
 ---
 
 # Voz
@@ -113,14 +113,64 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
   (jsdom: seletor, tile e grade) e `server/tests/voice.test.ts` (`voice:sharing`). À mão: duas janelas na mesma
   sala com o LiveKit rodando; uma compartilha, a outra vê a tela e o "ao vivo" some ao parar.
 
+## Dispositivos, volume e menu de botão direito (B4)
+
+**Só cliente:** nada vai para o servidor e não há evento novo.
+
+- **Configurações de voz** (`components/voice/DeviceSettings.tsx`): microfone e saída. Aberto pelo botão de ondas
+  sonoras na `VoiceView` e no painel "Voz conectada" (`VoiceStatusPanel`). Fica montado no `UserPanel`, então dá
+  para escolher o microfone antes de entrar numa sala.
+- **Botão direito sobre uma pessoa** (`components/voice/MemberContextMenu.tsx`, shadcn `ui/context-menu`), no tile
+  da sala de voz (`VoiceGrid`) e na lista embaixo do canal na barra lateral (`ChannelSidebar`):
+  1. nome#tag;
+  2. **Volume** (controle de 0 a 100%; as setas do teclado mexem nele, não no menu);
+  3. **Silenciar** (só para mim; o menu fica aberto para dar para ajustar o volume na mesma vez);
+  4. **Ver perfil** (`components/UserProfileDialog.tsx`: avatar, nome#tag, online e sala de voz em que está).
+  Em si mesmo, só "Ver perfil". Quem eu silenciei ganha um ícone de alto-falante cortado no tile e na barra lateral.
+  **Itens que ainda vão entrar neste menu:** "Cargos" (B5, só para quem pode gerenciar membros, depende da A4) e
+  "Mensagem" (A7/B7, abre a DM com a pessoa).
+
+| Peça | Papel |
+|---|---|
+| `lib/voice.ts` | `listDevices(kind)`, `setInputDevice(id)`, `setOutputDevice(id)`, `setUserVolume(accountId, 0–1)`, `setUserMuted(accountId, bool)`. `null` = padrão do sistema. |
+| `lib/actions/devices.ts` | `listAudioDevices`, `selectAudioInput`, `selectAudioOutput`, `setUserVolume`, `setUserMuted`, `open/closeDeviceSettings`, `canChooseAudioOutput`, `loadAudioPreferences`. |
+| `store/devices.ts` | `audioInputId`, `audioOutputId`, `userVolumes[accountId]`, `userMuted[accountId]`, `deviceSettingsOpen`. |
+
+- **Microfone:** fora da sala, a escolha vale para a próxima entrada (`createMicTrack(deviceId)`); dentro, troca na
+  hora com `room.switchActiveDevice('audioinput', id)` (sem microfone, "só ouvindo", não mexe). Se o escolhido
+  sumiu (desconectado), entra com o padrão do sistema em vez de cair no modo só ouvir.
+- **Saída:** vai na criação da `Room` (`audioOutput`) e troca na hora com `switchActiveDevice('audiooutput', id)`.
+  Só aparece se o ambiente tem `HTMLMediaElement.setSinkId` (o Electron tem).
+- **Volume por pessoa:** guardado por **conta** (o token traz `attributes.accountId`; a identidade muda a cada
+  conexão). Aplicado com `RemoteAudioTrack.setVolume` ao receber o microfone da pessoa e na hora ao mexer no
+  controle. Só o microfone; o áudio da tela não muda. Vai de 0 a 100%: passar de 100% exigiria `webAudioMix`, que
+  mixa o áudio pela Web Audio e quebraria o deafen (feito com `muted` nos `<audio>`).
+- **Silenciar alguém:** também por conta. O volume aplicado vira 0, mas o valor ajustado continua em `userVolumes`;
+  ao tirar o silêncio, volta ao que era. Mexer no volume enquanto silenciado só guarda o valor. Não afeta os outros:
+  é só no meu app (para silenciar para todos, B6 "silenciar pelo servidor").
+- **Preferências desta máquina:** `localStorage` `concord:audio` = `{ input, output, volumes, muted }`, lido ao carregar o
+  app (`loadAudioPreferences`) e de novo depois do `disconnect()` (sair da conta não apaga). Dados inválidos ou
+  armazenamento bloqueado: volta aos padrões sem quebrar.
+- **Lista:** `Room.getLocalDevices(kind, false)` (não pede permissão só para listar). Os apelidos do Windows
+  `default`/`communications` saem da lista (a opção "Padrão do sistema" cobre). Sem permissão de microfone os nomes
+  vêm vazios: viram "Microfone 1", "Saída 1" e o diálogo explica. Ligar/desligar um fone com o diálogo aberto
+  atualiza a lista (`devicechange`). Escolha salva de um aparelho desconectado aparece como "Dispositivo desconectado".
+- **Testes:** `lib/voice.test.ts` (blocos "dispositivos e volume" e "silenciar alguém"), `lib/actions/devices.test.ts`
+  (preferências, silenciar, erros, filtro da lista), `components/voice/DeviceSettings.test.tsx` (jsdom: seletores,
+  desconectado, sem `setSinkId`) e `components/voice/MemberContextMenu.test.tsx` (jsdom: menu no tile e na barra
+  lateral, só "Ver perfil" em si mesmo, volume, silenciar mantendo o volume e o menu aberto, cartão de perfil).
+  À mão: trocar de fone no meio da conversa e conferir que o outro continua ouvindo; botão direito numa pessoa,
+  baixar o volume, silenciar, tirar o silêncio (volta ao volume ajustado) e reiniciar o app (tudo continua).
+
 ## Limites e evolução
 
 - **Escala:** o SFU aguenta salas grandes (dezenas de pessoas); o gargalo passa a ser a banda/CPU do servidor do
   LiveKit, não de cada cliente.
 - **NAT:** em dev o LiveKit usa UDP 7882 e TCP 7881 (fallback). Entre redes restritivas (4G, empresas), ative o
   TURN embutido do LiveKit (`turn.enabled` em `livekit.yaml`, com domínio e TLS) antes de ir para a internet.
-- **Dispositivos** (B4): `createLocalAudioTrack({ deviceId })` / `room.switchActiveDevice('audioinput', id)` e
-  `room.switchActiveDevice('audiooutput', id)`; volume por pessoa com `RemoteAudioTrack.setVolume()`.
+- **Volume acima de 100%** e volume do áudio da tela separado do microfone: precisariam de `webAudioMix` e de
+  refazer o deafen sobre a Web Audio.
+- **Teste de microfone** (medidor de nível no diálogo) ainda não existe.
 - **Áudio da tela sem eco:** excluir o próprio Concord do loopback exigiria captura por processo (não existe no
   Electron hoje).
 
@@ -138,3 +188,6 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
 6. Microfone negado: `main/index.ts` libera `media` em `setPermissionRequestHandler`. O toast traduz
    `NotAllowedError`, `NotFoundError` e `NotReadableError`.
 7. Testar sozinho numa máquina: duas janelas no mesmo PC funcionam, mas dá microfonia sem fone.
+8. Trocou de fone e não ouve nada: a saída salva pode ser um aparelho desconectado; volte para "Padrão do
+   sistema" em Configurações de voz. Alguém baixinho ou mudo: botão direito na pessoa e confira o volume e o
+   "Silenciar" (ficam salvos por conta, neste computador; o ícone de alto-falante cortado indica silenciado por você).

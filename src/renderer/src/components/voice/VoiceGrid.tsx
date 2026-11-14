@@ -1,10 +1,11 @@
 // Grade da sala de voz: participantes e, quando alguém compartilha, a tela em destaque.
 import { useState } from 'react'
-import { HeadphoneOff, MicOff } from 'lucide-react'
+import { HeadphoneOff, MicOff, VolumeX } from 'lucide-react'
 import type { VoiceState } from '@shared/types'
 import { UserAvatar } from '@/components/UserAvatar'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
+import { MemberContextMenu } from './MemberContextMenu'
 import { LiveBadge, ScreenTile } from './ScreenTile'
 
 export function VoiceGrid({ members }: { members: VoiceState[] }) {
@@ -46,26 +47,30 @@ export function ParticipantTile({ state, compact = false }: { state: VoiceState;
   const user = useApp((s) => s.users.find((u) => u.id === state.userId))
   const speaking = useApp((s) => !!s.speaking[state.userId])
   const isSelf = useApp((s) => s.self?.id === state.userId)
+  const mutedByMe = useApp((s) => !!user && !!s.userMuted[user.accountId])
   if (!user) return null
 
   return (
-    <div
-      className={cn(
-        'relative flex aspect-video items-center justify-center rounded-lg bg-background ring-2 ring-transparent transition-shadow',
-        speaking && 'ring-success'
-      )}
-    >
-      <UserAvatar user={user} size={compact ? 'lg' : 'xl'} />
-      {state.sharing && <LiveBadge className="absolute top-2 right-2" />}
-      <div className="absolute bottom-2 left-2 flex max-w-[calc(100%-1rem)] items-center gap-1.5 rounded-md bg-black/50 px-2 py-0.5 text-sm text-white">
-        {state.deafened ? (
-          <HeadphoneOff className="size-3.5 shrink-0 text-destructive" />
-        ) : state.muted ? (
-          <MicOff className="size-3.5 shrink-0 text-destructive" />
-        ) : null}
-        <span className="truncate">{user.name}</span>
-        {isSelf && <span className="text-white/60">(você)</span>}
+    <MemberContextMenu userId={state.userId}>
+      <div
+        className={cn(
+          'relative flex aspect-video items-center justify-center rounded-lg bg-background ring-2 ring-transparent transition-shadow',
+          speaking && 'ring-success'
+        )}
+      >
+        <UserAvatar user={user} size={compact ? 'lg' : 'xl'} />
+        {state.sharing && <LiveBadge className="absolute top-2 right-2" />}
+        <div className="absolute bottom-2 left-2 flex max-w-[calc(100%-1rem)] items-center gap-1.5 rounded-md bg-black/50 px-2 py-0.5 text-sm text-white">
+          {state.deafened ? (
+            <HeadphoneOff className="size-3.5 shrink-0 text-destructive" />
+          ) : state.muted ? (
+            <MicOff className="size-3.5 shrink-0 text-destructive" />
+          ) : null}
+          {mutedByMe && <VolumeX className="size-3.5 shrink-0 text-destructive" aria-label="Silenciado por você" />}
+          <span className="truncate">{user.name}</span>
+          {isSelf && <span className="text-white/60">(você)</span>}
+        </div>
       </div>
-    </div>
+    </MemberContextMenu>
   )
 }

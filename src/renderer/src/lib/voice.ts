@@ -11,6 +11,10 @@
  * escolhida antes no ScreenPicker; ver src/main/screen-share.ts). As telas dos outros
  * (e a própria, como prévia) ficam em `store.screens`; a UI liga cada uma num <video>
  * com `attachScreen`.
+ *
+ * Dispositivos (B4): microfone e saída escolhidos (`setInputDevice`/`setOutputDevice`), volume por pessoa
+ * (`setUserVolume`) e silenciar alguém só para mim (`setUserMuted`, que guarda o volume para quando voltar).
+ * Tudo por conta, porque a identidade muda a cada conexão.
  */
 import {
   createLocalAudioTrack,
@@ -35,21 +39,27 @@ const SCREEN_CAPTURE = { resolution: { width: 1920, height: 1080, frameRate: 15 
 
 /** O que o VoiceClient usa de fora; os testes trocam por versões falsas. */
 export interface VoiceDeps {
-  createRoom: () => Room
-  createMicTrack: () => Promise<LocalAudioTrack>
+  createRoom: (opts: { outputDeviceId: string | null }) => Room
+  /** `deviceId` null = microfone padrão do sistema */
+  createMicTrack: (deviceId: string | null) => Promise<LocalAudioTrack>
+  listDevices: (kind: 'audioinput' | 'audiooutput') => Promise<MediaDeviceInfo[]>
 }
 
 const defaultDeps: VoiceDeps = {
-  createRoom: () =>
+  createRoom: ({ outputDeviceId }) =>
     new Room({
       audioCaptureDefaults: AUDIO_CAPTURE,
+      // Saída escolhida (B4): vale para todo áudio que chegar nesta sala.
+      audioOutput: outputDeviceId ? { deviceId: outputDeviceId } : undefined,
       // DTX economiza banda no silêncio; RED deixa o áudio mais resistente a perda de pacotes.
       publishDefaults: { dtx: true, red: true },
       // Para a tela (B3): só recebe a resolução que está sendo exibida.
       adaptiveStream: true,
       dynacast: true
     }),
-  createMicTrack: () => createLocalAudioTrack(AUDIO_CAPTURE)
+  createMicTrack: (deviceId) => createLocalAudioTrack(deviceId ? { ...AUDIO_CAPTURE, deviceId } : AUDIO_CAPTURE),
+  // false = não pede permissão só para listar (sem permissão, os nomes vêm vazios).
+  listDevices: (kind) => Room.getLocalDevices(kind, false)
 }
 
 /** Traduz o motivo de desconexão do LiveKit para uma frase da interface. */
@@ -77,13 +87,27 @@ export class VoiceClient {
   private activeSpeakers: string[] = []
   /** identidade → faixa de vídeo da tela (remota ou a própria, como prévia) */
   private screens = new Map<string, Track>()
+  /** dispositivos escolhidos (null = padrão do sistema) */
+  private inputDeviceId: string | null = null
+  private outputDeviceId: string | null = null
+  /** volume (0 a 1) por conta; quem não está aqui fica em 100% */
+  private volumes = new Map<string, number>()
+  /** contas silenciadas por mim (o volume delas continua guardado em `volumes`) */
+  private mutedUsers = new Set<string>()
+  /** faixa do microfone de cada pessoa → conta dela (para aplicar o volume) */
+  private voices = new Map<RemoteTrack, string>()
 
   /** Chamado quando a sala cai sem a pessoa ter pedido (removida, servidor de voz fora do ar...). */
   onUnexpectedDisconnect: ((message: string) => void) | null = null
   /** Chamado quando a própria tela para sem ser pelo app (janela fechada, "parar" do sistema...). */
   onScreenShareEnded: (() => void) | null = null
 
-  constructor(private readonly deps: VoiceDeps = defaultDeps) {}
+  private readonly deps: VoiceDeps
+
+  /** Cada dependência pode ser trocada (testes); o que faltar usa a de verdade. */
+  constructor(deps: Partial<VoiceDeps> = {}) {
+    this.deps = { ...defaultDeps, ...deps }
+  }
 
   setSocket(socket: AppSocket | null): void {
     this.socket = socket
@@ -103,7 +127,7 @@ export class VoiceClient {
     let mic: LocalAudioTrack | null = null
     let micError: unknown = null
     try {
-      mic = await this.deps.createMicTrack()
+      mic = await this.openMic()
       if (this.muted) await mic.mute()
     } catch (err) {
       micError = err
@@ -123,7 +147,7 @@ export class VoiceClient {
       throw new Error(res.error)
     }
 
-    const room = this.deps.createRoom()
+    const room = this.deps.createRoom({ outputDeviceId: this.outputDeviceId })
     this.room = room
     this.mic = mic
     this.bindRoom(room)
@@ -159,6 +183,7 @@ export class VoiceClient {
     }
     for (const track of this.remoteAudio) track.detach().forEach((el) => el.remove())
     this.remoteAudio.clear()
+    this.voices.clear()
     this.mic?.stop()
     this.mic = null
     this.activeSpeakers = []
@@ -177,6 +202,55 @@ export class VoiceClient {
     this.deafened = deafened
     for (const track of this.remoteAudio) track.attachedElements.forEach((el) => (el.muted = deafened))
     this.publishSpeaking()
+  }
+
+  // ---------- dispositivos ----------
+
+  listDevices(kind: 'audioinput' | 'audiooutput'): Promise<MediaDeviceInfo[]> {
+    return this.deps.listDevices(kind)
+  }
+
+  /** Troca o microfone (na hora, se estiver numa sala; senão vale para a próxima entrada). */
+  async setInputDevice(deviceId: string | null): Promise<void> {
+    this.inputDeviceId = deviceId
+    if (this.room && this.mic) await this.room.switchActiveDevice('audioinput', deviceId ?? 'default')
+  }
+
+  /** Troca a saída de áudio (alto-falante/fone) de tudo que toca na sala. */
+  async setOutputDevice(deviceId: string | null): Promise<void> {
+    this.outputDeviceId = deviceId
+    if (this.room) await this.room.switchActiveDevice('audiooutput', deviceId ?? 'default')
+  }
+
+  /** Volume da voz de uma pessoa (0 a 1), por conta. */
+  setUserVolume(accountId: string, volume: number): void {
+    const v = Math.min(1, Math.max(0, Number.isFinite(volume) ? volume : 1))
+    if (v === 1) this.volumes.delete(accountId)
+    else this.volumes.set(accountId, v)
+    for (const [track, owner] of this.voices) if (owner === accountId) this.applyVolume(track, owner)
+  }
+
+  /** Silencia (ou volta) a voz de uma pessoa só para mim, sem perder o volume ajustado. */
+  setUserMuted(accountId: string, muted: boolean): void {
+    if (muted) this.mutedUsers.add(accountId)
+    else this.mutedUsers.delete(accountId)
+    for (const [track, owner] of this.voices) if (owner === accountId) this.applyVolume(track, owner)
+  }
+
+  /** Abre o microfone escolhido; se ele sumiu (desconectado), cai para o padrão do sistema. */
+  private async openMic(): Promise<LocalAudioTrack> {
+    if (!this.inputDeviceId) return this.deps.createMicTrack(null)
+    try {
+      return await this.deps.createMicTrack(this.inputDeviceId)
+    } catch (err) {
+      console.warn('[voz] microfone escolhido indisponível, usando o padrão:', err)
+      return this.deps.createMicTrack(null)
+    }
+  }
+
+  private applyVolume(track: RemoteTrack, accountId: string): void {
+    const volume = this.mutedUsers.has(accountId) ? 0 : (this.volumes.get(accountId) ?? 1)
+    ;(track as RemoteTrack & { setVolume?: (v: number) => void }).setVolume?.(volume)
   }
 
   // ---------- tela ----------
@@ -213,9 +287,15 @@ export class VoiceClient {
         const el = track.attach()
         el.muted = this.deafened
         this.remoteAudio.add(track)
+        const accountId = participant?.attributes?.accountId
+        if (track.source === Track.Source.Microphone && accountId) {
+          this.voices.set(track, accountId)
+          this.applyVolume(track, accountId)
+        }
       })
       .on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack, _pub: RemoteTrackPublication, participant: Participant) => {
         if (track.kind === Track.Kind.Video) return this.removeScreen(participant.identity, track)
+        this.voices.delete(track)
         if (!this.remoteAudio.delete(track)) return
         track.detach().forEach((el) => el.remove())
       })
