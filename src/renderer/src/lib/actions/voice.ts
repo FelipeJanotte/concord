@@ -52,7 +52,9 @@ export async function joinVoice(channelId: string): Promise<void> {
   if (st.myVoiceChannelId === channelId || st.joiningVoice) return
   set({ joiningVoice: true })
   try {
-    const { micError } = await voice.join(channelId)
+    const { micError, cancelled } = await voice.join(channelId)
+    // Interrompida no meio (saiu, trocou de sala, conexão caiu): não grava a sala.
+    if (cancelled) return
     // Trocar de sala encerra a tela (o servidor também zera o "ao vivo").
     set({ myVoiceChannelId: channelId, noMic: micError !== null, sharing: false, screenPickerOpen: false })
     enteredVoiceRoom(channelId)
@@ -60,6 +62,12 @@ export async function joinVoice(channelId: string): Promise<void> {
       notify(`${describeMediaError(micError)} Você entrou só para ouvir.`, 'info')
     }
   } catch (err) {
+    // Troca recusada pelo servidor: a sala antiga continua de pé e o estado também.
+    // Falha depois de aceita (LiveKit fora do ar): o VoiceClient já saiu de tudo; o estado acompanha.
+    if (!voice.inRoom && get().myVoiceChannelId) {
+      set({ ...OUT_OF_VOICE })
+      leftVoiceRoom()
+    }
     notify(describeMediaError(err))
   } finally {
     set({ joiningVoice: false })
