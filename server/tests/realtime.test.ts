@@ -1,4 +1,4 @@
-// Eventos Socket.IO: presença, canais, mensagens, "digitando", voz e perfil.
+// Eventos Socket.IO: presença, canais, mensagens, "digitando" e perfil. Voz: tests/voice.test.ts.
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import type { Channel } from '../../src/shared/types'
 import { expectNoEvent, TestServer, uniqueCredentials, waitFor, type ClientSocket, type TestUser } from './helpers'
@@ -120,7 +120,7 @@ describe('canais', () => {
     })
   })
 
-  it('apagar canal remove mensagens, tira todos da voz e avisa', async () => {
+  it('apagar canal remove mensagens e avisa (a parte da voz fica em voice.test.ts)', async () => {
     const a = await user()
     const b = await user()
     const text = await newChannel(a, 'text')
@@ -131,12 +131,6 @@ describe('canais', () => {
     a.socket.emit('channel:delete', text.id)
     await deleted
     expect(await b.socket.emitWithAck('message:history', text.id)).toEqual([])
-
-    const voice = await newChannel(a, 'voice')
-    await b.socket.emitWithAck('voice:join', { channelId: voice.id, muted: false, deafened: false })
-    const cleared = waitFor(a.socket, 'voice:state', (states) => !states.some((v) => v.channelId === voice.id))
-    a.socket.emit('channel:delete', voice.id)
-    await cleared
   })
 
   it('apagar canal inexistente não faz nada', async () => {
@@ -198,103 +192,6 @@ describe('mensagens', () => {
     a.socket.emit('typing', ch.id)
     expect((await typing)[0]).toEqual({ channelId: ch.id, userId: a.socket.id, name: 'Digitador' })
     await notMe
-  })
-})
-
-describe('voz', () => {
-  it('quem entra recebe os peers que já estavam na sala', async () => {
-    const a = await user()
-    const b = await user()
-    const ch = await newChannel(a, 'voice')
-    expect(await a.socket.emitWithAck('voice:join', { channelId: ch.id, muted: false, deafened: false })).toEqual({
-      ok: true,
-      peers: []
-    })
-    const state = waitFor(a.socket, 'voice:state', (s) => s.some((v) => v.userId === b.socket.id))
-    expect(await b.socket.emitWithAck('voice:join', { channelId: ch.id, muted: true, deafened: false })).toEqual({
-      ok: true,
-      peers: [a.socket.id]
-    })
-    const [states] = await state
-    expect(states.find((v) => v.userId === b.socket.id)).toEqual({
-      userId: b.socket.id,
-      channelId: ch.id,
-      muted: true,
-      deafened: false
-    })
-  })
-
-  it('recusa canal de texto e canal inexistente', async () => {
-    const a = await user()
-    const text = await newChannel(a, 'text')
-    expect(await a.socket.emitWithAck('voice:join', { channelId: text.id, muted: false, deafened: false })).toEqual({
-      ok: false,
-      error: 'Canal de voz não encontrado'
-    })
-    expect(await a.socket.emitWithAck('voice:join', { channelId: 'x', muted: false, deafened: false })).toMatchObject({
-      ok: false
-    })
-  })
-
-  it('repassa sinalização só dentro da mesma sala', async () => {
-    const a = await user()
-    const b = await user()
-    const c = await user()
-    const room1 = await newChannel(a, 'voice')
-    const room2 = await newChannel(a, 'voice')
-    await a.socket.emitWithAck('voice:join', { channelId: room1.id, muted: false, deafened: false })
-    await b.socket.emitWithAck('voice:join', { channelId: room1.id, muted: false, deafened: false })
-    await c.socket.emitWithAck('voice:join', { channelId: room2.id, muted: false, deafened: false })
-
-    const got = waitFor(a.socket, 'voice:signal')
-    b.socket.emit('voice:signal', { to: a.socket.id!, data: { type: 'offer', sdp: 'sdp-b' } })
-    expect((await got)[0]).toEqual({ from: b.socket.id, data: { type: 'offer', sdp: 'sdp-b' } })
-
-    const blocked = expectNoEvent(a.socket, 'voice:signal')
-    c.socket.emit('voice:signal', { to: a.socket.id!, data: { type: 'offer', sdp: 'sdp-c' } })
-    await blocked
-  })
-
-  it('voice:update muda mute/deafen para todos', async () => {
-    const a = await user()
-    const b = await user()
-    const ch = await newChannel(a, 'voice')
-    await a.socket.emitWithAck('voice:join', { channelId: ch.id, muted: false, deafened: false })
-    const updated = waitFor(b.socket, 'voice:state', (s) =>
-      s.some((v) => v.userId === a.socket.id && v.muted && v.deafened)
-    )
-    a.socket.emit('voice:update', { muted: true, deafened: true })
-    await updated
-  })
-
-  it('trocar de sala sai da anterior', async () => {
-    const a = await user()
-    const b = await user()
-    const room1 = await newChannel(a, 'voice')
-    const room2 = await newChannel(a, 'voice')
-    await b.socket.emitWithAck('voice:join', { channelId: room1.id, muted: false, deafened: false })
-    await a.socket.emitWithAck('voice:join', { channelId: room1.id, muted: false, deafened: false })
-    const left = waitFor(b.socket, 'voice:peer-left', (id) => id === a.socket.id)
-    await a.socket.emitWithAck('voice:join', { channelId: room2.id, muted: false, deafened: false })
-    await left
-  })
-
-  it('sair (voice:leave ou desconectar) avisa a sala', async () => {
-    const a = await user()
-    const b = await user()
-    const ch = await newChannel(a, 'voice')
-    await a.socket.emitWithAck('voice:join', { channelId: ch.id, muted: false, deafened: false })
-    await b.socket.emitWithAck('voice:join', { channelId: ch.id, muted: false, deafened: false })
-
-    const leave = waitFor(a.socket, 'voice:peer-left', (id) => id === b.socket.id)
-    b.socket.emit('voice:leave')
-    await leave
-
-    await b.socket.emitWithAck('voice:join', { channelId: ch.id, muted: false, deafened: false })
-    const bId = b.socket.id
-    const gone = waitFor(a.socket, 'voice:state', (s) => !s.some((v) => v.userId === bId))
-    b.socket.close()
-    await gone
   })
 })
 

@@ -15,8 +15,10 @@ description: Visão completa da arquitetura do Concord (clone do Discord em Elec
 │   components ──lê──> store/ (zustand, slices)         │  + WS  │ repo/<dominio>.ts: dados (async) │
 │        └──chama──> lib/client.ts ──fetch/socket────────┼───────>│   └─> db.ts (db.json)            │
 │                     └ lib/actions/<dominio>.ts         │        │ memória: users (context), voice  │
-│                        └──> lib/voice.ts (WebRTC) ◄────┼─ P2P ─►│ (áudio NÃO passa pelo servidor)  │
-└───────────────────────────────────────────────────────┘        └──────────────────────────────────┘
+│                        └──> lib/voice.ts ──────────────┼─┐      │ livekit.ts: token + kick da sala │
+└───────────────────────────────────────────────────────┘ │      └──────────────┬───────────────────┘
+                                                          │ áudio (WebRTC)    │ API (Twirp)
+                                                          └──────► LiveKit ◄───┘  (docker compose, SFU)
 ```
 
 ## Organização por domínio
@@ -66,14 +68,13 @@ Cliente → servidor (`ClientToServerEvents`):
 | `channel:delete` | `channelId` | — | apaga o canal e as mensagens, tira todo mundo da sala de voz; `channel:deleted` + `voice:state` |
 | `message:history` | `channelId` | `Message[]` | últimas 500 mensagens |
 | `message:send` | `{ channelId, content }` | — | valida (canal de texto, até 2000 caracteres); `message:new` para todos |
-| `voice:join` | `{ channelId, muted, deafened }` | `JoinVoiceResult` (`peers`) | sai da sala anterior, entra na nova, devolve quem já estava lá |
-| `voice:leave` | — | — | `voice:peer-left` para a sala + `voice:state` |
+| `voice:join` | `{ channelId, muted, deafened }` | `JoinVoiceResult` (`url`, `token` do LiveKit) | exige LiveKit configurado; sai da sala anterior (também no LiveKit), entra na nova; `voice:state` |
+| `voice:leave` | — | — | tira da sala no LiveKit (`RemoveParticipant`) + `voice:state` |
 | `voice:update` | `{ muted, deafened }` | — | `voice:state` |
-| `voice:signal` | `{ to, data: SignalData }` | — | repassa só se os dois estiverem na mesma sala |
 | `typing` | `channelId` | — | broadcast `typing` (o cliente limita a 1 envio a cada 2,5 s) |
 
 Servidor → cliente (`ServerToClientEvents`): `channel:created`, `channel:deleted`, `user:joined`, `user:left`,
-`user:updated` (por `accountId`), `message:new`, `voice:state` (sempre a **lista completa**), `voice:signal`, `voice:peer-left`, `typing`.
+`user:updated` (por `accountId`), `message:new`, `voice:state` (sempre a **lista completa**), `typing`.
 
 ## Estado do renderer (`store/`)
 
@@ -105,4 +106,4 @@ Servidor → cliente (`ServerToClientEvents`): `channel:created`, `channel:delet
 - Contas com e-mail+senha ou Google, mas sem papéis: qualquer pessoa logada exclui qualquer canal. Sem recuperação de senha.
 - Um único "servidor/comunidade" (a barra da esquerda é decorativa).
 - Persistência num arquivo JSON, salvo com 500 ms de atraso, atrás do `server/repo/`. A troca por Postgres é a task A1 do `docs/ROADMAP.md`.
-- A voz em malha aguenta bem até umas 8 pessoas por sala (ver `concord-voice`).
+- A voz depende do LiveKit rodando (`docker compose up -d`); sem ele, `voice:join` falha (ver `concord-voice`).

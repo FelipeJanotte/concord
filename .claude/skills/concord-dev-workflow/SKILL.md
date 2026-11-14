@@ -56,8 +56,9 @@ docker compose down -v   # para e APAGA o banco (recria concord_test na próxima
 - **Voz pela rede local:** o LiveKit anuncia o IP de `LIVEKIT_NODE_IP` (padrão `127.0.0.1`, só funciona na mesma
   máquina). Crie um `.env` na raiz com `LIVEKIT_NODE_IP=192.168.x.x`, rode `docker compose up -d` de novo, troque
   `LIVEKIT_URL` no `server/.env` para `ws://192.168.x.x:7880` e libere 7880–7881/TCP e 7882/UDP no firewall.
-- Até as tasks A1 (Postgres) e B1 (LiveKit) entrarem, o servidor ainda usa `server/data/db.json` e a voz P2P; o
-  compose pode ficar desligado.
+- **A voz precisa do LiveKit rodando** (`docker compose up -d` + `LIVEKIT_*` em `server/.env`). Sem ele, o servidor
+  mostra `Voz (LiveKit): desativada` ou o app avisa "Não foi possível conectar ao servidor de voz"; texto e contas
+  funcionam normalmente.
 
 ## Testes (vitest)
 

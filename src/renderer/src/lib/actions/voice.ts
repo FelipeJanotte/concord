@@ -1,11 +1,15 @@
-// Entrar/sair da sala de voz, mute e deafen. A parte WebRTC fica em `lib/voice.ts`.
+// Entrar/sair da sala de voz, mute e deafen. A conexão com o LiveKit fica em `lib/voice.ts`.
 import { get, getSocket, notify, set, type AppSocket } from '../core'
 import { voice } from '../voice'
 
+// A sala do LiveKit caiu sem a pessoa pedir (removida, sala encerrada, servidor de voz fora do ar).
+voice.onUnexpectedDisconnect = (message) => {
+  set({ myVoiceChannelId: null, speaking: {}, noMic: false })
+  notify(message)
+}
+
 export function bindVoiceEvents(s: AppSocket): void {
   s.on('voice:state', (states) => set({ voice: states }))
-  s.on('voice:signal', (payload) => void voice.handleSignal(payload))
-  s.on('voice:peer-left', (userId) => voice.removePeer(userId))
 }
 
 function describeMediaError(err: unknown): string {
