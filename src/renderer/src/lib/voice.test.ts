@@ -805,3 +805,72 @@ describe('revisão do #9: entrada cancelada e troca de sala que falha', () => {
     expect(dropped).toHaveBeenCalled()
   })
 })
+
+describe('bug: trocar de sala aparecia "removido" e não entrava', () => {
+  /** O servidor, ao aceitar a sala nova, tira a pessoa da antiga no LiveKit antes de responder. */
+  function kickOldRoomOnJoin(oldRoom: () => FakeRoom): void {
+    socket.replyTo('voice:join', () => {
+      oldRoom().fire(RoomEvent.Disconnected, DisconnectReason.PARTICIPANT_REMOVED)
+      return CREDS
+    })
+  }
+
+  it('o "removido" da sala antiga durante a troca é esperado: entra na nova, sem aviso e sem voice:leave', async () => {
+    const dropped = vi.fn()
+    client.onUnexpectedDisconnect = dropped
+    await client.join('sala-1')
+    const first = lastRoom()
+    kickOldRoomOnJoin(() => first)
+    const res = await client.join('sala-2')
+    expect(res).toMatchObject({ cancelled: false })
+    expect(dropped).not.toHaveBeenCalled()
+    expect(socket.sent('voice:leave')).toHaveLength(0)
+    expect(rooms).toHaveLength(2)
+    expect(lastRoom().connect).toHaveBeenCalled()
+    expect(client.inRoom).toBe(true)
+  })
+
+  it('o kick chegando depois da resposta (já fechada a antiga) também não atrapalha', async () => {
+    const dropped = vi.fn()
+    client.onUnexpectedDisconnect = dropped
+    await client.join('sala-1')
+    const first = lastRoom()
+    const handlers = first.listeners.get(RoomEvent.Disconnected) ?? []
+    await client.join('sala-2')
+    for (const fn of handlers) fn(DisconnectReason.PARTICIPANT_REMOVED)
+    expect(dropped).not.toHaveBeenCalled()
+    expect(client.inRoom).toBe(true)
+  })
+
+  it('troca recusada e a sala antiga caiu no meio: aí sim é queda (sai e avisa)', async () => {
+    const dropped = vi.fn()
+    client.onUnexpectedDisconnect = dropped
+    await client.join('sala-1')
+    const first = lastRoom()
+    socket.replyTo('voice:join', () => {
+      first.fire(RoomEvent.Disconnected, DisconnectReason.UNKNOWN_REASON)
+      return { ok: false, error: 'Canal de voz não encontrado' }
+    })
+    await expect(client.join('sala-2')).rejects.toThrow('Canal de voz não encontrado')
+    expect(dropped).toHaveBeenCalledWith('A conexão com o servidor de voz caiu.')
+    expect(client.inRoom).toBe(false)
+  })
+
+  it('troca recusada sem queda: continua na antiga', async () => {
+    const dropped = vi.fn()
+    client.onUnexpectedDisconnect = dropped
+    await client.join('sala-1')
+    socket.replyTo('voice:join', () => ({ ok: false, error: 'Canal de voz não encontrado' }))
+    await expect(client.join('sala-2')).rejects.toThrow()
+    expect(dropped).not.toHaveBeenCalled()
+    expect(client.inRoom).toBe(true)
+  })
+
+  it('fora de uma troca, ser removido continua avisando', async () => {
+    const dropped = vi.fn()
+    client.onUnexpectedDisconnect = dropped
+    await client.join('sala-1')
+    lastRoom().fire(RoomEvent.Disconnected, DisconnectReason.PARTICIPANT_REMOVED)
+    expect(dropped).toHaveBeenCalledWith('Você foi removido da sala de voz.')
+  })
+})
