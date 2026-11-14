@@ -61,6 +61,14 @@ describe('limites por conta', () => {
     expect(!res.ok && res.error).toMatch(/^Muitos canais criados seguidos\. Tente de novo em \d+ s\.$/)
   })
 
+  it('sorteio de times: 5 seguidos; o 6º recebe erro com o tempo de espera', async () => {
+    const geral = a.state.channels.find((c) => c.type === 'text')!
+    const req = { channelId: geral.id, players: [{ name: 'Ana' }, { name: 'Bia' }], teamCount: 2 }
+    for (let i = 0; i < 5; i++) expect((await b.socket.emitWithAck('tools:teams', req)).ok).toBe(true)
+    const res = await b.socket.emitWithAck('tools:teams', req)
+    expect(!res.ok && res.error).toMatch(/^Muitos sorteios seguidos\. Tente de novo em \d+ s\.$/)
+  })
+
   it('perfil: 10 alterações seguidas; a 11ª é recusada', async () => {
     for (let i = 0; i < 10; i++) expect((await a.socket.emitWithAck('account:update', { name: `Nome ${i}` })).ok).toBe(true)
     const res = await a.socket.emitWithAck('account:update', { name: 'Nome 11' })

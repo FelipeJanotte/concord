@@ -1,8 +1,12 @@
 // Mensagens dos canais de texto e "digitando".
 import type { User } from './account'
 import type { Attachment } from './attachment'
+import type { ToolPayload } from './tools'
 
 export const MESSAGE_MAX_LENGTH = 2000
+
+/** `text` = escrita por alguém; `tool` = resultado de uma ferramenta do grupo (v4, `tool` preenchido). */
+export type MessageKind = 'text' | 'tool'
 /** Quantas mensagens vêm por página do histórico. */
 export const HISTORY_PAGE_SIZE = 50
 
@@ -19,6 +23,10 @@ export interface Message {
   /** na ordem em que foram enviados */
   attachments: Attachment[]
   createdAt: number
+  /** ausente = `text` (mensagens antigas e de quem ainda não conhece a v4) */
+  kind?: MessageKind
+  /** só em `kind: 'tool'`: o resultado tipado (o `content` traz o mesmo por extenso) */
+  tool?: ToolPayload
 }
 
 /** `message:send`: texto e/ou anexos já enviados por `POST /uploads` (do próprio usuário, ainda não usados). */
