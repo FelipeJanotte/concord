@@ -1,7 +1,7 @@
 /**
  * Servidor do Concord: contas (HTTP), canais e mensagens, lista de usuários
- * online e sinalização WebRTC dos canais de voz (o áudio em si vai direto de
- * um usuário para o outro, peer-to-peer).
+ * online e salas de voz (o áudio e a tela passam pelo LiveKit; aqui só sai o
+ * token de acesso e a lista de quem está em cada sala).
  *
  *   npm run server          (com recarregamento automático)
  *   PORT=4000 npm run server
@@ -18,6 +18,7 @@ import { users, type AppServer, type ServerModule } from './context'
 import { closeDatabase, databaseConfigFromEnv, describeDatabase, openDatabase } from './db/client'
 import { ensureInitialData } from './db/seed'
 import { sendJson } from './http'
+import { liveKitConfig } from './livekit'
 import { accountsModule } from './modules/accounts'
 import { backupModule } from './modules/backup'
 import { channelsModule } from './modules/channels'
@@ -122,6 +123,7 @@ async function main(): Promise<void> {
     }
   }
   console.log(`  Banco: ${describeDatabase()}`)
+  console.log(`  Voz (LiveKit): ${liveKitConfig ? liveKitConfig.url : 'desativada (configure LIVEKIT_* em server/.env)'}`)
   console.log(`  Login com Google: ${GOOGLE_CLIENT_ID ? 'ativado' : 'desativado (configure server/.env)'}`)
   console.log('')
 }

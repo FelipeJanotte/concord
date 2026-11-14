@@ -1,14 +1,18 @@
 // Cargos e permissões de ponta a ponta (A4): o servidor real bloqueia e só entrega o que cada um pode ver.
+import { TokenVerifier } from 'livekit-server-sdk'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { EVERYONE_ROLE_ID, type ChannelPermission, type Role } from '../../src/shared/types'
+import { FakeLiveKit, LIVEKIT_API_KEY, LIVEKIT_API_SECRET, liveKitEnv } from './fake-livekit'
 import { expectNoEvent, TestServer, waitFor, type ClientSocket, type TestUser } from './helpers'
 
 let server: TestServer
 let owner: TestUser
 const open: ClientSocket[] = []
+const livekit = new FakeLiveKit()
+const verifier = new TokenVerifier(LIVEKIT_API_KEY, LIVEKIT_API_SECRET)
 
 beforeAll(async () => {
-  server = await TestServer.start()
+  server = await TestServer.start({ env: liveKitEnv(await livekit.start()) })
   owner = await server.asOwner()
 })
 
@@ -25,6 +29,7 @@ afterEach(async () => {
 
 afterAll(async () => {
   await server?.destroy()
+  await livekit.stop()
 })
 
 async function user(name?: string): Promise<TestUser> {
@@ -115,6 +120,65 @@ describe('o que cada um recebe (revisão do Dev B)', () => {
     )
     b.socket.emit('voice:update', { muted: false, deafened: true }) // tenta se dessilenciar
     await stillMuted
+    b.socket.emit('voice:leave')
+  })
+})
+
+describe('LiveKit: o que a pessoa pode publicar', () => {
+  it('o token só libera microfone com "falar" e tela com "compartilhar"', async () => {
+    const b = await user()
+    const room = await server.createChannel('Só tela', 'voice')
+    await overrides(room.id, [{ roleId: EVERYONE_ROLE_ID, deny: ['speak'] }])
+    const res = await b.socket.emitWithAck('voice:join', { channelId: room.id, muted: false, deafened: false })
+    if (!res.ok) throw new Error(res.error)
+    const claims = await verifier.verify(res.token)
+    expect(claims.video?.canPublishSources).toEqual(['screen_share', 'screen_share_audio'])
+    expect(claims.video?.canPublish).toBe(true)
+    b.socket.emit('voice:leave')
+
+    const mute = await server.createChannel('Plateia', 'voice')
+    await overrides(mute.id, [{ roleId: EVERYONE_ROLE_ID, deny: ['speak', 'share'] }])
+    const res2 = await b.socket.emitWithAck('voice:join', { channelId: mute.id, muted: false, deafened: false })
+    if (!res2.ok) throw new Error(res2.error)
+    expect((await verifier.verify(res2.token)).video).toMatchObject({ canPublish: false, canPublishSources: [] })
+    b.socket.emit('voice:leave')
+  })
+
+  it('perder "falar" com a pessoa na sala: LiveKit atualizado na hora e ela fica silenciada', async () => {
+    const b = await user()
+    const room = await server.createChannel('Debate', 'voice')
+    const joined = await b.socket.emitWithAck('voice:join', { channelId: room.id, muted: false, deafened: false })
+    expect(joined).toMatchObject({ ok: true, canSpeak: true })
+
+    const muted = waitFor(owner.socket, 'voice:state', (s) => s.some((v) => v.userId === b.socket.id && v.muted))
+    await overrides(room.id, [{ roleId: EVERYONE_ROLE_ID, deny: ['speak'] }])
+    const call = await livekit.waitCall('UpdateParticipant', (body) => body.identity === b.socket.id)
+    expect(call.body).toMatchObject({
+      room: room.id,
+      permission: { canPublishSources: ['SCREEN_SHARE', 'SCREEN_SHARE_AUDIO'] }
+    })
+    await muted
+    b.socket.emit('voice:leave')
+  })
+
+  it('perder "entrar" com a pessoa na sala: sai também do LiveKit', async () => {
+    const b = await user()
+    const room = await server.createChannel('Fechando', 'voice')
+    await b.socket.emitWithAck('voice:join', { channelId: room.id, muted: false, deafened: false })
+    await overrides(room.id, [{ roleId: EVERYONE_ROLE_ID, deny: ['connect'] }])
+    const call = await livekit.waitCall('RemoveParticipant', (body) => body.identity === b.socket.id)
+    expect(call.body).toMatchObject({ room: room.id })
+  })
+
+  it('mudança que não afeta a sala não chama o LiveKit', async () => {
+    const b = await user()
+    const room = await server.createChannel('Tranquila', 'voice')
+    await b.socket.emitWithAck('voice:join', { channelId: room.id, muted: false, deafened: false })
+    const before = livekit.calls.filter((c) => c.method === 'UpdateParticipant' && c.body.identity === b.socket.id).length
+    await createRole(owner, 'Irrelevante')
+    await new Promise((r) => setTimeout(r, 200))
+    const after = livekit.calls.filter((c) => c.method === 'UpdateParticipant' && c.body.identity === b.socket.id).length
+    expect(after).toBe(before)
     b.socket.emit('voice:leave')
   })
 })

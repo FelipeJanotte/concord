@@ -1,6 +1,6 @@
 ---
 name: concord-add-feature
-description: Passo a passo para adicionar uma funcionalidade de ponta a ponta no Concord (tipos em shared/types/<dominio>.ts → módulo do servidor em server/modules + repo → lib/actions → store/<slice> → componente React/shadcn), com exemplo completo e convenções de código. Use ao criar eventos, telas, componentes ou mudar o comportamento do chat.
+description: Passo a passo para adicionar uma funcionalidade de ponta a ponta no Concord (tipos em shared/types/<dominio>.ts → módulo do servidor em server/modules + repo → lib/actions → store/<slice> → componente React/shadcn → testes → skill), com exemplo completo, convenções de código e a definição de pronto. Use ao criar eventos, telas, componentes, módulos ou mudar qualquer comportamento.
 ---
 
 # Adicionando uma funcionalidade
@@ -109,6 +109,47 @@ Mudanças em contas/perfil seguem a skill `concord-accounts`.
 - Seletor que gera array novo → `useApp(useShallow(s => s.voice.filter(...)))`.
 - Textos em português do Brasil.
 
+## Skill da mudança (obrigatória)
+
+Toda tarefa, módulo novo ou alteração só está pronta com a skill em dia (regra 13 e "Definição de pronto" no
+`AGENTS.md`).
+
+- **Área nova** → crie `.claude/skills/concord-<area>/SKILL.md` e acrescente-a em "Skills detalhadas" no `AGENTS.md`.
+  Área pequena que cabe numa skill existente → uma seção nova nela.
+- **Alteração** → atualize as seções afetadas da skill da área no mesmo PR (e a tabela de eventos da
+  `concord-architecture` se mexeu em evento).
+
+Modelo para skill nova:
+
+```markdown
+---
+name: concord-<area>
+description: O que a área faz em uma frase. Use ao mexer em <arquivos principais>, nos eventos <area>:* ou ao investigar <sintomas comuns>.
+---
+
+# <Área>
+
+O que faz e por quê (2–3 linhas).
+
+## Arquivos
+| Arquivo | Papel |
+
+## Contrato
+Tipos e eventos em `shared/types/<dominio>.ts` (payload, ack, quem recebe).
+
+## Fluxo
+O caminho principal, do clique ao servidor e de volta.
+
+## Regras e limites
+Validações, permissões, limites de requisição, o que não é suportado.
+
+## Testes
+Onde estão e o que cobrem; como testar à mão (duas janelas, duas contas).
+
+## Depuração
+Sintoma → causa → como resolver.
+```
+
 ## Checklist antes de terminar
 
 - [ ] O tipo existe em `shared/types/<dominio>.ts` e o servidor valida o payload
@@ -118,4 +159,7 @@ Mudanças em contas/perfil seguem a skill `concord-accounts`.
 - [ ] Funciona depois de reconectar (o `hello` repõe o estado?)
 - [ ] Testes novos (`server/tests/` e/ou `*.test.ts` ao lado do código) cobrindo o caminho feliz e as validações
 - [ ] `npm run typecheck` **e** `npm test` passam por completo
+- [ ] **Skill criada (área nova) ou atualizada (alteração)**, listada no `AGENTS.md` se for nova; eventos na `concord-architecture`
+- [ ] Arquivos novos no "Mapa rápido" do `AGENTS.md`
+- [ ] A descrição do PR diz quais skills foram criadas ou atualizadas
 - [ ] Testado com duas janelas e **duas contas** (ver `concord-dev-workflow`)

@@ -1,39 +1,41 @@
-// Salas de voz e sinalização WebRTC.
+// Salas de voz. O áudio (e, na B3, a tela) passa pelo LiveKit (SFU); o servidor do
+// Concord só valida a entrada, emite o token de acesso e mantém a lista de quem está em cada sala.
 
 export interface VoiceState {
+  /** id da conexão (socket.id). É também a identidade da pessoa na sala do LiveKit. */
   userId: string
   channelId: string
   muted: boolean
   deafened: boolean
+  /** está compartilhando a tela (indicador "ao vivo"; a imagem em si vai pelo LiveKit) */
+  sharing: boolean
 }
 
-export interface IceCandidate {
-  candidate?: string
-  sdpMid?: string | null
-  sdpMLineIndex?: number | null
-  usernameFragment?: string | null
+/** Como conectar na sala do LiveKit (sala = id do canal, identidade = `User.id`). */
+export interface VoiceCredentials {
+  /** endereço WebSocket do LiveKit, ex.: `ws://192.168.0.10:7880` */
+  url: string
+  /** JWT de acesso, válido só para esta sala e esta conexão; usado só para conectar */
+  token: string
 }
-
-export type SignalData =
-  | { type: 'offer'; sdp: string }
-  | { type: 'answer'; sdp: string }
-  | { type: 'candidate'; candidate: IceCandidate }
 
 /**
- * `canSpeak` false: entra só para ouvir (não envia o microfone).
- * `canShare` false: sem compartilhar a tela. O servidor decide pelas permissões do canal.
+ * Permissões da pessoa na sala (v2), decididas pelo servidor; o token do LiveKit já sai com elas.
+ * `canSpeak` false: entra só para ouvir (não publica o microfone).
+ * `canShare` false: não compartilha a tela.
  */
-export type JoinVoiceResult =
-  | { ok: true; peers: string[]; canSpeak: boolean; canShare: boolean }
-  | { ok: false; error: string }
+export interface VoicePermissions {
+  canSpeak: boolean
+  canShare: boolean
+}
+
+export type JoinVoiceResult = ({ ok: true } & VoiceCredentials & VoicePermissions) | { ok: false; error: string }
 
 // ---------- Eventos ----------
 
 export interface VoiceServerEvents {
   /** sempre a lista completa */
   'voice:state': (voice: VoiceState[]) => void
-  'voice:signal': (payload: { from: string; data: SignalData }) => void
-  'voice:peer-left': (userId: string) => void
 }
 
 export interface VoiceClientEvents {
@@ -43,5 +45,6 @@ export interface VoiceClientEvents {
   ) => void
   'voice:leave': () => void
   'voice:update': (payload: { muted: boolean; deafened: boolean }) => void
-  'voice:signal': (payload: { to: string; data: SignalData }) => void
+  /** começou/parou de compartilhar a tela (só vale para quem está numa sala) */
+  'voice:sharing': (sharing: boolean) => void
 }

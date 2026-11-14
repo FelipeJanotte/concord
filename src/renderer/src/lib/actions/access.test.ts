@@ -67,7 +67,7 @@ describe('voice:state sem mim', () => {
   it('o servidor me tirou da sala: sai localmente e avisa', () => {
     const teardown = vi.spyOn(voice, 'teardown').mockImplementation(() => {})
     useApp.setState({ myVoiceChannelId: 'sala' })
-    socket.receive('voice:state', [{ userId: 'outra', channelId: 'sala', muted: false, deafened: false }])
+    socket.receive('voice:state', [{ userId: 'outra', channelId: 'sala', muted: false, deafened: false, sharing: false }])
     expect(teardown).toHaveBeenCalled()
     expect(useApp.getState().myVoiceChannelId).toBeNull()
     expect(useApp.getState().notice?.text).toBe('Você saiu da sala de voz.')
@@ -76,7 +76,7 @@ describe('voice:state sem mim', () => {
   it('comigo na lista, ou ainda entrando, nada muda', () => {
     const teardown = vi.spyOn(voice, 'teardown').mockImplementation(() => {})
     useApp.setState({ myVoiceChannelId: 'sala' })
-    socket.receive('voice:state', [{ userId: me.id, channelId: 'sala', muted: false, deafened: false }])
+    socket.receive('voice:state', [{ userId: me.id, channelId: 'sala', muted: false, deafened: false, sharing: false }])
     useApp.setState({ joiningVoice: true })
     socket.receive('voice:state', [])
     expect(teardown).not.toHaveBeenCalled()

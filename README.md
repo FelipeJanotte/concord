@@ -54,7 +54,7 @@ src/renderer/src/
   store/                      estado global (zustand), um slice por domínio
   lib/client.ts               login, conexão e reexporta as ações
   lib/actions/                ações por domínio (enviar mensagem, criar canal, entrar na voz...)
-  lib/voice.ts                WebRTC em malha + detecção de fala
+  lib/voice.ts                voz via LiveKit (livekit-client) + quem está falando
   components/ui/              componentes shadcn/ui (button, dialog, input, tooltip...)
   components/                 telas e partes do app
 ```
@@ -63,9 +63,10 @@ Para adicionar mais componentes shadcn: `npx shadcn@latest add dropdown-menu` (o
 
 ## Como funciona a voz
 
-Cada pessoa na sala abre uma conexão peer-to-peer com cada outra (malha). O servidor só repassa a
-sinalização (offer/answer/ICE). Isso funciona bem para salas pequenas, até umas 8 pessoas. Para salas
-maiores, o caminho é trocar por um SFU, como LiveKit ou mediasoup.
+O áudio passa pelo [LiveKit](https://livekit.io), um SFU open source que roda localmente com `docker compose up -d`.
+Ao entrar numa sala, o servidor do Concord confere o canal e devolve um token de acesso só para aquela sala; o app
+conecta no LiveKit com esse token. Cada pessoa tem uma conexão só, então salas grandes funcionam. Detalhes na skill
+`concord-voice`.
 
 ## Próximos passos sugeridos
 

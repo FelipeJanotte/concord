@@ -285,7 +285,7 @@ describe('canais', () => {
 
 describe('voz', () => {
   it('voice:state substitui a lista inteira', () => {
-    const states = [{ userId: 'b', channelId: 'voz', muted: true, deafened: false }]
+    const states = [{ userId: 'b', channelId: 'voz', muted: true, deafened: false, sharing: false }]
     socket.receive('voice:state', states)
     expect(useApp.getState().voice).toEqual(states)
     socket.receive('voice:state', [])

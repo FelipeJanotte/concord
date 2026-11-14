@@ -1,13 +1,13 @@
 import type { ReactNode } from 'react'
-import { HeadphoneOff, Headphones, Loader2, Mic, MicOff, PhoneOff, Volume2 } from 'lucide-react'
+import { AudioLines, HeadphoneOff, Headphones, Loader2, Mic, MicOff, MonitorOff, MonitorUp, PhoneOff, Volume2 } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
-import type { VoiceState } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { joinVoice, leaveVoice, toggleDeafen, toggleMute } from '@/lib/client'
+import { joinVoice, leaveVoice, openDeviceSettings, toggleDeafen, toggleMute, toggleScreenShare } from '@/lib/client'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
-import { UserAvatar } from './UserAvatar'
+import { ScreenPicker } from './voice/ScreenPicker'
+import { VoiceGrid } from './voice/VoiceGrid'
 
 export function VoiceView({ channelId }: { channelId: string }) {
   const channel = useApp((s) => s.channels.find((c) => c.id === channelId))
@@ -16,6 +16,7 @@ export function VoiceView({ channelId }: { channelId: string }) {
   const joining = useApp((s) => s.joiningVoice)
   const muted = useApp((s) => s.muted || s.noMic)
   const deafened = useApp((s) => s.deafened)
+  const sharing = useApp((s) => s.sharing)
 
   if (!channel) return null
 
@@ -33,11 +34,7 @@ export function VoiceView({ channelId }: { channelId: string }) {
             <p className="text-muted-foreground">Ninguém está aqui ainda.</p>
           </div>
         ) : (
-          <div className="grid content-center gap-4 [grid-template-columns:repeat(auto-fill,minmax(240px,1fr))]">
-            {members.map((m) => (
-              <ParticipantTile key={m.userId} state={m} />
-            ))}
-          </div>
+          <VoiceGrid members={members} />
         )}
       </div>
 
@@ -50,6 +47,12 @@ export function VoiceView({ channelId }: { channelId: string }) {
             <ControlButton label={deafened ? 'Ativar áudio' : 'Desativar áudio'} onClick={toggleDeafen} off={deafened}>
               {deafened ? <HeadphoneOff /> : <Headphones />}
             </ControlButton>
+            <ControlButton label={sharing ? 'Parar de compartilhar' : 'Compartilhar a tela'} onClick={toggleScreenShare} active={sharing}>
+              {sharing ? <MonitorOff /> : <MonitorUp />}
+            </ControlButton>
+            <ControlButton label="Configurações de voz" onClick={openDeviceSettings}>
+              <AudioLines />
+            </ControlButton>
             <ControlButton label="Desconectar" onClick={leaveVoice} danger>
               <PhoneOff />
             </ControlButton>
@@ -61,33 +64,7 @@ export function VoiceView({ channelId }: { channelId: string }) {
           </Button>
         )}
       </div>
-    </div>
-  )
-}
-
-function ParticipantTile({ state }: { state: VoiceState }) {
-  const user = useApp((s) => s.users.find((u) => u.id === state.userId))
-  const speaking = useApp((s) => !!s.speaking[state.userId])
-  const isSelf = useApp((s) => s.self?.id === state.userId)
-  if (!user) return null
-
-  return (
-    <div
-      className={cn(
-        'relative flex aspect-video items-center justify-center rounded-lg bg-background ring-2 ring-transparent transition-shadow',
-        speaking && 'ring-success'
-      )}
-    >
-      <UserAvatar user={user} size="xl" />
-      <div className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-md bg-black/50 px-2 py-0.5 text-sm text-white">
-        {state.deafened ? (
-          <HeadphoneOff className="size-3.5 text-destructive" />
-        ) : state.muted ? (
-          <MicOff className="size-3.5 text-destructive" />
-        ) : null}
-        {user.name}
-        {isSelf && <span className="text-white/60">(você)</span>}
-      </div>
+      <ScreenPicker />
     </div>
   )
 }
@@ -96,12 +73,15 @@ function ControlButton({
   label,
   onClick,
   off,
+  active,
   danger,
   children
 }: {
   label: string
   onClick: () => void
   off?: boolean
+  /** ligado (ex.: compartilhando a tela) */
+  active?: boolean
   danger?: boolean
   children: ReactNode
 }) {
@@ -111,9 +91,11 @@ function ControlButton({
         <button
           onClick={onClick}
           aria-label={label}
+          aria-pressed={active}
           className={cn(
             'flex size-14 items-center justify-center rounded-full bg-secondary text-white transition-colors hover:bg-secondary/80 [&_svg]:size-6',
             off && 'bg-white text-black hover:bg-white/90',
+            active && 'bg-success hover:bg-success/90',
             danger && 'bg-destructive hover:bg-destructive/90'
           )}
         >

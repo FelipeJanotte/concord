@@ -88,17 +88,17 @@ channelId, evento, payload)` no lugar de `io.emit` quando o evento é de um cana
 
 Depois de qualquer evento acima: recarrega o estado → `access:updated` (por `accessFor`) para cada conexão →
 `channels:visible` para cada conexão cuja lista mudou → `applyVoiceAccess(io, access)` em `server/modules/voice.ts`:
-quem perdeu `connect` na sala em que está **sai da voz** e todos recebem o `voice:state` filtrado de novo. Com o
-LiveKit (B1), é dentro de `applyVoiceAccess` que entra a atualização de `speak`/`share` de quem continua na sala. No app, `replaceChannels` limpa rascunho, histórico, não lidos e a
+quem perdeu `connect` na sala em que está **sai da voz** (e do LiveKit); quem continua e teve `speak`/`share`
+alterado recebe as permissões novas no LiveKit na hora (`updateVoicePermissions`; sem `speak` fica silenciado, sem
+`share` a tela para); no fim todos recebem o `voice:state` filtrado de novo. O token da entrada já sai com
+microfone só se `speak` e tela só se `share` (`publishSources` em `server/livekit.ts`). No app, `replaceChannels` limpa rascunho, histórico, não lidos e a
 tela aberta dos canais que sumiram, e sai da voz se a sala sumiu. Apagar canal também recarrega o acesso (as regras
 dele saem por cascade).
 
 ## Pendências conhecidas
 
-- **Token do LiveKit ainda não usa `speak`/`share`** (depende do #9): combinado no PR #8 — `canPublishSources` =
-  microfone se `speak`, tela + áudio da tela se `share`, `canPublish` = um ou outro; e atualizar no LiveKit
-  (`RoomService.updateParticipant`) dentro de `applyVoiceAccess` quando mudar com a pessoa na sala (Dev B).
-- **Modo "só ouvir" quando `canSpeak` é false** no `VoiceClient` (B2).
+- **Modo "só ouvir" quando `canSpeak` é false** no `VoiceClient` (B2): o servidor já não deixa publicar o microfone
+  (token e `UpdateParticipant`), mas o app ainda tenta e só recebe o erro do LiveKit.
 - **Download de anexo (`GET /files`) não checa `view`** do canal da mensagem (vale só o id aleatório; ver a parte de
   anexos em `concord-architecture`).
 - Sem transferência de posse da comunidade.
