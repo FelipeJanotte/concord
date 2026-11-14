@@ -21,12 +21,20 @@ function signature(attachmentId: string, accountId: string, expiresAt: number): 
   return createHmac('sha256', SECRET).update(`${attachmentId}|${accountId}|${expiresAt}`).digest('base64url')
 }
 
+/**
+ * Assina um caminho do servidor para a conta (`?a=&e=&s=`), amarrado ao `id` do recurso.
+ * Usado pelos anexos e pelos efeitos sonoros (A10).
+ */
+export function signResourceUrl(path: string, id: string, accountId: string, now = Date.now()): string {
+  const base = path.split('?')[0]
+  const e = now + FILE_URL_TTL_MS
+  const query = new URLSearchParams({ a: accountId, e: String(e), s: signature(id, accountId, e) })
+  return `${base}?${query}`
+}
+
 /** URL assinada do anexo para a conta (o caminho `/files/<id>/<nome>` continua igual). */
 export function signFileUrl(attachment: Attachment, accountId: string, now = Date.now()): string {
-  const base = attachment.url.split('?')[0]
-  const e = now + FILE_URL_TTL_MS
-  const query = new URLSearchParams({ a: accountId, e: String(e), s: signature(attachment.id, accountId, e) })
-  return `${base}?${query}`
+  return signResourceUrl(attachment.url, attachment.id, accountId, now)
 }
 
 /** A mensagem com os links dos anexos assinados para a conta. */

@@ -24,7 +24,7 @@ import { UPLOAD_ORPHAN_TTL_MS, UPLOAD_SWEEP_INTERVAL_MS } from '../config'
 import type { ServerModule } from '../context'
 import { allowed } from '../access'
 import { FILE_URL_TTL_MS, verifyFileQuery } from '../files-signing'
-import { sendJson } from '../http'
+import { discardBody, sendJson } from '../http'
 import { limiters, retryText } from '../middleware/rate-limit'
 import {
   deleteStaleUnattached,
@@ -121,7 +121,9 @@ async function handleUpload(req: IncomingMessage, res: ServerResponse): Promise<
   if (Number.isFinite(declaredLength) && declaredLength > ATTACHMENT_MAX_BYTES) {
     res.setHeader('connection', 'close')
     reply(res, 413, { ok: false, error: 'Arquivo maior que 25 MB' })
-    req.destroy()
+    // o app precisa conseguir ler o 413: descarta o corpo inteiro (até 2× o limite; 25 MB + 1 byte não
+    // pode bater no teto do descarte, senão a conexão cai no último byte e o app perde a resposta)
+    discardBody(req, ATTACHMENT_MAX_BYTES * 2)
     return
   }
 
@@ -138,7 +140,7 @@ async function handleUpload(req: IncomingMessage, res: ServerResponse): Promise<
     if (err instanceof TooLarge) {
       res.setHeader('connection', 'close')
       reply(res, 413, { ok: false, error: 'Arquivo maior que 25 MB' })
-      req.destroy()
+      discardBody(req, ATTACHMENT_MAX_BYTES)
       return
     }
     if (!req.complete) return // o app desistiu: não há a quem responder

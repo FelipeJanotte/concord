@@ -6,6 +6,11 @@ export const DATA_DIR = process.env.DATA_DIR || join(__dirname, 'data')
 export const AVATAR_DIR = join(DATA_DIR, 'avatars')
 /** Arquivos enviados (anexos), um por id. */
 export const UPLOAD_DIR = join(DATA_DIR, 'uploads')
+/** Efeitos sonoros (A10), separados dos anexos (a limpeza de anexos não pode apagá-los). */
+export const SOUND_DIR = join(DATA_DIR, 'sounds')
+/** Quantos sons cada conta pode ter e quantos a comunidade toda (padrões 20 e 200). */
+export const SOUNDS_PER_ACCOUNT = Number(process.env.SOUNDS_PER_ACCOUNT) || 20
+export const SOUNDS_TOTAL = Number(process.env.SOUNDS_TOTAL) || 200
 /** Anexo que não entrou numa mensagem depois deste tempo é apagado (padrão 1 h). */
 export const UPLOAD_ORPHAN_TTL_MS = Number(process.env.UPLOAD_ORPHAN_TTL_MS) || 60 * 60 * 1000
 /** De quanto em quanto tempo apaga sessões vencidas e limpa os limites de requisição (padrão 1 h). */

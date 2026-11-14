@@ -58,6 +58,7 @@ export async function listMessages(
       channelId: m.channelId,
       content: m.content,
       attachments: files.get(m.id) ?? [],
+      ...(m.kind === 'tool' && m.tool ? { kind: 'tool' as const, tool: m.tool } : {}),
       createdAt: m.createdAt.getTime(),
       author: a
         ? { id: a.id, accountId: a.id, name: a.name, tag: a.tag, color: a.color, avatarUrl: avatarUrl(a) }
@@ -94,6 +95,8 @@ export async function insertMessage(message: Message, attachmentIds: string[] = 
         authorTag: message.author.tag,
         authorColor: message.author.color,
         content: message.content,
+        kind: message.kind ?? 'text',
+        tool: message.kind === 'tool' ? (message.tool ?? null) : null,
         createdAt: new Date(message.createdAt)
       })
       const files: Attachment[] = []

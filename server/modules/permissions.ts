@@ -275,7 +275,8 @@ export const permissionsModule: ServerModule = {
         const access = await currentAccess()
         if (!can(access, me, 'manageChannels')) return ack(fail('Você não tem permissão para gerenciar canais'))
         const channel = typeof payload?.channelId === 'string' ? await findChannel(payload.channelId) : undefined
-        if (!channel) return ack(fail('Canal não encontrado'))
+        // conversa privada não tem regras por cargo (só os dois membros veem)
+        if (!channel || channel.type === 'dm') return ack(fail('Canal não encontrado'))
         if (!Array.isArray(payload.overrides)) return ack(fail('Regras inválidas'))
 
         const roleIds = new Set(access.roles.map((r) => r.id))

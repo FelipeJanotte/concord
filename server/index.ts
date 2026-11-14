@@ -24,8 +24,13 @@ import { backupModule } from './modules/backup'
 import { channelsModule } from './modules/channels'
 import { messagesModule } from './modules/messages'
 import { permissionsModule } from './modules/permissions'
+import { dmsModule } from './modules/dms'
+import { friendsModule } from './modules/friends'
+import { preferencesModule } from './modules/preferences'
 import { presenceModule } from './modules/presence'
 import { uploadsModule } from './modules/uploads'
+import { soundsModule } from './modules/sounds'
+import { toolsModule } from './modules/tools'
 import { voiceModule } from './modules/voice'
 
 const PORT = Number(process.env.PORT ?? 3001)
@@ -40,6 +45,11 @@ const modules: ServerModule[] = [
   channelsModule,
   messagesModule,
   voiceModule,
+  soundsModule,
+  preferencesModule,
+  friendsModule,
+  dmsModule,
+  toolsModule,
   presenceModule,
   backupModule
 ]
@@ -49,7 +59,7 @@ const modules: ServerModule[] = [
 async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
   // O app roda em file:// (build) ou localhost:5173 (dev), então liberamos CORS.
   res.setHeader('access-control-allow-origin', '*')
-  res.setHeader('access-control-allow-headers', 'content-type, authorization, x-file-name')
+  res.setHeader('access-control-allow-headers', 'content-type, authorization, x-file-name, x-sound-name, x-sound-emoji')
   res.setHeader('access-control-allow-methods', 'GET, POST, OPTIONS')
   if (req.method === 'OPTIONS') {
     res.writeHead(204).end()
