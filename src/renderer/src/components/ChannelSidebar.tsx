@@ -1,13 +1,16 @@
 import { useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
-import { ChevronDown, HeadphoneOff, Hash, Loader2, MicOff, Plus, Trash2, Volume2, VolumeX } from 'lucide-react'
+import { ChevronDown, HeadphoneOff, Hash, Loader2, Lock, MicOff, Plus, Settings, Trash2, Volume2, VolumeX } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import type { Channel, ChannelType, VoiceState } from '@shared/types'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { deleteChannel, joinVoice, selectTextChannel } from '@/lib/client'
+import { isPrivateChannel, useCan, useCanAdminister } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
 import { CreateChannelDialog } from './CreateChannelDialog'
+import { ChannelPermissionsDialog } from './settings/ChannelPermissionsDialog'
+import { CommunitySettingsDialog } from './settings/CommunitySettingsDialog'
 import { UserAvatar } from './UserAvatar'
 import { MemberContextMenu } from './voice/MemberContextMenu'
 import { LiveBadge } from './voice/ScreenTile'
@@ -17,6 +20,9 @@ export function ChannelSidebar() {
   const channels = useApp((s) => s.channels)
   const [dialog, setDialog] = useState<{ open: boolean; type: ChannelType }>({ open: false, type: 'text' })
   const [collapsed, setCollapsed] = useState<Record<ChannelType, boolean>>({ text: false, voice: false })
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const canManageChannels = useCan('manageChannels')
+  const canAdminister = useCanAdminister()
 
   const textChannels = channels.filter((c) => c.type === 'text')
   const voiceChannels = channels.filter((c) => c.type === 'voice')
@@ -24,7 +30,21 @@ export function ChannelSidebar() {
   return (
     <aside className="flex w-60 shrink-0 flex-col bg-sidebar">
       <header className="flex h-12 shrink-0 items-center border-b border-black/25 px-4 font-semibold text-accent-foreground shadow-sm">
-        Concord
+        <span className="flex-1">Concord</span>
+        {canAdminister && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => setSettingsOpen(true)}
+                aria-label="Configurações da comunidade"
+                className="text-muted-foreground hover:text-accent-foreground"
+              >
+                <Settings className="size-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Configurações da comunidade</TooltipContent>
+          </Tooltip>
+        )}
       </header>
 
       <ScrollArea className="min-h-0 flex-1">
@@ -33,7 +53,7 @@ export function ChannelSidebar() {
             title="Canais de texto"
             collapsed={collapsed.text}
             onToggle={() => setCollapsed((c) => ({ ...c, text: !c.text }))}
-            onAdd={() => setDialog({ open: true, type: 'text' })}
+            onAdd={canManageChannels ? () => setDialog({ open: true, type: 'text' }) : undefined}
           >
             {textChannels.map((c) => (
               <TextChannelItem key={c.id} channel={c} />
@@ -44,7 +64,7 @@ export function ChannelSidebar() {
             title="Canais de voz"
             collapsed={collapsed.voice}
             onToggle={() => setCollapsed((c) => ({ ...c, voice: !c.voice }))}
-            onAdd={() => setDialog({ open: true, type: 'voice' })}
+            onAdd={canManageChannels ? () => setDialog({ open: true, type: 'voice' }) : undefined}
           >
             {voiceChannels.map((c) => (
               <VoiceChannelItem key={c.id} channel={c} />
@@ -61,6 +81,7 @@ export function ChannelSidebar() {
         defaultType={dialog.type}
         onOpenChange={(open) => setDialog((d) => ({ ...d, open }))}
       />
+      {canAdminister && <CommunitySettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />}
     </aside>
   )
 }
@@ -75,7 +96,8 @@ function ChannelSection({
   title: string
   collapsed: boolean
   onToggle: () => void
-  onAdd: () => void
+  /** sem a função (sem permissão de gerenciar canais), o botão + some */
+  onAdd?: () => void
   children: ReactNode
 }) {
   return (
@@ -88,18 +110,20 @@ function ChannelSection({
           <ChevronDown className={cn('size-3 transition-transform', collapsed && '-rotate-90')} />
           {title}
         </button>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              onClick={onAdd}
-              aria-label="Criar canal"
-              className="text-muted-foreground hover:text-accent-foreground"
-            >
-              <Plus className="size-4" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent>Criar canal</TooltipContent>
-        </Tooltip>
+        {onAdd && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={onAdd}
+                aria-label="Criar canal"
+                className="text-muted-foreground hover:text-accent-foreground"
+              >
+                <Plus className="size-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Criar canal</TooltipContent>
+          </Tooltip>
+        )}
       </div>
       {!collapsed && <div className="space-y-0.5">{children}</div>}
     </section>
@@ -118,6 +142,48 @@ function onActivate(handler: () => void) {
       }
     }
   }
+}
+
+/** Engrenagem (permissões do canal) e lixeira: só para quem gerencia canais. */
+function ChannelActions({ channel }: { channel: Channel }) {
+  const allowed = useCan('manageChannels')
+  const [open, setOpen] = useState(false)
+  if (!allowed) return null
+  return (
+    <>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              setOpen(true)
+            }}
+            onKeyDown={(e) => e.stopPropagation()}
+            aria-label="Permissões do canal"
+            className="opacity-0 transition-opacity group-hover:opacity-100 hover:text-accent-foreground focus-visible:opacity-100"
+          >
+            <Settings className="size-3.5" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>Permissões do canal</TooltipContent>
+      </Tooltip>
+      <DeleteChannelButton channel={channel} />
+      {open && (
+        // O diálogo é um portal, mas os eventos dele sobem pela árvore do React até o item do canal:
+        // sem isto, clicar no diálogo abriria o canal (ou entraria na sala) e Espaço/Enter acionariam o item.
+        <span className="contents" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+          <ChannelPermissionsDialog channel={channel} open={open} onOpenChange={setOpen} />
+        </span>
+      )}
+    </>
+  )
+}
+
+/** Cadeado ao lado do nome quando o @todos não vê o canal. */
+function PrivateBadge({ channelId }: { channelId: string }) {
+  const priv = useApp((s) => isPrivateChannel(s.access, channelId))
+  if (!priv) return null
+  return <Lock className="size-3.5 shrink-0 opacity-60" aria-label="Canal privado" />
 }
 
 function DeleteChannelButton({ channel }: { channel: Channel }) {
@@ -161,7 +227,8 @@ function TextChannelItem({ channel }: { channel: Channel }) {
       {unread && !active && <span className="absolute -left-2 h-2 w-1 rounded-r-full bg-accent-foreground" />}
       <Hash className="size-5 shrink-0 opacity-60" />
       <span className="flex-1 truncate text-[15px]">{channel.name}</span>
-      <DeleteChannelButton channel={channel} />
+      <PrivateBadge channelId={channel.id} />
+      <ChannelActions channel={channel} />
     </div>
   )
 }
@@ -184,7 +251,8 @@ function VoiceChannelItem({ channel }: { channel: Channel }) {
           <Volume2 className={cn('size-5 shrink-0 opacity-60', connected && 'text-success opacity-100')} />
         )}
         <span className="flex-1 truncate text-[15px]">{channel.name}</span>
-        <DeleteChannelButton channel={channel} />
+        <PrivateBadge channelId={channel.id} />
+        <ChannelActions channel={channel} />
       </div>
       {members.length > 0 && (
         <div className="space-y-0.5 py-1 pl-6">

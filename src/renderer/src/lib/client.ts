@@ -13,6 +13,7 @@ import { bindAccountEvents } from './actions/account'
 import { bindChannelEvents, firstTextView } from './actions/channels'
 import { bindLimitEvents } from './actions/limits'
 import { bindMessageEvents, loadHistory } from './actions/messages'
+import { bindPermissionsEvents } from './actions/permissions'
 import { bindPresenceEvents } from './actions/presence'
 import { bindVoiceEvents, OUT_OF_VOICE } from './actions/voice'
 import { clearAllDrafts } from './actions/uploads'
@@ -123,6 +124,7 @@ export function connect(url: string, token: string): Promise<void> {
   bindMessageEvents(s)
   bindVoiceEvents(s)
   bindLimitEvents(s)
+  bindPermissionsEvents(s)
 
   return new Promise((resolve, reject) => {
     let settled = false
@@ -139,6 +141,7 @@ export function connect(url: string, token: string): Promise<void> {
           channels: state.channels,
           users: state.users,
           voice: state.voice,
+          access: state.access,
           messages: {},
           hasMoreHistory: {},
           loadingOlder: {},
@@ -202,6 +205,7 @@ export type { AppSocket } from './core'
 export * from './actions/account'
 export * from './actions/channels'
 export * from './actions/messages'
+export * from './actions/permissions'
 export * from './actions/uploads'
 export * from './actions/voice'
 export * from './actions/devices'

@@ -1,6 +1,6 @@
 ---
 name: concord-permissions
-description: Como funcionam os cargos e permissões do Concord (v2) — contrato e regra de cálculo compartilhados (can, channelPermissions, globalPermissions, highestPosition), dona da comunidade, @todos, regras por canal (allow/deny), hierarquia de cargos, eventos role:*/member:set-roles/channel:set-overrides/access:*, o que cada handler bloqueia e o que acontece quando o acesso muda. Use ao mexer em src/shared/types/permissions.ts, server/access.ts, server/modules/permissions.ts, server/repo/permissions.ts, server/db/schema/roles.ts, em qualquer handler que precise checar permissão, ou ao investigar canal que some, "Você não tem permissão", mensagem que não chega ou alguém saindo da voz sozinho.
+description: Como funcionam os cargos e permissões do Concord (v2) — contrato e regra de cálculo compartilhados (can, channelPermissions, globalPermissions, highestPosition), dona da comunidade, @todos, regras por canal (allow/deny), hierarquia de cargos, eventos role:*/member:set-roles/channel:set-overrides/access:*, o que cada handler bloqueia e o que acontece quando o acesso muda. Use ao mexer em src/shared/types/permissions.ts, server/access.ts, server/modules/permissions.ts, server/repo/permissions.ts, server/db/schema/roles.ts, na tela de administração (components/settings/**, lib/permissions.ts, lib/actions/permissions.ts, store/permissions.ts), em qualquer handler que precise checar permissão, ou ao investigar canal que some, "Você não tem permissão", mensagem que não chega ou alguém saindo da voz sozinho.
 ---
 
 # Cargos e permissões (v2: A4 servidor, B5 tela)
@@ -20,6 +20,10 @@ cargos atribuídos; cada canal pode **liberar** ou **negar** permissões por car
 | `server/db/schema/roles.ts` | Tabelas `roles`, `member_roles`, `channel_overrides` (migration `0002_roles`); apagar conta, cargo ou canal apaga as ligações (cascade). |
 | `server/modules/{channels,messages,presence,voice}.ts` | Aplicam as permissões (tabela "O que cada handler bloqueia"). |
 | `src/renderer/src/lib/actions/channels.ts` | App: `channels:visible` troca a lista de canais e limpa o que era dos canais que saíram (`replaceChannels`). |
+| `src/renderer/src/store/permissions.ts` | App: `access` (o `AccessState` do `hello`/`access:updated`; `null` antes de chegar). |
+| `src/renderer/src/lib/actions/permissions.ts` | App: `bindPermissionsEvents` (`access:updated`) e as ações `reloadAccess`, `createRole`, `updateRole`, `deleteRole`, `reorderRoles`, `setMemberRoles`, `setChannelOverrides` (erro do servidor vira exceção com a mensagem dele). |
+| `src/renderer/src/lib/permissions.ts` | App: `useCan`, `useCanAdminister`, `useNameColor` e helpers puros (`allows`, `isPrivateChannel`, `rolesByPosition`, `topRole`, `memberRoleIds`, `canManageRole`, `canAssignRole`, `canEditMember`) espelhando a hierarquia do servidor. |
+| `src/renderer/src/components/settings/` | Tela de administração (B5): `CommunitySettingsDialog` (abas Cargos e Membros), `ChannelPermissionsDialog` (Negar/Herdar/Liberar por cargo, "Canal privado"), `RoleDot`. |
 
 ## Contrato
 
@@ -102,10 +106,28 @@ O `VoiceClient` usa o `canSpeak`/`canShare` do `voice:join` e o `ParticipantPerm
 (detalhes na `concord-voice`, seção "Permissões de voz no app"): sem `speak` entra só ouvindo e o botão de microfone
 só avisa; sem `share` o botão de tela some; mudanças com a pessoa na sala tiram ou devolvem o microfone na hora.
 
+## No app (tela de administração, B5)
+
+O estado de acesso chega no `hello` (`state.access` → `useApp().access`) e é trocado inteiro a cada `access:updated`.
+A tela usa a **mesma** `can()` do servidor por `lib/permissions.ts`; com `access === null` (antes do `hello`, ou em
+testes antigos) nada é escondido, o servidor bloqueia de qualquer jeito.
+
+| Onde | O que aparece / some |
+|---|---|
+| Cabeçalho da barra lateral | Engrenagem "Configurações da comunidade" só com `manageRoles` ou `manageMembers` (dona sempre). |
+| Seções de canais | Botão **+** só com `manageChannels`. Em cada canal, engrenagem "Permissões do canal" e lixeira também só com `manageChannels`. Cadeado quando o @todos tem `view` negado (canal privado). |
+| Aba **Cargos** | Lista do mais para o menos importante (@todos por último). Criar (`manageRoles`; nasce "novo cargo" sem permissões, logo abaixo do seu). Setas subir/descer só nos cargos que posso mexer (manda `role:reorder` com só esses, do menos para o mais importante). Editor: nome (até 32), cor (ou "Sem cor"), permissões de administração e de canal. Cargo no meu nível ou acima fica só leitura; permissão global que não tenho fica travada (`canGrantPermissions`), mas posso desmarcar a que já está. @todos: só permissões. |
+| Aba **Membros** | Quem está **online** (uma linha por conta), com um checkbox por cargo. Travado para a dona, para quem está no meu nível ou acima e para cargos que não estão abaixo do meu. |
+| Permissões do canal | Lista de cargos (@todos primeiro) e, para o cargo escolhido, cada permissão do tipo do canal (texto: ver/enviar/anexar; voz: ver/entrar/falar/tela) em Negar / Herdar / Liberar. "Canal privado" = negar `view` ao @todos. Salvar manda todas as regras (`channel:set-overrides`), sem as vazias. O rascunho é lido só ao abrir. |
+| Lista de membros | Agrupada pelo cargo mais alto de cada pessoa (seções na ordem dos cargos; quem não tem cargo em "Online") e nome na cor de `displayColor` (senão a cor da conta). |
+| Botão direito numa pessoa | Submenu **Cargos** com checkbox por cargo atribuível, só se `canEditMember`; erro vira toast. |
+| Campo de mensagem | Sem `send`: aviso "Você não tem permissão para enviar mensagens neste canal." no lugar do campo. Sem `attach`: some o clipe, colar arquivo e arrastar para o chat não fazem nada. |
+
 ## Pendências conhecidas
 
 - Sem transferência de posse da comunidade.
-- A tela de administração (B5) e o tratamento de `access:updated`/`state.access` no app ainda não existem.
+- A aba Membros só lista quem está online (o app não recebe a lista de contas offline); os cargos de quem está offline continuam valendo.
+- Canal de voz sem `connect` continua aparecendo e clicável; o servidor recusa com "Você não tem permissão para entrar nesta sala".
 
 ## Testes
 
@@ -115,8 +137,13 @@ só avisa; sem `share` o botão de tela some; mudanças com a pessoa na sala tir
 | `server/repo/permissions.test.ts` | @todos criado no boot, dona = conta mais antiga, gravar cargos/membros/regras e cascades. |
 | `server/tests/permissions.test.ts` | Servidor real: estado de acesso, canal privado (não aparece no `hello`, não recebe `message:new`/`typing`/`voice:state`, não entra na voz), regras de enviar/anexar/entrar (inclusive no @todos), hierarquia (criar abaixo do seu, não dar permissão que não tem, reordenar só a lista exata) e validação de nome, cor, permissões e regras; saída da voz ao perder o acesso; estado no `hello` e `access:updated` filtrados por pessoa; escalada no @todos; `canSpeak`/`canShare`. |
 | `src/renderer/src/lib/actions/access.test.ts` | App: `channels:visible` (limpa o que saiu, sai da voz) e `voice:state` sem a própria pessoa. |
+| `src/renderer/src/lib/actions/permissions.test.ts` | App: `access:updated`/`reloadAccess` na store e o payload de cada ação (nome sem espaços, regras vazias não vão, erro vira exceção). |
+| `src/renderer/src/lib/permissions.test.ts` | Helpers da tela: `allows` (null não esconde), canal privado, ordem e cargo mais alto, `canManageRole`/`canAssignRole`/`canEditMember`. |
+| `src/renderer/src/components/settings/settings.test.tsx` | Tela (jsdom): o que some na barra lateral sem permissão, cadeado, criar/editar/reordenar cargo, @todos só permissões, travas de hierarquia, Membros, Permissões do canal (privado, Herdar remove), composer sem enviar/anexar, grupos e cores da lista de membros, submenu Cargos. |
 
-À mão: conta A (dona) cria cargo "Mod" e um canal privado liberado só para "Mod"; conta B sem cargo não vê o canal
+À mão (tela): conta A (dona) abre a engrenagem ao lado de "Concord", cria "Mod" com cor, marca "Gerenciar membros"; na engrenagem de um canal marca "Canal privado" e libera "Ver o canal" para "Mod"; dá "Mod" para B pelo botão direito → o nome de B fica colorido e o canal aparece para B.
+
+À mão (servidor): conta A (dona) cria cargo "Mod" e um canal privado liberado só para "Mod"; conta B sem cargo não vê o canal
 (DevTools → WS: nenhum `message:new` dele); A dá "Mod" para B → o canal aparece para B na hora; A tira → some, e B
 sai da voz se estava na sala.
 
@@ -130,4 +157,5 @@ sai da voz se estava na sala.
 | Canal sumiu para alguém | Perdeu `view` (regra do canal ou cargo removido): veio `channels:visible`. Confira as regras do canal para o @todos e para os cargos dela. |
 | Mensagem não chega para alguém | `emitToViewers` só manda para quem tem `view` no canal. |
 | Alguém saiu da voz sozinho | Perdeu `connect` naquela sala depois de uma mudança de cargo/regra. |
+| Clicar no diálogo de permissões abre o canal / entra na sala | Eventos de portal do Radix sobem pela árvore do **React** até o item do canal (que tem `onClick`/`onKeyDown`). O `ChannelActions` embrulha o diálogo num `<span className="contents">` que para `click` e `keydown`; mantenha isso ao mover o diálogo. Teste: "clicar e digitar dentro das permissões de uma sala" em `settings.test.tsx`. |
 | Dona errada | A dona é a conta mais antiga do banco (`accounts.created_at`). Importar um `db.json` antigo pode mudar quem é. |

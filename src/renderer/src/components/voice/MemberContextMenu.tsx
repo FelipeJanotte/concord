@@ -1,12 +1,12 @@
 /**
  * Menu de botão direito sobre uma pessoa (tile da sala de voz e lista da barra lateral):
- * volume da voz, silenciar só para mim e ver o perfil.
+ * volume da voz, silenciar só para mim, cargos (B5, só para quem gerencia membros) e ver o perfil.
  *
- * Itens futuros entram aqui: "Cargos" (B5, só para quem pode gerenciar membros) e
- * "Mensagem" (B7/A7, abre a DM com a pessoa).
+ * Item futuro: "Mensagem" (B7/A7, abre a DM com a pessoa).
  */
 import { useState, type ReactNode } from 'react'
-import { User as UserIcon, Volume2, VolumeX } from 'lucide-react'
+import { Shield, User as UserIcon, Volume2, VolumeX } from 'lucide-react'
+import { EVERYONE_ROLE_ID } from '@shared/types'
 import {
   ContextMenu,
   ContextMenuCheckboxItem,
@@ -14,10 +14,15 @@ import {
   ContextMenuItem,
   ContextMenuLabel,
   ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger
 } from '@/components/ui/context-menu'
+import { RoleDot } from '@/components/settings/RoleDot'
 import { UserProfileDialog } from '@/components/UserProfileDialog'
-import { setUserMuted, setUserVolume } from '@/lib/client'
+import { notify, setMemberRoles, setUserMuted, setUserVolume } from '@/lib/client'
+import { canAssignRole, canEditMember, memberRoleIds, rolesByPosition } from '@/lib/permissions'
 import { useApp } from '@/store'
 
 export function MemberContextMenu({ userId, children }: { userId: string; children: ReactNode }) {
@@ -44,6 +49,7 @@ export function MemberContextMenu({ userId, children }: { userId: string; childr
               <ContextMenuSeparator />
             </>
           )}
+          <RolesSubmenu accountId={user.accountId} />
           <ContextMenuItem onSelect={() => setProfileOpen(true)}>
             <UserIcon />
             Ver perfil
@@ -91,5 +97,44 @@ function MuteItem({ accountId }: { accountId: string }) {
       {muted ? <VolumeX className="text-destructive" /> : <Volume2 />}
       Silenciar
     </ContextMenuCheckboxItem>
+  )
+}
+
+/** Submenu "Cargos": marcar/desmarcar dá ou tira o cargo na hora. Só aparece para quem pode mexer nos cargos da pessoa. */
+function RolesSubmenu({ accountId }: { accountId: string }) {
+  const access = useApp((s) => s.access)
+  const me = useApp((s) => s.self?.accountId)
+  if (!access || !me || !canEditMember(access, me, accountId)) return null
+  const roles = rolesByPosition(access).filter((r) => r.id !== EVERYONE_ROLE_ID && canAssignRole(access, me, r))
+  if (roles.length === 0) return null
+  const current = memberRoleIds(access, accountId)
+
+  function toggle(roleId: string, on: boolean) {
+    const next = on ? [...current, roleId] : current.filter((id) => id !== roleId)
+    setMemberRoles(accountId, next).catch((err: unknown) =>
+      notify(err instanceof Error ? err.message : 'Não foi possível mudar os cargos')
+    )
+  }
+
+  return (
+    <ContextMenuSub>
+      <ContextMenuSubTrigger>
+        <Shield />
+        Cargos
+      </ContextMenuSubTrigger>
+      <ContextMenuSubContent className="w-52" aria-label="Cargos">
+        {roles.map((role) => (
+          <ContextMenuCheckboxItem
+            key={role.id}
+            checked={current.includes(role.id)}
+            onCheckedChange={(checked) => toggle(role.id, checked === true)}
+            onSelect={(e) => e.preventDefault()}
+          >
+            <RoleDot color={role.color} />
+            <span className="truncate">{role.name}</span>
+          </ContextMenuCheckboxItem>
+        ))}
+      </ContextMenuSubContent>
+    </ContextMenuSub>
   )
 }

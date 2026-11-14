@@ -2,6 +2,7 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState, type DragEvent 
 import { Hash, Loader2, Upload } from 'lucide-react'
 import type { Channel, Message } from '@shared/types'
 import { addFiles, loadOlderMessages } from '@/lib/client'
+import { useCan } from '@/lib/permissions'
 import { formatDay, formatTime, formatTimestamp } from '@/lib/utils'
 import { useApp } from '@/store'
 import { Composer } from './chat/Composer'
@@ -26,6 +27,9 @@ export function ChatView({ channelId }: { channelId: string }) {
   const restoreFromBottom = useRef<number | null>(null)
   const [dragging, setDragging] = useState(false)
   const dragDepth = useRef(0)
+  // sem permissão de anexar (v2), arrastar arquivo não faz nada
+  const canAttach = useCan('attach', channelId)
+  const acceptsFiles = (e: DragEvent): boolean => canAttach && hasFiles(e)
 
   useEffect(() => {
     stickToBottom.current = true
@@ -65,21 +69,21 @@ export function ChatView({ channelId }: { channelId: string }) {
         data-testid="chat-drop-zone"
         className="relative flex min-h-0 flex-1 flex-col"
         onDragEnter={(e) => {
-          if (!hasFiles(e)) return
+          if (!acceptsFiles(e)) return
           e.preventDefault()
           dragDepth.current++
           setDragging(true)
         }}
         onDragOver={(e) => {
-          if (hasFiles(e)) e.preventDefault()
+          if (acceptsFiles(e)) e.preventDefault()
         }}
         onDragLeave={(e) => {
-          if (!hasFiles(e)) return
+          if (!acceptsFiles(e)) return
           dragDepth.current = Math.max(0, dragDepth.current - 1)
           if (dragDepth.current === 0) setDragging(false)
         }}
         onDrop={(e) => {
-          if (!hasFiles(e)) return
+          if (!acceptsFiles(e)) return
           e.preventDefault()
           dragDepth.current = 0
           setDragging(false)

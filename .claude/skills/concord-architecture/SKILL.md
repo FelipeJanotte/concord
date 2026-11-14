@@ -122,6 +122,7 @@ Servidor → cliente (`ServerToClientEvents`): `channel:created`, `channel:delet
 - `unread[channelId]`: bolinha de não lido (mensagem chegou num canal que não está aberto).
 - `view: { kind: 'text' | 'voice', channelId }`: o que aparece no painel central.
 - `myVoiceChannelId`, `joiningVoice`, `muted`, `deafened`, `speaking[userId]`, `sharing`, `screens`, `screenPickerOpen`.
+- `access` (`store/permissions.ts`): `AccessState` do `hello`/`access:updated`, `null` antes de chegar; a tela lê com `useCan`/`useNameColor` de `lib/permissions.ts` (skill `concord-permissions`).
 - `audioInputId`, `audioOutputId`, `userVolumes[accountId]`, `userMuted[accountId]`, `voiceSoundsEnabled`, `voiceSoundsVolume`, `noiseSuppression`, `noiseMode`, `deviceSettingsOpen` (`store/devices.ts`; preferência da máquina, salva em `concord:audio` no `localStorage`).
 - `typing[channelId][userId] = { name, until }`: expira sozinho depois de 3,5 s.
 - `notice`: toast (`notify()` em `client.ts`).
