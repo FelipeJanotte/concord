@@ -125,7 +125,7 @@ beforeEach(() => {
 
 describe('join', () => {
   it('pede o token ao servidor, conecta no LiveKit e publica o microfone', async () => {
-    expect(await client.join('sala-1')).toEqual({ micError: null })
+    expect(await client.join('sala-1')).toEqual({ micError: null, cancelled: false })
     expect(socket.sent('voice:join')).toEqual([[{ channelId: 'sala-1', muted: false, deafened: false }]])
     const room = lastRoom()
     expect(room.connect).toHaveBeenCalledWith('ws://livekit.test:7880', 'jwt-de-teste', { autoSubscribe: true })
@@ -195,7 +195,7 @@ describe('join', () => {
     await vi.waitFor(() => expect(rooms).toHaveLength(1))
     c.leave()
     finishConnect(new Error('Client initiated disconnect'))
-    await expect(joining).resolves.toEqual({ micError: null })
+    await expect(joining).resolves.toEqual({ micError: null, cancelled: true })
     expect(lastRoom().disconnect).toHaveBeenCalled()
     expect(lastRoom().localParticipant.publishTrack).not.toHaveBeenCalled()
     expect(mic!.stop).toHaveBeenCalled()
@@ -489,7 +489,7 @@ describe('dispositivos e volume (B4)', () => {
   it('microfone escolhido que sumiu: entra com o padrão do sistema', async () => {
     const c = deviceClient({ failDevice: 'mic-usb' })
     await c.setInputDevice('mic-usb')
-    expect(await c.join('sala-1')).toEqual({ micError: null })
+    expect(await c.join('sala-1')).toEqual({ micError: null, cancelled: false })
     expect(micDevices).toEqual(['mic-usb', null])
     expect(lastRoom().localParticipant.publishTrack).toHaveBeenCalled()
   })
@@ -670,7 +670,7 @@ describe('supressão de ruído automática (B13)', () => {
   it('se o filtro não liga, entra mesmo assim com a supressão nativa', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const c = noiseClient({ processorFails: true })
-    expect(await c.join('sala-1')).toEqual({ micError: null })
+    expect(await c.join('sala-1')).toEqual({ micError: null, cancelled: false })
     expect(lastRoom().localParticipant.publishTrack).toHaveBeenCalled()
     expect(modes).toContain('light-fallback')
     warn.mockRestore()
@@ -722,5 +722,86 @@ describe('supressão de ruído automática (B13)', () => {
     await c.join('sala-1')
     c.leave()
     expect(modes.at(-1)).toBeNull()
+  })
+})
+
+describe('revisão do #9: entrada cancelada e troca de sala que falha', () => {
+  it('troca recusada pelo servidor: a sala atual continua de pé e o servidor não recebe voice:leave', async () => {
+    await client.join('sala-1')
+    const first = lastRoom()
+    const firstMic = mic!
+    socket.replyTo('voice:join', () => ({ ok: false, error: 'Canal de voz não encontrado' }))
+    await expect(client.join('sala-2')).rejects.toThrow('Canal de voz não encontrado')
+    expect(first.disconnect).not.toHaveBeenCalled()
+    expect(firstMic.stop).not.toHaveBeenCalled()
+    expect(mic).not.toBe(firstMic)
+    expect(mic!.stop).toHaveBeenCalled() // o microfone aberto para a sala nova é liberado
+    expect(rooms).toHaveLength(1)
+    expect(client.inRoom).toBe(true)
+    expect(socket.sent('voice:leave')).toHaveLength(0)
+  })
+
+  it('a sala antiga só fecha depois que o servidor aceita a nova', async () => {
+    await client.join('sala-1')
+    const first = lastRoom()
+    let answer: (r: JoinVoiceResult) => void = () => {}
+    socket.replyTo('voice:join', () => new Promise<JoinVoiceResult>((res) => (answer = res)))
+    const switching = client.join('sala-2')
+    await vi.waitFor(() => expect(socket.sent('voice:join')).toHaveLength(2))
+    expect(first.disconnect).not.toHaveBeenCalled()
+    answer(CREDS)
+    await switching
+    expect(first.disconnect).toHaveBeenCalled()
+  })
+
+  it('LiveKit fora do ar ao entrar: a mensagem é a do LiveKit, não a de "queda", mesmo se vier Disconnected', async () => {
+    const dropped = vi.fn()
+    const c = new VoiceClient({
+      createRoom: () => {
+        const room = new FakeRoom()
+        room.connect.mockImplementation(async () => {
+          room.fire(RoomEvent.Disconnected, DisconnectReason.UNKNOWN_REASON)
+          throw new Error('could not establish signal connection')
+        })
+        rooms.push(room)
+        return room as unknown as Room
+      },
+      createMicTrack: async () => (mic = new FakeMic()) as unknown as LocalAudioTrack
+    })
+    c.onUnexpectedDisconnect = dropped
+    c.setSocket(socket.asSocket())
+    await expect(c.join('sala-1')).rejects.toThrow('Confira se o LiveKit está rodando')
+    expect(dropped).not.toHaveBeenCalled()
+    expect(socket.sent('voice:leave')).toHaveLength(1)
+    expect(c.inRoom).toBe(false)
+  })
+
+  it('conexão com o Concord cai durante a entrada: devolve cancelled e não publica nada', async () => {
+    let finishConnect: () => void = () => {}
+    const c = new VoiceClient({
+      createRoom: () => {
+        const room = new FakeRoom()
+        room.connect.mockImplementation(() => new Promise<void>((res) => (finishConnect = res)))
+        rooms.push(room)
+        return room as unknown as Room
+      },
+      createMicTrack: async () => (mic = new FakeMic()) as unknown as LocalAudioTrack
+    })
+    c.setSocket(socket.asSocket())
+    const joining = c.join('sala-1')
+    await vi.waitFor(() => expect(rooms).toHaveLength(1))
+    c.teardown() // o handler de disconnect do socket chama isto
+    finishConnect()
+    await expect(joining).resolves.toEqual({ micError: null, cancelled: true })
+    expect(lastRoom().localParticipant.publishTrack).not.toHaveBeenCalled()
+    expect(c.inRoom).toBe(false)
+  })
+
+  it('depois de conectado, Disconnected volta a ser "queda" normalmente', async () => {
+    const dropped = vi.fn()
+    client.onUnexpectedDisconnect = dropped
+    await client.join('sala-1')
+    lastRoom().fire(RoomEvent.Disconnected, DisconnectReason.SERVER_SHUTDOWN)
+    expect(dropped).toHaveBeenCalled()
   })
 })

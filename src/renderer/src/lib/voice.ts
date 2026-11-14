@@ -88,6 +88,15 @@ const defaultDeps: VoiceDeps = {
   listDevices: (kind) => Room.getLocalDevices(kind, false)
 }
 
+/**
+ * Resultado de `join`. `cancelled` = a entrada foi interrompida antes de terminar (a pessoa saiu,
+ * trocou de sala ou a conexão com o Concord caiu): não houve erro, mas ela NÃO está na sala.
+ */
+export interface JoinOutcome {
+  micError: unknown
+  cancelled: boolean
+}
+
 /** Traduz o motivo de desconexão do LiveKit para uma frase da interface. */
 function describeDisconnect(reason: DisconnectReason | undefined): string {
   switch (reason) {
@@ -106,6 +115,8 @@ export class VoiceClient {
   private socket: AppSocket | null = null
   private room: Room | null = null
   private mic: LocalAudioTrack | null = null
+  /** sala cujo `connect` ainda não terminou */
+  private connecting: Room | null = null
   private remoteAudio = new Set<RemoteTrack>()
   private muted = false
   private deafened = false
@@ -148,12 +159,12 @@ export class VoiceClient {
    * permissão negada, em uso por outro programa), entra mesmo assim só para
    * ouvir e devolve o erro em `micError` para a UI avisar o usuário.
    */
-  async join(channelId: string): Promise<{ micError: unknown }> {
+  async join(channelId: string): Promise<JoinOutcome> {
     const socket = this.socket
     if (!socket) throw new Error('Sem conexão com o servidor')
 
-    this.teardown()
-
+    // A sala atual (se houver) só fecha depois que o servidor aceitar a nova: se a troca for
+    // recusada, a pessoa continua onde estava, com áudio, e o servidor também a mantém lá.
     let mic: LocalAudioTrack | null = null
     let micError: unknown = null
     try {
@@ -177,27 +188,38 @@ export class VoiceClient {
       throw new Error(res.error)
     }
 
+    // O servidor já nos tirou da sala anterior: agora sim fecha a conexão antiga.
+    this.teardown()
     const room = this.deps.createRoom({ outputDeviceId: this.outputDeviceId })
     this.room = room
+    this.connecting = room
     this.mic = mic
     this.bindRoom(room)
     try {
       await room.connect(res.url, res.token, { autoSubscribe: true })
-      if (this.room !== room) return { micError } // saiu (ou trocou de sala) enquanto conectava
+      this.connecting = null
+      // Saiu, trocou de sala ou a conexão com o Concord caiu enquanto conectava: não é sucesso.
+      if (this.room !== room) return { micError, cancelled: true }
       // O filtro entra antes de publicar: ninguém chega a ouvir o áudio cru.
       if (mic && this.noiseEnabled) await this.attachNoise(mic)
       if (mic) await room.localParticipant.publishTrack(mic, { source: Track.Source.Microphone })
       // O Electron libera autoplay, mas no navegador (npm run dev em localhost:5173) isso destrava o áudio.
       void room.startAudio().catch(() => {})
     } catch (err) {
+      if (this.connecting === room) this.connecting = null
       // Saiu enquanto conectava: o `teardown` já limpou tudo e não há erro para mostrar.
-      if (this.room !== room) return { micError }
+      if (this.room !== room) return { micError, cancelled: true }
       console.error('[voz] não foi possível conectar ao LiveKit:', err)
       // O servidor do Concord já nos colocou na sala: desfaz para os outros não verem um fantasma.
       this.leave()
       throw new Error('Não foi possível conectar ao servidor de voz. Confira se o LiveKit está rodando (docker compose up -d).')
     }
-    return { micError }
+    return { micError, cancelled: false }
+  }
+
+  /** Está numa sala do LiveKit (ou conectando a uma)? */
+  get inRoom(): boolean {
+    return this.room !== null
   }
 
   leave(): void {
@@ -388,6 +410,8 @@ export class VoiceClient {
       .on(RoomEvent.Disconnected, (reason?: DisconnectReason) => {
         // `teardown` remove os listeners antes de desconectar, então aqui só chega queda não pedida.
         if (this.room !== room) return
+        // Ainda conectando: quem trata a falha é o `join` (com a mensagem certa), não o aviso de queda.
+        if (this.connecting === room) return
         console.warn('[voz] desconectado do LiveKit:', reason)
         this.leave()
         this.onUnexpectedDisconnect?.(describeDisconnect(reason))
