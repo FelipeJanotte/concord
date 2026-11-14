@@ -1,46 +1,75 @@
 /**
- * Voz via WebRTC em malha (mesh): cada participante abre uma conexão
- * peer-to-peer com cada outro participante da sala. O servidor só repassa
- * as mensagens de sinalização (offer / answer / ICE candidates).
+ * Voz via LiveKit (SFU). O servidor do Concord valida a entrada e devolve
+ * `{ url, token }` no ack do `voice:join`; daqui em diante o áudio vai e volta
+ * pelo LiveKit (uma conexão por pessoa, não uma por par como na malha antiga).
  *
- * Funciona bem para salas pequenas (até ~8 pessoas). Para salas grandes,
- * o próximo passo seria um SFU (ex.: mediasoup ou LiveKit).
+ * A API pública (`join`, `leave`, `setMuted`, `setDeafened`, `teardown`) é a mesma
+ * da versão P2P, então `lib/actions/voice.ts` e a interface não mudaram.
+ * Identidade na sala = `socket.id` = `VoiceState.userId` = chave de `speaking`.
  */
-import type { JoinVoiceResult, SignalData } from '@shared/types'
+import {
+  createLocalAudioTrack,
+  DisconnectReason,
+  Room,
+  RoomEvent,
+  Track,
+  type LocalAudioTrack,
+  type Participant,
+  type RemoteTrack
+} from 'livekit-client'
+import type { JoinVoiceResult } from '@shared/types'
 import { useApp } from '@/store'
 import type { AppSocket } from './core'
 
-const ICE_SERVERS: RTCIceServer[] = [
-  { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }
-  // Para conectar pessoas atrás de NATs restritivos, adicione um servidor TURN:
-  // { urls: 'turn:seu-servidor:3478', username: 'usuario', credential: 'senha' }
-]
+const AUDIO_CAPTURE = { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
 
-const SPEAKING_THRESHOLD = 0.015
-const METER_INTERVAL_MS = 120
-
-interface Peer {
-  pc: RTCPeerConnection
-  audio: HTMLAudioElement
+/** O que o VoiceClient usa de fora; os testes trocam por versões falsas. */
+export interface VoiceDeps {
+  createRoom: () => Room
+  createMicTrack: () => Promise<LocalAudioTrack>
 }
 
-interface Meter {
-  source: MediaStreamAudioSourceNode
-  analyser: AnalyserNode
-  buffer: Float32Array<ArrayBuffer>
+const defaultDeps: VoiceDeps = {
+  createRoom: () =>
+    new Room({
+      audioCaptureDefaults: AUDIO_CAPTURE,
+      // DTX economiza banda no silêncio; RED deixa o áudio mais resistente a perda de pacotes.
+      publishDefaults: { dtx: true, red: true },
+      // Para a tela (B3): só recebe a resolução que está sendo exibida.
+      adaptiveStream: true,
+      dynacast: true
+    }),
+  createMicTrack: () => createLocalAudioTrack(AUDIO_CAPTURE)
 }
 
-class VoiceClient {
+/** Traduz o motivo de desconexão do LiveKit para uma frase da interface. */
+function describeDisconnect(reason: DisconnectReason | undefined): string {
+  switch (reason) {
+    case DisconnectReason.PARTICIPANT_REMOVED:
+      return 'Você foi removido da sala de voz.'
+    case DisconnectReason.ROOM_DELETED:
+      return 'A sala de voz foi encerrada.'
+    case DisconnectReason.DUPLICATE_IDENTITY:
+      return 'Você entrou nesta sala em outra conexão.'
+    default:
+      return 'A conexão com o servidor de voz caiu.'
+  }
+}
+
+export class VoiceClient {
   private socket: AppSocket | null = null
-  private local: MediaStream | null = null
-  private channelId: string | null = null
-  private peers = new Map<string, Peer>()
-  private pendingCandidates = new Map<string, RTCIceCandidateInit[]>()
-  private ctx: AudioContext | null = null
-  private meters = new Map<string, Meter>()
-  private meterTimer: number | null = null
+  private room: Room | null = null
+  private mic: LocalAudioTrack | null = null
+  private remoteAudio = new Set<RemoteTrack>()
   private muted = false
   private deafened = false
+  /** ids que o LiveKit diz estarem falando (antes do filtro de mute/deafen) */
+  private activeSpeakers: string[] = []
+
+  /** Chamado quando a sala cai sem a pessoa ter pedido (removida, servidor de voz fora do ar...). */
+  onUnexpectedDisconnect: ((message: string) => void) | null = null
+
+  constructor(private readonly deps: VoiceDeps = defaultDeps) {}
 
   setSocket(socket: AppSocket | null): void {
     this.socket = socket
@@ -57,221 +86,124 @@ class VoiceClient {
 
     this.teardown()
 
-    let local: MediaStream | null = null
+    let mic: LocalAudioTrack | null = null
     let micError: unknown = null
     try {
-      local = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-        video: false
-      })
-      local.getAudioTracks().forEach((t) => (t.enabled = !this.muted))
+      mic = await this.deps.createMicTrack()
+      if (this.muted) await mic.mute()
     } catch (err) {
       micError = err
       console.warn('[voz] sem microfone, entrando só para ouvir:', err)
     }
-    const stopLocal = (): void => local?.getTracks().forEach((t) => t.stop())
+    const stopMic = (): void => mic?.stop()
 
     let res: JoinVoiceResult
     try {
-      res = await socket.emitWithAck('voice:join', {
-        channelId,
-        muted: this.muted || !local,
-        deafened: this.deafened
-      })
+      res = await socket.emitWithAck('voice:join', { channelId, muted: this.muted || !mic, deafened: this.deafened })
     } catch (err) {
-      stopLocal()
+      stopMic()
       throw err
     }
     if (!res.ok) {
-      stopLocal()
+      stopMic()
       throw new Error(res.error)
     }
 
-    this.local = local
-    this.channelId = channelId
-
-    const selfId = useApp.getState().self?.id
-    if (selfId && local) this.watch(selfId, local)
-    this.startMeter()
-
-    // Quem entra liga para quem já está na sala.
-    for (const peerId of res.peers) void this.call(peerId)
+    const room = this.deps.createRoom()
+    this.room = room
+    this.mic = mic
+    this.bindRoom(room)
+    try {
+      await room.connect(res.url, res.token, { autoSubscribe: true })
+      if (this.room !== room) return { micError } // saiu (ou trocou de sala) enquanto conectava
+      if (mic) await room.localParticipant.publishTrack(mic, { source: Track.Source.Microphone })
+      // O Electron libera autoplay, mas no navegador (npm run dev em localhost:5173) isso destrava o áudio.
+      void room.startAudio().catch(() => {})
+    } catch (err) {
+      // Saiu enquanto conectava: o `teardown` já limpou tudo e não há erro para mostrar.
+      if (this.room !== room) return { micError }
+      console.error('[voz] não foi possível conectar ao LiveKit:', err)
+      // O servidor do Concord já nos colocou na sala: desfaz para os outros não verem um fantasma.
+      this.leave()
+      throw new Error('Não foi possível conectar ao servidor de voz. Confira se o LiveKit está rodando (docker compose up -d).')
+    }
     return { micError }
   }
 
   leave(): void {
-    if (this.channelId) this.socket?.emit('voice:leave')
+    if (this.room) this.socket?.emit('voice:leave')
     this.teardown()
   }
 
-  /** Fecha tudo localmente, sem avisar o servidor. */
+  /** Fecha tudo localmente, sem avisar o servidor do Concord. */
   teardown(): void {
-    for (const id of [...this.peers.keys()]) this.removePeer(id)
-    this.pendingCandidates.clear()
-    this.local?.getTracks().forEach((t) => t.stop())
-    this.local = null
-    for (const id of [...this.meters.keys()]) this.unwatch(id)
-    this.stopMeter()
-    this.channelId = null
+    const room = this.room
+    this.room = null
+    if (room) {
+      room.removeAllListeners()
+      void room.disconnect()
+    }
+    for (const track of this.remoteAudio) track.detach().forEach((el) => el.remove())
+    this.remoteAudio.clear()
+    this.mic?.stop()
+    this.mic = null
+    this.activeSpeakers = []
+    if (Object.keys(useApp.getState().speaking).length) useApp.setState({ speaking: {} })
   }
 
   setMuted(muted: boolean): void {
     this.muted = muted
-    this.local?.getAudioTracks().forEach((t) => (t.enabled = !muted))
+    if (this.mic) void (muted ? this.mic.mute() : this.mic.unmute())
+    this.publishSpeaking()
   }
 
   setDeafened(deafened: boolean): void {
     this.deafened = deafened
-    for (const peer of this.peers.values()) peer.audio.muted = deafened
-  }
-
-  async handleSignal({ from, data }: { from: string; data: SignalData }): Promise<void> {
-    if (!this.channelId) return
-    try {
-      if (data.type === 'offer') {
-        const peer = this.peers.get(from) ?? this.createPeer(from)
-        await peer.pc.setRemoteDescription({ type: 'offer', sdp: data.sdp })
-        const answer = await peer.pc.createAnswer()
-        await peer.pc.setLocalDescription(answer)
-        this.signal(from, { type: 'answer', sdp: answer.sdp ?? '' })
-        await this.flushCandidates(from)
-      } else if (data.type === 'answer') {
-        const peer = this.peers.get(from)
-        if (!peer) return
-        await peer.pc.setRemoteDescription({ type: 'answer', sdp: data.sdp })
-        await this.flushCandidates(from)
-      } else {
-        const peer = this.peers.get(from)
-        if (peer?.pc.remoteDescription) {
-          await peer.pc.addIceCandidate(data.candidate)
-        } else {
-          const list = this.pendingCandidates.get(from) ?? []
-          list.push(data.candidate)
-          this.pendingCandidates.set(from, list)
-        }
-      }
-    } catch (err) {
-      console.error('[voz] erro na sinalização com', from, err)
-    }
-  }
-
-  removePeer(id: string): void {
-    const peer = this.peers.get(id)
-    if (peer) {
-      peer.pc.close()
-      peer.audio.pause()
-      peer.audio.srcObject = null
-      this.peers.delete(id)
-    }
-    this.pendingCandidates.delete(id)
-    this.unwatch(id)
+    for (const track of this.remoteAudio) track.attachedElements.forEach((el) => (el.muted = deafened))
+    this.publishSpeaking()
   }
 
   // ---------- internos ----------
 
-  private signal(to: string, data: SignalData): void {
-    this.socket?.emit('voice:signal', { to, data })
+  private bindRoom(room: Room): void {
+    room
+      .on(RoomEvent.TrackSubscribed, (track) => {
+        if (track.kind !== Track.Kind.Audio) return // vídeo/tela: B3
+        const el = track.attach()
+        el.muted = this.deafened
+        this.remoteAudio.add(track)
+      })
+      .on(RoomEvent.TrackUnsubscribed, (track) => {
+        if (!this.remoteAudio.delete(track)) return
+        track.detach().forEach((el) => el.remove())
+      })
+      .on(RoomEvent.ActiveSpeakersChanged, (speakers: Participant[]) => {
+        this.activeSpeakers = speakers.map((p) => p.identity)
+        this.publishSpeaking()
+      })
+      .on(RoomEvent.Reconnecting, () => console.warn('[voz] conexão instável, reconectando...'))
+      .on(RoomEvent.Reconnected, () => console.info('[voz] reconectado'))
+      .on(RoomEvent.Disconnected, (reason?: DisconnectReason) => {
+        // `teardown` remove os listeners antes de desconectar, então aqui só chega queda não pedida.
+        if (this.room !== room) return
+        console.warn('[voz] desconectado do LiveKit:', reason)
+        this.leave()
+        this.onUnexpectedDisconnect?.(describeDisconnect(reason))
+      })
   }
 
-  private createPeer(id: string): Peer {
-    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS })
-    const audio = new Audio()
-    audio.autoplay = true
-    audio.muted = this.deafened
-    const peer: Peer = { pc, audio }
-
-    const local = this.local
-    if (local) local.getTracks().forEach((track) => pc.addTrack(track, local))
-
-    pc.onicecandidate = (e) => {
-      if (e.candidate) this.signal(id, { type: 'candidate', candidate: e.candidate.toJSON() })
-    }
-    pc.ontrack = (e) => {
-      const [stream] = e.streams
-      if (!stream) return
-      audio.srcObject = stream
-      audio.play().catch(() => {})
-      this.watch(id, stream)
-    }
-    pc.onconnectionstatechange = () => {
-      if (pc.connectionState === 'failed') console.warn('[voz] conexão falhou com', id)
-    }
-
-    this.peers.set(id, peer)
-    return peer
-  }
-
-  private async call(id: string): Promise<void> {
-    try {
-      const { pc } = this.createPeer(id)
-      // Sem microfone não há faixa local, e uma offer sem nenhuma faixa não
-      // negocia áudio: pedimos explicitamente para só receber.
-      if (!this.local) pc.addTransceiver('audio', { direction: 'recvonly' })
-      const offer = await pc.createOffer()
-      await pc.setLocalDescription(offer)
-      this.signal(id, { type: 'offer', sdp: offer.sdp ?? '' })
-    } catch (err) {
-      console.error('[voz] não foi possível ligar para', id, err)
-    }
-  }
-
-  private async flushCandidates(id: string): Promise<void> {
-    const peer = this.peers.get(id)
-    const list = this.pendingCandidates.get(id)
-    this.pendingCandidates.delete(id)
-    if (!peer || !list) return
-    for (const candidate of list) await peer.pc.addIceCandidate(candidate)
-  }
-
-  // ---------- indicador de quem está falando ----------
-
-  private watch(id: string, stream: MediaStream): void {
-    this.unwatch(id)
-    if (!this.ctx) this.ctx = new AudioContext()
-    void this.ctx.resume()
-    const source = this.ctx.createMediaStreamSource(stream)
-    const analyser = this.ctx.createAnalyser()
-    analyser.fftSize = 512
-    source.connect(analyser)
-    this.meters.set(id, { source, analyser, buffer: new Float32Array(analyser.fftSize) })
-  }
-
-  private unwatch(id: string): void {
-    const meter = this.meters.get(id)
-    if (!meter) return
-    meter.source.disconnect()
-    this.meters.delete(id)
-  }
-
-  private startMeter(): void {
-    this.stopMeter()
-    this.meterTimer = window.setInterval(() => this.tick(), METER_INTERVAL_MS)
-  }
-
-  private stopMeter(): void {
-    if (this.meterTimer !== null) window.clearInterval(this.meterTimer)
-    this.meterTimer = null
-    if (Object.keys(useApp.getState().speaking).length) useApp.setState({ speaking: {} })
-  }
-
-  private tick(): void {
+  /** Atualiza `store.speaking` (só quando muda, para não re-renderizar à toa). */
+  private publishSpeaking(): void {
     const selfId = useApp.getState().self?.id
-    const prev = useApp.getState().speaking
     const next: Record<string, boolean> = {}
-
-    for (const [id, meter] of this.meters) {
-      meter.analyser.getFloatTimeDomainData(meter.buffer)
-      let sum = 0
-      for (const v of meter.buffer) sum += v * v
-      const rms = Math.sqrt(sum / meter.buffer.length)
+    for (const id of this.activeSpeakers) {
       const silenced = id === selfId ? this.muted : this.deafened
-      if (rms > SPEAKING_THRESHOLD && !silenced) next[id] = true
+      if (!silenced) next[id] = true
     }
-
+    const prev = useApp.getState().speaking
     const prevKeys = Object.keys(prev)
     const nextKeys = Object.keys(next)
-    const changed = prevKeys.length !== nextKeys.length || nextKeys.some((k) => !prev[k])
-    if (changed) useApp.setState({ speaking: next })
+    if (prevKeys.length !== nextKeys.length || nextKeys.some((k) => !prev[k])) useApp.setState({ speaking: next })
   }
 }
 

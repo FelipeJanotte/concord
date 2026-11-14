@@ -2,7 +2,7 @@
 
 **Concord** é um app desktop estilo Discord: canais de **texto** e de **voz** em que cada usuário entra e sai.
 Stack: **Electron + electron-vite + React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui (Radix)**, estado com
-**zustand**, tempo real com **Socket.IO** e voz com **WebRTC** (malha peer-to-peer).
+**zustand**, tempo real com **Socket.IO** e voz com **LiveKit** (SFU self-hosted; o servidor do Concord emite o token de acesso).
 Gerenciador de pacotes: **npm** (não use pnpm/yarn; o projeto foi revertido do pnpm de propósito).
 
 ## Mapa rápido
@@ -11,6 +11,7 @@ Gerenciador de pacotes: **npm** (não use pnpm/yarn; o projeto foi revertido do 
 |---|---|
 | `server/index.ts` | Bootstrap do servidor Node: HTTP + Socket.IO, middleware que exige token de sessão e a **lista de módulos**. Sem lógica de domínio. |
 | `server/modules/` | Um arquivo por domínio (`accounts`, `channels`, `messages`, `voice`, `presence`), cada um exporta um `ServerModule` (`http?` e `socket?`). |
+| `server/livekit.ts` | Configuração do LiveKit (`LIVEKIT_*`), token de acesso por sala (`createVoiceCredentials`) e remoção da sala (`kickFromRoom`, `closeRoom`). |
 | `server/context.ts` | Tipos `AppServer`/`AppSocket`/`ServerModule`, mapa `users` (online) e `guard()` para handlers async. `socket.data.user` existe depois do `hello`. |
 | `server/repo/` | **Único acesso a dados** (funções async sobre o Drizzle): `accounts`, `sessions`, `channels`, `messages`. Ids inválidos viram "não existe" (`isUuid`); valor repetido recusado pelo banco vira `DuplicateError`. |
 | `server/db/` | PostgreSQL + Drizzle: `client.ts` (conexão: `DATABASE_URL` → Postgres; sem ela → PGlite em `DATA_DIR/pgdata`), `schema/<dominio>.ts`, `migrations/` (geradas, aplicadas no boot) e `seed.ts` (canais padrão / importa o `db.json` antigo). |
@@ -29,7 +30,7 @@ Gerenciador de pacotes: **npm** (não use pnpm/yarn; o projeto foi revertido do 
 | `src/renderer/src/lib/actions/` | Ações e listeners por domínio (`account`, `channels`, `messages`, `presence`, `uploads`, `voice`). `uploads.ts`: rascunho de anexos por canal, envio com progresso (`transport.send`, XHR). |
 | `src/renderer/src/components/chat/` | `Composer` (texto + clipe/colar), `AttachmentPreview`, `MessageAttachments` (imagem no chat / cartão de arquivo), `ImageLightbox`. Arrastar e soltar fica no `ChatView`. |
 | `src/renderer/src/lib/core.ts` | Socket atual (`getSocket`/`requireSocket`), `set`/`get` da store e `notify`. Usado pelas ações. |
-| `src/renderer/src/lib/voice.ts` | `VoiceClient`: WebRTC em malha, mute/deafen e detecção de quem está falando. |
+| `src/renderer/src/lib/voice.ts` | `VoiceClient` sobre `livekit-client`: conecta na sala com o token do servidor, mute/deafen, quem está falando (`ActiveSpeakersChanged`). |
 | `src/renderer/src/components/ui/` | Componentes shadcn/ui (estilo new-york, importando de `radix-ui`). |
 | `docker-compose.yml`, `livekit.yaml` | Infra local: PostgreSQL 17 e LiveKit (SFU). Credenciais de dev espelhadas em `server/.env.example`. |
 | `vitest.config.ts` | Testes `*.test.ts(x)` ao lado do código (`npm test`). |
@@ -75,5 +76,5 @@ Leia a skill certa antes de mexer em cada área (ficam em `.claude/skills/<nome>
 - `concord-architecture` — visão completa: fluxo de dados, todos os eventos, estado, ciclo de conexão.
 - `concord-add-feature` — passo a passo para adicionar uma funcionalidade de ponta a ponta, com exemplo.
 - `concord-accounts` — contas: cadastro/login com e-mail e senha, sessões, login com Google, perfil `nome#id` e foto, regra do id único e imutável.
-- `concord-voice` — como a voz WebRTC funciona, limites e depuração.
+- `concord-voice` — como a voz funciona (LiveKit no servidor, token por sala), limites e depuração.
 - `concord-dev-workflow` — rodar, testar com vários usuários, build e solução de problemas conhecidos.

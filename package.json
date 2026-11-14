@@ -45,6 +45,8 @@
     "electron-builder": "^26.0.12",
     "electron-vite": "^4.0.0",
     "jsdom": "^31.0.1",
+    "livekit-client": "^2.23.0",
+    "livekit-server-sdk": "^2.19.2",
     "lucide-react": "^0.525.0",
     "pg": "^8.23.1",
     "radix-ui": "^1.4.2",
