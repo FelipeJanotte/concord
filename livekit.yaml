@@ -1,0 +1,26 @@
+# Configuração do LiveKit para DESENVOLVIMENTO (usada pelo docker-compose.yml).
+# Em produção: troque a chave/segredo, ative o TURN embutido (turn.enabled + domínio com TLS)
+# e use use_external_ip: true se o servidor estiver atrás de NAT.
+
+port: 7880
+bind_addresses:
+  - ''
+
+rtc:
+  tcp_port: 7881
+  # Uma única porta UDP para todo o tráfego de mídia (mais fácil de mapear no Docker/firewall).
+  udp_port: 7882
+  # O IP anunciado aos clientes vem de --node-ip (ver docker-compose.yml).
+  use_external_ip: false
+
+# chave: segredo — os mesmos valores de LIVEKIT_API_KEY / LIVEKIT_API_SECRET em server/.env.example.
+# O segredo precisa ter pelo menos 32 caracteres.
+keys:
+  concord-dev: concord-dev-secret-troque-em-producao
+
+room:
+  # Sala some 5 min depois que o último sai (o servidor do Concord cria a sala = id do canal).
+  empty_timeout: 300
+
+logging:
+  level: info
