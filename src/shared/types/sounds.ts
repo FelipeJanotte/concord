@@ -16,8 +16,21 @@
 export const SOUND_MAX_BYTES = 512 * 1024
 export const SOUND_MAX_DURATION_MS = 5000
 export const SOUND_NAME_MAX = 32
-/** Emoji (ou poucos caracteres) que aparece no botão do som. */
+/**
+ * Emoji (ou poucos caracteres) que aparece no botão do som, contado em code points (a mesma conta do
+ * `char_length` do banco): 👨‍👩‍👧‍👦 tem 7 e cabe; em UTF-16 teria 11.
+ */
 export const SOUND_EMOJI_MAX = 8
+
+/**
+ * Regra do emoji, igual no servidor e na tela (B17): tira caracteres de controle e espaços das pontas.
+ * `null` = sem emoji; `undefined` = inválido (mais de `SOUND_EMOJI_MAX` code points).
+ */
+export function cleanSoundEmoji(raw: string): string | null | undefined {
+  const emoji = raw.replace(/[\u0000-\u001f\u007f]/g, '').trim()
+  if (!emoji) return null
+  return [...emoji].length <= SOUND_EMOJI_MAX ? emoji : undefined
+}
 
 /** Tipos aceitos (conferidos pelos bytes; o Content-Type do app não decide). */
 export const SOUND_TYPES = ['audio/mpeg', 'audio/ogg', 'audio/wav', 'audio/webm'] as const

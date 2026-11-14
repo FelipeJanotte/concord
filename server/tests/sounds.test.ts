@@ -86,6 +86,8 @@ describe('POST /sounds', () => {
     expect((await postSound(a.token, wav(1), { name: '   ' })).body).toMatchObject({ ok: false, error: expect.stringContaining('nome') })
     expect((await postSound(a.token, wav(1), { name: 'x'.repeat(33) })).body).toMatchObject({ ok: false })
     expect(await postSound(a.token, wav(1), { emoji: 'emoji-longo-demais' })).toEqual({ status: 400, body: { ok: false, error: 'Emoji inválido' } })
+    // emoji composto (11 unidades UTF-16, 7 code points) passa pelo servidor e pelo check do banco
+    expect((await soundOk(a, { emoji: '👨‍👩‍👧‍👦' })).emoji).toBe('👨‍👩‍👧‍👦')
   })
 
   it('nome repetido (sem diferenciar maiúsculas) é recusado e o arquivo não fica', async () => {

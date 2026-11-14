@@ -38,14 +38,15 @@ cada app baixa GET /sounds/<id>?a&e&s (link assinado) e toca localmente
 - **Envio:** 512 KB contados nos bytes (413; o resto do corpo é descartado para o app conseguir ler a resposta),
   tipo **pelos bytes** (`Envie um áudio MP3, OGG, WAV ou WebM`), duração lida do arquivo (`O som pode ter no máximo
   5 segundos`; sem duração legível → `Não foi possível ler a duração do áudio`). Nome 1–32 (único), emoji opcional
-  até 8 caracteres. `SOUNDS_PER_ACCOUNT` (20) e `SOUNDS_TOTAL` (200), configuráveis por ambiente. Envios usam o limite
+  até 8 code points (`cleanSoundEmoji` no contrato, a mesma conta do `char_length` do banco: 👨‍👩‍👧‍👦 cabe). `SOUNDS_PER_ACCOUNT` (20) e `SOUNDS_TOTAL` (200), configuráveis por ambiente. Envios usam o limite
   `upload` (o mesmo dos anexos).
 - **Links:** `Sound.url` sai assinado por conta (o mesmo esquema dos anexos, `signResourceUrl` em
   `server/files-signing.ts`); `GET /sounds/<id>` sem assinatura válida dá 404. A coleção é da comunidade inteira (não
   depende de canal).
 - **Tocar:** exige estar **naquela sala** (`Entre na sala de voz para tocar sons`) e poder **falar** nela
   (`speak`, v2). **Sobreposição:** a mesma conta não toca outro som antes do anterior terminar (o servidor guarda
-  até quando o som dela toca → `Espere o som anterior terminar`); pessoas diferentes podem tocar ao mesmo tempo.
+  até quando o som dela toca → `Espere o som anterior terminar`); pessoas diferentes podem tocar ao mesmo tempo. É **por conta, de propósito**: a mesma conta em duas janelas (até em salas diferentes) espera nas duas.
+  **Na tela (B17):** o volume e o "Silenciar" que eu dei para uma pessoa (B4) valem também para os sons que ela toca.
   Além disso, `LIMITS.sound` = 1 a cada 3 s por conta.
 - **Apagar:** o autor ou quem tem `manageMessages`; apaga registro e arquivo e emite `sound:deleted` para todos.
 
