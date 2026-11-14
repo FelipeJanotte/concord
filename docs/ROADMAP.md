@@ -1,4 +1,4 @@
-# Concord — roadmap v1 → v4 para 2 devs em paralelo
+# Concord — roadmap v1 → v5 para 2 devs em paralelo
 
 ## Contexto
 
@@ -13,7 +13,8 @@ Decisões já tomadas:
 - **Voz/tela:** salas com mais de 15 pessoas → trocar a malha P2P por **LiveKit** (SFU open source, self-hosted, gratuito) já na v1.
 - **Permissões (v2):** cargos estilo Discord simplificado.
 - **Hospedagem:** indefinida → tudo sobe por `docker compose` (Postgres + LiveKit) e arquivos ficam atrás de uma interface de storage (disco local agora; S3-compatível tipo MinIO/R2 depois, sem mudar o resto).
-- Sem "servidores/guildas": continua uma única comunidade.
+- Sem "servidores/guildas": continua uma única comunidade. A barra da esquerda, onde o Discord lista servidores, vira a **barra de úteis** (Home, Comunidade e as ferramentas do grupo da v4).
+- **Temas (v5):** temas com gradiente e cor de destaque, prontos e editáveis, salvos na conta e compartilháveis por código, grátis para todos.
 
 > Ajuste em relação ao pedido: a migração para Postgres entra **na v1** (não na v2). Anexos, permissões e DMs
 > dependem do schema; fazer depois significaria reescrever tudo duas vezes.
@@ -102,21 +103,37 @@ Decisão de modelagem que evita duplicar código: **DM é um canal** de tipo `'d
 |---|---|---|---|
 | **A6 Amizades** | A | Tabela `friendships` (pendente/aceita/bloqueada). Eventos `friend:request` (por `nome#tag`), `accept`, `decline`, `remove`, `block`. Presença por conta (online/offline) visível só para amigos. Tela "Amigos" (Online, Todos, Pendentes, Adicionar). | `server/modules/friends.ts`, `server/db/schema/friends.ts`, `components/friends/**`, `lib/actions/friends.ts`, `store/friends.ts` |
 | **A7 DMs de texto** | A | `dm:open(accountId)` cria/recupera o canal `dm`; só amigos (ou quem já tem conversa); lista de DMs na sidebar da Home com não lidos; reusa `ChatView`/anexos. | `server/modules/dms.ts`, `components/dm/DmList.tsx` |
-| **B7 Navegação Home** | B | `ServerRail` deixa de ser decorativa: botão Home (Amigos + DMs) × comunidade. `view` ganha `kind: 'friends' \| 'dm'`. Entrega o "casco" com slots onde A6/A7 encaixam seus componentes. **Mergear primeiro.** | `components/ServerRail.tsx`, `components/home/HomeLayout.tsx`, `store/view.ts`, `App.tsx` |
+| **B7 Navegação Home + barra de úteis** | B | A barra da esquerda (onde no Discord ficam os servidores) deixa de ser decorativa e vira a **barra de úteis**: no topo, Home (Amigos + DMs) e Comunidade (canais); abaixo de um separador, a área das ferramentas da v4 (vazia por enquanto, lida de um registro `components/tools/registry.ts`). `view` ganha `kind: 'friends' \| 'dm' \| 'tool'`. Entrega o "casco" com slots onde A6/A7 encaixam seus componentes. **Mergear primeiro.** | `components/ServerRail.tsx` (vira `components/rail/**`), `components/home/HomeLayout.tsx`, `store/view.ts`, `App.tsx` |
 | **B8 Chamadas privadas** | B | `call:invite/accept/decline/cancel/end` com toque e timeout; sala LiveKit = id do canal `dm`; UI de chamada recebida (toast persistente com som), barra de chamada no topo do DM, tela compartilhada reutilizando os componentes da v1. | `server/modules/calls.ts`, `components/call/**`, `lib/actions/calls.ts`, `store/calls.ts` |
 | **B9 Notificações** | B | Notificação nativa do Electron e badge no ícone para DM/chamada/pedido de amizade. | `src/main/notifications.ts`, `lib/notifications.ts` |
 
 Ordem: contrato → B7 → (A6, A7) em paralelo com (B8, B9).
 
-## v4 — Ferramentas do grupo
+## v4 — Ferramentas do grupo (na barra de úteis)
 
-Infra comum (contrato em conjunto): mensagem ganha `kind` (`'text' | 'tool'`) e `payload` tipado; menu "Ferramentas" (`+`) no composer com registro de ferramentas (`components/tools/registry.ts`: cada ferramenta = 1 arquivo de diálogo + 1 de renderização). O sorteio roda **no servidor** (`crypto.randomInt`) e o resultado é postado no canal, para todos verem o mesmo resultado e ninguém poder "rolar de novo escondido".
+As ferramentas moram na **barra da esquerda**, onde no Discord ficariam os servidores (casco entregue na B7): cada ferramenta é um ícone com tooltip; clicar abre o painel dela na área central (`view: { kind: 'tool', toolId }`), mantendo o canal ou a sala de voz atual como contexto (ex.: o sorteador já vem com quem está na sala). O resultado é postado num canal de texto escolhido no painel.
+
+Infra comum (contrato em conjunto): mensagem ganha `kind` (`'text' | 'tool'`) e `payload` tipado; registro de ferramentas (`components/tools/registry.ts`: cada ferramenta = id, ícone, nome, 1 painel + 1 cartão de resultado no chat). Um atalho opcional no `+` do composer abre o mesmo painel. O sorteio roda **no servidor** (`crypto.randomInt`) e o resultado é postado no canal, para todos verem o mesmo resultado e ninguém poder "rolar de novo escondido".
 
 | Task | Dev | O que faz | Arquivos (dono) |
 |---|---|---|---|
 | **A8 Sorteador de times (servidor)** | A | `tools:teams { channelId, names[], teamCount, lanes? }`: valida (2–50 nomes, até 32 caracteres), embaralha (Fisher–Yates), distribui equilibrado; com `lanes` ligado e times de 5, atribui Top/Selva/Meio/Atirador/Suporte sem repetir; aceita preferências de lane opcionais por pessoa. Função pura com testes. Posta mensagem `kind: 'tool'`. | `server/modules/tools.ts`, `server/tools/teams.ts`, `shared/types/tools.ts` |
-| **B10 Sorteador (UI)** | B | Diálogo: importar nomes de quem está na sala de voz / online / digitar manualmente, nº de times, toggle de lanes, "Sortear de novo". Card de resultado no chat com times coloridos e lanes. | `components/tools/{TeamRandomizerDialog,TeamResultCard,registry}.tsx` |
-| **Próximas ferramentas** | alternado | Mesmo molde, uma por pessoa: enquete, dado/moeda, sorteio de 1 nome, "mover times para salas de voz" (usa o resultado do sorteador + permissão de moderação da v2). | 1 arquivo de servidor + 2 de UI cada |
+| **B10 Sorteador (UI)** | B | Ícone na barra de úteis + painel: importar nomes de quem está na sala de voz / online / digitar manualmente, nº de times, toggle de lanes, canal onde postar, "Sortear de novo". Card de resultado no chat com times coloridos e lanes. | `components/tools/{TeamRandomizerPanel,TeamResultCard,registry}.tsx` |
+| **Próximas ferramentas** | alternado | Mesmo molde, uma por pessoa, cada uma vira mais um ícone na barra: enquete, dado/moeda, sorteio de 1 nome, "mover times para salas de voz" (usa o resultado do sorteador + permissão de moderação da v2). | 1 arquivo de servidor + 2 de UI cada |
+
+## v5 — Temas personalizáveis
+
+Temas no estilo dos temas premium do Discord (fundos em gradiente e cor de destaque), mas **grátis e editáveis**. Base pronta: as cores já são tokens CSS em `assets/globals.css`, então um tema é só um conjunto de valores para esses tokens. **Independente das outras versões**: pode ser puxado antes se sobrar tempo (só depende da F0).
+
+Contrato em conjunto (`shared/types/theme.ts`): `ThemeConfig { base: 'escuro' | 'claro', accent: '#rrggbb', background: { stops: '#rrggbb'[] (1 a 4), angle: 0–360 }, intensity: 0–100 }` + `validateTheme()` (função pura, usada pelos dois lados). Os demais tokens (sidebar, rail, panel, composer, texto) são **derivados** do `ThemeConfig` garantindo contraste legível (WCAG AA para texto).
+
+| Task | Dev | O que faz | Arquivos (dono) |
+|---|---|---|---|
+| **A9 Preferências da conta (servidor)** | A | Tabela `account_preferences` (tema ativo + até 10 temas salvos, jsonb validado com `validateTheme`). Eventos `preferences:get` / `preferences:update` com limite de requisições; o tema acompanha a conta em qualquer computador e muda ao vivo nas outras janelas da mesma conta (`preferences:updated`). | `server/modules/preferences.ts`, `server/db/schema/preferences.ts`, `server/repo/preferences.ts`, `shared/types/preferences.ts` |
+| **B11 Motor de temas (UI)** | B | `deriveTokens(theme)` (pura, com testes de contraste) aplicando as variáveis CSS no `:root`, com transição suave. ~10 temas prontos com gradientes próprios (ex.: Aurora, Pôr do sol, Oceano, Floresta, Neon, Grafite, Claro). Funciona antes do login com o último tema salvo localmente. | `lib/theme/**`, `assets/themes/**` |
+| **B12 Editor de temas (UI)** | B | Em "Configurações → Aparência": galeria dos prontos, editor (cor de destaque, 1 a 4 cores do gradiente, ângulo, intensidade, claro/escuro) com prévia ao vivo, salvar/duplicar/apagar temas próprios e **compartilhar por código** (copiar/colar um texto curto) entre amigos. | `components/settings/appearance/**` |
+
+Ordem: contrato → (A9) em paralelo com (B11 → B12). B12 funciona com o tema salvo localmente até a A9 entrar.
 
 ## Verificação (em toda task)
 
@@ -125,4 +142,5 @@ Infra comum (contrato em conjunto): mensagem ganha `kind` (`'text' | 'tool'`) e 
 - v1: enviar imagem e arquivo de 20 MB, rejeitar 30 MB, reiniciar servidor e conferir histórico; 3 clientes em voz + tela; `import-json` preserva contas e mensagens.
 - v2: conta sem cargo não vê canal privado, não recebe `message:new` dele (conferir no DevTools → WS) e não obtém token LiveKit.
 - v3: pedido de amizade → aceitar → DM com anexo → chamada com tela; bloqueado não consegue abrir DM.
-- v4: mesmo resultado nos dois clientes; times equilibrados com número ímpar; lanes sem repetição.
+- v4: ferramentas aparecem na barra da esquerda e abrem o painel; mesmo resultado nos dois clientes; times equilibrados com número ímpar; lanes sem repetição.
+- v5: trocar o tema numa janela muda na outra janela da mesma conta; tema salvo volta depois de reiniciar o app e em outro computador; código de tema copiado por um amigo aplica igual; nenhum tema pronto ou editado deixa texto ilegível (teste de contraste).
