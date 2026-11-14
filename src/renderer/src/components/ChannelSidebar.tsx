@@ -1,5 +1,5 @@
 import { useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
-import { ChevronDown, HeadphoneOff, Hash, Loader2, MicOff, Plus, Trash2, Volume2 } from 'lucide-react'
+import { ChevronDown, HeadphoneOff, Hash, Loader2, MicOff, Plus, Trash2, Volume2, VolumeX } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import type { Channel, ChannelType, VoiceState } from '@shared/types'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
 import { CreateChannelDialog } from './CreateChannelDialog'
 import { UserAvatar } from './UserAvatar'
+import { MemberContextMenu } from './voice/MemberContextMenu'
 import { LiveBadge } from './voice/ScreenTile'
 import { UserPanel, VoiceStatusPanel } from './UserPanel'
 
@@ -199,17 +200,21 @@ function VoiceChannelItem({ channel }: { channel: Channel }) {
 function VoiceMember({ state }: { state: VoiceState }) {
   const user = useApp((s) => s.users.find((u) => u.id === state.userId))
   const speaking = useApp((s) => !!s.speaking[state.userId])
+  const mutedByMe = useApp((s) => !!user && !!s.userMuted[user.accountId])
   if (!user) return null
   return (
-    <div className="flex h-7 items-center gap-2 rounded-md px-2 text-sm text-sidebar-foreground hover:bg-accent/40">
-      <UserAvatar user={user} size="sm" speaking={speaking} />
-      <span className={cn('flex-1 truncate', speaking && 'text-accent-foreground')}>{user.name}</span>
-      {state.sharing && <LiveBadge />}
-      {state.deafened ? (
-        <HeadphoneOff className="size-3.5 text-destructive" />
-      ) : state.muted ? (
-        <MicOff className="size-3.5 text-destructive" />
-      ) : null}
-    </div>
+    <MemberContextMenu userId={state.userId}>
+      <div className="flex h-7 items-center gap-2 rounded-md px-2 text-sm text-sidebar-foreground hover:bg-accent/40">
+        <UserAvatar user={user} size="sm" speaking={speaking} />
+        <span className={cn('flex-1 truncate', speaking && 'text-accent-foreground')}>{user.name}</span>
+        {state.sharing && <LiveBadge />}
+        {mutedByMe && <VolumeX className="size-3.5 text-destructive" aria-label="Silenciado por você" />}
+        {state.deafened ? (
+          <HeadphoneOff className="size-3.5 text-destructive" />
+        ) : state.muted ? (
+          <MicOff className="size-3.5 text-destructive" />
+        ) : null}
+      </div>
+    </MemberContextMenu>
   )
 }

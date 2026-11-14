@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react'
-import { HeadphoneOff, Headphones, Loader2, Mic, MicOff, MonitorOff, MonitorUp, PhoneOff, Volume2 } from 'lucide-react'
+import { AudioLines, HeadphoneOff, Headphones, Loader2, Mic, MicOff, MonitorOff, MonitorUp, PhoneOff, Volume2 } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { joinVoice, leaveVoice, toggleDeafen, toggleMute, toggleScreenShare } from '@/lib/client'
+import { joinVoice, leaveVoice, openDeviceSettings, toggleDeafen, toggleMute, toggleScreenShare } from '@/lib/client'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
 import { ScreenPicker } from './voice/ScreenPicker'
@@ -49,6 +49,9 @@ export function VoiceView({ channelId }: { channelId: string }) {
             </ControlButton>
             <ControlButton label={sharing ? 'Parar de compartilhar' : 'Compartilhar a tela'} onClick={toggleScreenShare} active={sharing}>
               {sharing ? <MonitorOff /> : <MonitorUp />}
+            </ControlButton>
+            <ControlButton label="Configurações de voz" onClick={openDeviceSettings}>
+              <AudioLines />
             </ControlButton>
             <ControlButton label="Desconectar" onClick={leaveVoice} danger>
               <PhoneOff />

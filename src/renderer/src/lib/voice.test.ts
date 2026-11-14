@@ -13,6 +13,8 @@ class FakeRoom {
   connect = vi.fn(async (_url: string, _token: string, _opts?: unknown) => {})
   disconnect = vi.fn(async () => {})
   startAudio = vi.fn(async () => {})
+  switchActiveDevice = vi.fn(async (_kind: string, _id: string) => true)
+  constructor(readonly opts: { outputDeviceId: string | null } = { outputDeviceId: null }) {}
   localParticipant = {
     identity: 'eu',
     publishTrack: vi.fn(async (_track: unknown, _opts?: unknown) => ({})),
@@ -64,6 +66,7 @@ class FakeRemoteTrack {
     return target
   }
   detachOne = vi.fn()
+  setVolume = vi.fn()
   detach(el?: FakeElement): FakeElement[] {
     if (el) {
       this.detachOne(el)
@@ -444,5 +447,154 @@ describe('tela', () => {
     client.leave()
     expect(useApp.getState().screens).toEqual([])
     expect(ended).not.toHaveBeenCalled()
+  })
+})
+
+describe('dispositivos e volume (B4)', () => {
+  const micOf = (accountId: string) => ({ identity: 'sock-' + accountId, attributes: { accountId } })
+  let micDevices: (string | null)[]
+
+  function deviceClient(opts: { failDevice?: string } = {}): VoiceClient {
+    micDevices = []
+    const c = new VoiceClient({
+      createRoom: (o) => {
+        const room = new FakeRoom(o)
+        rooms.push(room)
+        return room as unknown as Room
+      },
+      createMicTrack: async (deviceId) => {
+        micDevices.push(deviceId)
+        if (deviceId && deviceId === opts.failDevice) throw new DOMException('sumiu', 'OverconstrainedError')
+        mic = new FakeMic()
+        return mic as unknown as LocalAudioTrack
+      },
+      listDevices: async (kind) => [{ deviceId: kind, kind, label: kind, groupId: '' } as MediaDeviceInfo]
+    })
+    c.setSocket(socket.asSocket())
+    return c
+  }
+
+  it('microfone escolhido fora da sala vale na próxima entrada', async () => {
+    const c = deviceClient()
+    await c.setInputDevice('mic-usb')
+    expect(rooms).toHaveLength(0)
+    await c.join('sala-1')
+    expect(micDevices).toEqual(['mic-usb'])
+  })
+
+  it('microfone escolhido que sumiu: entra com o padrão do sistema', async () => {
+    const c = deviceClient({ failDevice: 'mic-usb' })
+    await c.setInputDevice('mic-usb')
+    expect(await c.join('sala-1')).toEqual({ micError: null })
+    expect(micDevices).toEqual(['mic-usb', null])
+    expect(lastRoom().localParticipant.publishTrack).toHaveBeenCalled()
+  })
+
+  it('trocar o microfone dentro da sala troca na hora; null = padrão', async () => {
+    const c = deviceClient()
+    await c.join('sala-1')
+    await c.setInputDevice('mic-2')
+    expect(lastRoom().switchActiveDevice).toHaveBeenLastCalledWith('audioinput', 'mic-2')
+    await c.setInputDevice(null)
+    expect(lastRoom().switchActiveDevice).toHaveBeenLastCalledWith('audioinput', 'default')
+  })
+
+  it('sem microfone (só ouvindo), trocar não mexe na sala', async () => {
+    micError = new DOMException('negado', 'NotAllowedError')
+    await client.join('sala-1')
+    await client.setInputDevice('mic-2')
+    expect(lastRoom().switchActiveDevice).not.toHaveBeenCalled()
+  })
+
+  it('a saída escolhida vai para a sala nova e troca na hora dentro da sala', async () => {
+    const c = deviceClient()
+    await c.setOutputDevice('fone')
+    await c.join('sala-1')
+    expect(lastRoom().opts).toEqual({ outputDeviceId: 'fone' })
+    await c.setOutputDevice(null)
+    expect(lastRoom().switchActiveDevice).toHaveBeenLastCalledWith('audiooutput', 'default')
+  })
+
+  it('listDevices usa o LiveKit', async () => {
+    const c = deviceClient()
+    expect((await c.listDevices('audiooutput')).map((d) => d.deviceId)).toEqual(['audiooutput'])
+  })
+
+  it('volume por conta: aplicado ao chegar e na hora, só no microfone daquela pessoa', async () => {
+    client.setUserVolume('acc-ana', 0.3)
+    await client.join('sala-1')
+    const ana = new FakeRemoteTrack(Track.Kind.Audio, Track.Source.Microphone)
+    const bia = new FakeRemoteTrack(Track.Kind.Audio, Track.Source.Microphone)
+    const anaScreen = new FakeRemoteTrack(Track.Kind.Audio, Track.Source.ScreenShareAudio)
+    lastRoom().fire(RoomEvent.TrackSubscribed, ana, {}, micOf('acc-ana'))
+    lastRoom().fire(RoomEvent.TrackSubscribed, bia, {}, micOf('acc-bia'))
+    lastRoom().fire(RoomEvent.TrackSubscribed, anaScreen, {}, micOf('acc-ana'))
+    expect(ana.setVolume).toHaveBeenLastCalledWith(0.3)
+    expect(bia.setVolume).toHaveBeenLastCalledWith(1)
+    expect(anaScreen.setVolume).not.toHaveBeenCalled()
+
+    client.setUserVolume('acc-bia', 0.5)
+    expect(bia.setVolume).toHaveBeenLastCalledWith(0.5)
+    client.setUserVolume('acc-ana', 1)
+    expect(ana.setVolume).toHaveBeenLastCalledWith(1)
+  })
+
+  it('volume fora de 0–1 ou inválido é corrigido', async () => {
+    await client.join('sala-1')
+    const ana = new FakeRemoteTrack(Track.Kind.Audio, Track.Source.Microphone)
+    lastRoom().fire(RoomEvent.TrackSubscribed, ana, {}, micOf('acc-ana'))
+    client.setUserVolume('acc-ana', 5)
+    expect(ana.setVolume).toHaveBeenLastCalledWith(1)
+    client.setUserVolume('acc-ana', -1)
+    expect(ana.setVolume).toHaveBeenLastCalledWith(0)
+    client.setUserVolume('acc-ana', Number.NaN)
+    expect(ana.setVolume).toHaveBeenLastCalledWith(1)
+  })
+
+  it('quem saiu não recebe mais mudança de volume', async () => {
+    await client.join('sala-1')
+    const ana = new FakeRemoteTrack(Track.Kind.Audio, Track.Source.Microphone)
+    lastRoom().fire(RoomEvent.TrackSubscribed, ana, {}, micOf('acc-ana'))
+    lastRoom().fire(RoomEvent.TrackUnsubscribed, ana, {}, micOf('acc-ana'))
+    ana.setVolume.mockClear()
+    client.setUserVolume('acc-ana', 0.2)
+    expect(ana.setVolume).not.toHaveBeenCalled()
+  })
+})
+
+describe('silenciar alguém só para mim', () => {
+  const micOf = (accountId: string) => ({ identity: 'sock-' + accountId, attributes: { accountId } })
+
+  it('silenciar zera o volume; voltar restaura o volume que estava ajustado', async () => {
+    await client.join('sala-1')
+    const ana = new FakeRemoteTrack(Track.Kind.Audio, Track.Source.Microphone)
+    lastRoom().fire(RoomEvent.TrackSubscribed, ana, {}, micOf('acc-ana'))
+    client.setUserVolume('acc-ana', 0.4)
+    client.setUserMuted('acc-ana', true)
+    expect(ana.setVolume).toHaveBeenLastCalledWith(0)
+    // mexer no volume enquanto silenciado guarda o valor, mas continua mudo
+    client.setUserVolume('acc-ana', 0.6)
+    expect(ana.setVolume).toHaveBeenLastCalledWith(0)
+    client.setUserMuted('acc-ana', false)
+    expect(ana.setVolume).toHaveBeenLastCalledWith(0.6)
+  })
+
+  it('quem já estava silenciado chega mudo', async () => {
+    client.setUserMuted('acc-ana', true)
+    await client.join('sala-1')
+    const ana = new FakeRemoteTrack(Track.Kind.Audio, Track.Source.Microphone)
+    lastRoom().fire(RoomEvent.TrackSubscribed, ana, {}, micOf('acc-ana'))
+    expect(ana.setVolume).toHaveBeenLastCalledWith(0)
+  })
+
+  it('silenciar uma pessoa não mexe nas outras', async () => {
+    await client.join('sala-1')
+    const ana = new FakeRemoteTrack(Track.Kind.Audio, Track.Source.Microphone)
+    const bia = new FakeRemoteTrack(Track.Kind.Audio, Track.Source.Microphone)
+    lastRoom().fire(RoomEvent.TrackSubscribed, ana, {}, micOf('acc-ana'))
+    lastRoom().fire(RoomEvent.TrackSubscribed, bia, {}, micOf('acc-bia'))
+    bia.setVolume.mockClear()
+    client.setUserMuted('acc-ana', true)
+    expect(bia.setVolume).not.toHaveBeenCalled()
   })
 })

@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { HeadphoneOff, Headphones, Mic, MicOff, PhoneOff, Settings, Signal } from 'lucide-react'
-import { joinVoice, leaveVoice, toggleDeafen, toggleMute } from '@/lib/client'
+import { AudioLines, HeadphoneOff, Headphones, Mic, MicOff, PhoneOff, Settings, Signal } from 'lucide-react'
+import { joinVoice, leaveVoice, openDeviceSettings, toggleDeafen, toggleMute } from '@/lib/client'
 import { useApp } from '@/store'
 import { IconButton } from './IconButton'
 import { ProfileDialog } from './ProfileDialog'
 import { UserAvatar } from './UserAvatar'
+import { DeviceSettings } from './voice/DeviceSettings'
 
 export function VoiceStatusPanel() {
   const channelId = useApp((s) => s.myVoiceChannelId)
@@ -25,6 +26,9 @@ export function VoiceStatusPanel() {
           {channel.name}
         </button>
       </div>
+      <IconButton label="Configurações de voz" onClick={openDeviceSettings}>
+        <AudioLines />
+      </IconButton>
       <IconButton label="Desconectar" onClick={leaveVoice}>
         <PhoneOff />
       </IconButton>
@@ -71,6 +75,8 @@ export function UserPanel() {
         <Settings />
       </IconButton>
       <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
+      {/* Sempre montado: o microfone e a saída podem ser escolhidos antes de entrar numa sala. */}
+      <DeviceSettings />
     </div>
   )
 }
