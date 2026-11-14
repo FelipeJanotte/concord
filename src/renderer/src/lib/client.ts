@@ -14,8 +14,9 @@ import { bindChannelEvents, firstTextView } from './actions/channels'
 import { bindLimitEvents } from './actions/limits'
 import { bindMessageEvents, loadHistory } from './actions/messages'
 import { bindPresenceEvents } from './actions/presence'
-import { bindVoiceEvents } from './actions/voice'
+import { bindVoiceEvents, OUT_OF_VOICE } from './actions/voice'
 import { clearAllDrafts } from './actions/uploads'
+import { loadAudioPreferences } from './actions/devices'
 import { baseUrl, get, getSocket, notify, SERVER_KEY, set, setSocket, TOKEN_KEY, type AppSocket } from './core'
 import { voice } from './voice'
 
@@ -174,7 +175,7 @@ export function connect(url: string, token: string): Promise<void> {
     s.on('disconnect', () => {
       if (getSocket() !== s) return
       voice.teardown()
-      set({ status: 'reconnecting', myVoiceChannelId: null, speaking: {}, noMic: false })
+      set({ status: 'reconnecting', ...OUT_OF_VOICE })
     })
   })
 }
@@ -190,6 +191,8 @@ export function disconnect(): void {
     s.disconnect()
   }
   set({ ...initialState })
+  // Dispositivos são preferência da máquina, não da conta: continuam valendo depois de sair.
+  loadAudioPreferences()
 }
 
 // ---------- Ações por domínio ----------
@@ -201,4 +204,5 @@ export * from './actions/channels'
 export * from './actions/messages'
 export * from './actions/uploads'
 export * from './actions/voice'
+export * from './actions/devices'
 export { resolveServerUrl } from './core'

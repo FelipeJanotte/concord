@@ -1,15 +1,14 @@
 /**
- * Salas de voz: quem está em qual sala e repasse da sinalização WebRTC
- * (o áudio vai direto de um usuário para o outro). Skill `concord-voice`.
+ * Salas de voz: valida a entrada, emite o token do LiveKit (o áudio e a tela passam
+ * pelo LiveKit, não por aqui) e mantém a lista de quem está em cada sala. Skill `concord-voice`.
  */
 import type { VoiceState } from '../../src/shared/types'
 import { guard, type AppServer, type AppSocket, type ServerModule } from '../context'
+import { closeRoom, createVoiceCredentials, kickFromRoom, liveKitConfig } from '../livekit'
 import { findChannel } from '../repo/channels'
 
 /** socket.id → estado de voz */
 const voice = new Map<string, VoiceState>()
-
-const voiceRoom = (channelId: string): string => `voice:${channelId}`
 
 export const voiceStates = (): VoiceState[] => [...voice.values()]
 
@@ -21,18 +20,19 @@ function leaveVoice(io: AppServer, socket: AppSocket): void {
   const state = voice.get(socket.id)
   if (!state) return
   voice.delete(socket.id)
-  socket.leave(voiceRoom(state.channelId))
-  io.to(voiceRoom(state.channelId)).emit('voice:peer-left', socket.id)
+  if (liveKitConfig) void kickFromRoom(liveKitConfig, state.channelId, socket.id)
   emitVoice(io)
 }
 
 /** Tira todo mundo de uma sala (usado quando o canal é apagado). Não emite `voice:state`. */
-export function clearVoiceChannel(io: AppServer, channelId: string): void {
+export function clearVoiceChannel(_io: AppServer, channelId: string): void {
+  let hadPeople = false
   for (const [sid, state] of voice) {
     if (state.channelId !== channelId) continue
     voice.delete(sid)
-    io.sockets.sockets.get(sid)?.leave(voiceRoom(channelId))
+    hadPeople = true
   }
+  if (hadPeople && liveKitConfig) void closeRoom(liveKitConfig, channelId)
 }
 
 export const voiceModule: ServerModule = {
@@ -40,23 +40,24 @@ export const voiceModule: ServerModule = {
     socket.on('voice:join', (payload, ack) => {
       if (typeof ack !== 'function') return
       void guard('voice:join', async () => {
-        if (!socket.data.user) return ack({ ok: false, error: 'Não autenticado' })
+        const user = socket.data.user
+        if (!user) return ack({ ok: false, error: 'Não autenticado' })
+        if (!liveKitConfig) return ack({ ok: false, error: 'A voz não está configurada neste servidor' })
         const channel = typeof payload?.channelId === 'string' ? await findChannel(payload.channelId, 'voice') : undefined
         if (!channel) return ack({ ok: false, error: 'Canal de voz não encontrado' })
+        const credentials = await createVoiceCredentials(liveKitConfig, user, channel.id)
         if (!socket.connected) return
-        leaveVoice(io, socket)
-        const peers = voiceStates()
-          .filter((v) => v.channelId === channel.id)
-          .map((v) => v.userId)
+        // Trocar de sala: sai da anterior (inclusive no LiveKit) antes de entrar na nova.
+        if (voice.get(socket.id)?.channelId !== channel.id) leaveVoice(io, socket)
         voice.set(socket.id, {
           userId: socket.id,
           channelId: channel.id,
           muted: !!payload.muted,
-          deafened: !!payload.deafened
+          deafened: !!payload.deafened,
+          // Entrar (ou trocar de sala) começa sem tela; o app avisa com voice:sharing ao publicar.
+          sharing: false
         })
-        socket.join(voiceRoom(channel.id))
-        // Quem entra inicia a conexão WebRTC com cada pessoa que já está na sala.
-        ack({ ok: true, peers })
+        ack({ ok: true, ...credentials })
         emitVoice(io)
       })
     })
@@ -71,13 +72,11 @@ export const voiceModule: ServerModule = {
       emitVoice(io)
     })
 
-    socket.on('voice:signal', (payload) => {
-      if (!payload || typeof payload.to !== 'string') return
-      const me = voice.get(socket.id)
-      const other = voice.get(payload.to)
-      // Só repassa sinalização entre pessoas na mesma sala de voz.
-      if (!me || !other || me.channelId !== other.channelId) return
-      io.to(payload.to).emit('voice:signal', { from: socket.id, data: payload.data })
+    socket.on('voice:sharing', (sharing) => {
+      const state = voice.get(socket.id)
+      if (!state || typeof sharing !== 'boolean' || state.sharing === sharing) return
+      state.sharing = sharing
+      emitVoice(io)
     })
 
     socket.on('disconnect', () => leaveVoice(io, socket))

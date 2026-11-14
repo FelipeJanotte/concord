@@ -16,8 +16,10 @@ description: Visão completa da arquitetura do Concord (clone do Discord em Elec
 │        └──chama──> lib/client.ts ──fetch/socket────────┼───────>│   └─> db/ (Drizzle → Postgres    │
 │                                                       │        │        ou PGlite)                │
 │                     └ lib/actions/<dominio>.ts         │        │ memória: users (context), voice  │
-│                        └──> lib/voice.ts (WebRTC) ◄────┼─ P2P ─►│ (áudio NÃO passa pelo servidor)  │
-└───────────────────────────────────────────────────────┘        └──────────────────────────────────┘
+│                        └──> lib/voice.ts ──────────────┼─┐      │ livekit.ts: token + kick da sala │
+└───────────────────────────────────────────────────────┘ │      └──────────────┬───────────────────┘
+                                                          │ áudio (WebRTC)    │ API (Twirp)
+                                                          └──────► LiveKit ◄───┘  (docker compose, SFU)
 ```
 
 ## Organização por domínio
@@ -86,14 +88,14 @@ Cliente → servidor (`ClientToServerEvents`):
 | `message:history` | `{ channelId, before? }` | `{ messages, hasMore }` | página de 50 (sem `before` = mais recentes) |
 | `message:send` (com anexos) | `{ channelId, content, attachmentIds? }` | — | até 10 anexos já enviados por `POST /uploads`, do próprio autor e não usados; tudo ou nada (senão a mensagem é ignorada); texto pode ser vazio se houver anexo |
 | `message:send` | `{ channelId, content }` | — | valida (canal de texto, até 2000 caracteres); `message:new` para todos |
-| `voice:join` | `{ channelId, muted, deafened }` | `JoinVoiceResult` (`peers`) | sai da sala anterior, entra na nova, devolve quem já estava lá |
-| `voice:leave` | — | — | `voice:peer-left` para a sala + `voice:state` |
+| `voice:join` | `{ channelId, muted, deafened }` | `JoinVoiceResult` (`url`, `token` do LiveKit) | exige LiveKit configurado; sai da sala anterior (também no LiveKit), entra na nova; `voice:state` |
+| `voice:leave` | — | — | tira da sala no LiveKit (`RemoveParticipant`) + `voice:state` |
 | `voice:update` | `{ muted, deafened }` | — | `voice:state` |
-| `voice:signal` | `{ to, data: SignalData }` | — | repassa só se os dois estiverem na mesma sala |
+| `voice:sharing` | `boolean` | — | liga/desliga o "ao vivo" (só para quem está numa sala); `voice:state` |
 | `typing` | `channelId` | — | broadcast `typing` (o cliente limita a 1 envio a cada 2,5 s) |
 
 Servidor → cliente (`ServerToClientEvents`): `channel:created`, `channel:deleted`, `user:joined`, `user:left`,
-`user:updated` (por `accountId`), `message:new`, `voice:state` (sempre a **lista completa**), `voice:signal`, `voice:peer-left`, `typing`.
+`user:updated` (por `accountId`), `message:new`, `voice:state` (sempre a **lista completa**), `typing`.
 
 ## Estado do renderer (`store/`)
 
@@ -103,7 +105,8 @@ Servidor → cliente (`ServerToClientEvents`): `channel:created`, `channel:delet
 - `messages[channelId]`: `undefined` significa histórico ainda não carregado. `message:new` só adiciona a mensagem se o histórico daquele canal já estiver carregado.
 - `unread[channelId]`: bolinha de não lido (mensagem chegou num canal que não está aberto).
 - `view: { kind: 'text' | 'voice', channelId }`: o que aparece no painel central.
-- `myVoiceChannelId`, `joiningVoice`, `muted`, `deafened`, `speaking[userId]`.
+- `myVoiceChannelId`, `joiningVoice`, `muted`, `deafened`, `speaking[userId]`, `sharing`, `screens`, `screenPickerOpen`.
+- `audioInputId`, `audioOutputId`, `userVolumes[accountId]`, `userMuted[accountId]`, `deviceSettingsOpen` (`store/devices.ts`; preferência da máquina, salva em `concord:audio` no `localStorage`).
 - `typing[channelId][userId] = { name, until }`: expira sozinho depois de 3,5 s.
 - `notice`: toast (`notify()` em `client.ts`).
 
@@ -125,4 +128,4 @@ Servidor → cliente (`ServerToClientEvents`): `channel:created`, `channel:delet
 - Contas com e-mail+senha ou Google, mas sem papéis: qualquer pessoa logada exclui qualquer canal. Sem recuperação de senha.
 - Um único "servidor/comunidade" (a barra da esquerda é decorativa).
 - Limites de requisição ficam em memória (reiniciar zera; com vários processos do servidor, cada um teria os seus).
-- A voz em malha aguenta bem até umas 8 pessoas por sala (ver `concord-voice`).
+- A voz depende do LiveKit rodando (`docker compose up -d`); sem ele, `voice:join` falha (ver `concord-voice`).
