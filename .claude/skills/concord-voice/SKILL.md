@@ -8,7 +8,9 @@ description: Como funcionam os canais de voz do Concord — WebRTC em malha (mes
 Cada participante tem uma `RTCPeerConnection` com **cada** outro participante da sala. O servidor só repassa a
 sinalização; o áudio vai direto de um usuário para o outro. O código fica em `src/renderer/src/lib/voice.ts`
 (classe `VoiceClient`, exportada como `voice`) e é chamado por `joinVoice`, `leaveVoice`, `toggleMute` e
-`toggleDeafen` em `lib/client.ts`.
+`toggleDeafen` em `lib/actions/voice.ts` (reexportados por `lib/client.ts`). No servidor, tudo fica em
+`server/modules/voice.ts` (o mapa `voice` é privado do módulo; outros módulos usam `voiceStates()`,
+`emitVoice()` e `clearVoiceChannel()`).
 
 ## Fluxo de entrada
 

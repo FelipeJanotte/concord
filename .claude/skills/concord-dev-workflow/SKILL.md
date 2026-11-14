@@ -18,11 +18,12 @@ description: Como rodar, testar, gerar o build e empacotar o Concord, e como res
 | `npm run server` | servidor com recarregamento (`tsx watch server/index.ts`), porta `PORT` (padrão 3001) |
 | `npm run server:start` | servidor sem watch (para produção) |
 | `npm run dev` | electron-vite em modo dev (HMR no renderer, reinicia o Electron quando main/preload mudam) |
-| `npm run typecheck` | `tsc` em `tsconfig.node.json` (main, preload, server, shared) e `tsconfig.web.json` (renderer) |
+| `npm run typecheck` | `tsc` em `tsconfig.node.json` (main, preload, server, shared) e `tsconfig.web.json` (renderer), testes incluídos |
+| `npm test` | vitest uma vez (`vitest run`). **Obrigatório passar por completo antes de dar uma tarefa por concluída.** |
+| `npm run test:watch` | vitest em modo watch; `npx vitest run server/tests/auth.test.ts` roda um arquivo só |
 | `npm run build` | typecheck + bundle em `out/` |
 | `npm start` | abre o build de `out/` |
 | `npm run dist` | build + instalador NSIS em `dist/` (config em `electron-builder.yml`) |
-| `npm test` | vitest uma vez (`vitest run`); `npm run test:watch` fica observando |
 
 Variáveis do servidor: `PORT`, `DATA_DIR` (padrão `server/data`, que está no `.gitignore`), `GOOGLE_CLIENT_ID` e
 `GOOGLE_CLIENT_SECRET`. O servidor lê `server/.env` sozinho ao iniciar (`server/env.ts`); o modelo está em
@@ -65,7 +66,11 @@ docker compose down -v   # para e APAGA o banco (recria concord_test na próxima
 - Importe explicitamente: `import { describe, it, expect } from 'vitest'` (sem globals).
 - Teste de banco usa `DATABASE_URL_TEST` (banco `concord_test`), nunca `DATABASE_URL`.
 - Teste que precisa de DOM: `// @vitest-environment jsdom` no topo do arquivo e `npm install -D jsdom`.
-- Antes de mergear: `npm run typecheck && npm test`.
+- **Integração do servidor** em `server/tests/<dominio>.test.ts`: `TestServer.start()` (`server/tests/helpers.ts`)
+  sobe o servidor real (`node --import tsx server/index.ts`) em porta livre e DATA_DIR temporário, sem tocar em
+  `server/data`; `server.newUser()`, `waitFor(socket, 'evento', filtro)`, `expectNoEvent(...)` e `server.restart()`.
+- **Ações do app**: `src/renderer/src/lib/actions/*.test.ts` com `FakeSocket` (`src/renderer/src/test/fake-socket.ts`).
+- Toda tarefa traz testes; só está pronta com `npm run typecheck && npm test` 100% verdes.
 
 ## Contas no desenvolvimento
 
@@ -89,7 +94,7 @@ docker compose down -v   # para e APAGA o banco (recria concord_test na próxima
 
 | Sintoma | Causa e solução |
 |---|---|
-| `Error: Electron uninstall` | O binário do Electron não foi baixado (o script de instalação dele não rodou ou ainda não terminou). `node node_modules/electron/install.js`, ou apague `node_modules` e rode `npm install` de novo. |
+| `Error: Electron uninstall` | O binário do Electron não foi baixado (o script de instalação dele não rodou ou ainda não terminou). `node node_modules/electron/install.js`, ou apague `node_modules` e rode `npm install` de novo. No npm 11.20+ os install scripts ficam bloqueados por padrão (aviso `install-scripts ... not yet covered by allowScripts`): rode `npm install-scripts approve electron esbuild` e depois `npm rebuild`. |
 | Tela de login diz que não conectou | O servidor não está rodando, o endereço está errado ou o firewall bloqueia. Teste abrindo o endereço no navegador: ele responde `{"name":"concord-server",...}`. |
 | `EADDRINUSE :3001` | Outro servidor já está rodando. Feche o processo ou use outra porta (PowerShell: `$env:PORT=3002; npm run server`). |
 | Microfone negado ou não encontrado | Confira as permissões de microfone do Windows para apps desktop. O main já libera `media` para o renderer. |

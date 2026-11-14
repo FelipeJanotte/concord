@@ -1,6 +1,8 @@
 /**
  * Contas do Concord: cadastro com e-mail + senha, login, sessões por token,
  * login com Google (OAuth 2.0 "app para computador", gratuito) e perfil (nome#tag + foto).
+ *
+ * Os dados ficam no repo (`server/repo/*`); aqui só ficam as regras.
  */
 import { createHash, randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
@@ -19,7 +21,19 @@ import {
   type ProfileUpdateResult,
   type RegisterRequest
 } from '../src/shared/types'
-import { AVATAR_DIR, db, save, type Account } from './db'
+import { AVATAR_DIR } from './db'
+import {
+  findAccount,
+  findAccountByEmail,
+  findAccountByGoogleId,
+  insertAccount,
+  isTagTaken,
+  updateAccount
+} from './repo/accounts'
+import { deleteSession, findValidSession, insertSession } from './repo/sessions'
+import type { Account } from './repo/types'
+
+export { findAccount }
 
 const scryptAsync = promisify(scrypt) as (password: string, salt: Buffer, keylen: number) => Promise<Buffer>
 
@@ -77,17 +91,12 @@ function normalizeTag(raw: unknown): string | null {
  * O id é único entre todas as contas (sem diferenciar maiúsculas). Como ele não
  * muda, é o que distingue duas pessoas com o mesmo nome, mesmo que elas troquem de nome.
  */
-function tagTaken(tag: string, exceptId?: string): boolean {
-  const t = tag.toLowerCase()
-  return db.accounts.some((a) => a.id !== exceptId && a.tag.toLowerCase() === t)
-}
-
-function randomFreeTag(): string {
+async function randomFreeTag(): Promise<string> {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
   for (let i = 0; ; i++) {
     let tag = ''
     for (let j = 0; j < 5; j++) tag += chars[randomBytes(1)[0] % chars.length]
-    if (!tagTaken(tag) || i > 1000) return tag
+    if (!(await isTagTaken(tag)) || i > 1000) return tag
   }
 }
 
@@ -128,46 +137,43 @@ function recordFailure(email: string): void {
 
 const sha256 = (s: string): string => createHash('sha256').update(s).digest('hex')
 
-function createSession(accountId: string): string {
+async function createSession(accountId: string): Promise<string> {
   const token = randomBytes(32).toString('base64url')
-  const now = Date.now()
-  db.sessions = db.sessions.filter((s) => s.expiresAt > now)
-  db.sessions.push({ tokenHash: sha256(token), accountId, expiresAt: now + SESSION_TTL_MS })
-  save()
+  await insertSession({ tokenHash: sha256(token), accountId, expiresAt: Date.now() + SESSION_TTL_MS })
   return token
 }
 
-export function accountFromToken(token: unknown): Account | null {
-  if (typeof token !== 'string' || !token) return null
-  const hash = sha256(token)
-  const session = db.sessions.find((s) => s.tokenHash === hash)
-  if (!session || session.expiresAt < Date.now()) return null
-  return db.accounts.find((a) => a.id === session.accountId) ?? null
+export async function accountFromToken(token: unknown): Promise<Account | undefined> {
+  if (typeof token !== 'string' || !token) return undefined
+  const session = await findValidSession(sha256(token))
+  return session ? findAccount(session.accountId) : undefined
 }
 
-export function revokeSession(token: unknown): void {
+export async function revokeSession(token: unknown): Promise<void> {
   if (typeof token !== 'string') return
-  const hash = sha256(token)
-  const before = db.sessions.length
-  db.sessions = db.sessions.filter((s) => s.tokenHash !== hash)
-  if (db.sessions.length !== before) save()
+  await deleteSession(sha256(token))
 }
 
-const success = (a: Account): AuthResult => ({ ok: true, token: createSession(a.id), account: toAccountInfo(a) })
+const success = async (a: Account): Promise<AuthResult> => ({
+  ok: true,
+  token: await createSession(a.id),
+  account: toAccountInfo(a)
+})
 
 // ---------- Foto ----------
 
-function writeAvatar(account: Account, bytes: Buffer, type: string): void {
+type AvatarPatch = Pick<Account, 'avatarType' | 'avatarVersion'>
+
+/** Grava o arquivo e devolve os campos que a conta precisa atualizar. */
+function writeAvatar(account: Account, bytes: Buffer, type: string): AvatarPatch {
   mkdirSync(AVATAR_DIR, { recursive: true })
   writeFileSync(join(AVATAR_DIR, account.id), bytes)
-  account.avatarType = type
-  account.avatarVersion++
+  return { avatarType: type, avatarVersion: account.avatarVersion + 1 }
 }
 
-function removeAvatar(account: Account): void {
+function removeAvatar(account: Account): AvatarPatch {
   rmSync(join(AVATAR_DIR, account.id), { force: true })
-  account.avatarType = null
-  account.avatarVersion++
+  return { avatarType: null, avatarVersion: account.avatarVersion + 1 }
 }
 
 /** Aceita só data URLs de imagem (png, jpeg, webp ou gif) até AVATAR_MAX_BYTES. */
@@ -191,11 +197,11 @@ export async function register(req: Partial<RegisterRequest>): Promise<AuthResul
   if (!name) return { ok: false, error: 'O nome precisa ter pelo menos 2 caracteres (sem "#")' }
   const tag = normalizeTag(req.tag)
   if (!tag) return { ok: false, error: 'O id precisa ter de 1 a 5 letras ou números' }
-  if (db.accounts.some((a) => a.email === email)) return { ok: false, error: 'Este e-mail já está cadastrado' }
-  if (tagTaken(tag)) return { ok: false, error: `O id #${tag} já está em uso. Escolha outro.` }
+  if (await findAccountByEmail(email)) return { ok: false, error: 'Este e-mail já está cadastrado' }
+  if (await isTagTaken(tag)) return { ok: false, error: `O id #${tag} já está em uso. Escolha outro.` }
 
   const id = randomUUID()
-  const account: Account = {
+  const account = await insertAccount({
     id,
     email,
     name,
@@ -207,9 +213,7 @@ export async function register(req: Partial<RegisterRequest>): Promise<AuthResul
     avatarType: null,
     avatarVersion: 0,
     createdAt: Date.now()
-  }
-  db.accounts.push(account)
-  save()
+  })
   console.log(`[conta] criada: ${name}#${tag}`)
   return success(account)
 }
@@ -219,7 +223,7 @@ export async function login(req: Partial<LoginRequest>): Promise<AuthResult> {
   const password = str(req.password)
   if (!email || !password) return { ok: false, error: 'E-mail ou senha incorretos' }
   if (isLocked(email)) return { ok: false, error: 'Muitas tentativas. Tente de novo em alguns minutos.' }
-  const account = db.accounts.find((a) => a.email === email)
+  const account = await findAccountByEmail(email)
   if (account && !account.passwordHash) {
     return { ok: false, error: 'Esta conta foi criada com o Google. Use "Entrar com Google".' }
   }
@@ -245,16 +249,17 @@ interface GoogleIdToken {
   picture?: string
 }
 
-async function downloadGooglePicture(account: Account, url: string): Promise<void> {
+async function downloadGooglePicture(account: Account, url: string): Promise<AvatarPatch | null> {
   try {
     const res = await fetch(url.replace(/=s\d+(-c)?$/, '=s256-c'))
     const type = res.headers.get('content-type')?.split(';')[0] ?? ''
-    if (!res.ok || !/^image\/(png|jpeg|webp|gif)$/.test(type)) return
+    if (!res.ok || !/^image\/(png|jpeg|webp|gif)$/.test(type)) return null
     const bytes = Buffer.from(await res.arrayBuffer())
-    if (bytes.length > 0 && bytes.length <= AVATAR_MAX_BYTES) writeAvatar(account, bytes, type)
+    if (bytes.length > 0 && bytes.length <= AVATAR_MAX_BYTES) return writeAvatar(account, bytes, type)
   } catch {
     // foto é opcional
   }
+  return null
 }
 
 export async function googleLogin(req: Partial<GoogleLoginRequest>): Promise<AuthResult> {
@@ -305,24 +310,21 @@ export async function googleLogin(req: Partial<GoogleLoginRequest>): Promise<Aut
   const email = normalizeEmail(claims.email)
   if (!email || !claims.email_verified) return { ok: false, error: 'Sua conta Google não tem e-mail verificado' }
 
-  let account = db.accounts.find((a) => a.googleId === claims.sub)
+  let account = await findAccountByGoogleId(claims.sub)
   if (!account) {
     // Mesmo e-mail (verificado pelo Google) de uma conta existente: vincula.
-    account = db.accounts.find((a) => a.email === email)
-    if (account) {
-      account.googleId = claims.sub
-      save()
-    }
+    const byEmail = await findAccountByEmail(email)
+    if (byEmail) account = await updateAccount(byEmail.id, { googleId: claims.sub })
   }
   if (!account) {
     const name = normalizeName(claims.name) ?? normalizeName(claims.given_name) ?? normalizeName(email.split('@')[0]) ?? 'Usuário'
     const id = randomUUID()
-    account = {
+    const draft: Account = {
       id,
       email,
       name,
       // id provisório: a pessoa escolhe o definitivo uma vez, logo após entrar
-      tag: randomFreeTag(),
+      tag: await randomFreeTag(),
       tagLocked: false,
       color: colorFor(id),
       passwordHash: null,
@@ -331,9 +333,8 @@ export async function googleLogin(req: Partial<GoogleLoginRequest>): Promise<Aut
       avatarVersion: 0,
       createdAt: Date.now()
     }
-    db.accounts.push(account)
-    if (claims.picture) await downloadGooglePicture(account, claims.picture)
-    save()
+    const picture = claims.picture ? await downloadGooglePicture(draft, claims.picture) : null
+    account = await insertAccount({ ...draft, ...picture })
     console.log(`[conta] criada via Google: ${account.name}#${account.tag}`)
   }
   return success(account)
@@ -341,7 +342,7 @@ export async function googleLogin(req: Partial<GoogleLoginRequest>): Promise<Aut
 
 // ---------- Perfil ----------
 
-export function updateProfile(account: Account, payload: Partial<ProfileUpdate>): ProfileUpdateResult {
+export async function updateProfile(account: Account, payload: Partial<ProfileUpdate>): Promise<ProfileUpdateResult> {
   const name = normalizeName(payload?.name)
   if (!name) return { ok: false, error: 'O nome precisa ter pelo menos 2 caracteres (sem "#")' }
 
@@ -351,7 +352,7 @@ export function updateProfile(account: Account, payload: Partial<ProfileUpdate>)
     if (account.tagLocked) return { ok: false, error: 'O id não pode ser alterado' }
     tag = normalizeTag(payload.tag)
     if (!tag) return { ok: false, error: 'O id precisa ter de 1 a 5 letras ou números' }
-    if (tagTaken(tag, account.id)) return { ok: false, error: `O id #${tag} já está em uso. Escolha outro.` }
+    if (await isTagTaken(tag, account.id)) return { ok: false, error: `O id #${tag} já está em uso. Escolha outro.` }
   }
 
   let avatar: { bytes: Buffer; type: string } | null = null
@@ -360,16 +361,14 @@ export function updateProfile(account: Account, payload: Partial<ProfileUpdate>)
     if (!avatar) return { ok: false, error: 'Imagem inválida ou grande demais' }
   }
 
-  account.name = name
-  if (tag) account.tag = tag
+  const patch: Partial<Account> = { name }
+  if (tag) patch.tag = tag
   // Confirmar o id (mesmo mantendo o provisório) trava de vez.
-  if (payload.tag !== undefined) account.tagLocked = true
-  if (avatar) writeAvatar(account, avatar.bytes, avatar.type)
-  else if (payload.avatar === null && account.avatarType) removeAvatar(account)
-  save()
-  return { ok: true, account: toAccountInfo(account) }
-}
+  if (payload.tag !== undefined) patch.tagLocked = true
+  if (avatar) Object.assign(patch, writeAvatar(account, avatar.bytes, avatar.type))
+  else if (payload.avatar === null && account.avatarType) Object.assign(patch, removeAvatar(account))
 
-export function findAccount(id: string): Account | undefined {
-  return db.accounts.find((a) => a.id === id)
+  const updated = await updateAccount(account.id, patch)
+  if (!updated) return { ok: false, error: 'Conta não encontrada' }
+  return { ok: true, account: toAccountInfo(updated) }
 }

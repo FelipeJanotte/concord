@@ -1,0 +1,329 @@
+// Eventos Socket.IO: presença, canais, mensagens, "digitando", voz e perfil.
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import type { Channel } from '../../src/shared/types'
+import { expectNoEvent, TestServer, uniqueCredentials, waitFor, type ClientSocket, type TestUser } from './helpers'
+
+let server: TestServer
+const open: ClientSocket[] = []
+
+beforeAll(async () => {
+  server = await TestServer.start()
+})
+
+afterEach(() => {
+  for (const s of open.splice(0)) s.close()
+})
+
+afterAll(async () => {
+  await server?.destroy()
+})
+
+async function user(name?: string): Promise<TestUser> {
+  const u = await server.newUser(name)
+  open.push(u.socket)
+  return u
+}
+
+async function newChannel(u: TestUser, type: 'text' | 'voice'): Promise<Channel> {
+  const res = await u.socket.emitWithAck('channel:create', { name: `c ${Math.random().toString(36).slice(2, 8)}`, type })
+  if (!res.ok) throw new Error(res.error)
+  return res.channel
+}
+
+describe('presença', () => {
+  it('avisa os outros quando alguém entra e sai', async () => {
+    const a = await user('Ana')
+    const creds = uniqueCredentials('Bia')
+    const reg = await server.register(creds)
+    if (!reg.ok) throw new Error(reg.error)
+    const b = await server.connect(reg.token)
+    open.push(b)
+
+    const joined = waitFor(a.socket, 'user:joined', (u) => u.id === b.id)
+    const hello = await b.emitWithAck('hello')
+    const [joinedUser] = await joined
+    expect(joinedUser).toMatchObject({ name: 'Bia', tag: creds.tag, accountId: reg.account.id })
+    expect(hello.state.users.some((u) => u.id === a.socket.id)).toBe(true)
+
+    const left = waitFor(a.socket, 'user:left', (id) => id === hello.self.id)
+    b.close()
+    await left
+  })
+
+  it('hello repetido na mesma conexão não anuncia de novo', async () => {
+    const a = await user()
+    const reg = await server.register(uniqueCredentials())
+    if (!reg.ok) throw new Error(reg.error)
+    const b = await server.connect(reg.token)
+    open.push(b)
+    const first = waitFor(a.socket, 'user:joined', (u) => u.id === b.id)
+    await b.emitWithAck('hello')
+    await first
+    const noRepeat = expectNoEvent(a.socket, 'user:joined', (u) => u.id === b.id)
+    await b.emitWithAck('hello')
+    await noRepeat
+  })
+
+  it('a mesma conta em duas conexões aparece duas vezes (uma por socket)', async () => {
+    const a = await user()
+    const second = await server.connect(a.token)
+    open.push(second)
+    const hello = await second.emitWithAck('hello')
+    expect(hello.state.users.filter((u) => u.accountId === a.account.id)).toHaveLength(2)
+  })
+
+  it('ignora ações antes do hello', async () => {
+    const creds = uniqueCredentials()
+    const reg = await server.register(creds)
+    if (!reg.ok) throw new Error(reg.error)
+    const s = await server.connect(reg.token)
+    open.push(s)
+    expect(await s.emitWithAck('channel:create', { name: 'x', type: 'text' })).toEqual({
+      ok: false,
+      error: 'Não autenticado'
+    })
+    expect(await s.emitWithAck('message:history', 'qualquer')).toEqual([])
+  })
+})
+
+describe('canais', () => {
+  it('cria canal de texto normalizando o nome e avisa todos', async () => {
+    const a = await user()
+    const b = await user()
+    const created = waitFor(b.socket, 'channel:created', (c) => c.name === 'meu-canal-novo')
+    const res = await a.socket.emitWithAck('channel:create', { name: '  Meu   Canal Novo ', type: 'text' })
+    expect(res.ok && res.channel).toMatchObject({ name: 'meu-canal-novo', type: 'text' })
+    await created
+  })
+
+  it('canal de voz mantém maiúsculas e espaços simples', async () => {
+    const a = await user()
+    const res = await a.socket.emitWithAck('channel:create', { name: 'Sala  Dos Amigos', type: 'voice' })
+    expect(res.ok && res.channel.name).toBe('Sala Dos Amigos')
+  })
+
+  it('corta o nome em 32 caracteres', async () => {
+    const a = await user()
+    const res = await a.socket.emitWithAck('channel:create', { name: 'x'.repeat(50), type: 'text' })
+    expect(res.ok && res.channel.name).toHaveLength(32)
+  })
+
+  it('recusa nome vazio e nome repetido no mesmo tipo', async () => {
+    const a = await user()
+    expect(await a.socket.emitWithAck('channel:create', { name: '   ', type: 'text' })).toEqual({
+      ok: false,
+      error: 'Dê um nome ao canal'
+    })
+    expect(await a.socket.emitWithAck('channel:create', { name: 'GERAL', type: 'text' })).toEqual({
+      ok: false,
+      error: 'Já existe um canal com esse nome'
+    })
+  })
+
+  it('apagar canal remove mensagens, tira todos da voz e avisa', async () => {
+    const a = await user()
+    const b = await user()
+    const text = await newChannel(a, 'text')
+    a.socket.emit('message:send', { channelId: text.id, content: 'oi' })
+    await waitFor(b.socket, 'message:new', (m) => m.channelId === text.id)
+
+    const deleted = waitFor(b.socket, 'channel:deleted', (id) => id === text.id)
+    a.socket.emit('channel:delete', text.id)
+    await deleted
+    expect(await b.socket.emitWithAck('message:history', text.id)).toEqual([])
+
+    const voice = await newChannel(a, 'voice')
+    await b.socket.emitWithAck('voice:join', { channelId: voice.id, muted: false, deafened: false })
+    const cleared = waitFor(a.socket, 'voice:state', (states) => !states.some((v) => v.channelId === voice.id))
+    a.socket.emit('channel:delete', voice.id)
+    await cleared
+  })
+
+  it('apagar canal inexistente não faz nada', async () => {
+    const a = await user()
+    const silent = expectNoEvent(a.socket, 'channel:deleted')
+    a.socket.emit('channel:delete', 'nao-existe')
+    await silent
+  })
+})
+
+describe('mensagens', () => {
+  it('envia para todos com o autor e guarda no histórico', async () => {
+    const a = await user('Autor')
+    const b = await user()
+    const ch = await newChannel(a, 'text')
+    const got = waitFor(b.socket, 'message:new', (m) => m.channelId === ch.id)
+    a.socket.emit('message:send', { channelId: ch.id, content: '   olá mundo  ' })
+    const [msg] = await got
+    expect(msg).toMatchObject({ content: 'olá mundo', author: { accountId: a.account.id, name: 'Autor' } })
+    expect(await b.socket.emitWithAck('message:history', ch.id)).toEqual([msg])
+  })
+
+  it('mantém a ordem de envio', async () => {
+    const a = await user()
+    const ch = await newChannel(a, 'text')
+    const last = waitFor(a.socket, 'message:new', (m) => m.content === 'm5')
+    for (let i = 1; i <= 5; i++) a.socket.emit('message:send', { channelId: ch.id, content: `m${i}` })
+    await last
+    const history = await a.socket.emitWithAck('message:history', ch.id)
+    expect(history.map((m) => m.content)).toEqual(['m1', 'm2', 'm3', 'm4', 'm5'])
+  })
+
+  it('corta em 2000 caracteres', async () => {
+    const a = await user()
+    const ch = await newChannel(a, 'text')
+    const got = waitFor(a.socket, 'message:new', (m) => m.channelId === ch.id)
+    a.socket.emit('message:send', { channelId: ch.id, content: 'a'.repeat(2500) })
+    expect((await got)[0].content).toHaveLength(2000)
+  })
+
+  it('ignora mensagem vazia, canal de voz e canal inexistente', async () => {
+    const a = await user()
+    const text = await newChannel(a, 'text')
+    const voice = await newChannel(a, 'voice')
+    const silent = expectNoEvent(a.socket, 'message:new')
+    a.socket.emit('message:send', { channelId: text.id, content: '    ' })
+    a.socket.emit('message:send', { channelId: voice.id, content: 'oi' })
+    a.socket.emit('message:send', { channelId: 'nao-existe', content: 'oi' })
+    await silent
+    expect(await a.socket.emitWithAck('message:history', voice.id)).toEqual([])
+  })
+
+  it('"digitando" vai para os outros, não para quem digita', async () => {
+    const a = await user('Digitador')
+    const b = await user()
+    const ch = await newChannel(a, 'text')
+    const typing = waitFor(b.socket, 'typing', (p) => p.channelId === ch.id)
+    const notMe = expectNoEvent(a.socket, 'typing', (p) => p.channelId === ch.id)
+    a.socket.emit('typing', ch.id)
+    expect((await typing)[0]).toEqual({ channelId: ch.id, userId: a.socket.id, name: 'Digitador' })
+    await notMe
+  })
+})
+
+describe('voz', () => {
+  it('quem entra recebe os peers que já estavam na sala', async () => {
+    const a = await user()
+    const b = await user()
+    const ch = await newChannel(a, 'voice')
+    expect(await a.socket.emitWithAck('voice:join', { channelId: ch.id, muted: false, deafened: false })).toEqual({
+      ok: true,
+      peers: []
+    })
+    const state = waitFor(a.socket, 'voice:state', (s) => s.some((v) => v.userId === b.socket.id))
+    expect(await b.socket.emitWithAck('voice:join', { channelId: ch.id, muted: true, deafened: false })).toEqual({
+      ok: true,
+      peers: [a.socket.id]
+    })
+    const [states] = await state
+    expect(states.find((v) => v.userId === b.socket.id)).toEqual({
+      userId: b.socket.id,
+      channelId: ch.id,
+      muted: true,
+      deafened: false
+    })
+  })
+
+  it('recusa canal de texto e canal inexistente', async () => {
+    const a = await user()
+    const text = await newChannel(a, 'text')
+    expect(await a.socket.emitWithAck('voice:join', { channelId: text.id, muted: false, deafened: false })).toEqual({
+      ok: false,
+      error: 'Canal de voz não encontrado'
+    })
+    expect(await a.socket.emitWithAck('voice:join', { channelId: 'x', muted: false, deafened: false })).toMatchObject({
+      ok: false
+    })
+  })
+
+  it('repassa sinalização só dentro da mesma sala', async () => {
+    const a = await user()
+    const b = await user()
+    const c = await user()
+    const room1 = await newChannel(a, 'voice')
+    const room2 = await newChannel(a, 'voice')
+    await a.socket.emitWithAck('voice:join', { channelId: room1.id, muted: false, deafened: false })
+    await b.socket.emitWithAck('voice:join', { channelId: room1.id, muted: false, deafened: false })
+    await c.socket.emitWithAck('voice:join', { channelId: room2.id, muted: false, deafened: false })
+
+    const got = waitFor(a.socket, 'voice:signal')
+    b.socket.emit('voice:signal', { to: a.socket.id!, data: { type: 'offer', sdp: 'sdp-b' } })
+    expect((await got)[0]).toEqual({ from: b.socket.id, data: { type: 'offer', sdp: 'sdp-b' } })
+
+    const blocked = expectNoEvent(a.socket, 'voice:signal')
+    c.socket.emit('voice:signal', { to: a.socket.id!, data: { type: 'offer', sdp: 'sdp-c' } })
+    await blocked
+  })
+
+  it('voice:update muda mute/deafen para todos', async () => {
+    const a = await user()
+    const b = await user()
+    const ch = await newChannel(a, 'voice')
+    await a.socket.emitWithAck('voice:join', { channelId: ch.id, muted: false, deafened: false })
+    const updated = waitFor(b.socket, 'voice:state', (s) =>
+      s.some((v) => v.userId === a.socket.id && v.muted && v.deafened)
+    )
+    a.socket.emit('voice:update', { muted: true, deafened: true })
+    await updated
+  })
+
+  it('trocar de sala sai da anterior', async () => {
+    const a = await user()
+    const b = await user()
+    const room1 = await newChannel(a, 'voice')
+    const room2 = await newChannel(a, 'voice')
+    await b.socket.emitWithAck('voice:join', { channelId: room1.id, muted: false, deafened: false })
+    await a.socket.emitWithAck('voice:join', { channelId: room1.id, muted: false, deafened: false })
+    const left = waitFor(b.socket, 'voice:peer-left', (id) => id === a.socket.id)
+    await a.socket.emitWithAck('voice:join', { channelId: room2.id, muted: false, deafened: false })
+    await left
+  })
+
+  it('sair (voice:leave ou desconectar) avisa a sala', async () => {
+    const a = await user()
+    const b = await user()
+    const ch = await newChannel(a, 'voice')
+    await a.socket.emitWithAck('voice:join', { channelId: ch.id, muted: false, deafened: false })
+    await b.socket.emitWithAck('voice:join', { channelId: ch.id, muted: false, deafened: false })
+
+    const leave = waitFor(a.socket, 'voice:peer-left', (id) => id === b.socket.id)
+    b.socket.emit('voice:leave')
+    await leave
+
+    await b.socket.emitWithAck('voice:join', { channelId: ch.id, muted: false, deafened: false })
+    const bId = b.socket.id
+    const gone = waitFor(a.socket, 'voice:state', (s) => !s.some((v) => v.userId === bId))
+    b.socket.close()
+    await gone
+  })
+})
+
+describe('perfil', () => {
+  it('troca o nome e avisa todos, inclusive nas mensagens novas', async () => {
+    const a = await user('Antigo')
+    const b = await user()
+    const updated = waitFor(b.socket, 'user:updated', (p) => p.accountId === a.account.id)
+    const res = await a.socket.emitWithAck('account:update', { name: 'Novo Nome' })
+    expect(res.ok && res.account.name).toBe('Novo Nome')
+    expect((await updated)[0]).toEqual({ accountId: a.account.id, name: 'Novo Nome', tag: a.tag, avatarUrl: null })
+
+    const ch = await newChannel(a, 'text')
+    const msg = waitFor(b.socket, 'message:new', (m) => m.channelId === ch.id)
+    a.socket.emit('message:send', { channelId: ch.id, content: 'oi' })
+    expect((await msg)[0].author.name).toBe('Novo Nome')
+  })
+
+  it('o id (tag) travado não pode mudar', async () => {
+    const a = await user()
+    expect(await a.socket.emitWithAck('account:update', { name: a.name, tag: 'outro' })).toEqual({
+      ok: false,
+      error: 'O id não pode ser alterado'
+    })
+  })
+
+  it('recusa nome inválido', async () => {
+    const a = await user()
+    const res = await a.socket.emitWithAck('account:update', { name: 'x' })
+    expect(res.ok).toBe(false)
+  })
+})

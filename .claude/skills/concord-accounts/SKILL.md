@@ -21,21 +21,26 @@ pode mudar) e um **id** (`tag`, 1 a 5 letras/números) e aparece como `Nome#id`.
 5. Senha: mínimo `PASSWORD_MIN` (8), máximo 200.
 6. Para identificar uma pessoa use **`accountId`**, nunca `User.id` (que é o `socket.id` e muda a cada conexão).
 
-Constantes compartilhadas em `src/shared/types.ts`: `NAME_MAX`, `TAG_MAX`, `TAG_PATTERN`, `PASSWORD_MIN`,
+Constantes compartilhadas em `src/shared/types/account.ts`: `NAME_MAX`, `TAG_MAX`, `TAG_PATTERN`, `PASSWORD_MIN`,
 `AVATAR_MAX_BYTES`. Use-as dos dois lados em vez de repetir números.
 
 ## Onde fica cada coisa
 
 | Arquivo | Papel |
 |---|---|
-| `src/shared/types.ts` | `User` (com `accountId`, `tag`, `avatarUrl`), `AccountInfo`, requests/`AuthResult` HTTP, `ProfileUpdate`, eventos `account:update` e `user:updated` |
-| `server/db.ts` | `Account` (com `passwordHash`, `googleId`, `tagLocked`, `avatarType`, `avatarVersion`) e `Session`; migração de dados antigos em `loadDb()` |
-| `server/auth.ts` | hash de senha, sessões, cadastro, login, Google, perfil e foto |
+| `src/shared/types/account.ts` | `User` (com `accountId`, `tag`, `avatarUrl`), `AccountInfo`, requests/`AuthResult` HTTP, `ProfileUpdate`, eventos `account:update` e `user:updated` |
+| `server/repo/types.ts` | `Account` (com `passwordHash`, `googleId`, `tagLocked`, `avatarType`, `avatarVersion`) e `Session` |
+| `server/repo/accounts.ts`, `server/repo/sessions.ts` | acesso async às contas e sessões (devolvem cópias; alteração só por `updateAccount(id, patch)`) |
+| `server/db.ts` | armazenamento JSON usado pelo repo; migração de dados antigos em `loadDb()` |
+| `server/auth.ts` | regras: hash de senha, sessões, cadastro, login, Google, perfil e foto (tudo async) |
 | `server/env.ts` | carrega `server/.env` (importado **primeiro** no `index.ts`, porque `auth.ts` lê `process.env` ao carregar) |
-| `server/index.ts` | rotas HTTP, middleware `io.use` que exige token, `hello`, `account:update` |
+| `server/modules/accounts.ts` | rotas HTTP `/auth/*` e `/avatars/*`, evento `account:update` |
+| `server/modules/presence.ts` | `hello` (`userFor()` monta o `User`) |
+| `server/index.ts` | middleware `io.use` que exige token (erro do banco vira `server_error`, que **não** apaga o token no app) |
 | `src/main/google-auth.ts` | abre o navegador e captura o código do Google (IPC `google-sign-in`) |
 | `src/preload/index.ts` | expõe `window.api.googleSignIn(clientId)` |
-| `src/renderer/src/lib/client.ts` | `register`, `login`, `loginWithGoogle`, `restoreSession`, `logout`, `updateProfile`, `resolveAvatarUrl` |
+| `src/renderer/src/lib/client.ts` | `register`, `login`, `loginWithGoogle`, `restoreSession`, `logout` |
+| `src/renderer/src/lib/actions/account.ts` | `updateProfile`, `resolveAvatarUrl`, listener `user:updated` |
 | `src/renderer/src/lib/image.ts` | `fileToAvatarDataUrl` (recorte quadrado 256×256 em WebP) e `randomTag` |
 | `components/LoginScreen.tsx` | abas Entrar / Criar conta, botão Google, troca de servidor, tela "Entrando..." |
 | `components/ProfileDialog.tsx` | "Minha conta": nome, foto, id com cadeado (ou campo de escolha única), sair da conta |
@@ -52,9 +57,9 @@ LoginScreen ──fetch──> POST /auth/register | /auth/login | /auth/google 
                                                                                   └─> hello → { self, account, state }
 ```
 
-- **HTTP antes do socket.** Cadastro/login/Google são rotas HTTP (`handleHttp` em `server/index.ts`, CORS `*`,
-  corpo JSON até 16 KB). Um socket sem token válido nem conecta (`next(new Error('unauthorized'))`).
-- **Sessão:** token aleatório de 32 bytes; o banco guarda só o `sha256` (`db.sessions`), validade de 30 dias.
+- **HTTP antes do socket.** Cadastro/login/Google são rotas HTTP (`accountsModule.http` em `server/modules/accounts.ts`,
+  CORS `*` em `server/index.ts`, corpo JSON até 16 KB). Um socket sem token válido nem conecta (`next(new Error('unauthorized'))`).
+- **Sessão:** token aleatório de 32 bytes; o banco guarda só o `sha256` (`server/repo/sessions.ts`), validade de 30 dias.
   `POST /auth/logout { token }` revoga.
 - **Ao abrir o app:** `App` chama `restoreSession()`, que usa o token salvo. Enquanto isso `store.restoring = true`
   e o `LoginScreen` mostra "Entrando...". O `connect()` preserva `restoring` ao chamar `disconnect()` (que volta
@@ -107,11 +112,11 @@ A `MemberList` deduplica por `accountId` (a mesma conta pode estar em duas janel
 
 ## Adicionar algo às contas (exemplo: campo "bio")
 
-1. `src/shared/types.ts`: campo em `AccountInfo`/`User` (se outros precisam ver) e em `ProfileUpdate`.
-2. `server/db.ts`: campo em `Account` + valor padrão na migração de `loadDb()` para contas antigas.
-3. `server/auth.ts`: validar em `updateProfile()` e incluir em `toAccountInfo()`; `server/index.ts`: `userFor()`
-   e o payload de `user:updated`.
-4. `client.ts`: nada novo se couber no `updateProfile`/`user:updated`.
+1. `src/shared/types/account.ts`: campo em `AccountInfo`/`User` (se outros precisam ver) e em `ProfileUpdate`.
+2. `server/repo/types.ts`: campo em `Account`; `server/db.ts`: valor padrão na migração de `loadDb()` para contas antigas.
+3. `server/auth.ts`: validar em `updateProfile()` (entra no `patch`) e incluir em `toAccountInfo()`;
+   `server/modules/presence.ts`: `userFor()`; `server/modules/accounts.ts`: payload de `user:updated`.
+4. `lib/actions/account.ts`: nada novo se couber no `updateProfile`/`user:updated`.
 5. UI em `ProfileDialog`. Textos em pt-BR, tokens de cor do tema.
 
 ## Testar

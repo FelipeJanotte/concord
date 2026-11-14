@@ -1,42 +1,21 @@
 /**
- * Conexão com o servidor (Socket.IO) e todas as ações do app.
- * Os componentes leem o estado via `useApp` e chamam estas funções.
+ * Ponto de entrada das ações do app: login/sessão, conexão Socket.IO e
+ * reexporta as ações de cada domínio (`lib/actions/*`).
+ * Os componentes leem o estado via `useApp` e chamam funções importadas daqui.
+ *
+ * Domínio novo: crie `lib/actions/<dominio>.ts` com `bind<Dominio>Events(s)`,
+ * chame-o em `connect()` e acrescente o `export *` no fim deste arquivo.
  */
-import { io, type Socket } from 'socket.io-client'
-import type {
-  AuthConfig,
-  AuthResult,
-  Channel,
-  ChannelType,
-  ClientToServerEvents,
-  LoginRequest,
-  ProfileUpdate,
-  RegisterRequest,
-  ServerToClientEvents
-} from '@shared/types'
-import { initialState, useApp, type View } from '@/store'
-import { omit } from './utils'
+import { io } from 'socket.io-client'
+import type { AuthConfig, AuthResult, LoginRequest, RegisterRequest } from '@shared/types'
+import { initialState } from '@/store'
+import { bindAccountEvents } from './actions/account'
+import { bindChannelEvents, firstTextView } from './actions/channels'
+import { bindMessageEvents, loadHistory } from './actions/messages'
+import { bindPresenceEvents } from './actions/presence'
+import { bindVoiceEvents } from './actions/voice'
+import { baseUrl, get, getSocket, notify, set, setSocket, type AppSocket } from './core'
 import { voice } from './voice'
-
-export type AppSocket = Socket<ServerToClientEvents, ClientToServerEvents>
-
-let socket: AppSocket | null = null
-const set = useApp.setState
-const get = useApp.getState
-
-function requireSocket(): AppSocket {
-  if (!socket) throw new Error('Sem conexão com o servidor')
-  return socket
-}
-
-export function notify(text: string, kind: 'error' | 'info' = 'error'): void {
-  set({ notice: { id: Date.now(), text, kind } })
-}
-
-function firstTextView(channels: Channel[]): View | null {
-  const channel = channels.find((c) => c.type === 'text')
-  return channel ? { kind: 'text', channelId: channel.id } : null
-}
 
 // ---------- Contas (HTTP) ----------
 
@@ -47,8 +26,6 @@ export const DEFAULT_SERVER = 'http://localhost:3001'
 export function savedServerUrl(): string {
   return localStorage.getItem(SERVER_KEY) ?? DEFAULT_SERVER
 }
-
-const baseUrl = (url: string): string => url.trim().replace(/\/+$/, '')
 
 async function http<T>(url: string, path: string, body?: unknown): Promise<T> {
   let res: Response
@@ -122,19 +99,6 @@ export function logout(): void {
   disconnect()
 }
 
-export async function updateProfile(update: ProfileUpdate): Promise<void> {
-  const res = await requireSocket().emitWithAck('account:update', update)
-  if (!res.ok) throw new Error(res.error)
-  set({ account: res.account })
-}
-
-/** Endereço completo da foto de perfil (o servidor devolve só o caminho). */
-export function resolveAvatarUrl(path: string | null | undefined, serverUrl: string | null): string | undefined {
-  if (!path) return undefined
-  if (/^(https?:|data:|blob:)/.test(path)) return path
-  return serverUrl ? baseUrl(serverUrl) + path : undefined
-}
-
 // ---------- Conexão ----------
 
 export function connect(url: string, token: string): Promise<void> {
@@ -148,8 +112,14 @@ export function connect(url: string, token: string): Promise<void> {
     timeout: 8000,
     auth: { token }
   })
-  socket = s
+  setSocket(s)
   voice.setSocket(s)
+
+  bindAccountEvents(s)
+  bindPresenceEvents(s)
+  bindChannelEvents(s)
+  bindMessageEvents(s)
+  bindVoiceEvents(s)
 
   return new Promise((resolve, reject) => {
     let settled = false
@@ -198,70 +168,16 @@ export function connect(url: string, token: string): Promise<void> {
     })
 
     s.on('disconnect', () => {
-      if (socket !== s) return
+      if (getSocket() !== s) return
       voice.teardown()
       set({ status: 'reconnecting', myVoiceChannelId: null, speaking: {}, noMic: false })
     })
-
-    s.on('channel:created', (channel) => set((st) => ({ channels: [...st.channels, channel] })))
-
-    s.on('channel:deleted', (channelId) => {
-      if (get().myVoiceChannelId === channelId) leaveVoice()
-      set((st) => {
-        const channels = st.channels.filter((c) => c.id !== channelId)
-        return {
-          channels,
-          messages: omit(st.messages, channelId),
-          unread: omit(st.unread, channelId),
-          view: st.view?.channelId === channelId ? firstTextView(channels) : st.view
-        }
-      })
-      const view = get().view
-      if (view?.kind === 'text') void loadHistory(view.channelId)
-    })
-
-    s.on('user:joined', (user) => set((st) => ({ users: [...st.users.filter((u) => u.id !== user.id), user] })))
-    s.on('user:left', (userId) => set((st) => ({ users: st.users.filter((u) => u.id !== userId) })))
-
-    s.on('user:updated', ({ accountId, ...profile }) =>
-      set((st) => ({
-        users: st.users.map((u) => (u.accountId === accountId ? { ...u, ...profile } : u)),
-        self: st.self?.accountId === accountId ? { ...st.self, ...profile } : st.self,
-        account: st.account?.id === accountId ? { ...st.account, ...profile } : st.account
-      }))
-    )
-
-    s.on('message:new', (message) =>
-      set((st) => {
-        const list = st.messages[message.channelId]
-        const isActive = st.view?.kind === 'text' && st.view.channelId === message.channelId
-        const typingInChannel = st.typing[message.channelId]
-        return {
-          messages: list ? { ...st.messages, [message.channelId]: [...list, message] } : st.messages,
-          unread:
-            !isActive && message.author.id !== st.self?.id ? { ...st.unread, [message.channelId]: true } : st.unread,
-          typing: typingInChannel?.[message.author.id]
-            ? { ...st.typing, [message.channelId]: omit(typingInChannel, message.author.id) }
-            : st.typing
-        }
-      })
-    )
-
-    s.on('typing', ({ channelId, userId, name: who }) =>
-      set((st) => ({
-        typing: { ...st.typing, [channelId]: { ...st.typing[channelId], [userId]: { name: who, until: Date.now() + 3500 } } }
-      }))
-    )
-
-    s.on('voice:state', (states) => set({ voice: states }))
-    s.on('voice:signal', (payload) => void voice.handleSignal(payload))
-    s.on('voice:peer-left', (userId) => voice.removePeer(userId))
   })
 }
 
 export function disconnect(): void {
-  const s = socket
-  socket = null
+  const s = getSocket()
+  setSocket(null)
   voice.teardown()
   voice.setSocket(null)
   if (s) {
@@ -271,110 +187,11 @@ export function disconnect(): void {
   set({ ...initialState })
 }
 
-// ---------- Texto ----------
+// ---------- Ações por domínio ----------
 
-const loadingHistory = new Set<string>()
-
-export async function loadHistory(channelId: string): Promise<void> {
-  if (!socket || get().messages[channelId] || loadingHistory.has(channelId)) return
-  loadingHistory.add(channelId)
-  try {
-    const messages = await socket.emitWithAck('message:history', channelId)
-    set((st) => ({ messages: { ...st.messages, [channelId]: messages } }))
-  } catch {
-    notify('Não foi possível carregar as mensagens')
-  } finally {
-    loadingHistory.delete(channelId)
-  }
-}
-
-export function selectTextChannel(channelId: string): void {
-  set((st) => ({ view: { kind: 'text', channelId }, unread: omit(st.unread, channelId) }))
-  void loadHistory(channelId)
-}
-
-let lastTypingAt = 0
-
-export function sendMessage(channelId: string, content: string): void {
-  const text = content.trim()
-  if (!text) return
-  requireSocket().emit('message:send', { channelId, content: text })
-  lastTypingAt = 0
-}
-
-export function notifyTyping(channelId: string): void {
-  const now = Date.now()
-  if (now - lastTypingAt < 2500) return
-  lastTypingAt = now
-  socket?.emit('typing', channelId)
-}
-
-// ---------- Canais ----------
-
-export async function createChannel(name: string, type: ChannelType): Promise<Channel> {
-  const res = await requireSocket().emitWithAck('channel:create', { name, type })
-  if (!res.ok) throw new Error(res.error)
-  return res.channel
-}
-
-export function deleteChannel(channelId: string): void {
-  requireSocket().emit('channel:delete', channelId)
-}
-
-// ---------- Voz ----------
-
-function describeMediaError(err: unknown): string {
-  if (err instanceof DOMException) {
-    if (err.name === 'NotAllowedError') return 'Permissão de microfone negada.'
-    if (err.name === 'NotFoundError') return 'Nenhum microfone encontrado.'
-    if (err.name === 'NotReadableError') return 'O microfone está sendo usado por outro programa.'
-  }
-  return err instanceof Error ? err.message : 'Falha ao entrar no canal de voz'
-}
-
-export async function joinVoice(channelId: string): Promise<void> {
-  const st = get()
-  set({ view: { kind: 'voice', channelId } })
-  if (st.myVoiceChannelId === channelId || st.joiningVoice) return
-  set({ joiningVoice: true })
-  try {
-    const { micError } = await voice.join(channelId)
-    set({ myVoiceChannelId: channelId, noMic: micError !== null })
-    if (micError !== null) {
-      notify(`${describeMediaError(micError)} Você entrou só para ouvir.`, 'info')
-    }
-  } catch (err) {
-    notify(describeMediaError(err))
-  } finally {
-    set({ joiningVoice: false })
-  }
-}
-
-export function leaveVoice(): void {
-  voice.leave()
-  set({ myVoiceChannelId: null, speaking: {}, noMic: false })
-}
-
-function applyAudio(muted: boolean, deafened: boolean): void {
-  set({ muted, deafened })
-  voice.setMuted(muted)
-  voice.setDeafened(deafened)
-  // Sem microfone, os outros sempre veem o usuário como silenciado.
-  if (get().myVoiceChannelId) socket?.emit('voice:update', { muted: muted || get().noMic, deafened })
-}
-
-export function toggleMute(): void {
-  const { muted, deafened, noMic } = get()
-  if (noMic) {
-    if (deafened) applyAudio(muted, false)
-    else notify('Nenhum microfone disponível. Saia e entre de novo na sala depois de conectá-lo.', 'info')
-    return
-  }
-  if (deafened) applyAudio(false, false)
-  else applyAudio(!muted, false)
-}
-
-export function toggleDeafen(): void {
-  const { deafened } = get()
-  applyAudio(!deafened, !deafened)
-}
+export { notify } from './core'
+export type { AppSocket } from './core'
+export * from './actions/account'
+export * from './actions/channels'
+export * from './actions/messages'
+export * from './actions/voice'

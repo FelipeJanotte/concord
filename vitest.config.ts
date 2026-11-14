@@ -16,6 +16,9 @@ export default defineConfig({
     exclude: ['**/node_modules/**', 'out/**', 'dist/**'],
     environment: 'node',
     // Carrega server/.env (DATABASE_URL_TEST etc.) como o servidor faz.
-    setupFiles: ['server/env.ts']
+    setupFiles: ['server/env.ts'],
+    // Os testes de integração (server/tests/) sobem o servidor real em cada arquivo.
+    testTimeout: 15_000,
+    hookTimeout: 30_000
   }
 })

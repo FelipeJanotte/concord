@@ -1,13 +1,4 @@
-// Tipos compartilhados entre o servidor (Node) e o app (renderer).
-
-export type ChannelType = 'text' | 'voice'
-
-export interface Channel {
-  id: string
-  name: string
-  type: ChannelType
-  createdAt: number
-}
+// Contas, perfil e autenticação.
 
 export interface User {
   /** id da conexão (socket.id). Usado em presença, voz e "digitando". */
@@ -89,73 +80,13 @@ export interface ProfileUpdate {
 }
 export type ProfileUpdateResult = { ok: true; account: AccountInfo } | { ok: false; error: string }
 
-export interface Message {
-  id: string
-  channelId: string
-  author: User
-  content: string
-  createdAt: number
-}
+// ---------- Eventos ----------
 
-export interface VoiceState {
-  userId: string
-  channelId: string
-  muted: boolean
-  deafened: boolean
-}
-
-export interface ServerState {
-  channels: Channel[]
-  users: User[]
-  voice: VoiceState[]
-}
-
-export interface IceCandidate {
-  candidate?: string
-  sdpMid?: string | null
-  sdpMLineIndex?: number | null
-  usernameFragment?: string | null
-}
-
-export type SignalData =
-  | { type: 'offer'; sdp: string }
-  | { type: 'answer'; sdp: string }
-  | { type: 'candidate'; candidate: IceCandidate }
-
-export type CreateChannelResult = { ok: true; channel: Channel } | { ok: false; error: string }
-export type JoinVoiceResult = { ok: true; peers: string[] } | { ok: false; error: string }
-
-export interface ServerToClientEvents {
-  'channel:created': (channel: Channel) => void
-  'channel:deleted': (channelId: string) => void
-  'user:joined': (user: User) => void
-  'user:left': (userId: string) => void
+export interface AccountServerEvents {
   /** nome/tag/foto de uma conta mudou (vale para todas as conexões dela) */
   'user:updated': (payload: { accountId: string; name: string; tag: string; avatarUrl: string | null }) => void
-  'message:new': (message: Message) => void
-  'voice:state': (voice: VoiceState[]) => void
-  'voice:signal': (payload: { from: string; data: SignalData }) => void
-  'voice:peer-left': (userId: string) => void
-  typing: (payload: { channelId: string; userId: string; name: string }) => void
 }
 
-export interface ClientToServerEvents {
-  /** O socket só conecta com um token válido (`auth: { token }`); o hello devolve o estado inicial. */
-  hello: (ack: (res: { self: User; account: AccountInfo; state: ServerState }) => void) => void
+export interface AccountClientEvents {
   'account:update': (payload: ProfileUpdate, ack: (res: ProfileUpdateResult) => void) => void
-  'channel:create': (
-    payload: { name: string; type: ChannelType },
-    ack: (res: CreateChannelResult) => void
-  ) => void
-  'channel:delete': (channelId: string) => void
-  'message:history': (channelId: string, ack: (messages: Message[]) => void) => void
-  'message:send': (payload: { channelId: string; content: string }) => void
-  'voice:join': (
-    payload: { channelId: string; muted: boolean; deafened: boolean },
-    ack: (res: JoinVoiceResult) => void
-  ) => void
-  'voice:leave': () => void
-  'voice:update': (payload: { muted: boolean; deafened: boolean }) => void
-  'voice:signal': (payload: { to: string; data: SignalData }) => void
-  typing: (channelId: string) => void
 }

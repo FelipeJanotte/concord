@@ -42,14 +42,17 @@ O instalador sai na pasta `dist/`.
 ## Estrutura
 
 ```
-server/index.ts               servidor Socket.IO (canais, mensagens, presença, sinalização de voz)
-src/shared/types.ts           tipos e eventos compartilhados entre app e servidor
+server/index.ts               monta HTTP + Socket.IO e registra os módulos
+server/modules/               um módulo por domínio (contas, canais, mensagens, voz, presença)
+server/repo/                  acesso a dados (hoje sobre server/data/db.json)
+src/shared/types/             tipos e eventos compartilhados entre app e servidor, um arquivo por domínio
 src/main/index.ts             processo principal do Electron (janela, permissão de microfone)
 src/preload/index.ts          ponte segura main ↔ renderer
 src/renderer/src/
   App.tsx                     layout principal
-  store.ts                    estado global (zustand)
-  lib/client.ts               conexão e ações (enviar mensagem, criar canal, entrar na voz...)
+  store/                      estado global (zustand), um slice por domínio
+  lib/client.ts               login, conexão e reexporta as ações
+  lib/actions/                ações por domínio (enviar mensagem, criar canal, entrar na voz...)
   lib/voice.ts                WebRTC em malha + detecção de fala
   components/ui/              componentes shadcn/ui (button, dialog, input, tooltip...)
   components/                 telas e partes do app
