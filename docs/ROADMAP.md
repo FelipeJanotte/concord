@@ -135,6 +135,103 @@ Contrato em conjunto (`shared/types/theme.ts`): `ThemeConfig { base: 'escuro' | 
 
 Ordem: contrato → (A9) em paralelo com (B11 → B12). B12 funciona com o tema salvo localmente até a A9 entrar.
 
+## Extras de voz e comunidade (independentes)
+
+Ideias sem versão fixa, para puxar quando sobrar tempo, em paralelo com qualquer versão. Cada uma diz do que
+depende: B1, B2, B3 e A2 já estão na `main`; a B4 está no PR #14.
+
+| Ideia | Tasks | Depende de | Tamanho |
+|---|---|---|---|
+| Supressão de ruído | B13 | B4 (PR #14) | médio (spike + 3 níveis) |
+| Sons de entrar/sair | B16 | B4 (PR #14) | pequeno |
+| Efeitos sonoros (soundboard) | A10 + B17 | A2 (na `main`); permissão opcional da v2 | médio |
+| Overlay em jogos | B15 | B2 (na `main`) | médio |
+| Bot de música | A11 + B14 | B1 (na `main`); **decisão sobre termos de uso** | grande |
+
+### B13 Supressão de ruído
+
+| Task | Dev | O que faz | Arquivos (dono) |
+|---|---|---|---|
+| **B13 Supressão de ruído** | B | Tirar teclado, ventilador, cachorro latindo etc. do microfone **antes de enviar**, com um interruptor "Supressão de ruído" (Desligada / Padrão / Avançada) em Configurações de voz, salvo em `concord:audio`. Roda no **app de quem fala** (processador na faixa do microfone, `LocalAudioTrack.setProcessor()` do `livekit-client`), então todo mundo ouve limpo sem mudar nada no servidor. Troca na hora, mesmo dentro da sala. | `lib/noise/**`, `lib/voice.ts` (só o `setProcessor`), `lib/actions/devices.ts`, `components/voice/DeviceSettings.tsx` |
+
+**Opções avaliadas** (todas gratuitas; escolher no spike):
+
+| Opção | Licença | Prós | Contras |
+|---|---|---|---|
+| **Supressão nativa do WebRTC** (`noiseSuppression: true`) | — | Já está ligada hoje; custo zero. Vira o nível "Padrão". | Remove só ruído constante (chiado, ventilador); teclado e vozes ao fundo passam. |
+| **RNNoise** via `@sapphi-red/web-noise-suppressor` (também traz Speex) | MIT | Leve (WASM + AudioWorklet), roda bem em qualquer PC; bom contra teclado e ruído de fundo. Candidato ao nível "Avançada". | Qualidade abaixo do Krisp; precisa embrulhar como `TrackProcessor`. |
+| **DeepFilterNet3** via `deepfilternet3-noise-filter` | MIT / Apache-2.0 | Melhor qualidade entre as abertas; já vem como processador do `livekit-client`. | Mais pesado (CPU e tamanho do modelo); medir em PC fraco. |
+| **RNNoise** via `@shiguredo/noise-suppression` | Apache-2.0 | Alternativa à de cima. | Última versão em 2025. |
+| **Krisp** (`@livekit/krisp-noise-filter`) | Termos da LiveKit | Qualidade comercial. | Pelo que consta, só funciona com o **LiveKit Cloud**, não com o nosso servidor self-hosted. **Confirmar** antes de descartar; se for o caso, fica fora (fere "stack 100% gratuita e self-hosted"). |
+
+**Plano sugerido:**
+1. **Spike** (branch descartável): RNNoise e DeepFilterNet3 como processador no `livekit-client`; medir CPU (Gerenciador de
+   Tarefas), atraso percebido e qualidade com teclado, ventilador e música ao fundo, em duas janelas.
+2. Implementar: "Desligada" (tira inclusive o nativo), "Padrão" (nativo do WebRTC) e "Avançada" (a vencedora do spike).
+   Com "Avançada" ligada, desligar o `noiseSuppression` nativo para não processar duas vezes (som "abafado").
+3. Se a vencedora falhar ao carregar (WASM bloqueado, PC sem suporte a AudioWorklet), cai para "Padrão" com aviso.
+4. Os arquivos WASM/modelo vão empacotados no app (sem baixar de CDN em tempo de execução; a CSP não libera).
+
+**Pronto quando:** com "Avançada", quem ouve não escuta teclado nem ventilador de quem fala; a troca entre os três
+níveis vale sem sair da sala; a escolha volta depois de reiniciar o app. Testes: escolha do nível e fallback
+(processador falso no `VoiceClient`), preferência salva, interruptor no diálogo (jsdom). Skill: seção em
+`concord-voice`.
+
+### B16 Sons de entrada e saída na sala
+
+| Task | Dev | O que faz | Arquivos (dono) |
+|---|---|---|---|
+| **B16 Sons de entrar/sair** | B | Um som curto quando alguém **entra** na sala de voz em que estou e outro quando alguém **sai** (inclusive eu mesmo entrando/saindo, como no Discord). Só cliente: compara o `voice:state` anterior com o novo na minha sala. Toca pela saída escolhida na B4, respeita o deafen e tem interruptor + volume em Configurações de voz (salvo em `concord:audio`). Não toca na carga inicial (`hello`), nem em reconexão, nem em rajada (várias pessoas entrando juntas = um som só). Sons próprios (licença livre, ex.: CC0) empacotados no app. | `lib/sounds/**`, `assets/sounds/**`, `lib/actions/devices.ts`, `components/voice/DeviceSettings.tsx` |
+
+Pequena e sem dependências: boa para puxar logo. **Testes:** detecção de entrada/saída a partir de dois `voice:state`, sem som no `hello`, rajada agrupada, deafen e interruptor desligado silenciam (áudio falso).
+
+### Efeitos sonoros do servidor (soundboard)
+
+Cada pessoa pode enviar **áudios de até 5 segundos** para a coleção da comunidade; quem está numa sala de voz toca um
+deles e **todos na sala ouvem do começo ao fim** (sem cortar no meio, sem tocar dois por cima do mesmo autor).
+
+**Contrato em conjunto** (`shared/types/sounds.ts`): `Sound { id, name, emoji?, durationMs, uploaderId, url }`,
+`sound:list`, `sound:created`/`sound:deleted`, `sound:play { channelId, soundId }` → servidor emite
+`sound:played { channelId, soundId, by }` só para quem está naquela sala. Envio do arquivo por HTTP, como os anexos.
+
+| Task | Dev | O que faz | Arquivos (dono) |
+|---|---|---|---|
+| **A10 Sons (servidor)** | A | `POST /sounds` (multipart igual a `/uploads`: token, limite de **512 KB**, MP3/OGG/WAV/WebM conferidos pelos bytes) e **duração ≤ 5 s** lida do próprio arquivo com `music-metadata` (MIT), recusando o que passar. Tabela `sounds`, bytes no `FileStorage` (reusa a A2), nome até 32, limite de sons por conta e no total. `sound:play` valida que a pessoa está na sala, aplica limite de requisições (ex.: 1 a cada 3 s por pessoa) e repassa só para a sala. Apagar: o autor ou quem tiver permissão (v2). | `server/modules/sounds.ts`, `server/repo/sounds.ts`, `server/db/schema/sounds.ts`, `shared/types/sounds.ts` |
+| **B17 Sons (UI)** | B | Botão "Efeitos sonoros" na sala de voz abrindo a grade de sons (nome + emoji, clique toca, botão direito apaga se puder). Enviar: escolher arquivo, prévia, cortar para 5 s antes de enviar (opcional), nome e emoji. Ao receber `sound:played`, cada app toca o som localmente pela saída escolhida, respeitando deafen e o volume da pessoa que tocou (B4); o mesmo autor não toca dois ao mesmo tempo (o novo espera ou substitui, decidir no contrato). Indicador de quem tocou. | `components/voice/Soundboard*.tsx`, `lib/actions/sounds.ts`, `store/sounds.ts` |
+
+Tocar **localmente em cada app** (em vez de mixar no microfone de quem tocou) é mais simples, sai igual para todo
+mundo e respeita o volume/deafen de cada um. Na v2, uma permissão de canal `soundboard` pode limitar quem toca.
+
+### Sobreposição em jogos (overlay)
+
+| Task | Dev | O que faz | Arquivos (dono) |
+|---|---|---|---|
+| **B15 Overlay** | B | Janela extra do Electron **transparente, sem borda, sempre no topo** (`alwaysOnTop: 'screen-saver'`, `setIgnoreMouseEvents(true)` para o clique passar para o jogo, `focusable: false`) mostrando os membros da minha sala de voz com avatar, nome, mute/deafen e **quem está falando** (mesmo `speaking` da store, enviado do renderer principal por IPC). Liga/desliga em Configurações de voz e por atalho global (`globalShortcut`, ex.: Shift+`); posição (cantos) e tamanho configuráveis; some quando não estou em sala. | `src/main/overlay.ts`, `src/preload/*`, `src/renderer/overlay/**` (página própria no electron-vite), `lib/actions/overlay.ts` |
+
+**Limite importante:** funciona por cima de jogos em **modo janela** e **tela cheia sem bordas (borderless)**, que é o
+padrão da maioria dos jogos hoje. Em **tela cheia exclusiva** (DirectX/Vulkan com o monitor só para o jogo) uma
+janela comum não aparece por cima: o Discord resolve injetando código no processo do jogo, o que é complexo, frágil e
+pode ser bloqueado por **anti-cheat**. Fica fora; a tela de configuração deve explicar isso ("use tela cheia sem bordas").
+
+### Bot de música (YouTube/Spotify por URL)
+
+| Task | Dev | O que faz | Arquivos (dono) |
+|---|---|---|---|
+| **A11 Bot de música (servidor)** | A | Um participante "Música" que o **servidor** coloca na sala do LiveKit com `@livekit/rtc-node` (Apache-2.0), publicando uma faixa de áudio. Fila por sala: `music:play { channelId, url }`, `music:skip`, `music:stop`, `music:queue`; estado em `music:state` para a sala. Áudio obtido com **yt-dlp** (`youtube-dl-exec`, MIT) + **ffmpeg** (decodifica para PCM e envia em quadros). Link do **Spotify** não tem áudio disponível pela API: o bot lê título/artista da página/oEmbed e procura a música no YouTube. Validação de URL (só domínios permitidos), duração máxima, limite de fila e de requisições; sai sozinho quando a sala esvazia. | `server/modules/music.ts`, `server/music/**`, `shared/types/music.ts` |
+| **B14 Bot de música (UI)** | B | Comandos no chat (`/tocar <url>`, `/pular`, `/parar`, `/fila`) e um cartão "Tocando agora" na sala de voz com capa, título, quem pediu e botões; o bot aparece na lista da sala com o selo "BOT" e tem o volume do botão direito (B4) como qualquer pessoa. | `components/voice/MusicPlayer.tsx`, `lib/actions/music.ts`, `store/music.ts`, comandos no `Composer` |
+
+**Decidir antes de começar (riscos):**
+- **Termos de uso:** baixar/retransmitir áudio do YouTube viola os termos do YouTube, e o Spotify não permite
+  retransmitir áudio fora dos apps dele. Para um grupo de amigos num servidor próprio o risco prático é baixo, mas é um
+  risco real (bloqueio de IP, quebra quando o YouTube muda algo e o yt-dlp precisa atualizar). Alternativas mais limpas:
+  só arquivos enviados pelo grupo, rádios/streams com licença, ou SoundCloud/Bandcamp onde o autor permite.
+- **Licença:** evitar bibliotecas GPL no servidor se o projeto não quiser virar GPL (ex.: `play-dl` é GPL-3.0); `yt-dlp`
+  (Unlicense) chamado como programa externo e `ffmpeg` em build LGPL não contaminam o código.
+- **Hospedagem:** yt-dlp e ffmpeg precisam estar instalados no servidor (entram no `docker-compose`/imagem do servidor).
+
+Como sempre: cada task vem com testes e com a skill da área (`concord-voice` para B13–B17; skills novas
+`concord-sounds` para A10/B17, `concord-overlay` para B15 e `concord-music` para A11/B14).
+
 ## Verificação (em toda task)
 
 - `npm run typecheck` e `npm test` (vitest: `can()`, sorteador, validação de upload, repos contra Postgres de teste).
@@ -144,3 +241,8 @@ Ordem: contrato → (A9) em paralelo com (B11 → B12). B12 funciona com o tema 
 - v3: pedido de amizade → aceitar → DM com anexo → chamada com tela; bloqueado não consegue abrir DM.
 - v4: ferramentas aparecem na barra da esquerda e abrem o painel; mesmo resultado nos dois clientes; times equilibrados com número ímpar; lanes sem repetição.
 - v5: trocar o tema numa janela muda na outra janela da mesma conta; tema salvo volta depois de reiniciar o app e em outro computador; código de tema copiado por um amigo aplica igual; nenhum tema pronto ou editado deixa texto ilegível (teste de contraste).
+- B13: com "Avançada", gravar teclando e com ventilador ligado e conferir na outra janela que o ruído some; alternar os níveis dentro da sala; reiniciar o app e a escolha continua.
+- B16: terceira janela entra e sai da sala → as outras ouvem os dois sons; com deafen ou interruptor desligado, silêncio; reconectar não toca som.
+- A10/B17: enviar áudio de 4 s (aceita) e de 6 s ou 1 MB (recusa); tocar numa sala → só quem está nela ouve, do começo ao fim; quem está em outra sala não recebe `sound:played`.
+- B15: jogo em janela e em tela cheia sem bordas mostra o overlay com quem fala; o clique passa para o jogo; o atalho liga/desliga.
+- A11/B14: `/tocar <link do YouTube>` toca para todos na sala; `/pular` e `/parar` funcionam; link de Spotify acha a música; sala vazia derruba o bot; URL de domínio não permitido é recusada.
