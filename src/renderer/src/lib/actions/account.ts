@@ -1,6 +1,6 @@
 // Perfil da própria conta e mudanças de perfil dos outros.
 import type { ProfileUpdate } from '@shared/types'
-import { baseUrl, requireSocket, set, type AppSocket } from '../core'
+import { requireSocket, resolveServerUrl, set, type AppSocket } from '../core'
 
 export function bindAccountEvents(s: AppSocket): void {
   s.on('user:updated', ({ accountId, ...profile }) =>
@@ -19,8 +19,4 @@ export async function updateProfile(update: ProfileUpdate): Promise<void> {
 }
 
 /** Endereço completo da foto de perfil (o servidor devolve só o caminho). */
-export function resolveAvatarUrl(path: string | null | undefined, serverUrl: string | null): string | undefined {
-  if (!path) return undefined
-  if (/^(https?:|data:|blob:)/.test(path)) return path
-  return serverUrl ? baseUrl(serverUrl) + path : undefined
-}
+export const resolveAvatarUrl = resolveServerUrl

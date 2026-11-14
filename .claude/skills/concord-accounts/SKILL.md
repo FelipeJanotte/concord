@@ -31,7 +31,8 @@ Constantes compartilhadas em `src/shared/types/account.ts`: `NAME_MAX`, `TAG_MAX
 | `src/shared/types/account.ts` | `User` (com `accountId`, `tag`, `avatarUrl`), `AccountInfo`, requests/`AuthResult` HTTP, `ProfileUpdate`, eventos `account:update` e `user:updated` |
 | `server/repo/types.ts` | `Account` (com `passwordHash`, `googleId`, `tagLocked`, `avatarType`, `avatarVersion`) e `Session` |
 | `server/repo/accounts.ts`, `server/repo/sessions.ts` | acesso async às contas e sessões (devolvem cópias; alteração só por `updateAccount(id, patch)`) |
-| `server/db.ts` | armazenamento JSON usado pelo repo; migração de dados antigos em `loadDb()` |
+| `server/db/schema/accounts.ts` | tabelas `accounts` (únicos: e-mail, `lower(tag)`, Google id) e `sessions` (cascata ao apagar a conta) |
+| `server/db/seed.ts` | importa contas/sessões do `db.json` antigo no primeiro boot (senhas e sessões continuam valendo) |
 | `server/auth.ts` | regras: hash de senha, sessões, cadastro, login, Google, perfil e foto (tudo async) |
 | `server/env.ts` | carrega `server/.env` (importado **primeiro** no `index.ts`, porque `auth.ts` lê `process.env` ao carregar) |
 | `server/modules/accounts.ts` | rotas HTTP `/auth/*` e `/avatars/*`, evento `account:update` |
@@ -113,7 +114,8 @@ A `MemberList` deduplica por `accountId` (a mesma conta pode estar em duas janel
 ## Adicionar algo às contas (exemplo: campo "bio")
 
 1. `src/shared/types/account.ts`: campo em `AccountInfo`/`User` (se outros precisam ver) e em `ProfileUpdate`.
-2. `server/repo/types.ts`: campo em `Account`; `server/db.ts`: valor padrão na migração de `loadDb()` para contas antigas.
+2. `server/db/schema/accounts.ts`: coluna nova (com `default` para as contas existentes) → `npm run db:generate`;
+   `server/repo/types.ts`: campo em `Account`.
 3. `server/auth.ts`: validar em `updateProfile()` (entra no `patch`) e incluir em `toAccountInfo()`;
    `server/modules/presence.ts`: `userFor()`; `server/modules/accounts.ts`: payload de `user:updated`.
 4. `lib/actions/account.ts`: nada novo se couber no `updateProfile`/`user:updated`.
@@ -121,12 +123,13 @@ A `MemberList` deduplica por `accountId` (a mesma conta pode estar em duas janel
 
 ## Testar
 
-- `npm run typecheck`.
+- `npm run typecheck && npm test`. Os testes de contas ficam em `server/tests/auth.test.ts` (servidor real) e
+  `server/repo/repo.test.ts` (repo direto no banco).
 - Servidor isolado para não sujar `server/data` (Git Bash):
-  `DATA_DIR="$TMPDIR/concord-teste" PORT=3999 npx tsx server/index.ts`, depois `curl` nas rotas e um script com
-  `socket.io-client` (`auth: { token }`) para `hello`/`account:update`. Espere o servidor subir antes dos testes.
-- Para simular uma conta do Google sem credenciais: crie um `db.json` com uma conta `tagLocked: false`,
-  `passwordHash: null` e uma sessão cujo `tokenHash` seja o `sha256` de um token conhecido.
+  `DATA_DIR="$TMPDIR/concord-teste" DATABASE_URL= PORT=3999 npx tsx server/index.ts` (PGlite no DATA_DIR temporário).
+- Para simular uma conta do Google sem credenciais: no teste, `TestServer.start({ prepare })` escreve um `db.json`
+  com uma conta `tagLocked: false`, `passwordHash: null` e uma sessão cujo `tokenHash` seja o `sha256` de um token
+  conhecido; o boot importa (veja `server/tests/database.test.ts`).
 - Casos que devem continuar valendo: mesmo nome + ids diferentes = ok; id repetido (outra caixa) = erro; trocar id
   de conta travada = erro; trocar só o nome = ok; conta Google escolhe id uma vez e na segunda = erro;
   token inválido ou revogado = `unauthorized`; imagem que não é PNG/JPEG/WebP/GIF = erro.
@@ -138,4 +141,5 @@ A `MemberList` deduplica por `accountId` (a mesma conta pode estar em duas janel
 - Sem recuperação ou troca de senha, sem verificação de e-mail no cadastro com senha, sem excluir conta.
 - Conta só com Google não ganha senha; conta com senha ganha Google automaticamente ao entrar com o mesmo e-mail.
 - Sem papéis: qualquer pessoa logada exclui qualquer canal.
-- Persistência em JSON (`server/data/db.json`); sessões e contas junto com as mensagens.
+- Limites: 5 cadastros e 20 logins por IP (além dos 10 erros por e-mail), 10 alterações de perfil seguidas por conta
+  (`server/middleware/rate-limit.ts`). Sessões vencidas são apagadas a cada hora.

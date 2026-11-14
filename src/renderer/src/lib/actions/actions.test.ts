@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Channel, Message, User } from '@shared/types'
 import { bindAccountEvents, resolveAvatarUrl, updateProfile } from '@/lib/actions/account'
 import { bindChannelEvents, createChannel, deleteChannel, firstTextView, selectTextChannel } from '@/lib/actions/channels'
-import { bindMessageEvents, loadHistory, notifyTyping, sendMessage } from '@/lib/actions/messages'
+import { bindMessageEvents, loadHistory, loadOlderMessages, notifyTyping, sendMessage } from '@/lib/actions/messages'
 import { bindPresenceEvents } from '@/lib/actions/presence'
 import { bindVoiceEvents } from '@/lib/actions/voice'
 import { notify, requireSocket, setSocket } from '@/lib/core'
@@ -26,6 +26,7 @@ const message = (id: string, channelId: string, author: User): Message => ({
   channelId,
   author,
   content: `msg ${id}`,
+  attachments: [],
   createdAt: 0
 })
 
@@ -154,18 +155,61 @@ describe('mensagens', () => {
     expect(useApp.getState().typing.geral).toEqual({})
   })
 
-  it('loadHistory pede uma vez só e guarda', async () => {
+  it('loadHistory pede uma vez só e guarda a página e se há mais', async () => {
     const msgs = [message('1', 'outro', me)]
-    socket.replyTo('message:history', () => msgs)
+    socket.replyTo('message:history', () => ({ messages: msgs, hasMore: true }))
     await Promise.all([loadHistory('outro'), loadHistory('outro')])
     await loadHistory('outro')
-    expect(socket.sent('message:history')).toEqual([['outro']])
+    expect(socket.sent('message:history')).toEqual([[{ channelId: 'outro' }]])
     expect(useApp.getState().messages.outro).toEqual(msgs)
+    expect(useApp.getState().hasMoreHistory.outro).toBe(true)
   })
 
   it('loadHistory avisa quando falha', async () => {
     await loadHistory('geral')
     expect(useApp.getState().notice?.text).toBe('Não foi possível carregar as mensagens')
+  })
+
+  it('loadOlderMessages pede as anteriores à mais antiga e põe antes, sem repetir', async () => {
+    const b = user('b')
+    useApp.setState({
+      messages: { geral: [message('3', 'geral', b), message('4', 'geral', b)] },
+      hasMoreHistory: { geral: true }
+    })
+    socket.replyTo('message:history', () => ({
+      messages: [message('1', 'geral', b), message('2', 'geral', b), message('3', 'geral', b)],
+      hasMore: false
+    }))
+    await loadOlderMessages('geral')
+    expect(socket.sent('message:history')).toEqual([[{ channelId: 'geral', before: '3' }]])
+    const st = useApp.getState()
+    expect(st.messages.geral.map((m) => m.id)).toEqual(['1', '2', '3', '4'])
+    expect(st.hasMoreHistory.geral).toBe(false)
+    expect(st.loadingOlder.geral).toBeUndefined()
+  })
+
+  it('loadOlderMessages não pede nada quando não há mais, sem histórico ou já carregando', async () => {
+    const b = user('b')
+    await loadOlderMessages('geral') // histórico não carregado
+    useApp.setState({ messages: { geral: [message('1', 'geral', b)] }, hasMoreHistory: { geral: false } })
+    await loadOlderMessages('geral') // não há mais
+    useApp.setState({ hasMoreHistory: { geral: true }, loadingOlder: { geral: true } })
+    await loadOlderMessages('geral') // já carregando
+    expect(socket.sent('message:history')).toEqual([])
+  })
+
+  it('loadOlderMessages mostra o carregamento e avisa se falhar', async () => {
+    const b = user('b')
+    useApp.setState({ messages: { geral: [message('1', 'geral', b)] }, hasMoreHistory: { geral: true } })
+    let release!: () => void
+    socket.replyTo('message:history', () => new Promise((_, reject) => (release = () => reject(new Error('x')))))
+    const pending = loadOlderMessages('geral')
+    expect(useApp.getState().loadingOlder.geral).toBe(true)
+    release()
+    await pending
+    expect(useApp.getState().loadingOlder.geral).toBeUndefined()
+    expect(useApp.getState().notice?.text).toBe('Não foi possível carregar as mensagens antigas')
+    expect(useApp.getState().messages.geral.map((m) => m.id)).toEqual(['1'])
   })
 
   it('sendMessage apara o texto e ignora vazio', () => {
@@ -199,15 +243,16 @@ describe('canais', () => {
   })
 
   it('channel:deleted do canal aberto troca a tela e limpa dados', () => {
-    socket.replyTo('message:history', () => [])
-    useApp.setState({ messages: { geral: [] }, unread: { geral: true } })
+    socket.replyTo('message:history', () => ({ messages: [], hasMore: false }))
+    useApp.setState({ messages: { geral: [] }, unread: { geral: true }, hasMoreHistory: { geral: true } })
     socket.receive('channel:deleted', 'geral')
     const st = useApp.getState()
     expect(st.channels.map((c) => c.id)).toEqual(['outro', 'voz'])
     expect(st.view).toEqual({ kind: 'text', channelId: 'outro' })
     expect(st.messages.geral).toBeUndefined()
     expect(st.unread.geral).toBeUndefined()
-    expect(socket.sent('message:history')).toEqual([['outro']])
+    expect(st.hasMoreHistory.geral).toBeUndefined()
+    expect(socket.sent('message:history')).toEqual([[{ channelId: 'outro' }]])
   })
 
   it('channel:deleted da sala de voz atual sai da voz', () => {
@@ -217,12 +262,12 @@ describe('canais', () => {
   })
 
   it('selectTextChannel abre o canal, limpa o não lido e carrega o histórico', () => {
-    socket.replyTo('message:history', () => [])
+    socket.replyTo('message:history', () => ({ messages: [], hasMore: false }))
     useApp.setState({ unread: { outro: true } })
     selectTextChannel('outro')
     expect(useApp.getState().view).toEqual({ kind: 'text', channelId: 'outro' })
     expect(useApp.getState().unread).toEqual({})
-    expect(socket.sent('message:history')).toEqual([['outro']])
+    expect(socket.sent('message:history')).toEqual([[{ channelId: 'outro' }]])
   })
 
   it('createChannel devolve o canal ou lança o erro', async () => {

@@ -7,8 +7,10 @@ import { join } from 'node:path'
 import type { AuthConfig } from '../../src/shared/types'
 import { findAccount, GOOGLE_CLIENT_ID, googleLogin, login, register, revokeSession, updateProfile } from '../auth'
 import { guard, users, type ServerModule } from '../context'
-import { AVATAR_DIR } from '../db'
-import { readJson, sendJson } from '../http'
+import { AVATAR_DIR, SESSION_SWEEP_INTERVAL_MS } from '../config'
+import { clientIp, readJson, sendJson } from '../http'
+import { limiters, pruneAllLimiters, retryText } from '../middleware/rate-limit'
+import { deleteExpiredSessions } from '../repo/sessions'
 
 export const accountsModule: ServerModule = {
   async http(req, res, path) {
@@ -41,14 +43,24 @@ export const accountsModule: ServerModule = {
       sendJson(res, 400, { ok: false, error: 'Requisição inválida' })
       return true
     }
+    const limit = (name: 'register' | 'login'): boolean => {
+      const result = limiters[name].take(clientIp(req))
+      if (result.ok) return false
+      res.setHeader('retry-after', String(Math.ceil(result.retryAfterMs / 1000)))
+      sendJson(res, 429, { ok: false, error: `Muitas tentativas deste computador. ${retryText(result.retryAfterMs)}` })
+      return true
+    }
     switch (path) {
       case '/auth/register':
+        if (limit('register')) return true
         sendJson(res, 200, await register(body))
         return true
       case '/auth/login':
+        if (limit('login')) return true
         sendJson(res, 200, await login(body))
         return true
       case '/auth/google':
+        if (limit('login')) return true
         sendJson(res, 200, await googleLogin(body))
         return true
       case '/auth/logout':
@@ -65,6 +77,8 @@ export const accountsModule: ServerModule = {
       void guard('account:update', async () => {
         const account = await findAccount(socket.data.accountId)
         if (!socket.data.user || !account) return ack({ ok: false, error: 'Não autenticado' })
+        const limited = limiters.profile.take(account.id)
+        if (!limited.ok) return ack({ ok: false, error: `Muitas alterações seguidas. ${retryText(limited.retryAfterMs)}` })
         const res = await updateProfile(account, payload ?? {})
         if (res.ok) {
           const { name, tag, avatarUrl } = res.account
@@ -80,5 +94,18 @@ export const accountsModule: ServerModule = {
         ack(res)
       })
     })
+  },
+
+  init() {
+    // Sessões vencidas e baldes de limite cheios são limpos de tempos em tempos.
+    const cleanup = (): void => {
+      pruneAllLimiters()
+      deleteExpiredSessions().then(
+        (n) => n && console.log(`[sessões] ${n} sessão(ões) vencida(s) apagada(s)`),
+        (err) => console.error('[sessões] limpeza falhou:', err)
+      )
+    }
+    cleanup()
+    setInterval(cleanup, SESSION_SWEEP_INTERVAL_MS).unref()
   }
 }

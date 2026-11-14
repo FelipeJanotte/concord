@@ -82,7 +82,7 @@ describe('presença', () => {
       ok: false,
       error: 'Não autenticado'
     })
-    expect(await s.emitWithAck('message:history', 'qualquer')).toEqual([])
+    expect(await s.emitWithAck('message:history', { channelId: 'qualquer' })).toEqual({ messages: [], hasMore: false })
   })
 })
 
@@ -130,7 +130,7 @@ describe('canais', () => {
     const deleted = waitFor(b.socket, 'channel:deleted', (id) => id === text.id)
     a.socket.emit('channel:delete', text.id)
     await deleted
-    expect(await b.socket.emitWithAck('message:history', text.id)).toEqual([])
+    expect((await b.socket.emitWithAck('message:history', { channelId: text.id })).messages).toEqual([])
   })
 
   it('apagar canal inexistente não faz nada', async () => {
@@ -150,7 +150,11 @@ describe('mensagens', () => {
     a.socket.emit('message:send', { channelId: ch.id, content: '   olá mundo  ' })
     const [msg] = await got
     expect(msg).toMatchObject({ content: 'olá mundo', author: { accountId: a.account.id, name: 'Autor' } })
-    expect(await b.socket.emitWithAck('message:history', ch.id)).toEqual([msg])
+    // No histórico, author.id é o id da conta (em message:new é o socket de quem enviou).
+    expect(await b.socket.emitWithAck('message:history', { channelId: ch.id })).toEqual({
+      messages: [{ ...msg, author: { ...msg.author, id: a.account.id } }],
+      hasMore: false
+    })
   })
 
   it('mantém a ordem de envio', async () => {
@@ -159,8 +163,8 @@ describe('mensagens', () => {
     const last = waitFor(a.socket, 'message:new', (m) => m.content === 'm5')
     for (let i = 1; i <= 5; i++) a.socket.emit('message:send', { channelId: ch.id, content: `m${i}` })
     await last
-    const history = await a.socket.emitWithAck('message:history', ch.id)
-    expect(history.map((m) => m.content)).toEqual(['m1', 'm2', 'm3', 'm4', 'm5'])
+    const history = await a.socket.emitWithAck('message:history', { channelId: ch.id })
+    expect(history.messages.map((m) => m.content)).toEqual(['m1', 'm2', 'm3', 'm4', 'm5'])
   })
 
   it('corta em 2000 caracteres', async () => {
@@ -180,7 +184,7 @@ describe('mensagens', () => {
     a.socket.emit('message:send', { channelId: voice.id, content: 'oi' })
     a.socket.emit('message:send', { channelId: 'nao-existe', content: 'oi' })
     await silent
-    expect(await a.socket.emitWithAck('message:history', voice.id)).toEqual([])
+    expect((await a.socket.emitWithAck('message:history', { channelId: voice.id })).messages).toEqual([])
   })
 
   it('"digitando" vai para os outros, não para quem digita', async () => {

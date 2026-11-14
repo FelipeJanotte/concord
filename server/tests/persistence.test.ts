@@ -30,8 +30,10 @@ describe('persistência', () => {
     const hello = await s.emitWithAck('hello')
     expect(hello.account).toMatchObject({ id: a.account.id, name: 'Nome Salvo', tag: a.tag })
     expect(hello.state.channels.some((c) => c.id === created.channel.id)).toBe(true)
-    const history = await s.emitWithAck('message:history', created.channel.id)
-    expect(history.map((m) => m.content)).toEqual(['não me perca'])
+    const history = await s.emitWithAck('message:history', { channelId: created.channel.id })
+    expect(history.messages.map((m) => m.content)).toEqual(['não me perca'])
+    // o histórico junta o autor com a conta: mostra o nome atual, não o do envio
+    expect(history.messages[0].author).toMatchObject({ accountId: a.account.id, name: 'Nome Salvo' })
     s.close()
 
     // senha continua funcionando

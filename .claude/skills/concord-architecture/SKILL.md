@@ -13,7 +13,8 @@ description: Visão completa da arquitetura do Concord (clone do Discord em Elec
 │ preload (src/preload) window.api                      │        │   (porta 3001) + lista de módulos│
 │ renderer (React)                                      │  HTTP  │ modules/<dominio>.ts: handlers   │
 │   components ──lê──> store/ (zustand, slices)         │  + WS  │ repo/<dominio>.ts: dados (async) │
-│        └──chama──> lib/client.ts ──fetch/socket────────┼───────>│   └─> db.ts (db.json)            │
+│        └──chama──> lib/client.ts ──fetch/socket────────┼───────>│   └─> db/ (Drizzle → Postgres    │
+│                                                       │        │        ou PGlite)                │
 │                     └ lib/actions/<dominio>.ts         │        │ memória: users (context), voice  │
 │                        └──> lib/voice.ts ──────────────┼─┐      │ livekit.ts: token + kick da sala │
 └───────────────────────────────────────────────────────┘ │      └──────────────┬───────────────────┘
@@ -28,7 +29,8 @@ Cada domínio (`account`, `channel`, `message`, `presence`, `voice`) aparece nas
 | Camada | Onde | Registro (só linhas de registro) |
 |---|---|---|
 | Contrato | `src/shared/types/<dominio>.ts` (tipos + `<Dominio>ClientEvents`/`ServerEvents`) | `src/shared/types/index.ts` |
-| Dados | `server/repo/<dominio>.ts` (async, devolve cópias; único que importa `db.ts`) | — |
+| Tabelas | `server/db/schema/<dominio>.ts` (Drizzle) + migration gerada em `server/db/migrations/` | `server/db/schema/index.ts` |
+| Dados | `server/repo/<dominio>.ts` (async; único que importa `server/db/`) | — |
 | Servidor | `server/modules/<dominio>.ts` (`ServerModule` com `socket?` e `http?`) | lista `modules` em `server/index.ts` |
 | Ações | `src/renderer/src/lib/actions/<dominio>.ts` (`bind<Dominio>Events` + funções) | `connect()` e `export *` em `lib/client.ts` |
 | Estado | `src/renderer/src/store/<dominio>.ts` (interface + `<dominio>Initial`) | `store/index.ts` |
@@ -46,7 +48,24 @@ cadastro/login (antes de existir socket) e **Socket.IO** para o resto. Detalhes 
 - `Channel { id, name, type: 'text' | 'voice', createdAt }`
 - `User { id, accountId, name, tag, color, avatarUrl }`: `id` é o `socket.id` (presença/voz); `accountId` identifica a conta. A pessoa aparece como `nome#tag`. A tag (1 a 5 letras/números) é **única entre todas as contas e imutável**: é o que diferencia pessoas com o mesmo nome. Exceção: conta criada pelo Google recebe tag provisória (`tagLocked: false`) e escolhe a definitiva uma única vez.
 - `AccountInfo`: dados da própria conta (e-mail, `hasPassword`, `hasGoogle`, `tagLocked`), recebidos só pelo dono no `hello`.
-- `Message { id, channelId, author: User, content, createdAt }`: o autor é uma cópia do usuário no momento do envio.
+- `Message { id, channelId, author: User, content, createdAt }`: o banco guarda `author_id` (conta) e o histórico junta com a conta, então mostra nome/foto **atuais**. Em `message:new`, `author.id` é o socket de quem enviou; no histórico é o id da conta. Identifique a pessoa sempre por `author.accountId`.
+- Histórico paginado: `message:history { channelId, before? }` → `{ messages, hasMore }`, 50 por página (`HISTORY_PAGE_SIZE`), da mais antiga para a mais nova. A ordem vem da coluna `seq` (ordem de chegada). Sem limite de mensagens guardadas.
+
+## Banco (`server/db/`)
+
+Anexos: o app envia o arquivo por HTTP (`POST /uploads`, corpo = bytes, `Authorization: Bearer <token>`,
+`X-File-Name`) e recebe um `Attachment` (`id`, `name`, `size`, `contentType`, `url`, `width`, `height`); depois
+manda os ids no `message:send`. `GET /files/<id>/<nome>` serve só anexos já publicados: PNG/JPEG/GIF/WebP
+confirmados pelos bytes vão inline, o resto como download `octet-stream` (HTML/SVG nunca rodam). Anexo solto
+há mais de 1 h é apagado; apagar o canal apaga os arquivos. Permissão por canal no download entra na v2.
+
+PostgreSQL via Drizzle. `client.ts` abre `DATABASE_URL` com `pg`; sem ela, abre o **PGlite** (Postgres em
+WebAssembly) em `DATA_DIR/pgdata`. Mesmo schema e mesmas migrations nos dois, aplicadas no boot (`server/index.ts`
+abre o banco antes do `listen` e roda o `init` dos módulos). Tabelas: `accounts`, `sessions`, `channels`,
+`messages`, `attachments` (bytes no `FileStorage`, `DATA_DIR/uploads/<id>`). O banco garante
+unicidade (e-mail, `lower(tag)`, Google id, `type + lower(name)` do canal), tamanhos (`check`) e apaga em cascata
+(canal → mensagens; conta → sessões; conta apagada deixa a mensagem com a cópia `author_*`). `seed.ts` cria os
+canais padrão ou importa o `db.json` antigo quando o banco está vazio.
 - `VoiceState { userId, channelId, muted, deafened }`: quem está em qual sala de voz.
 - `ServerState { channels, users, voice }`: snapshot enviado no `hello`.
 
@@ -66,7 +85,8 @@ Cliente → servidor (`ClientToServerEvents`):
 | `account:update` | `ProfileUpdate { name, tag?, avatar? }` | `ProfileUpdateResult` | troca nome/foto (o id só se `tagLocked` for false); `user:updated` para todos |
 | `channel:create` | `{ name, type }` | `CreateChannelResult` | normaliza o nome (texto: minúsculo e com hífens, até 32 caracteres), bloqueia duplicado e mais de 100 canais; `channel:created` para todos |
 | `channel:delete` | `channelId` | — | apaga o canal e as mensagens, tira todo mundo da sala de voz; `channel:deleted` + `voice:state` |
-| `message:history` | `channelId` | `Message[]` | últimas 500 mensagens |
+| `message:history` | `{ channelId, before? }` | `{ messages, hasMore }` | página de 50 (sem `before` = mais recentes) |
+| `message:send` (com anexos) | `{ channelId, content, attachmentIds? }` | — | até 10 anexos já enviados por `POST /uploads`, do próprio autor e não usados; tudo ou nada (senão a mensagem é ignorada); texto pode ser vazio se houver anexo |
 | `message:send` | `{ channelId, content }` | — | valida (canal de texto, até 2000 caracteres); `message:new` para todos |
 | `voice:join` | `{ channelId, muted, deafened }` | `JoinVoiceResult` (`url`, `token` do LiveKit) | exige LiveKit configurado; sai da sala anterior (também no LiveKit), entra na nova; `voice:state` |
 | `voice:leave` | — | — | tira da sala no LiveKit (`RemoveParticipant`) + `voice:state` |
@@ -105,5 +125,5 @@ Servidor → cliente (`ServerToClientEvents`): `channel:created`, `channel:delet
 
 - Contas com e-mail+senha ou Google, mas sem papéis: qualquer pessoa logada exclui qualquer canal. Sem recuperação de senha.
 - Um único "servidor/comunidade" (a barra da esquerda é decorativa).
-- Persistência num arquivo JSON, salvo com 500 ms de atraso, atrás do `server/repo/`. A troca por Postgres é a task A1 do `docs/ROADMAP.md`.
+- Limites de requisição ficam em memória (reiniciar zera; com vários processos do servidor, cada um teria os seus).
 - A voz depende do LiveKit rodando (`docker compose up -d`); sem ele, `voice:join` falha (ver `concord-voice`).

@@ -25,13 +25,51 @@ description: Como rodar, testar, gerar o build e empacotar o Concord, e como res
 | `npm start` | abre o build de `out/` |
 | `npm run dist` | build + instalador NSIS em `dist/` (config em `electron-builder.yml`) |
 
-Variáveis do servidor: `PORT`, `DATA_DIR` (padrão `server/data`, que está no `.gitignore`), `GOOGLE_CLIENT_ID` e
-`GOOGLE_CLIENT_SECRET`. O servidor lê `server/.env` sozinho ao iniciar (`server/env.ts`); o modelo está em
+Variáveis do servidor: `PORT`, `DATA_DIR` (padrão `server/data`, que está no `.gitignore`), `DATABASE_URL`,
+`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `UPLOAD_ORPHAN_TTL_MS` (anexo solto é apagado depois disso; padrão 1 h)
+e `UPLOAD_SWEEP_INTERVAL_MS` (intervalo da limpeza; padrão 10 min). O servidor lê `server/.env` sozinho ao iniciar (`server/env.ts`); o modelo está em
 `server/.env.example` e o `server/.env` está no `.gitignore`.
 
-Para zerar tudo (canais, mensagens, **contas e sessões**): apague `server/data/db.json` e `server/data/avatars/` com
-o servidor parado. Ele recria os canais padrão (`geral`, `off-topic`, `Sala de Voz`, `Jogos`). As sessões salvas nos
-apps deixam de valer e eles voltam para o login.
+## Banco de dados (PostgreSQL + Drizzle)
+
+- **Com `DATABASE_URL`** (no `server/.env`): usa o Postgres do `docker compose` (ou de produção).
+- **Sem `DATABASE_URL`**: usa o **PGlite** (o Postgres compilado em WebAssembly, dentro do Node) em
+  `DATA_DIR/pgdata`. Nada para instalar. O PGlite aceita **um processo por vez**: não rode dois servidores, nem o
+  `db:import-json`, sobre o mesmo `pgdata`.
+- O log de inicialização mostra `Banco: PostgreSQL ...` ou `Banco: PGlite em ...`.
+- As migrations (`server/db/migrations/`) são aplicadas sozinhas ao iniciar.
+- **Banco vazio:** se existir `DATA_DIR/db.json` (versões antigas), ele é importado automaticamente (contas, sessões
+  válidas, canais, mensagens; quem estava logado continua logado). Senão, cria os canais padrão. Para importar à mão:
+  `npm run db:import-json [arquivo]` (idempotente).
+
+**Mudar o schema:** edite `server/db/schema/<dominio>.ts` → `npm run db:generate` → confira o SQL gerado em
+`server/db/migrations/` → commit junto. Gere a migration **só depois do rebase na `main`** (se o outro dev mergeou
+uma migration antes, apague a sua e gere de novo) e nunca edite uma migration já mergeada.
+
+**Backup:**
+- PGlite: o próprio servidor grava `DATA_DIR/backups/concord-<data>.tar.gz` quando o último backup tem mais de
+  `BACKUP_INTERVAL_MS` (padrão 24 h) e mantém `BACKUP_KEEP` (padrão 7). Reiniciar não gera backup extra.
+  Restaurar (servidor **parado**): `npm run db:restore [arquivo]` (sem arquivo = o mais novo); o banco atual vira
+  `pgdata.antes-<data>`.
+- Postgres: serviço `pg-backup` do compose (`pg_dump` diário em `server/data/backups-pg`, mantém 7). Restaurar:
+  `gunzip -c <arquivo>.sql.gz | psql "$DATABASE_URL"`.
+
+**Privilégio mínimo (produção):** `DATABASE_URL` com o usuário `concord_app` (só lê/grava dados, criado por
+`docker/postgres/init/02-app-role.sql`) e `DATABASE_MIGRATE_URL` com o dono (`concord`), usada só para as
+migrations. Volume já existente: rode o `.sql` uma vez com `psql`.
+
+**Limite de requisições:** regras em `LIMITS` (`server/middleware/rate-limit.ts`), em memória. Ações com ack
+recebem o erro ("Tente de novo em N s."); `message:send` gera `rate:limited`; HTTP responde 429 com
+`Retry-After`. Atrás de proxy, `TRUST_PROXY=1` para usar o `X-Forwarded-For`. Nos testes, o `TestServer` sobe com
+`RATE_LIMIT_MULTIPLIER=1000`; `server/tests/limits.test.ts` usa `1` para testar os valores reais.
+
+**Zerar tudo** (canais, mensagens, **contas e sessões**), com o servidor parado:
+- PGlite: apague `server/data/pgdata/` (e `server/data/avatars/` e `server/data/uploads/`). Se `server/data/db.json` ainda existir, ele será
+  importado de novo; apague-o também para começar vazio.
+- Docker: `docker compose down -v && docker compose up -d`.
+
+Ele recria os canais padrão (`geral`, `off-topic`, `Sala de Voz`, `Jogos`). As sessões salvas nos apps deixam de
+valer e eles voltam para o login.
 
 ## Infra local (Docker)
 
@@ -56,6 +94,8 @@ docker compose down -v   # para e APAGA o banco (recria concord_test na próxima
 - **Voz pela rede local:** o LiveKit anuncia o IP de `LIVEKIT_NODE_IP` (padrão `127.0.0.1`, só funciona na mesma
   máquina). Crie um `.env` na raiz com `LIVEKIT_NODE_IP=192.168.x.x`, rode `docker compose up -d` de novo, troque
   `LIVEKIT_URL` no `server/.env` para `ws://192.168.x.x:7880` e libere 7880–7881/TCP e 7882/UDP no firewall.
+- O servidor usa o Postgres do compose quando `DATABASE_URL` está no `server/.env`; sem ela, usa o PGlite (o
+  compose pode ficar desligado para texto e contas).
 - **A voz precisa do LiveKit rodando** (`docker compose up -d` + `LIVEKIT_*` em `server/.env`). Sem ele, o servidor
   mostra `Voz (LiveKit): desativada` ou o app avisa "Não foi possível conectar ao servidor de voz"; texto e contas
   funcionam normalmente.
@@ -65,8 +105,14 @@ docker compose down -v   # para e APAGA o banco (recria concord_test na próxima
 - `vitest.config.ts` na raiz: testes `*.test.ts(x)` ao lado do código em `server/`, `src/shared/` e `src/renderer/src/`;
   aliases `@` e `@shared` iguais aos do renderer; ambiente `node`; carrega `server/.env` antes (via `server/env.ts`).
 - Importe explicitamente: `import { describe, it, expect } from 'vitest'` (sem globals).
-- Teste de banco usa `DATABASE_URL_TEST` (banco `concord_test`), nunca `DATABASE_URL`.
-- Teste que precisa de DOM: `// @vitest-environment jsdom` no topo do arquivo e `npm install -D jsdom`.
+- Teste de banco usa `DATABASE_URL_TEST` (banco `concord_test`), nunca `DATABASE_URL`: cada arquivo de teste cria
+  e apaga um banco temporário a partir dela (`server/tests/database.ts`). Sem `DATABASE_URL_TEST`, os testes usam
+  PGlite (em memória nos testes do repo; dentro do DATA_DIR temporário nos de integração). Rode a suíte **nos dois
+  modos** antes de mergear mudança de banco quando puder (com e sem o compose ligado).
+- Testes do repo (`server/repo/repo.test.ts`) abrem o banco no próprio processo com `openTestDatabase()`.
+- Teste que precisa de DOM: `// @vitest-environment jsdom` no topo do arquivo (jsdom e Testing Library já estão
+  instalados). Sem globals, chame `cleanup()` no `afterEach`. Exemplo: `components/chat/chat.test.tsx`.
+  `URL.createObjectURL` não existe no jsdom: troque por `vi.fn()` no teste.
 - **Integração do servidor** em `server/tests/<dominio>.test.ts`: `TestServer.start()` (`server/tests/helpers.ts`)
   sobe o servidor real (`node --import tsx server/index.ts`) em porta livre e DATA_DIR temporário, sem tocar em
   `server/data`; `server.newUser()`, `waitFor(socket, 'evento', filtro)`, `expectNoEvent(...)` e `server.restart()`.

@@ -16,8 +16,10 @@ import type {
   ClientToServerEvents,
   ServerState,
   ServerToClientEvents,
+  UploadResult,
   User
 } from '../../src/shared/types'
+import { createTestDatabase, type TestDatabase } from './database'
 
 const ROOT = resolve(__dirname, '../..')
 
@@ -39,12 +41,29 @@ export class TestServer {
   private child: ChildProcess | null = null
   private output = ''
 
-  constructor(readonly dataDir: string) {}
+  constructor(
+    readonly dataDir: string,
+    private readonly database: TestDatabase,
+    private readonly extraEnv: Record<string, string> = {}
+  ) {}
 
-  /** Cria um servidor com DATA_DIR novo e vazio. */
-  static async start(): Promise<TestServer> {
-    const server = new TestServer(mkdtempSync(join(tmpdir(), 'concord-test-')))
-    await server.boot()
+  /**
+   * Cria um servidor com DATA_DIR e banco novos e vazios. `prepare` roda antes
+   * de subir (ex.: escrever um db.json antigo no DATA_DIR para testar a importação);
+   * `env` acrescenta variáveis de ambiente ao servidor.
+   */
+  static async start(
+    opts: { prepare?: (dataDir: string) => void; env?: Record<string, string> } = {}
+  ): Promise<TestServer> {
+    const dataDir = mkdtempSync(join(tmpdir(), 'concord-test-'))
+    opts.prepare?.(dataDir)
+    const server = new TestServer(dataDir, await createTestDatabase(), opts.env)
+    try {
+      await server.boot()
+    } catch (err) {
+      await server.destroy()
+      throw err
+    }
     return server
   }
 
@@ -54,7 +73,19 @@ export class TestServer {
     this.output = ''
     const child = spawn(process.execPath, ['--import', 'tsx', 'server/index.ts'], {
       cwd: ROOT,
-      env: { ...process.env, PORT: String(port), DATA_DIR: this.dataDir, GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: '' },
+      env: {
+        ...process.env,
+        PORT: String(port),
+        DATA_DIR: this.dataDir,
+        // Sem DATABASE_URL_TEST, o servidor usa PGlite dentro do DATA_DIR temporário.
+        DATABASE_URL: this.database.url ?? '',
+        GOOGLE_CLIENT_ID: '',
+        GOOGLE_CLIENT_SECRET: '',
+        // Os testes fazem muitas ações seguidas; o limite em si é testado em rate-limit.test.ts
+        // (que passa RATE_LIMIT_MULTIPLIER=1).
+        RATE_LIMIT_MULTIPLIER: '1000',
+        ...this.extraEnv
+      },
       stdio: ['ignore', 'pipe', 'pipe']
     })
     this.child = child
@@ -75,11 +106,13 @@ export class TestServer {
     throw new Error(`servidor não respondeu em 20 s:\n${this.output}`)
   }
 
-  /** Para o processo. Espera o salvamento atrasado do db.json (500 ms) antes. */
-  async stop({ waitForSave = true } = {}): Promise<void> {
+  /**
+   * Mata o processo sem aviso (no Windows não há SIGTERM): também prova que o
+   * que foi confirmado no banco sobrevive a uma queda.
+   */
+  async stop(): Promise<void> {
     const child = this.child
     if (!child) return
-    if (waitForSave) await sleep(800)
     this.child = null
     if (child.exitCode !== null) return
     const exited = new Promise((res) => child.once('exit', res))
@@ -87,16 +120,17 @@ export class TestServer {
     await exited
   }
 
-  /** Reinicia sobre o mesmo DATA_DIR (testa persistência). */
+  /** Reinicia sobre o mesmo DATA_DIR e banco (testa persistência). */
   async restart(): Promise<void> {
     await this.stop()
     await this.boot()
   }
 
-  /** Para e apaga o DATA_DIR. */
+  /** Para, apaga o DATA_DIR e o banco temporário. */
   async destroy(): Promise<void> {
-    await this.stop({ waitForSave: false })
-    rmSync(this.dataDir, { recursive: true, force: true })
+    await this.stop()
+    rmSync(this.dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+    await this.database.drop()
   }
 
   /** Log do servidor (útil para depurar um teste que falhou). */
@@ -113,6 +147,18 @@ export class TestServer {
       body: JSON.stringify(body)
     })
     return (await res.json()) as T
+  }
+
+  /** Envia um arquivo como o app faz (`POST /uploads`). Devolve status HTTP e corpo. */
+  async upload(
+    token: string | null,
+    data: Uint8Array | string,
+    { name = 'arquivo.bin', type = 'application/octet-stream' }: { name?: string; type?: string } = {}
+  ): Promise<{ status: number; body: UploadResult }> {
+    const headers: Record<string, string> = { 'content-type': type, 'x-file-name': encodeURIComponent(name) }
+    if (token) headers.authorization = `Bearer ${token}`
+    const res = await fetch(this.url + '/uploads', { method: 'POST', headers, body: data })
+    return { status: res.status, body: (await res.json()) as UploadResult }
   }
 
   register(body: { email: string; password: string; name: string; tag: string }): Promise<AuthResult> {

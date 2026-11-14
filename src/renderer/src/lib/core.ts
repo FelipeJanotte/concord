@@ -31,3 +31,25 @@ export function notify(text: string, kind: 'error' | 'info' = 'error'): void {
 }
 
 export const baseUrl = (url: string): string => url.trim().replace(/\/+$/, '')
+
+export const SERVER_KEY = 'concord:server'
+export const TOKEN_KEY = 'concord:token'
+
+/** Token da sessão atual (salvo no login), para as rotas HTTP que exigem login. */
+export function sessionToken(): string | null {
+  try {
+    return localStorage.getItem(TOKEN_KEY)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Endereço completo de um caminho do servidor (`/avatars/...`, `/files/...`).
+ * Endereços já completos (http, data, blob) voltam como estão.
+ */
+export function resolveServerUrl(path: string | null | undefined, serverUrl: string | null): string | undefined {
+  if (!path) return undefined
+  if (/^(https?:|data:|blob:)/.test(path)) return path
+  return serverUrl ? baseUrl(serverUrl) + path : undefined
+}

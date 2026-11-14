@@ -4,6 +4,7 @@ import type { View } from '@/store'
 import { omit } from '../utils'
 import { get, requireSocket, set, type AppSocket } from '../core'
 import { loadHistory } from './messages'
+import { clearDraft } from './uploads'
 import { leaveVoice } from './voice'
 
 export function firstTextView(channels: Channel[]): View | null {
@@ -16,11 +17,14 @@ export function bindChannelEvents(s: AppSocket): void {
 
   s.on('channel:deleted', (channelId) => {
     if (get().myVoiceChannelId === channelId) leaveVoice()
+    clearDraft(channelId)
     set((st) => {
       const channels = st.channels.filter((c) => c.id !== channelId)
       return {
         channels,
         messages: omit(st.messages, channelId),
+        hasMoreHistory: omit(st.hasMoreHistory, channelId),
+        loadingOlder: omit(st.loadingOlder, channelId),
         unread: omit(st.unread, channelId),
         view: st.view?.channelId === channelId ? firstTextView(channels) : st.view
       }

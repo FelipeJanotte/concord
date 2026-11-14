@@ -1,28 +1,56 @@
-import { Fragment, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { Hash, Loader2, SendHorizontal } from 'lucide-react'
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type DragEvent } from 'react'
+import { Hash, Loader2, Upload } from 'lucide-react'
 import type { Channel, Message } from '@shared/types'
-import { Button } from '@/components/ui/button'
-import { notifyTyping, sendMessage } from '@/lib/client'
-import { cn, formatDay, formatTime, formatTimestamp } from '@/lib/utils'
+import { addFiles, loadOlderMessages } from '@/lib/client'
+import { formatDay, formatTime, formatTimestamp } from '@/lib/utils'
 import { useApp } from '@/store'
+import { Composer } from './chat/Composer'
+import { MessageAttachments } from './chat/MessageAttachments'
 import { UserAvatar } from './UserAvatar'
 
 const GROUP_WINDOW_MS = 5 * 60 * 1000
 
+/** A esta distância do topo (px), começa a buscar mensagens mais antigas. */
+const LOAD_OLDER_THRESHOLD = 200
+
+const hasFiles = (e: DragEvent): boolean => Array.from(e.dataTransfer?.types ?? []).includes('Files')
+
 export function ChatView({ channelId }: { channelId: string }) {
   const channel = useApp((s) => s.channels.find((c) => c.id === channelId))
   const messages = useApp((s) => s.messages[channelId])
+  const hasMore = useApp((s) => !!s.hasMoreHistory[channelId])
+  const loadingOlder = useApp((s) => !!s.loadingOlder[channelId])
   const scrollRef = useRef<HTMLDivElement>(null)
   const stickToBottom = useRef(true)
+  /** distância até o fim antes de entrar uma página antiga (para não pular a leitura) */
+  const restoreFromBottom = useRef<number | null>(null)
+  const [dragging, setDragging] = useState(false)
+  const dragDepth = useRef(0)
 
   useEffect(() => {
     stickToBottom.current = true
+    restoreFromBottom.current = null
   }, [channelId])
 
   useLayoutEffect(() => {
     const el = scrollRef.current
-    if (el && stickToBottom.current) el.scrollTop = el.scrollHeight
-  }, [messages, channelId])
+    if (!el) return
+    if (restoreFromBottom.current !== null) {
+      el.scrollTop = el.scrollHeight - restoreFromBottom.current
+      restoreFromBottom.current = null
+    } else if (stickToBottom.current) {
+      el.scrollTop = el.scrollHeight
+    }
+    // Página curta que nem enche a tela: não há como rolar, então já busca a próxima.
+    if (hasMore && !loadingOlder && el.scrollHeight <= el.clientHeight) requestOlder()
+  }, [messages, channelId, hasMore, loadingOlder])
+
+  function requestOlder(): void {
+    const el = scrollRef.current
+    if (!el || !hasMore || loadingOlder) return
+    restoreFromBottom.current = el.scrollHeight - el.scrollTop
+    void loadOlderMessages(channelId)
+  }
 
   if (!channel) return null
 
@@ -34,37 +62,81 @@ export function ChatView({ channelId }: { channelId: string }) {
       </header>
 
       <div
-        ref={scrollRef}
-        onScroll={(e) => {
-          const el = e.currentTarget
-          stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+        data-testid="chat-drop-zone"
+        className="relative flex min-h-0 flex-1 flex-col"
+        onDragEnter={(e) => {
+          if (!hasFiles(e)) return
+          e.preventDefault()
+          dragDepth.current++
+          setDragging(true)
         }}
-        className="min-h-0 flex-1 overflow-y-auto select-text"
+        onDragOver={(e) => {
+          if (hasFiles(e)) e.preventDefault()
+        }}
+        onDragLeave={(e) => {
+          if (!hasFiles(e)) return
+          dragDepth.current = Math.max(0, dragDepth.current - 1)
+          if (dragDepth.current === 0) setDragging(false)
+        }}
+        onDrop={(e) => {
+          if (!hasFiles(e)) return
+          e.preventDefault()
+          dragDepth.current = 0
+          setDragging(false)
+          addFiles(channelId, Array.from(e.dataTransfer.files))
+        }}
       >
-        {messages === undefined ? (
-          <div className="flex h-full items-center justify-center text-muted-foreground">
-            <Loader2 className="size-6 animate-spin" />
-          </div>
-        ) : (
-          <div className="flex min-h-full flex-col justify-end pb-4">
-            <ChannelWelcome channel={channel} />
-            {messages.map((m, i) => {
-              const prev = messages[i - 1]
-              const newDay = !prev || new Date(prev.createdAt).toDateString() !== new Date(m.createdAt).toDateString()
-              const compact =
-                !newDay && !!prev && prev.author.accountId === m.author.accountId && m.createdAt - prev.createdAt < GROUP_WINDOW_MS
-              return (
-                <Fragment key={m.id}>
-                  {newDay && <DayDivider ts={m.createdAt} />}
-                  <MessageItem message={m} compact={compact} />
-                </Fragment>
-              )
-            })}
+        <div
+          ref={scrollRef}
+          onScroll={(e) => {
+            const el = e.currentTarget
+            stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+            if (el.scrollTop < LOAD_OLDER_THRESHOLD) requestOlder()
+          }}
+          className="min-h-0 flex-1 overflow-y-auto select-text"
+        >
+          {messages === undefined ? (
+            <div className="flex h-full items-center justify-center text-muted-foreground">
+              <Loader2 className="size-6 animate-spin" />
+            </div>
+          ) : (
+            <div className="flex min-h-full flex-col justify-end pb-4">
+              {hasMore ? (
+                <div className="flex h-12 shrink-0 items-center justify-center text-muted-foreground">
+                  {loadingOlder && <Loader2 className="size-5 animate-spin" aria-label="Carregando mensagens antigas" />}
+                </div>
+              ) : (
+                <ChannelWelcome channel={channel} />
+              )}
+              {messages.map((m, i) => {
+                const prev = messages[i - 1]
+                const newDay = !prev || new Date(prev.createdAt).toDateString() !== new Date(m.createdAt).toDateString()
+                const compact =
+                  !newDay &&
+                  !!prev &&
+                  prev.author.accountId === m.author.accountId &&
+                  m.createdAt - prev.createdAt < GROUP_WINDOW_MS
+                return (
+                  <Fragment key={m.id}>
+                    {newDay && <DayDivider ts={m.createdAt} />}
+                    <MessageItem message={m} compact={compact} />
+                  </Fragment>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        <Composer channel={channel} />
+
+        {dragging && (
+          <div className="pointer-events-none absolute inset-2 z-10 flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-primary bg-background/90 text-accent-foreground">
+            <Upload className="size-10 text-primary" />
+            <p className="text-lg font-semibold">Solte para enviar em #{channel.name}</p>
+            <p className="text-sm text-muted-foreground">Até 10 arquivos de 25 MB</p>
           </div>
         )}
       </div>
-
-      <MessageInput channel={channel} />
     </>
   )
 }
@@ -91,8 +163,19 @@ function DayDivider({ ts }: { ts: number }) {
   )
 }
 
+function MessageBody({ message }: { message: Message }) {
+  return (
+    <>
+      {message.content && (
+        <p className="text-[15px] leading-[22px] break-words whitespace-pre-wrap">{message.content}</p>
+      )}
+      <MessageAttachments attachments={message.attachments ?? []} />
+    </>
+  )
+}
+
 function MessageItem({ message, compact }: { message: Message; compact: boolean }) {
-  // Se o autor estiver online, mostra o nome/foto atuais (a mensagem guarda uma cópia antiga).
+  // Se o autor estiver online, mostra o nome/foto atuais.
   const live = useApp((s) => (compact ? undefined : s.users.find((u) => u.accountId === message.author.accountId)))
   const author = live ?? message.author
 
@@ -102,7 +185,9 @@ function MessageItem({ message, compact }: { message: Message; compact: boolean 
         <span className="w-14 shrink-0 pt-1 pr-2 text-right text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100">
           {formatTime(message.createdAt)}
         </span>
-        <p className="min-w-0 flex-1 text-[15px] leading-[22px] break-words whitespace-pre-wrap">{message.content}</p>
+        <div className="min-w-0 flex-1">
+          <MessageBody message={message} />
+        </div>
       </div>
     )
   }
@@ -121,103 +206,8 @@ function MessageItem({ message, compact }: { message: Message; compact: boolean 
           </span>
           <span className="text-xs text-muted-foreground">{formatTimestamp(message.createdAt)}</span>
         </div>
-        <p className="text-[15px] leading-[22px] break-words whitespace-pre-wrap">{message.content}</p>
+        <MessageBody message={message} />
       </div>
-    </div>
-  )
-}
-
-function MessageInput({ channel }: { channel: Channel }) {
-  const [value, setValue] = useState('')
-  const ref = useRef<HTMLTextAreaElement>(null)
-
-  useEffect(() => {
-    setValue('')
-    ref.current?.focus()
-  }, [channel.id])
-
-  useLayoutEffect(() => {
-    const el = ref.current
-    if (!el) return
-    el.style.height = 'auto'
-    el.style.height = `${Math.min(el.scrollHeight, 200)}px`
-  }, [value])
-
-  function send() {
-    if (!value.trim()) return
-    sendMessage(channel.id, value)
-    setValue('')
-  }
-
-  function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-      e.preventDefault()
-      send()
-    }
-  }
-
-  return (
-    <div className="shrink-0 px-4">
-      <div className="flex items-end gap-2 rounded-lg bg-composer py-1.5 pr-1.5 pl-4">
-        <textarea
-          ref={ref}
-          rows={1}
-          maxLength={2000}
-          value={value}
-          placeholder={`Conversar em #${channel.name}`}
-          onChange={(e) => {
-            setValue(e.target.value)
-            if (e.target.value) notifyTyping(channel.id)
-          }}
-          onKeyDown={onKeyDown}
-          className="max-h-[200px] flex-1 resize-none bg-transparent py-1.5 text-[15px] leading-[22px] outline-none placeholder:text-muted-foreground"
-        />
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          aria-label="Enviar"
-          disabled={!value.trim()}
-          onClick={send}
-          className="text-muted-foreground hover:text-accent-foreground"
-        >
-          <SendHorizontal />
-        </Button>
-      </div>
-      <TypingIndicator channelId={channel.id} />
-    </div>
-  )
-}
-
-function TypingIndicator({ channelId }: { channelId: string }) {
-  const typing = useApp((s) => s.typing[channelId])
-  const selfId = useApp((s) => s.self?.id)
-  const [now, setNow] = useState(() => Date.now())
-
-  const hasEntries = !!typing && Object.keys(typing).length > 0
-  useEffect(() => {
-    if (!hasEntries) return
-    setNow(Date.now())
-    const t = window.setInterval(() => setNow(Date.now()), 1000)
-    return () => window.clearInterval(t)
-  }, [hasEntries, typing])
-
-  const names = Object.entries(typing ?? {})
-    .filter(([id, entry]) => id !== selfId && entry.until > now)
-    .map(([, entry]) => entry.name)
-
-  let text = ''
-  if (names.length === 1) text = `${names[0]} está digitando...`
-  else if (names.length === 2) text = `${names[0]} e ${names[1]} estão digitando...`
-  else if (names.length > 2) text = 'Várias pessoas estão digitando...'
-
-  return (
-    <div className={cn('flex h-6 items-center gap-1.5 text-xs text-accent-foreground', !text && 'invisible')}>
-      <span className="flex gap-0.5">
-        <span className="size-1.5 animate-bounce rounded-full bg-accent-foreground [animation-delay:-0.3s]" />
-        <span className="size-1.5 animate-bounce rounded-full bg-accent-foreground [animation-delay:-0.15s]" />
-        <span className="size-1.5 animate-bounce rounded-full bg-accent-foreground" />
-      </span>
-      <span className="font-medium">{text}</span>
     </div>
   )
 }
