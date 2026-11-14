@@ -1,13 +1,16 @@
-// "Configurações de voz": microfone e saída de áudio (B4). O volume de cada pessoa fica no botão direito sobre ela.
+// "Configurações de voz": microfone, saída de áudio (B4) e sons de entrar/sair da sala (B16). O volume de cada pessoa fica no botão direito sobre ela.
 import { useCallback, useEffect, useState } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import {
   canChooseAudioOutput,
   closeDeviceSettings,
   listAudioDevices,
+  previewVoiceSound,
   selectAudioInput,
   selectAudioOutput,
+  setVoiceSounds,
   type AudioDevice
 } from '@/lib/client'
 import { useApp } from '@/store'
@@ -76,11 +79,49 @@ export function DeviceSettings() {
           )}
         </div>
 
+        <JoinLeaveSounds />
+
         <p className="text-xs text-muted-foreground">
           Para ajustar o volume ou silenciar alguém, clique com o botão direito na pessoa.
         </p>
       </DialogContent>
     </Dialog>
+  )
+}
+
+/** Sons de quando alguém entra ou sai da sala (B16). */
+function JoinLeaveSounds() {
+  const enabled = useApp((s) => s.voiceSoundsEnabled)
+  const pct = useApp((s) => Math.round(s.voiceSoundsVolume * 100))
+  return (
+    <div className="space-y-2 border-t border-border pt-4">
+      <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => setVoiceSounds({ enabled: e.target.checked })}
+          className="size-4 accent-primary"
+        />
+        Tocar um som quando alguém entra ou sai da sala
+      </label>
+      <div className="flex items-center gap-3 pl-6">
+        <input
+          type="range"
+          min={0}
+          max={100}
+          step={5}
+          value={pct}
+          disabled={!enabled}
+          aria-label="Volume dos sons de entrada e saída"
+          onChange={(e) => setVoiceSounds({ volume: Number(e.target.value) / 100 })}
+          className="flex-1 accent-primary disabled:opacity-50"
+        />
+        <span className="w-10 text-right text-xs text-muted-foreground tabular-nums">{pct}%</span>
+        <Button variant="secondary" size="sm" onClick={previewVoiceSound}>
+          Testar
+        </Button>
+      </div>
+    </div>
   )
 }
 
