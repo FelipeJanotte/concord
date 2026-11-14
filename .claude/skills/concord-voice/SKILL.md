@@ -74,6 +74,11 @@ clica na sala ─► createLocalAudioTrack(echoCancellation/noiseSuppression/aut
   `voice:join`). Troca recusada (canal apagado, sem permissão, voz desligada): o `join` lança o erro, libera o
   microfone aberto para a sala nova e a pessoa continua na antiga, com áudio; o servidor também a mantém lá. O
   servidor troca de sala sozinho no `voice:join` aceito, sem precisar de `voice:leave`.
+  Ao aceitar, o servidor **tira a pessoa da sala antiga no LiveKit** (`RemoveParticipant`), e o aviso pode chegar
+  antes da resposta. Por isso, do envio do `voice:join` até fechar a antiga, o `Disconnected` dela é esperado
+  (`switchingFrom`): não vira "Você foi removido" nem manda `voice:leave` (que tiraria a pessoa da sala nova). Só se a
+  troca for **recusada** e a antiga tiver caído nesse meio-tempo, aí é tratado como queda (`endSwitch`). Testes: bloco
+  "bug: trocar de sala" em `lib/voice.test.ts`.
 - **Falha ao conectar no LiveKit** (depois do ack): emite `voice:leave` (o servidor já tinha colocado a pessoa na
   lista) e lança "Não foi possível conectar ao servidor de voz..."; o `joinVoice` vê `voice.inRoom === false` e zera
   o estado (`OUT_OF_VOICE`), inclusive quando era uma troca de sala. Enquanto o `connect` não termina, um
