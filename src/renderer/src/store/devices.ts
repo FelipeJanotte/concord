@@ -9,6 +9,10 @@ export interface DevicesState {
   userVolumes: Record<string, number>
   /** contas que silenciei só para mim (o volume em `userVolumes` fica guardado para quando voltar) */
   userMuted: Record<string, true>
+  /** som quando alguém entra/sai da minha sala de voz (B16) */
+  voiceSoundsEnabled: boolean
+  /** volume desses sons, de 0 a 1 */
+  voiceSoundsVolume: number
   /** diálogo "Configurações de voz" aberto */
   deviceSettingsOpen: boolean
 }
@@ -18,5 +22,7 @@ export const devicesInitial: DevicesState = {
   audioOutputId: null,
   userVolumes: {},
   userMuted: {},
+  voiceSoundsEnabled: true,
+  voiceSoundsVolume: 0.5,
   deviceSettingsOpen: false
 }

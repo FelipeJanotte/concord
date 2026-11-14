@@ -138,50 +138,66 @@ Ordem: contrato → (A9) em paralelo com (B11 → B12). B12 funciona com o tema 
 ## Extras de voz e comunidade (independentes)
 
 Ideias sem versão fixa, para puxar quando sobrar tempo, em paralelo com qualquer versão. Cada uma diz do que
-depende: B1, B2, B3 e A2 já estão na `main`; a B4 está no PR #14.
+depende: B1, B2, B3, B4 e A2 já estão na `main`.
 
 | Ideia | Tasks | Depende de | Tamanho |
 |---|---|---|---|
-| Supressão de ruído | B13 | B4 (PR #14) | médio (spike + 3 níveis) |
-| Sons de entrar/sair | B16 | B4 (PR #14) | pequeno |
+| Supressão de ruído automática | B13 | B4 (na `main`) | médio (spike + modo automático) |
+| Sons de entrar/sair ✅ | B16 | B4 (na `main`) | pequeno |
 | Efeitos sonoros (soundboard) | A10 + B17 | A2 (na `main`); permissão opcional da v2 | médio |
 | Overlay em jogos | B15 | B2 (na `main`) | médio |
 | Bot de música | A11 + B14 | B1 (na `main`); **decisão sobre termos de uso** | grande |
 
-### B13 Supressão de ruído
+### B13 Supressão de ruído automática
 
 | Task | Dev | O que faz | Arquivos (dono) |
 |---|---|---|---|
-| **B13 Supressão de ruído** | B | Tirar teclado, ventilador, cachorro latindo etc. do microfone **antes de enviar**, com um interruptor "Supressão de ruído" (Desligada / Padrão / Avançada) em Configurações de voz, salvo em `concord:audio`. Roda no **app de quem fala** (processador na faixa do microfone, `LocalAudioTrack.setProcessor()` do `livekit-client`), então todo mundo ouve limpo sem mudar nada no servidor. Troca na hora, mesmo dentro da sala. | `lib/noise/**`, `lib/voice.ts` (só o `setProcessor`), `lib/actions/devices.ts`, `components/voice/DeviceSettings.tsx` |
+| **B13 Supressão de ruído automática** | B | Tirar teclado, ventilador, cachorro latindo etc. do microfone **antes de enviar**, **sem a pessoa precisar escolher nada**: vem ligada e o próprio app decide o filtro conforme o ruído do ambiente e a capacidade do PC. Roda no **app de quem fala** (processador na faixa do microfone, `LocalAudioTrack.setProcessor()` do `livekit-client`), então todo mundo ouve limpo sem mudar nada no servidor. | `lib/noise/**`, `lib/voice.ts` (só o `setProcessor`), `lib/actions/devices.ts`, `components/voice/DeviceSettings.tsx` |
 
-**Opções avaliadas** (todas gratuitas; escolher no spike):
+**Como o modo automático decide** (tudo no app, a cada entrada na sala e durante a conversa):
+
+1. **Filtro forte por padrão:** ao entrar na sala, o microfone já sai pelo filtro avançado (o vencedor do spike) e a
+   supressão nativa do WebRTC é desligada para não processar duas vezes (som "abafado").
+2. **Liga o pesado só quando precisa** (economiza CPU e bateria): mede o **ruído de fundo** nos momentos em que a pessoa
+   não está falando (nível do microfone fora da fala). Ambiente silencioso → fica no filtro nativo, que é leve; ruído
+   persistente (teclado, ventilador, rua) → ativa o filtro avançado. Com folga (histerese de alguns segundos) para não
+   ficar trocando a cada barulho.
+3. **Se adapta ao PC:** se o filtro avançado pesar demais (o processamento de áudio atrasando, quadros perdidos no
+   AudioWorklet) ou não carregar (WASM bloqueado, PC sem suporte), **cai sozinho** para o filtro nativo e tenta de novo
+   só na próxima entrada. Sem mensagem de erro para a pessoa; no máximo um log `[ruído]`.
+4. **Sem configuração para escolher:** em Configurações de voz aparece só um texto informativo ("Supressão de ruído:
+   automática") com o estado atual (por exemplo, "filtro avançado ativo"). Existe **um único interruptor** para
+   desligar tudo, pensado para quem toca instrumento ou quer o áudio cru; ele vem ligado e fica salvo em `concord:audio`.
+
+**Opções avaliadas para o filtro avançado** (todas gratuitas; escolher no spike):
 
 | Opção | Licença | Prós | Contras |
 |---|---|---|---|
-| **Supressão nativa do WebRTC** (`noiseSuppression: true`) | — | Já está ligada hoje; custo zero. Vira o nível "Padrão". | Remove só ruído constante (chiado, ventilador); teclado e vozes ao fundo passam. |
-| **RNNoise** via `@sapphi-red/web-noise-suppressor` (também traz Speex) | MIT | Leve (WASM + AudioWorklet), roda bem em qualquer PC; bom contra teclado e ruído de fundo. Candidato ao nível "Avançada". | Qualidade abaixo do Krisp; precisa embrulhar como `TrackProcessor`. |
-| **DeepFilterNet3** via `deepfilternet3-noise-filter` | MIT / Apache-2.0 | Melhor qualidade entre as abertas; já vem como processador do `livekit-client`. | Mais pesado (CPU e tamanho do modelo); medir em PC fraco. |
+| **Supressão nativa do WebRTC** (`noiseSuppression: true`) | — | Já está ligada hoje; custo zero. É o filtro **leve** do modo automático e a reserva quando o avançado não roda. | Remove só ruído constante (chiado, ventilador); teclado e vozes ao fundo passam. |
+| **RNNoise** via `@sapphi-red/web-noise-suppressor` (também traz Speex) | MIT | Leve (WASM + AudioWorklet), roda bem em qualquer PC; bom contra teclado e ruído de fundo. Forte candidato a filtro avançado. | Qualidade abaixo do Krisp; precisa embrulhar como `TrackProcessor`. |
+| **DeepFilterNet3** via `deepfilternet3-noise-filter` | MIT / Apache-2.0 | Melhor qualidade entre as abertas; já vem como processador do `livekit-client`. | Mais pesado (CPU e tamanho do modelo); medir em PC fraco. Se ficar, o passo 3 (cair sozinho) é essencial. |
 | **RNNoise** via `@shiguredo/noise-suppression` | Apache-2.0 | Alternativa à de cima. | Última versão em 2025. |
 | **Krisp** (`@livekit/krisp-noise-filter`) | Termos da LiveKit | Qualidade comercial. | Pelo que consta, só funciona com o **LiveKit Cloud**, não com o nosso servidor self-hosted. **Confirmar** antes de descartar; se for o caso, fica fora (fere "stack 100% gratuita e self-hosted"). |
 
 **Plano sugerido:**
 1. **Spike** (branch descartável): RNNoise e DeepFilterNet3 como processador no `livekit-client`; medir CPU (Gerenciador de
-   Tarefas), atraso percebido e qualidade com teclado, ventilador e música ao fundo, em duas janelas.
-2. Implementar: "Desligada" (tira inclusive o nativo), "Padrão" (nativo do WebRTC) e "Avançada" (a vencedora do spike).
-   Com "Avançada" ligada, desligar o `noiseSuppression` nativo para não processar duas vezes (som "abafado").
-3. Se a vencedora falhar ao carregar (WASM bloqueado, PC sem suporte a AudioWorklet), cai para "Padrão" com aviso.
-4. Os arquivos WASM/modelo vão empacotados no app (sem baixar de CDN em tempo de execução; a CSP não libera).
+   Tarefas), atraso percebido e qualidade com teclado, ventilador e música ao fundo, em duas janelas. Medir também como
+   detectar "pesado demais" de forma confiável (atraso do AudioWorklet).
+2. Implementar o modo automático (passos 1 a 4 acima) com o vencedor do spike.
+3. Os arquivos WASM/modelo vão empacotados no app (sem baixar de CDN em tempo de execução; a CSP não libera).
 
-**Pronto quando:** com "Avançada", quem ouve não escuta teclado nem ventilador de quem fala; a troca entre os três
-níveis vale sem sair da sala; a escolha volta depois de reiniciar o app. Testes: escolha do nível e fallback
-(processador falso no `VoiceClient`), preferência salva, interruptor no diálogo (jsdom). Skill: seção em
+**Pronto quando:** sem mexer em nada, quem ouve não escuta teclado nem ventilador de quem fala; em ambiente silencioso o
+filtro avançado não fica ligado à toa; num PC que não aguenta (simulado nos testes) o app cai para o filtro nativo sem
+quebrar a voz nem mostrar erro; o interruptor de desligar volta como estava depois de reiniciar. Testes: decisão do
+modo automático a partir de níveis de ruído simulados (com histerese), queda para o nativo quando o processador falha ou
+atrasa (processador falso no `VoiceClient`), interruptor salvo e texto de estado no diálogo (jsdom). Skill: seção em
 `concord-voice`.
 
 ### B16 Sons de entrada e saída na sala
 
 | Task | Dev | O que faz | Arquivos (dono) |
 |---|---|---|---|
-| **B16 Sons de entrar/sair** | B | Um som curto quando alguém **entra** na sala de voz em que estou e outro quando alguém **sai** (inclusive eu mesmo entrando/saindo, como no Discord). Só cliente: compara o `voice:state` anterior com o novo na minha sala. Toca pela saída escolhida na B4, respeita o deafen e tem interruptor + volume em Configurações de voz (salvo em `concord:audio`). Não toca na carga inicial (`hello`), nem em reconexão, nem em rajada (várias pessoas entrando juntas = um som só). Sons próprios (licença livre, ex.: CC0) empacotados no app. | `lib/sounds/**`, `assets/sounds/**`, `lib/actions/devices.ts`, `components/voice/DeviceSettings.tsx` |
+| **B16 Sons de entrar/sair** ✅ (branch `extras/b16-sons-entrada-saida`) | B | Um som curto quando alguém **entra** na sala de voz em que estou e outro quando alguém **sai** (inclusive eu mesmo entrando/saindo, como no Discord). Só cliente: compara o `voice:state` anterior com o novo na minha sala. Toca pela saída escolhida na B4, respeita o deafen e tem interruptor + volume + "Testar" em Configurações de voz (salvo em `concord:audio`). Não toca na carga inicial (`hello`) nem em rajada (várias mudanças juntas = um som de cada tipo). Os sons são **gerados na hora pela Web Audio** (sem arquivos de áudio: nada para baixar nem licença para conferir). | `lib/sounds/**`, `lib/actions/voice-sounds.ts`, `lib/actions/devices.ts`, `components/voice/DeviceSettings.tsx` |
 
 Pequena e sem dependências: boa para puxar logo. **Testes:** detecção de entrada/saída a partir de dois `voice:state`, sem som no `hello`, rajada agrupada, deafen e interruptor desligado silenciam (áudio falso).
 
@@ -241,7 +257,7 @@ Como sempre: cada task vem com testes e com a skill da área (`concord-voice` pa
 - v3: pedido de amizade → aceitar → DM com anexo → chamada com tela; bloqueado não consegue abrir DM.
 - v4: ferramentas aparecem na barra da esquerda e abrem o painel; mesmo resultado nos dois clientes; times equilibrados com número ímpar; lanes sem repetição.
 - v5: trocar o tema numa janela muda na outra janela da mesma conta; tema salvo volta depois de reiniciar o app e em outro computador; código de tema copiado por um amigo aplica igual; nenhum tema pronto ou editado deixa texto ilegível (teste de contraste).
-- B13: com "Avançada", gravar teclando e com ventilador ligado e conferir na outra janela que o ruído some; alternar os níveis dentro da sala; reiniciar o app e a escolha continua.
+- B13: sem configurar nada, falar teclando e com ventilador ligado e conferir na outra janela que o ruído some; em silêncio, o estado mostra o filtro leve; desligar o interruptor e conferir o áudio cru; reiniciar o app e o interruptor continua como estava.
 - B16: terceira janela entra e sai da sala → as outras ouvem os dois sons; com deafen ou interruptor desligado, silêncio; reconectar não toca som.
 - A10/B17: enviar áudio de 4 s (aceita) e de 6 s ou 1 MB (recusa); tocar numa sala → só quem está nela ouve, do começo ao fim; quem está em outra sala não recebe `sound:played`.
 - B15: jogo em janela e em tela cheia sem bordas mostra o overlay com quem fala; o clique passa para o jogo; o atalho liga/desliga.

@@ -175,6 +175,28 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
   À mão: trocar de fone no meio da conversa e conferir que o outro continua ouvindo; botão direito numa pessoa,
   baixar o volume, silenciar, tirar o silêncio (volta ao volume ajustado) e reiniciar o app (tudo continua).
 
+## Sons de entrar e sair da sala (B16)
+
+Um som curto quando alguém **entra** na sala de voz em que estou (duas notas subindo) e outro quando alguém **sai**
+(descendo). Também toca quando eu mesmo entro ou saio. **Só cliente:** nenhum evento novo.
+
+| Peça | Papel |
+|---|---|
+| `lib/sounds/chime.ts` | `ChimePlayer`: gera os sons **na hora pela Web Audio** (osciladores senoidais com envelope; sem arquivos de áudio, sem licença para conferir). Volume com teto baixo (25% do máximo no "100%"), usa a saída escolhida (`AudioContext.setSinkId`, quando existe) e junta o mesmo som repetido em menos de 400 ms (`MERGE_WINDOW_MS`). |
+| `lib/sounds/transitions.ts` | `roomChanges(prev, next, minhaSala, eu)`: quem apareceu e quem sumiu da minha sala entre dois `voice:state` (função pura; eu fico de fora). |
+| `lib/actions/voice-sounds.ts` | `handleVoiceStateChange` (chamado no listener de `voice:state` em `lib/actions/voice.ts`), `enteredVoiceRoom`/`leftVoiceRoom` (chamados em `joinVoice`, `leaveVoice` e na queda da sala), `playVoiceSound`, `previewVoiceSound` (botão Testar). |
+| `store/devices.ts` + `lib/actions/devices.ts` | `voiceSoundsEnabled` (padrão ligado) e `voiceSoundsVolume` (padrão 50%), salvos em `concord:audio` (`sounds`); `setVoiceSounds`. Interruptor, volume e "Testar" em Configurações de voz. |
+
+- **Não toca:** fora de uma sala; na carga inicial (o `hello` não passa pelo listener); com deafen; com o interruptor
+  desligado; quando só muda mute/deafen/tela de alguém. Quem já estava na sala quando eu entro não conta como "entrou"
+  (a lista anterior já tem essas pessoas). Queda do socket do Concord não toca som de saída (só a queda da sala do LiveKit).
+- **Várias mudanças juntas** (mesmo `voice:state` ou rajada) viram no máximo um som de cada tipo.
+- **Testes:** `lib/sounds/sounds.test.ts` (notas, volume, junção, saída escolhida, sem `setSinkId`, erro de áudio;
+  `roomChanges`), `lib/actions/voice-sounds.test.ts` (com socket falso: entra/sai, outras salas, fora de sala,
+  lista da minha entrada, deafen, interruptor, trocar de sala, própria entrada/saída, falha ao entrar, queda, Testar),
+  `lib/actions/devices.test.ts` e `components/voice/DeviceSettings.test.tsx` (preferência e controles). À mão: três
+  janelas na mesma sala; a terceira entra e sai e as outras ouvem os dois sons; com deafen, silêncio.
+
 ## Limites e evolução
 
 - **Escala:** o SFU aguenta salas grandes (dezenas de pessoas); o gargalo passa a ser a banda/CPU do servidor do
@@ -204,3 +226,5 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
 8. Trocou de fone e não ouve nada: a saída salva pode ser um aparelho desconectado; volte para "Padrão do
    sistema" em Configurações de voz. Alguém baixinho ou mudo: botão direito na pessoa e confira o volume e o
    "Silenciar" (ficam salvos por conta, neste computador; o ícone de alto-falante cortado indica silenciado por você).
+9. Não toca o som de entrar/sair: confira em Configurações de voz se o interruptor está ligado, o volume acima de 0 e
+   se você não está em deafen; o botão "Testar" toca mesmo com o interruptor desligado.
