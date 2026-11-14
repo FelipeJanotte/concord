@@ -13,7 +13,11 @@ class FakeRoom {
   connect = vi.fn(async (_url: string, _token: string, _opts?: unknown) => {})
   disconnect = vi.fn(async () => {})
   startAudio = vi.fn(async () => {})
-  localParticipant = { publishTrack: vi.fn(async (_track: unknown, _opts?: unknown) => ({})) }
+  localParticipant = {
+    identity: 'eu',
+    publishTrack: vi.fn(async (_track: unknown, _opts?: unknown) => ({})),
+    setScreenShareEnabled: vi.fn(async (_on: boolean, _opts?: unknown) => undefined)
+  }
 
   on(event: string, fn: Listener): this {
     this.listeners.set(event, [...(this.listeners.get(event) ?? []), fn])
@@ -50,13 +54,22 @@ class FakeElement {
 
 class FakeRemoteTrack {
   attachedElements: FakeElement[] = []
-  constructor(readonly kind: Track.Kind = Track.Kind.Audio) {}
-  attach(): FakeElement {
-    const el = new FakeElement()
-    this.attachedElements.push(el)
-    return el
+  constructor(
+    readonly kind: Track.Kind = Track.Kind.Audio,
+    readonly source: Track.Source = kind === Track.Kind.Audio ? Track.Source.Microphone : Track.Source.Camera
+  ) {}
+  attach(el?: FakeElement): FakeElement {
+    const target = el ?? new FakeElement()
+    this.attachedElements.push(target)
+    return target
   }
-  detach(): FakeElement[] {
+  detachOne = vi.fn()
+  detach(el?: FakeElement): FakeElement[] {
+    if (el) {
+      this.detachOne(el)
+      this.attachedElements = this.attachedElements.filter((e) => e !== el)
+      return [el]
+    }
     const els = this.attachedElements
     this.attachedElements = []
     return els
@@ -330,5 +343,106 @@ describe('queda da sala', () => {
     // Mesmo que o LiveKit ainda entregue o evento de um handler antigo:
     for (const fn of disconnectedHandlers) fn(DisconnectReason.CLIENT_INITIATED)
     expect(onDrop).not.toHaveBeenCalled()
+  })
+})
+
+describe('tela', () => {
+  const screenTrack = (): FakeRemoteTrack => new FakeRemoteTrack(Track.Kind.Video, Track.Source.ScreenShare)
+  const participant = (identity: string) => ({ identity })
+
+  it('publica a tela pelo LiveKit com o áudio pedido', async () => {
+    await client.join('sala-1')
+    await client.startScreenShare(true)
+    expect(lastRoom().localParticipant.setScreenShareEnabled).toHaveBeenCalledWith(
+      true,
+      expect.objectContaining({ audio: true, systemAudio: 'include', contentHint: 'detail' })
+    )
+    await client.startScreenShare(false)
+    expect(lastRoom().localParticipant.setScreenShareEnabled).toHaveBeenLastCalledWith(
+      true,
+      expect.objectContaining({ audio: false, systemAudio: 'exclude' })
+    )
+  })
+
+  it('fora da sala não dá para compartilhar', async () => {
+    await expect(client.startScreenShare(false)).rejects.toThrow('Entre numa sala de voz')
+  })
+
+  it('parar desliga a publicação', async () => {
+    await client.join('sala-1')
+    await client.stopScreenShare()
+    expect(lastRoom().localParticipant.setScreenShareEnabled).toHaveBeenCalledWith(false)
+    await expect(new VoiceClient().stopScreenShare()).resolves.toBeUndefined() // fora da sala: nada
+  })
+
+  it('a tela de quem compartilha aparece em store.screens e some quando acaba', async () => {
+    await client.join('sala-1')
+    const track = screenTrack()
+    lastRoom().fire(RoomEvent.TrackSubscribed, track, {}, participant('ana'))
+    expect(useApp.getState().screens).toEqual(['ana'])
+    expect(track.attachedElements).toHaveLength(0) // vídeo só toca quando a UI liga num <video>
+    lastRoom().fire(RoomEvent.TrackUnsubscribed, track, {}, participant('ana'))
+    expect(useApp.getState().screens).toEqual([])
+  })
+
+  it('vídeo que não é tela (câmera) é ignorado', async () => {
+    await client.join('sala-1')
+    lastRoom().fire(RoomEvent.TrackSubscribed, new FakeRemoteTrack(Track.Kind.Video), {}, participant('ana'))
+    expect(useApp.getState().screens).toEqual([])
+  })
+
+  it('o áudio da tela toca como os outros áudios (e respeita o deafen)', async () => {
+    await client.join('sala-1')
+    const screenAudio = new FakeRemoteTrack(Track.Kind.Audio, Track.Source.ScreenShareAudio)
+    lastRoom().fire(RoomEvent.TrackSubscribed, screenAudio, {}, participant('ana'))
+    client.setDeafened(true)
+    expect(screenAudio.attachedElements[0].muted).toBe(true)
+  })
+
+  it('attachScreen liga a tela num <video> e devolve quem desliga', async () => {
+    await client.join('sala-1')
+    const track = screenTrack()
+    lastRoom().fire(RoomEvent.TrackSubscribed, track, {}, participant('ana'))
+    const video = new FakeElement()
+    const detach = client.attachScreen('ana', video as unknown as HTMLVideoElement)
+    expect(track.attachedElements).toEqual([video])
+    detach()
+    expect(track.detachOne).toHaveBeenCalledWith(video)
+    // Quem não está compartilhando: não faz nada.
+    expect(() => client.attachScreen('ninguem', video as unknown as HTMLVideoElement)()).not.toThrow()
+  })
+
+  it('a própria tela entra como prévia e, ao parar (inclusive pelo sistema), avisa o app', async () => {
+    const ended = vi.fn()
+    client.onScreenShareEnded = ended
+    await client.join('sala-1')
+    const local = screenTrack()
+    const pub = { source: Track.Source.ScreenShare, track: local }
+    lastRoom().fire(RoomEvent.LocalTrackPublished, pub, participant('eu'))
+    expect(useApp.getState().screens).toEqual(['eu'])
+    lastRoom().fire(RoomEvent.LocalTrackUnpublished, pub, participant('eu'))
+    expect(useApp.getState().screens).toEqual([])
+    expect(ended).toHaveBeenCalledOnce()
+  })
+
+  it('publicar/despublicar o microfone não mexe na tela', async () => {
+    const ended = vi.fn()
+    client.onScreenShareEnded = ended
+    await client.join('sala-1')
+    const pub = { source: Track.Source.Microphone, track: new FakeRemoteTrack() }
+    lastRoom().fire(RoomEvent.LocalTrackPublished, pub, participant('eu'))
+    lastRoom().fire(RoomEvent.LocalTrackUnpublished, pub, participant('eu'))
+    expect(useApp.getState().screens).toEqual([])
+    expect(ended).not.toHaveBeenCalled()
+  })
+
+  it('sair limpa as telas sem disparar o aviso de fim', async () => {
+    const ended = vi.fn()
+    client.onScreenShareEnded = ended
+    await client.join('sala-1')
+    lastRoom().fire(RoomEvent.TrackSubscribed, screenTrack(), {}, participant('ana'))
+    client.leave()
+    expect(useApp.getState().screens).toEqual([])
+    expect(ended).not.toHaveBeenCalled()
   })
 })

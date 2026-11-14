@@ -91,6 +91,7 @@ Cliente → servidor (`ClientToServerEvents`):
 | `voice:join` | `{ channelId, muted, deafened }` | `JoinVoiceResult` (`url`, `token` do LiveKit) | exige LiveKit configurado; sai da sala anterior (também no LiveKit), entra na nova; `voice:state` |
 | `voice:leave` | — | — | tira da sala no LiveKit (`RemoveParticipant`) + `voice:state` |
 | `voice:update` | `{ muted, deafened }` | — | `voice:state` |
+| `voice:sharing` | `boolean` | — | liga/desliga o "ao vivo" (só para quem está numa sala); `voice:state` |
 | `typing` | `channelId` | — | broadcast `typing` (o cliente limita a 1 envio a cada 2,5 s) |
 
 Servidor → cliente (`ServerToClientEvents`): `channel:created`, `channel:deleted`, `user:joined`, `user:left`,

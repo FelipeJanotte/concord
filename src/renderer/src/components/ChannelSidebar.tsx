@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
 import { CreateChannelDialog } from './CreateChannelDialog'
 import { UserAvatar } from './UserAvatar'
+import { LiveBadge } from './voice/ScreenTile'
 import { UserPanel, VoiceStatusPanel } from './UserPanel'
 
 export function ChannelSidebar() {
@@ -203,6 +204,7 @@ function VoiceMember({ state }: { state: VoiceState }) {
     <div className="flex h-7 items-center gap-2 rounded-md px-2 text-sm text-sidebar-foreground hover:bg-accent/40">
       <UserAvatar user={user} size="sm" speaking={speaking} />
       <span className={cn('flex-1 truncate', speaking && 'text-accent-foreground')}>{user.name}</span>
+      {state.sharing && <LiveBadge />}
       {state.deafened ? (
         <HeadphoneOff className="size-3.5 text-destructive" />
       ) : state.muted ? (

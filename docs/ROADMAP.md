@@ -55,7 +55,7 @@ Feita em sequência e mergeada na `main` antes de qualquer feature.
 5. `package.json`/`package-lock.json`: em conflito, aceite a `main` e rode `npm install <pacotes>` de novo.
 6. Branch por task (`v1/a2-uploads`), PRs pequenos, rebase diário, `npm run typecheck && npm test` antes de mergear.
 7. **Toda task traz testes automatizados** e só está pronta quando `npm test` passa por completo. Testes de integração do servidor ficam em `server/tests/<dominio>.test.ts`; os demais ficam ao lado do código (`arquivo.test.ts`). Um arquivo por domínio, para não haver conflito.
-8. Cada task atualiza a skill da sua área em `.claude/skills/` e o mapa do `AGENTS.md`.
+8. **Toda task, todo módulo novo e toda alteração vêm com a skill correspondente** (cria `.claude/skills/concord-<area>/` para área nova ou atualiza a da área no mesmo PR) e com o mapa do `AGENTS.md` em dia. Sem skill, a task **não está pronta** (ver "Definição de pronto" no `AGENTS.md`).
 
 ## v1 — Banco, anexos, voz em SFU e compartilhamento de tela
 
@@ -75,7 +75,7 @@ Trilha A = dados e texto. Trilha B = mídia. As duas não compartilham arquivos.
 |---|---|---|
 | **B1 LiveKit (servidor)** ✅ (branch `v1/b1-livekit`) | `voice:join` continua validando o canal e mantendo `VoiceState`, mas o ack passa a devolver `{ url, token }` (JWT do `livekit-server-sdk`, sala = id do canal, identidade = `User.id`). Remove `voice:signal`/`voice:peer-left` e `peers`. | `server/modules/voice.ts`, `shared/types/voice.ts` |
 | **B2 Voz no cliente** ✅ (branch `v1/b1-livekit`, junto com a B1) | Reescrever `VoiceClient` sobre `livekit-client` mantendo a mesma API pública (`join`, `leave`, `setMuted`, `setDeafened`, `teardown`) para `client.ts` e a UI não mudarem. `speaking` vem de `ActiveSpeakersChanged` (some o `AnalyserNode`). Mantém o modo "só ouvir" sem microfone. | `lib/voice.ts`, `lib/actions/voice.ts`, `store/voice.ts` |
-| **B3 Compartilhar tela** | Main: `session.setDisplayMediaRequestHandler` + `desktopCapturer.getSources`, IPC `screen-sources` para o seletor. Renderer: diálogo de escolha de tela/janela (com miniaturas), publicar faixa de tela (com áudio do sistema quando disponível), grade no `VoiceView` com tile de tela em destaque, indicador "ao vivo" na sidebar. Campo `sharing` em `VoiceState`. | `src/main/screen-share.ts`, `src/preload/*`, `components/voice/{ScreenPicker,ScreenTile,VoiceGrid}.tsx`, `VoiceView.tsx` |
+| **B3 Compartilhar tela** ✅ (branch `v1/b3-screen-share`) | Main: `session.setDisplayMediaRequestHandler` + `desktopCapturer.getSources`, IPC `screen-sources` para o seletor. Renderer: diálogo de escolha de tela/janela (com miniaturas), publicar faixa de tela (com áudio do sistema quando disponível), grade no `VoiceView` com tile de tela em destaque, indicador "ao vivo" na sidebar. Campo `sharing` em `VoiceState`. | `src/main/screen-share.ts`, `src/preload/*`, `components/voice/{ScreenPicker,ScreenTile,VoiceGrid}.tsx`, `VoiceView.tsx` |
 | **B4 Dispositivos** (se sobrar tempo) | Escolha de microfone/saída e volume por pessoa. | `components/voice/DeviceSettings.tsx` |
 
 **Único ponto de contato na v1:** `voice.ts` do servidor usa `repo/channels` (A1). Como o repo já é async desde a F0, B não é afetado pela troca.

@@ -53,7 +53,9 @@ export const voiceModule: ServerModule = {
           userId: socket.id,
           channelId: channel.id,
           muted: !!payload.muted,
-          deafened: !!payload.deafened
+          deafened: !!payload.deafened,
+          // Entrar (ou trocar de sala) começa sem tela; o app avisa com voice:sharing ao publicar.
+          sharing: false
         })
         ack({ ok: true, ...credentials })
         emitVoice(io)
@@ -67,6 +69,13 @@ export const voiceModule: ServerModule = {
       if (!state) return
       state.muted = !!payload?.muted
       state.deafened = !!payload?.deafened
+      emitVoice(io)
+    })
+
+    socket.on('voice:sharing', (sharing) => {
+      const state = voice.get(socket.id)
+      if (!state || typeof sharing !== 'boolean' || state.sharing === sharing) return
+      state.sharing = sharing
       emitVoice(io)
     })
 

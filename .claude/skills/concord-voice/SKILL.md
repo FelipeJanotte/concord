@@ -23,7 +23,8 @@ O áudio (e a tela, na B3) passa pelo LiveKit, um SFU self-hosted que roda pelo 
    - `canPublishSources` = microfone, tela e áudio da tela (câmera bloqueada); `canPublishData` = false;
      sem `roomAdmin`/`roomCreate`/`roomList`.
 2. **Mantém o estado.** O mapa `voice` (socket.id → `VoiceState`) continua sendo a fonte da lista de quem está em
-   cada sala; todos recebem `voice:state` (lista completa) ao entrar, sair, trocar de sala e em `voice:update`.
+   cada sala; todos recebem `voice:state` (lista completa) ao entrar, sair, trocar de sala, em `voice:update` e em
+   `voice:sharing` (indicador "ao vivo"; entrar ou trocar de sala zera `sharing`).
 3. **Tira da sala no LiveKit** quando a pessoa sai pelo Concord (`voice:leave`, `disconnect`, troca de sala):
    `kickFromRoom` → `RoomService.RemoveParticipant`. Canal apagado → `closeRoom` → `DeleteRoom`. Sem isso, um
    cliente modificado continuaria ouvindo depois de "sair". Erros `not_found` são ignorados; outros só geram log
@@ -81,6 +82,37 @@ clica na sala ─► createLocalAudioTrack(echoCancellation/noiseSuppression/aut
 - Dependências injetáveis (`new VoiceClient({ createRoom, createMicTrack })`): os testes em
   `lib/voice.test.ts` usam Room, microfone e faixas falsos.
 
+## Compartilhar a tela (B3)
+
+```
+botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
+  Electron:  abre o ScreenPicker ─► window.api.screen.getSources() ─► IPC screen-sources (desktopCapturer)
+             escolhe ─► startScreenShare(id, áudio) ─► IPC screen-select (guarda a escolha no main, 15 s)
+  navegador: (npm run dev em localhost:5173) o próprio navegador pergunta
+  ─► voice.startScreenShare(áudio) ─► localParticipant.setScreenShareEnabled(true, {...})
+  ─► getDisplayMedia ─► setDisplayMediaRequestHandler entrega a fonte escolhida (sem escolha: recusa)
+  ─► emit('voice:sharing', true)  ─► todos veem "ao vivo" na sidebar e no tile
+```
+
+- **Main** (`src/main/screen-share.ts`): `createScreenShareController` (testável sem Electron) só aceita ids da
+  última listagem; a escolha vale para **um** `getDisplayMedia` e expira em 15 s. Áudio = `'loopback'` (só Windows;
+  `window.api.screen.canShareAudio`). O loopback captura **todo** o áudio do PC, inclusive a voz dos outros que o
+  Concord toca: quem assiste pode ouvir eco. Por isso o áudio vem desmarcado.
+- **Captura:** 1080p a 15 fps, `contentHint: 'detail'` (texto legível). O token já libera `screen_share` e
+  `screen_share_audio`.
+- **Receber:** `TrackSubscribed` de vídeo com `source === ScreenShare` entra em `store.screens` (ids de conexão);
+  a própria tela entra como prévia via `LocalTrackPublished`. O áudio da tela toca como os outros áudios (respeita
+  deafen). O `ScreenTile` liga a faixa num `<video muted>` com `attachScreen(userId, el)` (de `@/lib/client`).
+- **Parar:** botão de novo (`stopScreenShare`) ou pelo sistema (janela fechada): `LocalTrackUnpublished` chama
+  `voice.onScreenShareEnded`, que desliga `sharing` e avisa o servidor uma vez só.
+- **Grade** (`components/voice/VoiceGrid.tsx`): sem telas, grade de participantes; com telas, a de **outra pessoa**
+  em destaque (a própria só se for a única), miniaturas clicáveis embaixo e botão de tela cheia.
+- `sharing` no servidor é só indicador (o cliente avisa); quem pode publicar a tela é decidido pelo token do LiveKit.
+- **Testes:** `src/main/screen-share.test.ts` (controlador, sem Electron), `lib/voice.test.ts` (bloco "tela"),
+  `lib/actions/screen.test.ts` (botão, seletor, erros, aviso único ao servidor), `components/voice/voice.test.tsx`
+  (jsdom: seletor, tile e grade) e `server/tests/voice.test.ts` (`voice:sharing`). À mão: duas janelas na mesma
+  sala com o LiveKit rodando; uma compartilha, a outra vê a tela e o "ao vivo" some ao parar.
+
 ## Limites e evolução
 
 - **Escala:** o SFU aguenta salas grandes (dezenas de pessoas); o gargalo passa a ser a banda/CPU do servidor do
@@ -89,8 +121,8 @@ clica na sala ─► createLocalAudioTrack(echoCancellation/noiseSuppression/aut
   TURN embutido do LiveKit (`turn.enabled` em `livekit.yaml`, com domínio e TLS) antes de ir para a internet.
 - **Dispositivos** (B4): `createLocalAudioTrack({ deviceId })` / `room.switchActiveDevice('audioinput', id)` e
   `room.switchActiveDevice('audiooutput', id)`; volume por pessoa com `RemoteAudioTrack.setVolume()`.
-- **Tela** (B3): `localParticipant.setScreenShareEnabled(true, { audio: true })`; o token já libera
-  `screen_share` e `screen_share_audio`.
+- **Áudio da tela sem eco:** excluir o próprio Concord do loopback exigiria captura por processo (não existe no
+  Electron hoje).
 
 ## Depuração
 

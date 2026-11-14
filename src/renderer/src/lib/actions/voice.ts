@@ -1,12 +1,24 @@
-// Entrar/sair da sala de voz, mute e deafen. A conexão com o LiveKit fica em `lib/voice.ts`.
+// Entrar/sair da sala de voz, mute, deafen e compartilhar a tela. A conexão com o LiveKit fica em `lib/voice.ts`.
 import { get, getSocket, notify, set, type AppSocket } from '../core'
 import { voice } from '../voice'
 
+/** Estado de quem não está em nenhuma sala (sair, cair, perder a conexão). */
+export const OUT_OF_VOICE = {
+  myVoiceChannelId: null,
+  speaking: {},
+  noMic: false,
+  sharing: false,
+  screenPickerOpen: false
+} as const
+
 // A sala do LiveKit caiu sem a pessoa pedir (removida, sala encerrada, servidor de voz fora do ar).
 voice.onUnexpectedDisconnect = (message) => {
-  set({ myVoiceChannelId: null, speaking: {}, noMic: false })
+  set({ ...OUT_OF_VOICE })
   notify(message)
 }
+
+// A tela parou sem ser pelo botão (janela compartilhada fechada, "parar" do sistema...).
+voice.onScreenShareEnded = () => setSharing(false)
 
 export function bindVoiceEvents(s: AppSocket): void {
   s.on('voice:state', (states) => set({ voice: states }))
@@ -28,7 +40,8 @@ export async function joinVoice(channelId: string): Promise<void> {
   set({ joiningVoice: true })
   try {
     const { micError } = await voice.join(channelId)
-    set({ myVoiceChannelId: channelId, noMic: micError !== null })
+    // Trocar de sala encerra a tela (o servidor também zera o "ao vivo").
+    set({ myVoiceChannelId: channelId, noMic: micError !== null, sharing: false, screenPickerOpen: false })
     if (micError !== null) {
       notify(`${describeMediaError(micError)} Você entrou só para ouvir.`, 'info')
     }
@@ -41,7 +54,7 @@ export async function joinVoice(channelId: string): Promise<void> {
 
 export function leaveVoice(): void {
   voice.leave()
-  set({ myVoiceChannelId: null, speaking: {}, noMic: false })
+  set({ ...OUT_OF_VOICE })
 }
 
 function applyAudio(muted: boolean, deafened: boolean): void {
@@ -66,4 +79,66 @@ export function toggleMute(): void {
 export function toggleDeafen(): void {
   const { deafened } = get()
   applyAudio(!deafened, !deafened)
+}
+
+// ---------- Tela ----------
+
+function setSharing(sharing: boolean): void {
+  if (get().sharing === sharing) return
+  set({ sharing })
+  if (get().myVoiceChannelId) getSocket()?.emit('voice:sharing', sharing)
+}
+
+/** No Electron existe o seletor próprio; no navegador (npm run dev), o do próprio navegador. */
+function screenBridge() {
+  return typeof window !== 'undefined' ? window.api?.screen : undefined
+}
+
+export function canShareSystemAudio(): boolean {
+  return screenBridge()?.canShareAudio ?? false
+}
+
+/** Liga a tela de `userId` num <video> (usado pelo ScreenTile). Devolve a função que desliga. */
+export function attachScreen(userId: string, el: HTMLVideoElement): () => void {
+  return voice.attachScreen(userId, el)
+}
+
+export function closeScreenPicker(): void {
+  set({ screenPickerOpen: false })
+}
+
+/** Botão "Compartilhar tela": abre o seletor, ou para se já estiver compartilhando. */
+export function toggleScreenShare(): void {
+  const { sharing, myVoiceChannelId } = get()
+  if (!myVoiceChannelId) return notify('Entre numa sala de voz para compartilhar a tela.', 'info')
+  if (sharing) return void stopScreenShare()
+  if (screenBridge()) set({ screenPickerOpen: true })
+  else void startScreenShare(null, false)
+}
+
+/**
+ * Começa a compartilhar. `sourceId` vem do ScreenPicker (Electron); null = deixa o
+ * navegador perguntar. `audio` = levar junto o áudio do sistema (só Windows).
+ */
+export async function startScreenShare(sourceId: string | null, audio: boolean): Promise<void> {
+  set({ screenPickerOpen: false })
+  try {
+    const bridge = screenBridge()
+    if (bridge && sourceId) await bridge.select(sourceId, audio && bridge.canShareAudio)
+    await voice.startScreenShare(audio)
+    setSharing(true)
+  } catch (err) {
+    // Cancelou o seletor do navegador: não é erro.
+    if (err instanceof DOMException && err.name === 'NotAllowedError') return
+    console.error('[tela] não foi possível compartilhar:', err)
+    notify(err instanceof Error && err.message ? `Não foi possível compartilhar a tela: ${err.message}` : 'Não foi possível compartilhar a tela.')
+  }
+}
+
+export async function stopScreenShare(): Promise<void> {
+  try {
+    await voice.stopScreenShare()
+  } finally {
+    setSharing(false)
+  }
 }

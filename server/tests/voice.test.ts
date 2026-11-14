@@ -5,7 +5,7 @@ import type { AddressInfo } from 'node:net'
 import { TokenVerifier } from 'livekit-server-sdk'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import type { Channel, JoinVoiceResult, VoiceCredentials } from '../../src/shared/types'
-import { sleep, TestServer, waitFor, type ClientSocket, type TestUser } from './helpers'
+import { expectNoEvent, sleep, TestServer, waitFor, type ClientSocket, type TestUser } from './helpers'
 
 const API_KEY = 'chave-de-teste'
 const API_SECRET = 'segredo-de-teste-com-mais-de-32-caracteres'
@@ -175,7 +175,8 @@ describe('voice:join', () => {
       userId: b.socket.id,
       channelId: ch.id,
       muted: true,
-      deafened: false
+      deafened: false,
+      sharing: false
     })
   })
 
@@ -219,6 +220,51 @@ describe('estado e saída', () => {
     const updated = waitFor(b.socket, 'voice:state', (s) => s.some((v) => v.userId === a.socket.id && v.muted && v.deafened))
     a.socket.emit('voice:update', { muted: true, deafened: true })
     await updated
+  })
+
+  it('voice:sharing liga e desliga o indicador "ao vivo" para todos', async () => {
+    const a = await user()
+    const b = await user()
+    const ch = await voiceChannel(a)
+    credentials(await join(a, ch.id))
+    const on = waitFor(b.socket, 'voice:state', (s) => s.some((v) => v.userId === a.socket.id && v.sharing))
+    a.socket.emit('voice:sharing', true)
+    await on
+    const off = waitFor(b.socket, 'voice:state', (s) => s.some((v) => v.userId === a.socket.id && !v.sharing))
+    a.socket.emit('voice:sharing', false)
+    await off
+  })
+
+  it('voice:sharing ignora valor que não é booleano, repetido e fora da sala', async () => {
+    const a = await user()
+    const b = await user()
+    const ch = await voiceChannel(a)
+    // fora da sala: nada acontece
+    const outside = expectNoEvent(b.socket, 'voice:state')
+    a.socket.emit('voice:sharing', true)
+    await outside
+    credentials(await join(a, ch.id))
+    await sleep(100)
+    const raw = a.socket as unknown as { emit(e: string, p: unknown): void }
+    const silent = expectNoEvent(b.socket, 'voice:state')
+    raw.emit('voice:sharing', 'sim')
+    raw.emit('voice:sharing', 1)
+    a.socket.emit('voice:sharing', false) // já era false
+    await silent
+  })
+
+  it('trocar de sala zera o compartilhamento de tela', async () => {
+    const a = await user()
+    const room1 = await voiceChannel(a)
+    const room2 = await voiceChannel(a)
+    credentials(await join(a, room1.id))
+    const sharing = waitFor(a.socket, 'voice:state', (s) => s.some((v) => v.userId === a.socket.id && v.sharing))
+    a.socket.emit('voice:sharing', true)
+    await sharing
+    const moved = waitFor(a.socket, 'voice:state', (s) => s.some((v) => v.userId === a.socket.id && v.channelId === room2.id))
+    credentials(await join(a, room2.id))
+    const [states] = await moved
+    expect(states.find((v) => v.userId === a.socket.id)?.sharing).toBe(false)
   })
 
   it('voice:update fora da sala é ignorado', async () => {

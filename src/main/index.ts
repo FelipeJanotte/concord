@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, session, shell } from 'electron'
 import { join } from 'path'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { googleSignIn } from './google-auth'
+import { setupScreenShare } from './screen-share'
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -50,6 +51,8 @@ app.whenReady().then(() => {
     if (typeof clientId !== 'string' || !clientId) throw new Error('Login com Google não configurado')
     return googleSignIn(clientId)
   })
+
+  setupScreenShare()
 
   createWindow()
 
