@@ -184,6 +184,35 @@ Um som curto quando alguém **entra** na sala de voz em que estou (duas notas su
   `lib/actions/devices.test.ts` e `components/voice/DeviceSettings.test.tsx` (preferência e controles). À mão: três
   janelas na mesma sala; a terceira entra e sai e as outras ouvem os dois sons; com deafen, silêncio.
 
+## Supressão de ruído automática (B13)
+
+Tira teclado, ventilador e ruído de fundo do microfone **antes de enviar**, sem a pessoa escolher nada. Roda no app
+de quem fala (processador da faixa do microfone no `livekit-client`); quem ouve recebe limpo. Um único interruptor
+("Supressão de ruído automática", ligado por padrão, salvo em `concord:audio` como `noise`) desliga tudo: microfone cru.
+
+| Peça | Papel |
+|---|---|
+| `lib/noise/decide.ts` | `NoiseDecider` (função pura): ruído de fundo = percentil 20% do nível dos últimos 4 s (a fala é alta e intermitente; o fundo fica nos valores baixos). Fundo acima de **-50 dBFS por 2 s** liga o avançado; abaixo de **-58 dBFS por 10 s** desliga. O vão entre os dois evita ficar trocando. |
+| `lib/noise/processor.ts` | `AutoNoiseProcessor` (`TrackProcessor` do LiveKit): microfone → seco + (RNNoise → molhado) → faixa publicada, e um analisador que mede o nível a cada 250 ms. A troca de modo é um crossfade (sem estalo, sem republicar). Com o avançado ligado, desliga a supressão nativa do WebRTC (`applyConstraints`) para não processar duas vezes. |
+| `lib/noise/engine.ts` | Motor: **RNNoise** (MIT) de `@sapphi-red/web-noise-suppressor`, WASM + AudioWorklet, carregado com `import()` só quando o filtro liga. Os arquivos (`rnnoise*.wasm`, worklet) vão empacotados pelo Vite (`?url`). O WASM é baixado uma vez e o worklet é registrado uma vez por AudioContext. |
+| `lib/voice.ts` | `setNoiseSuppression(on)`, `onNoiseModeChange`. Antes de publicar o microfone: `mic.setAudioContext(ctx48k)` + `mic.setProcessor(...)` (o AudioContext a 48 kHz é criado uma vez e reaproveitado). Desligar na sala: `stopProcessor` + nativa desligada. |
+| `store/devices.ts` | `noiseSuppression` e `noiseMode` (`'light' \| 'advanced' \| 'light-fallback' \| 'off' \| null`), mostrado como frase em Configurações de voz. |
+
+- **Modos:** `light` = só a nativa do WebRTC (ambiente silencioso); `advanced` = RNNoise; `light-fallback` = o avançado
+  não está disponível (não carregou, erro no AudioWorklet, PC com menos de 3 núcleos, ou o `setProcessor` falhou);
+  `off` = desligada pela pessoa; `null` = fora de sala.
+- **Nunca derruba a voz:** qualquer falha do filtro cai para a supressão nativa e a pessoa entra/continua falando; só
+  aparece um log `[ruído]` e a frase do diálogo muda.
+- **CSP:** `script-src` ganhou `'wasm-unsafe-eval'` (necessário para compilar WebAssembly; não libera `eval` de JS).
+- **Trocar de motor:** outra função com a assinatura de `NoiseEngineLoader` (ex.: o GTCRN do mesmo pacote, ou
+  DeepFilterNet3). O resto não muda.
+- **Testes:** `lib/noise/noise.test.ts` (decisor: silêncio, ventilador, fala sobre silêncio × sobre ruído, histerese,
+  barulho curto; processador com Web Audio falso: crossfade, nativa liga/desliga, motor que falha, PC fraco, erro no
+  worklet, destroy, `applyConstraints` recusado), `lib/voice.test.ts` (bloco B13: filtro antes de publicar, contexto
+  reaproveitado, falha → entra com a nativa, desligado = cru, ligar/desligar dentro da sala, sair), `lib/actions/devices.test.ts`
+  e `components/voice/DeviceSettings.test.tsx`. **À mão (o que os testes não medem):** a qualidade e o atraso do filtro
+  e o uso de CPU; falar teclando e com ventilador e ouvir na outra janela.
+
 ## Limites e evolução
 
 - **Escala:** o SFU aguenta salas grandes (dezenas de pessoas); o gargalo passa a ser a banda/CPU do servidor do
@@ -193,6 +222,9 @@ Um som curto quando alguém **entra** na sala de voz em que estou (duas notas su
 - **Volume acima de 100%** e volume do áudio da tela separado do microfone: precisariam de `webAudioMix` e de
   refazer o deafen sobre a Web Audio.
 - **Teste de microfone** (medidor de nível no diálogo) ainda não existe.
+- **Supressão de ruído e CPU:** o "se adapta ao PC" hoje é por núcleos (≥ 3) e por erro no AudioWorklet; ainda não
+  mede atraso real do processamento. Se o RNNoise pesar em algum PC, o próximo passo é medir a carga do worklet e
+  cair para o leve automaticamente.
 - **Áudio da tela sem eco:** excluir o próprio Concord do loopback exigiria captura por processo (não existe no
   Electron hoje).
 
@@ -215,3 +247,6 @@ Um som curto quando alguém **entra** na sala de voz em que estou (duas notas su
    "Silenciar" (ficam salvos por conta, neste computador; o ícone de alto-falante cortado indica silenciado por você).
 9. Não toca o som de entrar/sair: confira em Configurações de voz se o interruptor está ligado, o volume acima de 0 e
    se você não está em deafen; o botão "Testar" toca mesmo com o interruptor desligado.
+10. Supressão de ruído "indisponível neste computador": veja no console o log `[ruído]` (WASM bloqueado pela CSP,
+    AudioWorklet sem suporte, menos de 3 núcleos). A voz continua com a supressão nativa. Som "abafado" ou robótico:
+    desligue o interruptor para comparar com o microfone cru.

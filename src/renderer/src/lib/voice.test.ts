@@ -39,6 +39,10 @@ class FakeRoom {
 class FakeMic {
   muted = false
   stop = vi.fn()
+  setAudioContext = vi.fn(async (_ctx: unknown) => {})
+  setProcessor = vi.fn(async (_p: unknown) => {})
+  stopProcessor = vi.fn(async () => {})
+  mediaStreamTrack = { applyConstraints: vi.fn(async (_c: unknown) => {}) }
   mute = vi.fn(async () => {
     this.muted = true
     return this
@@ -596,5 +600,127 @@ describe('silenciar alguém só para mim', () => {
     bia.setVolume.mockClear()
     client.setUserMuted('acc-ana', true)
     expect(bia.setVolume).not.toHaveBeenCalled()
+  })
+})
+
+describe('supressão de ruído automática (B13)', () => {
+  let micOpts: ({ noiseSuppression: boolean } | undefined)[]
+  let processors: { onMode: (m: 'light' | 'advanced' | 'light-fallback') => void }[]
+  let contexts: number
+  let modes: (string | null)[]
+
+  function noiseClient(opts: { processorFails?: boolean } = {}): VoiceClient {
+    micOpts = []
+    processors = []
+    contexts = 0
+    modes = []
+    const c = new VoiceClient({
+      createRoom: () => {
+        const room = new FakeRoom()
+        rooms.push(room)
+        return room as unknown as Room
+      },
+      createMicTrack: async (_deviceId, o) => {
+        micOpts.push(o)
+        mic = new FakeMic()
+        if (opts.processorFails) mic.setProcessor.mockRejectedValue(new Error('WASM bloqueado'))
+        return mic as unknown as LocalAudioTrack
+      },
+      createAudioContext: () => {
+        contexts++
+        return {} as AudioContext
+      },
+      createNoiseProcessor: (onMode) => {
+        const p = { onMode }
+        processors.push(p)
+        return p as never
+      }
+    })
+    c.onNoiseModeChange = (m) => modes.push(m)
+    c.setSocket(socket.asSocket())
+    return c
+  }
+
+  it('liga o filtro no microfone antes de publicar, com AudioContext próprio', async () => {
+    const c = noiseClient()
+    await c.join('sala-1')
+    expect(micOpts).toEqual([{ noiseSuppression: true }])
+    expect(mic!.setAudioContext).toHaveBeenCalled()
+    expect(mic!.setProcessor).toHaveBeenCalledWith(processors[0])
+    const setOrder = mic!.setProcessor.mock.invocationCallOrder[0]
+    const publishOrder = lastRoom().localParticipant.publishTrack.mock.invocationCallOrder[0]
+    expect(setOrder).toBeLessThan(publishOrder)
+  })
+
+  it('o modo informado pelo processador chega a quem escuta (store)', async () => {
+    const c = noiseClient()
+    await c.join('sala-1')
+    processors[0].onMode('advanced')
+    expect(modes).toContain('advanced')
+  })
+
+  it('reaproveita o mesmo AudioContext entre salas', async () => {
+    const c = noiseClient()
+    await c.join('sala-1')
+    await c.join('sala-2')
+    expect(contexts).toBe(1)
+    expect(processors).toHaveLength(2)
+  })
+
+  it('se o filtro não liga, entra mesmo assim com a supressão nativa', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const c = noiseClient({ processorFails: true })
+    expect(await c.join('sala-1')).toEqual({ micError: null })
+    expect(lastRoom().localParticipant.publishTrack).toHaveBeenCalled()
+    expect(modes).toContain('light-fallback')
+    warn.mockRestore()
+  })
+
+  it('desligado antes de entrar: microfone cru (sem nativa e sem processador)', async () => {
+    const c = noiseClient()
+    await c.setNoiseSuppression(false)
+    await c.join('sala-1')
+    expect(micOpts).toEqual([{ noiseSuppression: false }])
+    expect(mic!.setProcessor).not.toHaveBeenCalled()
+  })
+
+  it('desligar dentro da sala tira o filtro e a nativa; ligar de novo devolve', async () => {
+    const c = noiseClient()
+    await c.join('sala-1')
+    await c.setNoiseSuppression(false)
+    expect(mic!.stopProcessor).toHaveBeenCalled()
+    expect(mic!.mediaStreamTrack.applyConstraints).toHaveBeenLastCalledWith({ noiseSuppression: false })
+    expect(modes.at(-1)).toBe('off')
+    await c.setNoiseSuppression(true)
+    expect(mic!.mediaStreamTrack.applyConstraints).toHaveBeenLastCalledWith({ noiseSuppression: true })
+    expect(mic!.setProcessor).toHaveBeenCalledTimes(2)
+  })
+
+  it('sem microfone (só ouvindo) não tenta ligar nada', async () => {
+    const c = noiseClient()
+    const failing = new VoiceClient({
+      createRoom: () => {
+        const room = new FakeRoom()
+        rooms.push(room)
+        return room as unknown as Room
+      },
+      createMicTrack: async () => {
+        throw new DOMException('negado', 'NotAllowedError')
+      },
+      createNoiseProcessor: () => {
+        throw new Error('não deveria criar')
+      }
+    })
+    failing.setSocket(socket.asSocket())
+    await expect(failing.join('sala-1')).resolves.toMatchObject({ micError: expect.anything() })
+    await expect(failing.setNoiseSuppression(false)).resolves.toBeUndefined()
+    expect(c).toBeTruthy()
+  })
+
+  it('sair avisa que a supressão parou (fora de sala)', async () => {
+    const c = noiseClient()
+    await c.join('sala-1')
+    c.leave()
+    expect(modes.at(-1)).toBeNull()
   })
 })
