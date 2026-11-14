@@ -8,7 +8,7 @@
  */
 import type { JoinVoiceResult, SignalData } from '@shared/types'
 import { useApp } from '@/store'
-import type { AppSocket } from './client'
+import type { AppSocket } from './core'
 
 const ICE_SERVERS: RTCIceServer[] = [
   { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }

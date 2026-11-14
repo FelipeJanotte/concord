@@ -1,42 +1,19 @@
 /**
  * Persistência simples em JSON (canais, mensagens, contas e sessões).
- * Para produção, trocar por SQLite ou Postgres.
+ *
+ * Só `server/repo/*` deve importar `db` e `save`. O resto do servidor fala com
+ * o repo, então a troca por Postgres (roadmap v1/A1) substitui este arquivo
+ * sem mexer nos módulos.
  */
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Channel, ChannelType, Message } from '../src/shared/types'
+import type { Account, Session } from './repo/types'
 
 export const DATA_DIR = process.env.DATA_DIR ?? join(__dirname, 'data')
 export const AVATAR_DIR = join(DATA_DIR, 'avatars')
 const DB_FILE = join(DATA_DIR, 'db.json')
-
-export interface Account {
-  id: string
-  /** sempre em minúsculas */
-  email: string
-  name: string
-  /** id escolhido pela pessoa: único (sem diferenciar maiúsculas) e imutável depois de travado */
-  tag: string
-  /** false só em contas do Google que ainda não escolheram o id definitivo */
-  tagLocked: boolean
-  color: string
-  /** `scrypt$<salt>$<hash>` ou null para contas só com Google */
-  passwordHash: string | null
-  /** `sub` do Google, quando vinculada */
-  googleId: string | null
-  /** content-type da foto salva em AVATAR_DIR/<id>, ou null sem foto */
-  avatarType: string | null
-  avatarVersion: number
-  createdAt: number
-}
-
-export interface Session {
-  /** sha256 do token (o token em si nunca é salvo) */
-  tokenHash: string
-  accountId: string
-  expiresAt: number
-}
 
 export interface Db {
   channels: Channel[]

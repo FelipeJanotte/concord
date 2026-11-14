@@ -22,9 +22,22 @@ const env = await vi.hoisted(async () => {
 // Persistência desligada: os testes trabalham só no objeto `db` em memória.
 vi.mock('./db', async (importOriginal) => ({ ...(await importOriginal<typeof import('./db')>()), save: vi.fn() }))
 
-import type { AuthResult, ProfileUpdateResult } from '../src/shared/types'
+import type { AuthResult, ProfileUpdate, ProfileUpdateResult } from '../src/shared/types'
 import { accountFromToken, findAccount, googleLogin, login, register, revokeSession, updateProfile } from './auth'
 import { AVATAR_DIR, db } from './db'
+import type { Account } from './repo/types'
+
+/** O registro salvo da conta (o repo devolve cópias; aqui olhamos o que ficou gravado). */
+function stored(id: string): Account {
+  const account = db.accounts.find((a) => a.id === id)
+  if (!account) throw new Error(`conta ${id} não existe`)
+  return account
+}
+
+/** Como o servidor faz: busca a conta atual e aplica a alteração. */
+async function update(id: string, payload: Partial<ProfileUpdate>): Promise<ProfileUpdateResult> {
+  return updateProfile((await findAccount(id))!, payload)
+}
 
 let seq = 0
 const unique = (): string => (++seq).toString(36)
@@ -158,7 +171,7 @@ describe('login', () => {
 
   it('conta só do Google pede para usar o Google', async () => {
     const created = ok(await newAccount({ email: 'g@exemplo.test' }))
-    findAccount(created.account.id)!.passwordHash = null
+    stored(created.account.id).passwordHash = null
     expect(errorOf(await login({ email: 'g@exemplo.test', password: 'senha-segura' }))).toBe(
       'Esta conta foi criada com o Google. Use "Entrar com Google".'
     )
@@ -172,23 +185,23 @@ describe('sessões', () => {
 
   it('o token identifica a conta; o banco guarda só o hash', async () => {
     const r = ok(await newAccount())
-    expect(accountFromToken(r.token)?.id).toBe(r.account.id)
+    expect((await accountFromToken(r.token))?.id).toBe(r.account.id)
     expect(db.sessions[0].tokenHash).not.toBe(r.token)
     expect(db.sessions[0].tokenHash).toMatch(/^[0-9a-f]{64}$/)
   })
 
-  it.each([null, undefined, '', 123, 'token-inventado'])('token inválido (%o) não acha conta', (token) => {
-    expect(accountFromToken(token)).toBeNull()
+  it.each([null, undefined, '', 123, 'token-inventado'])('token inválido (%o) não acha conta', async (token) => {
+    expect(await accountFromToken(token)).toBeUndefined()
   })
 
   it('revogar invalida só aquela sessão', async () => {
     const a = ok(await newAccount({ email: 'rev@exemplo.test' }))
     const b = ok(await login({ email: 'rev@exemplo.test', password: 'senha-segura' }))
-    revokeSession(a.token)
-    expect(accountFromToken(a.token)).toBeNull()
-    expect(accountFromToken(b.token)?.id).toBe(a.account.id)
-    revokeSession(42)
-    revokeSession('inexistente')
+    await revokeSession(a.token)
+    expect(await accountFromToken(a.token)).toBeUndefined()
+    expect((await accountFromToken(b.token))?.id).toBe(a.account.id)
+    await revokeSession(42)
+    await revokeSession('inexistente')
     expect(db.sessions).toHaveLength(1)
   })
 
@@ -196,9 +209,9 @@ describe('sessões', () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     const r = ok(await newAccount({ email: 'exp@exemplo.test' }))
     vi.setSystemTime(Date.now() + 29 * 24 * 60 * 60 * 1000)
-    expect(accountFromToken(r.token)).not.toBeNull()
+    expect(await accountFromToken(r.token)).toBeDefined()
     vi.setSystemTime(Date.now() + 2 * 24 * 60 * 60 * 1000)
-    expect(accountFromToken(r.token)).toBeNull()
+    expect(await accountFromToken(r.token)).toBeUndefined()
     ok(await login({ email: 'exp@exemplo.test', password: 'senha-segura' }))
     expect(db.sessions).toHaveLength(1)
   })
@@ -208,59 +221,61 @@ describe('updateProfile', () => {
   const PNG_1PX =
     'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
 
-  async function account() {
-    return findAccount(ok(await newAccount({ tag: 'perf' })).account.id)!
+  /** Cria uma conta e devolve o id. */
+  async function account(): Promise<string> {
+    return ok(await newAccount({ tag: 'perf' })).account.id
   }
 
   it('troca o nome', async () => {
-    const a = await account()
-    const r = ok(updateProfile(a, { name: '  Novo   Nome ' }))
+    const id = await account()
+    const r = ok(await update(id, { name: '  Novo   Nome ' }))
     expect(r.account.name).toBe('Novo Nome')
+    expect(stored(id).name).toBe('Novo Nome')
   })
 
   it('rejeita nome inválido sem mudar nada', async () => {
-    const a = await account()
-    expect(errorOf(updateProfile(a, { name: 'x' }))).toBe('O nome precisa ter pelo menos 2 caracteres (sem "#")')
-    expect(a.name).toBe('Pessoa Teste')
+    const id = await account()
+    expect(errorOf(await update(id, { name: 'x' }))).toBe('O nome precisa ter pelo menos 2 caracteres (sem "#")')
+    expect(stored(id).name).toBe('Pessoa Teste')
   })
 
   it('o id travado não muda (mas reenviar o mesmo id é aceito)', async () => {
-    const a = await account()
-    expect(errorOf(updateProfile(a, { name: 'Ok Ok', tag: 'outro' }))).toBe('O id não pode ser alterado')
-    ok(updateProfile(a, { name: 'Ok Ok', tag: 'perf' }))
-    expect(a.tag).toBe('perf')
+    const id = await account()
+    expect(errorOf(await update(id, { name: 'Ok Ok', tag: 'outro' }))).toBe('O id não pode ser alterado')
+    ok(await update(id, { name: 'Ok Ok', tag: 'perf' }))
+    expect(stored(id).tag).toBe('perf')
   })
 
   it('id provisório (Google) pode ser escolhido uma única vez', async () => {
     ok(await newAccount({ tag: 'usado' }))
-    const a = await account()
-    a.tagLocked = false
-    expect(errorOf(updateProfile(a, { name: 'Ok Ok', tag: 'USADO' }))).toBe('O id #USADO já está em uso. Escolha outro.')
-    expect(errorOf(updateProfile(a, { name: 'Ok Ok', tag: 'inválido!' }))).toBe('O id precisa ter de 1 a 5 letras ou números')
-    expect(a.tagLocked).toBe(false)
-    ok(updateProfile(a, { name: 'Ok Ok', tag: 'meu' }))
-    expect(a).toMatchObject({ tag: 'meu', tagLocked: true })
-    expect(errorOf(updateProfile(a, { name: 'Ok Ok', tag: 'outro' }))).toBe('O id não pode ser alterado')
+    const id = await account()
+    stored(id).tagLocked = false
+    expect(errorOf(await update(id, { name: 'Ok Ok', tag: 'USADO' }))).toBe('O id #USADO já está em uso. Escolha outro.')
+    expect(errorOf(await update(id, { name: 'Ok Ok', tag: 'inválido!' }))).toBe('O id precisa ter de 1 a 5 letras ou números')
+    expect(stored(id).tagLocked).toBe(false)
+    ok(await update(id, { name: 'Ok Ok', tag: 'meu' }))
+    expect(stored(id)).toMatchObject({ tag: 'meu', tagLocked: true })
+    expect(errorOf(await update(id, { name: 'Ok Ok', tag: 'outro' }))).toBe('O id não pode ser alterado')
   })
 
   it('confirmar o id provisório sem trocar também trava', async () => {
-    const a = await account()
-    a.tagLocked = false
-    ok(updateProfile(a, { name: 'Ok Ok', tag: a.tag }))
-    expect(a.tagLocked).toBe(true)
+    const id = await account()
+    stored(id).tagLocked = false
+    ok(await update(id, { name: 'Ok Ok', tag: stored(id).tag }))
+    expect(stored(id).tagLocked).toBe(true)
   })
 
   it('salva e remove a foto, mudando a versão da URL', async () => {
-    const a = await account()
-    const withPhoto = ok(updateProfile(a, { name: 'Ok Ok', avatar: PNG_1PX }))
-    expect(withPhoto.account.avatarUrl).toBe(`/avatars/${a.id}?v=1`)
-    expect(a.avatarType).toBe('image/png')
-    expect(existsSync(join(AVATAR_DIR, a.id))).toBe(true)
+    const id = await account()
+    const withPhoto = ok(await update(id, { name: 'Ok Ok', avatar: PNG_1PX }))
+    expect(withPhoto.account.avatarUrl).toBe(`/avatars/${id}?v=1`)
+    expect(stored(id).avatarType).toBe('image/png')
+    expect(existsSync(join(AVATAR_DIR, id))).toBe(true)
 
-    const removed = ok(updateProfile(a, { name: 'Ok Ok', avatar: null }))
+    const removed = ok(await update(id, { name: 'Ok Ok', avatar: null }))
     expect(removed.account.avatarUrl).toBeNull()
-    expect(a.avatarVersion).toBe(2)
-    expect(existsSync(join(AVATAR_DIR, a.id))).toBe(false)
+    expect(stored(id).avatarVersion).toBe(2)
+    expect(existsSync(join(AVATAR_DIR, id))).toBe(false)
   })
 
   it.each([
@@ -268,9 +283,9 @@ describe('updateProfile', () => {
     ['não é data URL', 'https://exemplo.test/foto.png'],
     ['grande demais', `data:image/png;base64,${Buffer.alloc(400_001).toString('base64')}`]
   ])('rejeita foto inválida: %s', async (_caso, avatar) => {
-    const a = await account()
-    expect(errorOf(updateProfile(a, { name: 'Ok Ok', avatar }))).toBe('Imagem inválida ou grande demais')
-    expect(a.avatarType).toBeNull()
+    const id = await account()
+    expect(errorOf(await update(id, { name: 'Ok Ok', avatar }))).toBe('Imagem inválida ou grande demais')
+    expect(stored(id).avatarType).toBeNull()
   })
 })
 

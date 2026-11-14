@@ -8,21 +8,38 @@ description: Visão completa da arquitetura do Concord (clone do Discord em Elec
 ## Peças
 
 ```
-┌──────────── App Electron (um por usuário) ────────────┐        ┌──────── server/index.ts ────────┐
-│ main (src/main)      janela, microfone, login Google  │        │ http + Socket.IO (porta 3001)   │
-│ preload (src/preload) window.api                      │        │ HTTP: /auth/*, /avatars/*       │
-│ renderer (React)                                      │  HTTP  │ db.json: canais, mensagens,     │
-│   components ──lê──> store.ts (zustand)               │  + WS  │   contas, sessões               │
-│        └──chama──> lib/client.ts ──fetch/socket────────┼───────>│ memória: users, voice           │
-│                        └──> lib/voice.ts (WebRTC) ◄────┼─ P2P ─►│ (áudio NÃO passa pelo servidor) │
-└───────────────────────────────────────────────────────┘        └─────────────────────────────────┘
+┌──────────── App Electron (um por usuário) ────────────┐        ┌──────── server/ ─────────────────┐
+│ main (src/main)      janela, microfone, login Google  │        │ index.ts: http + Socket.IO       │
+│ preload (src/preload) window.api                      │        │   (porta 3001) + lista de módulos│
+│ renderer (React)                                      │  HTTP  │ modules/<dominio>.ts: handlers   │
+│   components ──lê──> store/ (zustand, slices)         │  + WS  │ repo/<dominio>.ts: dados (async) │
+│        └──chama──> lib/client.ts ──fetch/socket────────┼───────>│   └─> db.ts (db.json)            │
+│                     └ lib/actions/<dominio>.ts         │        │ memória: users (context), voice  │
+│                        └──> lib/voice.ts (WebRTC) ◄────┼─ P2P ─►│ (áudio NÃO passa pelo servidor)  │
+└───────────────────────────────────────────────────────┘        └──────────────────────────────────┘
 ```
+
+## Organização por domínio
+
+Cada domínio (`account`, `channel`, `message`, `presence`, `voice`) aparece nas mesmas camadas:
+
+| Camada | Onde | Registro (só linhas de registro) |
+|---|---|---|
+| Contrato | `src/shared/types/<dominio>.ts` (tipos + `<Dominio>ClientEvents`/`ServerEvents`) | `src/shared/types/index.ts` |
+| Dados | `server/repo/<dominio>.ts` (async, devolve cópias; único que importa `db.ts`) | — |
+| Servidor | `server/modules/<dominio>.ts` (`ServerModule` com `socket?` e `http?`) | lista `modules` em `server/index.ts` |
+| Ações | `src/renderer/src/lib/actions/<dominio>.ts` (`bind<Dominio>Events` + funções) | `connect()` e `export *` em `lib/client.ts` |
+| Estado | `src/renderer/src/store/<dominio>.ts` (interface + `<dominio>Initial`) | `store/index.ts` |
+
+`server/context.ts` guarda os tipos `AppServer`/`AppSocket`, o mapa `users` (online) e `guard()`. A voz guarda
+seu próprio mapa dentro de `modules/voice.ts` e expõe `voiceStates()`, `emitVoice()` e `clearVoiceChannel()`.
+No renderer, `lib/core.ts` guarda o socket atual, `set`/`get` e `notify`.
 
 O processo main não fala com o servidor do Concord. Ele só abre o navegador para o login com Google e devolve o
 código ao renderer (IPC `google-sign-in`). Toda a rede com o servidor acontece no renderer: **HTTP** para
 cadastro/login (antes de existir socket) e **Socket.IO** para o resto. Detalhes das contas: skill `concord-accounts`.
 
-## Modelo de dados (`src/shared/types.ts`)
+## Modelo de dados (`src/shared/types/`)
 
 - `Channel { id, name, type: 'text' | 'voice', createdAt }`
 - `User { id, accountId, name, tag, color, avatarUrl }`: `id` é o `socket.id` (presença/voz); `accountId` identifica a conta. A pessoa aparece como `nome#tag`. A tag (1 a 5 letras/números) é **única entre todas as contas e imutável**: é o que diferencia pessoas com o mesmo nome. Exceção: conta criada pelo Google recebe tag provisória (`tagLocked: false`) e escolhe a definitiva uma única vez.
@@ -58,7 +75,7 @@ Cliente → servidor (`ClientToServerEvents`):
 Servidor → cliente (`ServerToClientEvents`): `channel:created`, `channel:deleted`, `user:joined`, `user:left`,
 `user:updated` (por `accountId`), `message:new`, `voice:state` (sempre a **lista completa**), `voice:signal`, `voice:peer-left`, `typing`.
 
-## Estado do renderer (`store.ts`)
+## Estado do renderer (`store/`)
 
 `useApp` guarda só dados. Campos importantes:
 - `status`: `disconnected | connecting | connected | reconnecting`. O `App` mostra o `LoginScreen` enquanto `self` for `null`.
@@ -70,7 +87,7 @@ Servidor → cliente (`ServerToClientEvents`): `channel:created`, `channel:delet
 - `typing[channelId][userId] = { name, until }`: expira sozinho depois de 3,5 s.
 - `notice`: toast (`notify()` em `client.ts`).
 
-## Ciclo de conexão (`lib/client.ts`)
+## Ciclo de conexão (`lib/client.ts`; listeners em `lib/actions/*`)
 
 0. `register` / `login` / `loginWithGoogle` chamam o HTTP e, com sucesso, salvam `concord:server` e `concord:token` no `localStorage`. Ao abrir o app, `restoreSession()` usa o token salvo.
 1. `connect(url, token)`: chama `disconnect()` para limpar (preservando `restoring`), cria o socket (só websocket, `auth: { token }`) e o registra no `voice`.
@@ -87,5 +104,5 @@ Servidor → cliente (`ServerToClientEvents`): `channel:created`, `channel:delet
 
 - Contas com e-mail+senha ou Google, mas sem papéis: qualquer pessoa logada exclui qualquer canal. Sem recuperação de senha.
 - Um único "servidor/comunidade" (a barra da esquerda é decorativa).
-- Persistência num arquivo JSON, salvo com 500 ms de atraso. Para produção, trocar por SQLite ou Postgres.
+- Persistência num arquivo JSON, salvo com 500 ms de atraso, atrás do `server/repo/`. A troca por Postgres é a task A1 do `docs/ROADMAP.md`.
 - A voz em malha aguenta bem até umas 8 pessoas por sala (ver `concord-voice`).

@@ -53,7 +53,8 @@ Feita em sequência e mergeada na `main` antes de qualquer feature.
 4. **Migrations do Drizzle:** um arquivo de schema por domínio em `server/db/schema/`. Migration é gerada **depois do rebase na main**, logo antes do merge (se o outro mergeou antes, apague a sua e gere de novo). Nunca editar migration já mergeada.
 5. `package.json`/`package-lock.json`: em conflito, aceite a `main` e rode `npm install <pacotes>` de novo.
 6. Branch por task (`v1/a2-uploads`), PRs pequenos, rebase diário, `npm run typecheck && npm test` antes de mergear.
-7. Cada task atualiza a skill da sua área em `.claude/skills/` e o mapa do `AGENTS.md`.
+7. **Toda task traz testes automatizados** e só está pronta quando `npm test` passa por completo. Testes de integração do servidor ficam em `server/tests/<dominio>.test.ts`; os demais ficam ao lado do código (`arquivo.test.ts`). Um arquivo por domínio, para não haver conflito.
+8. Cada task atualiza a skill da sua área em `.claude/skills/` e o mapa do `AGENTS.md`.
 
 ## v1 — Banco, anexos, voz em SFU e compartilhamento de tela
 
