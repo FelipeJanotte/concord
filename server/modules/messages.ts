@@ -2,6 +2,7 @@
 import { randomUUID } from 'node:crypto'
 import { ATTACHMENTS_PER_MESSAGE, MESSAGE_MAX_LENGTH, type Message } from '../../src/shared/types'
 import { guard, type ServerModule } from '../context'
+import { limiters } from '../middleware/rate-limit'
 import { findChannel } from '../repo/channels'
 import { insertMessage, listMessages } from '../repo/messages'
 import { isUuid } from '../repo/util'
@@ -35,6 +36,11 @@ export const messagesModule: ServerModule = {
         return
       }
       if (!content && attachmentIds.length === 0) return
+      const limited = limiters.message.take(user.accountId)
+      if (!limited.ok) {
+        socket.emit('rate:limited', { action: 'message', retryAfterMs: limited.retryAfterMs })
+        return
+      }
       const { channelId } = payload
       queue = queue.then(() =>
         guard('message:send', async () => {
@@ -58,6 +64,7 @@ export const messagesModule: ServerModule = {
     socket.on('typing', (channelId) => {
       const user = socket.data.user
       if (!user || typeof channelId !== 'string') return
+      if (!limiters.typing.take(socket.id).ok) return // excesso de "digitando": só ignora
       socket.broadcast.emit('typing', { channelId, userId: user.id, name: user.name })
     })
   }

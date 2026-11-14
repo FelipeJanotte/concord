@@ -23,6 +23,7 @@ import { accountFromToken } from '../auth'
 import { UPLOAD_ORPHAN_TTL_MS, UPLOAD_SWEEP_INTERVAL_MS } from '../config'
 import type { ServerModule } from '../context'
 import { sendJson } from '../http'
+import { limiters, retryText } from '../middleware/rate-limit'
 import {
   deleteStaleUnattached,
   existingAttachmentIds,
@@ -105,6 +106,13 @@ async function handleUpload(req: IncomingMessage, res: ServerResponse): Promise<
   if (!account) {
     req.resume()
     return reply(res, 401, { ok: false, error: 'Sessão inválida. Entre de novo.' })
+  }
+
+  const limited = limiters.upload.take(account.id)
+  if (!limited.ok) {
+    req.resume()
+    res.setHeader('retry-after', String(Math.ceil(limited.retryAfterMs / 1000)))
+    return reply(res, 429, { ok: false, error: `Muitos envios seguidos. ${retryText(limited.retryAfterMs)}` })
   }
 
   const declaredLength = Number(req.headers['content-length'])

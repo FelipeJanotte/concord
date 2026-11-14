@@ -22,6 +22,12 @@ export async function findValidSession(tokenHash: string): Promise<Session | und
   return row && { ...row, expiresAt: row.expiresAt.getTime() }
 }
 
+/** Apaga as sessões vencidas. Devolve quantas. */
+export async function deleteExpiredSessions(now = new Date()): Promise<number> {
+  const rows = await db().delete(sessions).where(lt(sessions.expiresAt, now)).returning({ t: sessions.tokenHash })
+  return rows.length
+}
+
 export async function deleteSession(tokenHash: string): Promise<void> {
   await db().delete(sessions).where(eq(sessions.tokenHash, tokenHash))
 }

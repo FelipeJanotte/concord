@@ -16,6 +16,8 @@ Gerenciador de pacotes: **npm** (não use pnpm/yarn; o projeto foi revertido do 
 | `server/db/` | PostgreSQL + Drizzle: `client.ts` (conexão: `DATABASE_URL` → Postgres; sem ela → PGlite em `DATA_DIR/pgdata`), `schema/<dominio>.ts`, `migrations/` (geradas, aplicadas no boot) e `seed.ts` (canais padrão / importa o `db.json` antigo). |
 | `server/config.ts` | `DATA_DIR`, pastas das fotos (`avatars/`), dos anexos (`uploads/`), do PGlite e do `db.json` antigo; prazos da limpeza de anexos. |
 | `server/modules/uploads.ts` | Anexos: `POST /uploads` (até 25 MB, `Authorization: Bearer`), `GET /files/<id>/<nome>` (só publicados; só imagem confirmada é inline) e limpeza de anexos soltos. |
+| `server/middleware/rate-limit.ts` | Limite de requisições (balde de fichas) por conta/IP: mensagens, uploads, canais, perfil, "digitando", cadastro e login. Regras em `LIMITS`. |
+| `server/db/backup.ts`, `server/modules/backup.ts` | Backup automático do PGlite (`DATA_DIR/backups`, diário, mantém 7) e `npm run db:restore`. Com Postgres: serviço `pg-backup` do compose. |
 | `server/storage/` | `FileStorage` (disco hoje; S3/R2 depois) e `sniff.ts` (tipo e dimensões da imagem pelos bytes). |
 | `server/auth.ts` | Contas: cadastro e-mail+senha (scrypt), login, sessões por token (30 dias), login com Google, perfil `nome#id` e foto. O id é único e imutável (o nome pode mudar). |
 | `src/shared/types/` | **Contrato** entre app e servidor: um arquivo por domínio (tipos + `<Dominio>ClientEvents`/`<Dominio>ServerEvents`); `index.ts` compõe `ServerToClientEvents` / `ClientToServerEvents`. Importe sempre de `@shared/types`. |
@@ -46,6 +48,7 @@ npm test            # todos os testes automatizados (vitest)
 npm run test:watch  # testes em modo watch
 npm run db:generate # gera a migration depois de mudar server/db/schema (ver concord-dev-workflow)
 npm run db:import-json [arquivo]  # importa um db.json antigo para o banco
+npm run db:restore [arquivo]      # restaura um backup do PGlite (servidor parado)
 npm run build       # typecheck + build em out/
 npm run dist        # instalador Windows em dist/
 ```
@@ -59,7 +62,7 @@ npm run dist        # instalador Windows em dist/
 5. **Toda tarefa vem com testes automatizados** (vitest, `*.test.ts` ao lado do código). Uma tarefa só está completa quando `npm test` **e** `npm run typecheck` passam por completo. Testes de integração do servidor ficam em `server/tests/<dominio>.test.ts` e sobem o servidor de verdade (`server/tests/helpers.ts`); ações do app são testadas com o socket falso (`src/renderer/src/test/fake-socket.ts`); componentes com `// @vitest-environment jsdom` + Testing Library (veja `components/chat/chat.test.tsx`).
 6. Handlers async do servidor rodam dentro de `guard('evento', async () => { ... })` (erro não derruba o processo).
 7. Seletores que retornam arrays/objetos novos (ex.: `filter`) usam `useShallow` de `zustand/react/shallow`.
-8. O servidor **valida tudo** que chega (tipo, tamanho, existência do canal); nunca confie no cliente.
+8. O servidor **valida tudo** que chega (tipo, tamanho, existência do canal); nunca confie no cliente. Ação nova que pode ser abusada (cria coisa, manda para todos) ganha uma regra em `LIMITS` (`server/middleware/rate-limit.ts`).
 9. Visual: use os tokens de cor do tema (`bg-sidebar`, `bg-rail`, `bg-panel`, `bg-composer`, `text-muted-foreground`, `text-success`...) definidos em `src/renderer/src/assets/globals.css`. Não use cores hex soltas nos componentes.
 10. Novos componentes shadcn: `npx shadcn@latest add <nome>` (o `components.json` já aponta para os aliases certos).
 11. Textos da interface em **português do Brasil**.

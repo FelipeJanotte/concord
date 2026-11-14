@@ -7,6 +7,7 @@
  */
 import type { AccountClientEvents, AccountServerEvents } from './account'
 import type { ChannelClientEvents, ChannelServerEvents } from './channel'
+import type { LimitsServerEvents } from './limits'
 import type { MessageClientEvents, MessageServerEvents } from './message'
 import type { PresenceClientEvents, PresenceServerEvents } from './presence'
 import type { VoiceClientEvents, VoiceServerEvents } from './voice'
@@ -14,6 +15,7 @@ import type { VoiceClientEvents, VoiceServerEvents } from './voice'
 export * from './account'
 export * from './attachment'
 export * from './channel'
+export * from './limits'
 export * from './message'
 export * from './presence'
 export * from './voice'
@@ -21,6 +23,7 @@ export * from './voice'
 export interface ServerToClientEvents
   extends AccountServerEvents,
     ChannelServerEvents,
+    LimitsServerEvents,
     MessageServerEvents,
     PresenceServerEvents,
     VoiceServerEvents {}

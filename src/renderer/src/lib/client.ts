@@ -11,6 +11,7 @@ import type { AuthConfig, AuthResult, LoginRequest, RegisterRequest } from '@sha
 import { initialState } from '@/store'
 import { bindAccountEvents } from './actions/account'
 import { bindChannelEvents, firstTextView } from './actions/channels'
+import { bindLimitEvents } from './actions/limits'
 import { bindMessageEvents, loadHistory } from './actions/messages'
 import { bindPresenceEvents } from './actions/presence'
 import { bindVoiceEvents } from './actions/voice'
@@ -37,7 +38,8 @@ async function http<T>(url: string, path: string, body?: unknown): Promise<T> {
   } catch {
     throw new Error('Não foi possível conectar. Confira o endereço e se o servidor está rodando (npm run server).')
   }
-  if (!res.ok && res.status !== 400) throw new Error(`O servidor respondeu com erro (${res.status})`)
+  // 400 (dados inválidos) e 429 (limite de tentativas) trazem `{ ok: false, error }` para mostrar.
+  if (!res.ok && res.status !== 400 && res.status !== 429) throw new Error(`O servidor respondeu com erro (${res.status})`)
   return (await res.json()) as T
 }
 
@@ -119,6 +121,7 @@ export function connect(url: string, token: string): Promise<void> {
   bindChannelEvents(s)
   bindMessageEvents(s)
   bindVoiceEvents(s)
+  bindLimitEvents(s)
 
   return new Promise((resolve, reject) => {
     let settled = false

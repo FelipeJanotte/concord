@@ -28,7 +28,7 @@ import {
 } from './accounts'
 import { channelNameExists, countChannels, deleteChannel, findChannel, insertChannel, listChannels } from './channels'
 import { insertMessage, listMessages } from './messages'
-import { deleteSession, findValidSession, insertSession } from './sessions'
+import { deleteExpiredSessions, deleteSession, findValidSession, insertSession } from './sessions'
 import type { Account } from './types'
 import { DuplicateError } from './util'
 
@@ -130,6 +130,18 @@ describe('sessões', () => {
     expect(await findValidSession('h-valida')).toMatchObject({ accountId: a.id })
     await deleteSession('h-valida')
     expect(await findValidSession('h-valida')).toBeUndefined()
+  })
+
+  it('deleteExpiredSessions apaga só as vencidas', async () => {
+    const a = await insertAccount(newAccount())
+    await db().insert(sessions).values([
+      { tokenHash: 'exp-1', accountId: a.id, expiresAt: new Date(Date.now() - 10_000) },
+      { tokenHash: 'exp-2', accountId: a.id, expiresAt: new Date(Date.now() - 1) },
+      { tokenHash: 'ok-1', accountId: a.id, expiresAt: new Date(Date.now() + 60_000) }
+    ])
+    expect(await deleteExpiredSessions()).toBeGreaterThanOrEqual(2)
+    expect(await findValidSession('ok-1')).toBeTruthy()
+    expect(await db().select().from(sessions).where(eq(sessions.tokenHash, 'exp-1'))).toHaveLength(0)
   })
 
   it('sessão expirada não vale e é apagada na próxima gravação', async () => {
