@@ -70,10 +70,18 @@ clica na sala ─► createLocalAudioTrack(echoCancellation/noiseSuppression/aut
 - **Quem está falando:** `ActiveSpeakersChanged` do LiveKit (sem `AnalyserNode`). `publishSpeaking()` filtra a
   própria pessoa quando está silenciada e os outros quando está em deafen, e só atualiza `store.speaking`
   quando o conjunto muda.
-- **Troca de sala:** `join` chama `teardown()` antes (fecha a Room anterior); o servidor troca de sala sozinho no
-  `voice:join`, sem precisar de `voice:leave`.
-- **Falha ao conectar no LiveKit:** emite `voice:leave` (o servidor já tinha colocado a pessoa na lista) e lança
-  "Não foi possível conectar ao servidor de voz...". Sair enquanto conecta não gera erro.
+- **Troca de sala:** a Room atual só fecha **depois** que o servidor aceita a nova (`teardown()` vem depois do ack do
+  `voice:join`). Troca recusada (canal apagado, sem permissão, voz desligada): o `join` lança o erro, libera o
+  microfone aberto para a sala nova e a pessoa continua na antiga, com áudio; o servidor também a mantém lá. O
+  servidor troca de sala sozinho no `voice:join` aceito, sem precisar de `voice:leave`.
+- **Falha ao conectar no LiveKit** (depois do ack): emite `voice:leave` (o servidor já tinha colocado a pessoa na
+  lista) e lança "Não foi possível conectar ao servidor de voz..."; o `joinVoice` vê `voice.inRoom === false` e zera
+  o estado (`OUT_OF_VOICE`), inclusive quando era uma troca de sala. Enquanto o `connect` não termina, um
+  `RoomEvent.Disconnected` **não** vira "queda" (`connecting`): quem trata é o `join`, com a mensagem certa.
+- **Entrada interrompida:** se a pessoa sair, trocar de sala ou o socket do Concord cair enquanto o LiveKit conecta,
+  o `join` devolve `{ cancelled: true }` (sem erro) e o `joinVoice` **não** grava `myVoiceChannelId` (antes a UI
+  mostrava a pessoa na sala sem áudio). Testes: bloco "revisão do #9" em `lib/voice.test.ts` e
+  `lib/actions/voice-join.test.ts`.
 - **Queda não pedida** (`RoomEvent.Disconnected` com a Room ainda ativa: removido pelo servidor, sala encerrada,
   LiveKit fora do ar): sai, avisa o servidor e chama `voice.onUnexpectedDisconnect(mensagem)`, que em
   `lib/actions/voice.ts` limpa a store e mostra o toast. `teardown()` remove os listeners antes de desconectar,
