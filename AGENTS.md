@@ -69,6 +69,25 @@ npm run dist        # instalador Windows em dist/
 10. Novos componentes shadcn: `npx shadcn@latest add <nome>` (o `components.json` já aponta para os aliases certos).
 11. Textos da interface em **português do Brasil**.
 12. Aliases: `@/` → `src/renderer/src/`, `@shared/` → `src/shared/` (o servidor importa por caminho relativo `../src/shared/types`).
+13. **Toda tarefa, todo módulo novo e toda alteração vêm com a skill correspondente** em `.claude/skills/`. Sem isso a tarefa **não está finalizada**, mesmo com testes e typecheck passando. Ver "Definição de pronto" abaixo.
+
+## Definição de pronto
+
+Uma tarefa (task do roadmap, correção, refatoração ou mudança de comportamento) só está **finalizada** quando:
+
+1. `npm run typecheck` **e** `npm test` passam por completo, com testes novos cobrindo a mudança (regra 5).
+2. **A skill está em dia com o código entregue:**
+   - **Área nova** (domínio, módulo do servidor, processo do Electron, conjunto de telas): crie
+     `.claude/skills/concord-<area>/SKILL.md`, com frontmatter `name` e `description` (a `description` diz
+     **quando** usar a skill, citando arquivos e eventos), e acrescente-a na lista "Skills detalhadas" abaixo.
+     Se a área for pequena e pertencer a uma skill que já existe, uma **seção nova** nessa skill basta.
+   - **Alteração** em algo que já tem skill: atualize as seções afetadas no mesmo PR. Nada de skill descrevendo
+     comportamento antigo (evento removido, arquivo renomeado, regra que mudou).
+   - O conteúdo mínimo de cada skill ou seção: o que faz e por quê, arquivos envolvidos, eventos e contratos
+     (`shared/types`), fluxo principal, regras e limites, como testar e problemas conhecidos/depuração.
+3. Eventos novos ou alterados aparecem na tabela de eventos da `concord-architecture`.
+4. Arquivo ou pasta nova aparece no "Mapa rápido" deste arquivo.
+5. O PR diz quais skills foram criadas ou atualizadas. Revisor: PR sem skill atualizada volta.
 
 ## Skills detalhadas
 
