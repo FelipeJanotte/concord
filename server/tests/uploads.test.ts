@@ -32,10 +32,9 @@ async function user(): Promise<TestUser> {
   return u
 }
 
-async function textChannel(u: TestUser): Promise<Channel> {
-  const res = await u.socket.emitWithAck('channel:create', { name: `anexos-${randomUUID().slice(0, 8)}`, type: 'text' })
-  if (!res.ok) throw new Error(res.error)
-  return res.channel
+/** Canal novo, criado pela dona (só quem tem manageChannels cria). */
+async function textChannel(_u: TestUser): Promise<Channel> {
+  return server.createChannel(`anexos-${randomUUID().slice(0, 8)}`)
 }
 
 async function uploadOk(u: TestUser, data: Uint8Array | string, opts?: { name?: string; type?: string }): Promise<Attachment> {
@@ -149,10 +148,12 @@ describe('mensagens com anexos', () => {
     a.socket.emit('message:send', { channelId: ch.id, content: 'olha', attachmentIds: [doc.id, img.id] })
     const [msg] = await got
     expect(msg.content).toBe('olha')
-    expect(msg.attachments).toEqual([doc, img])
+    // mesmos anexos, na ordem; o link vem assinado para quem recebe
+    const signed = (x: Attachment) => ({ ...x, url: expect.stringMatching(new RegExp(`^${x.url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\?a=`)) })
+    expect(msg.attachments).toEqual([signed(doc), signed(img)])
 
     const page = await b.socket.emitWithAck('message:history', { channelId: ch.id })
-    expect(page.messages[0].attachments).toEqual([doc, img])
+    expect(page.messages[0].attachments).toEqual([signed(doc), signed(img)])
   })
 
   it('mensagem só com anexo (sem texto) é aceita', async () => {
@@ -161,7 +162,7 @@ describe('mensagens com anexos', () => {
     const img = await uploadOk(a, PNG_1PX)
     const got = waitFor(a.socket, 'message:new', (m) => m.channelId === ch.id)
     a.socket.emit('message:send', { channelId: ch.id, content: '   ', attachmentIds: [img.id] })
-    expect((await got)[0]).toMatchObject({ content: '', attachments: [img] })
+    expect((await got)[0]).toMatchObject({ content: '', attachments: [{ ...img, url: expect.stringContaining(`${img.url}?a=`) }] })
   })
 
   it('recusa anexo de outra pessoa, anexo já usado, repetido, inválido ou demais', async () => {
@@ -200,14 +201,42 @@ describe('mensagens com anexos', () => {
 })
 
 describe('GET /files', () => {
+  /** Publica o anexo e devolve como o autor o recebe no message:new (com o link assinado para ele). */
   async function published(u: TestUser, data: Uint8Array | string, opts: { name: string; type?: string }): Promise<Attachment> {
     const ch = await textChannel(u)
     const att = await uploadOk(u, data, opts)
     const got = waitFor(u.socket, 'message:new', (m) => m.attachments.some((x) => x.id === att.id))
     u.socket.emit('message:send', { channelId: ch.id, content: '', attachmentIds: [att.id] })
-    await got
-    return att
+    const [msg] = await got
+    return msg.attachments.find((x) => x.id === att.id)!
   }
+
+  it('o link vem assinado para cada pessoa; sem assinatura, adulterado ou de outro anexo: 404', async () => {
+    const a = await user()
+    const b = await user()
+    const ch = await textChannel(a)
+    const att = await uploadOk(a, PNG_1PX, { name: 'assinado.png' })
+    const forA = waitFor(a.socket, 'message:new', (m) => m.attachments.some((x) => x.id === att.id))
+    const forB = waitFor(b.socket, 'message:new', (m) => m.attachments.some((x) => x.id === att.id))
+    a.socket.emit('message:send', { channelId: ch.id, content: '', attachmentIds: [att.id] })
+    const urlA = (await forA)[0].attachments[0].url
+    const urlB = (await forB)[0].attachments[0].url
+    expect(urlA).toMatch(new RegExp(`^/files/${att.id}/assinado\\.png\\?a=${a.account.id}&e=\\d+&s=`))
+    expect(urlB).toContain(`a=${b.account.id}`)
+    expect(urlA).not.toBe(urlB)
+    expect((await fetch(server.url + urlA)).status).toBe(200)
+    expect((await fetch(server.url + urlB)).status).toBe(200)
+
+    expect((await fetch(server.url + att.url)).status).toBe(404) // sem assinatura
+    expect((await fetch(server.url + urlA.replace(/s=[^&]+/, 's=falsa'))).status).toBe(404)
+    expect((await fetch(server.url + urlA.replace(`a=${a.account.id}`, `a=${b.account.id}`))).status).toBe(404)
+    const other = await uploadOk(a, 'outro')
+    expect((await fetch(server.url + urlA.replace(att.id, other.id))).status).toBe(404)
+
+    // o histórico também entrega links assinados para quem pede
+    const page = await b.socket.emitWithAck('message:history', { channelId: ch.id })
+    expect(page.messages[0].attachments[0].url).toContain(`a=${b.account.id}`)
+  })
 
   it('serve imagem confirmada inline com o tipo certo e cabeçalhos de segurança', async () => {
     const u = await user()
@@ -257,7 +286,7 @@ describe('GET /files', () => {
     expect(existsSync(file)).toBe(true)
 
     const deleted = waitFor(u.socket, 'channel:deleted', (id) => id === ch.id)
-    u.socket.emit('channel:delete', ch.id)
+    ;(await server.asOwner()).socket.emit('channel:delete', ch.id)
     await deleted
     await sleep(100)
     expect(existsSync(file)).toBe(false)

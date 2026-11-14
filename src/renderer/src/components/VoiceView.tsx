@@ -14,7 +14,8 @@ export function VoiceView({ channelId }: { channelId: string }) {
   const members = useApp(useShallow((s) => s.voice.filter((v) => v.channelId === channelId)))
   const connected = useApp((s) => s.myVoiceChannelId === channelId)
   const joining = useApp((s) => s.joiningVoice)
-  const muted = useApp((s) => s.muted || s.noMic)
+  const muted = useApp((s) => s.muted || s.noMic || !s.voiceCanSpeak)
+  const canShare = useApp((s) => s.voiceCanShare)
   const deafened = useApp((s) => s.deafened)
   const sharing = useApp((s) => s.sharing)
 
@@ -47,9 +48,11 @@ export function VoiceView({ channelId }: { channelId: string }) {
             <ControlButton label={deafened ? 'Ativar áudio' : 'Desativar áudio'} onClick={toggleDeafen} off={deafened}>
               {deafened ? <HeadphoneOff /> : <Headphones />}
             </ControlButton>
-            <ControlButton label={sharing ? 'Parar de compartilhar' : 'Compartilhar a tela'} onClick={toggleScreenShare} active={sharing}>
-              {sharing ? <MonitorOff /> : <MonitorUp />}
-            </ControlButton>
+            {canShare && (
+              <ControlButton label={sharing ? 'Parar de compartilhar' : 'Compartilhar a tela'} onClick={toggleScreenShare} active={sharing}>
+                {sharing ? <MonitorOff /> : <MonitorUp />}
+              </ControlButton>
+            )}
             <ControlButton label="Configurações de voz" onClick={openDeviceSettings}>
               <AudioLines />
             </ControlButton>

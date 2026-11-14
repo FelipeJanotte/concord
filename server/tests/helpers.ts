@@ -13,6 +13,7 @@ import { io, type Socket } from 'socket.io-client'
 import type {
   AccountInfo,
   AuthResult,
+  Channel,
   ClientToServerEvents,
   ServerState,
   ServerToClientEvents,
@@ -40,6 +41,9 @@ export class TestServer {
   url = ''
   private child: ChildProcess | null = null
   private output = ''
+  /** credenciais da primeira conta (a dona: pode tudo, inclusive criar canais) */
+  private ownerCreds: (ReturnType<typeof uniqueCredentials> & { token: string }) | null = null
+  private ownerUser: TestUser | null = null
 
   constructor(
     readonly dataDir: string,
@@ -51,20 +55,46 @@ export class TestServer {
    * Cria um servidor com DATA_DIR e banco novos e vazios. `prepare` roda antes
    * de subir (ex.: escrever um db.json antigo no DATA_DIR para testar a importação);
    * `env` acrescenta variáveis de ambiente ao servidor.
+   * `owner` (padrão true): cadastra logo a primeira conta, que vira a dona (`asOwner()`),
+   * para os testes criarem canais. Use false quando o teste conta cadastros ou quer ser a dona.
    */
   static async start(
-    opts: { prepare?: (dataDir: string) => void; env?: Record<string, string> } = {}
+    opts: { prepare?: (dataDir: string) => void; env?: Record<string, string>; owner?: boolean } = {}
   ): Promise<TestServer> {
     const dataDir = mkdtempSync(join(tmpdir(), 'concord-test-'))
     opts.prepare?.(dataDir)
     const server = new TestServer(dataDir, await createTestDatabase(), opts.env)
     try {
       await server.boot()
+      if (opts.owner ?? true) {
+        const creds = uniqueCredentials('Dona')
+        const res = await server.register(creds)
+        if (!res.ok) throw new Error(`cadastro da dona falhou: ${res.error}`)
+        server.ownerCreds = { ...creds, token: res.token }
+      }
     } catch (err) {
       await server.destroy()
       throw err
     }
     return server
+  }
+
+  /** A dona, conectada (reconecta se o servidor reiniciou). */
+  async asOwner(): Promise<TestUser> {
+    if (!this.ownerCreds) throw new Error('servidor de teste iniciado sem dona (owner: false)')
+    if (this.ownerUser?.socket.connected) return this.ownerUser
+    const socket = await this.connect(this.ownerCreds.token)
+    const hello = await socket.emitWithAck('hello')
+    this.ownerUser = { ...this.ownerCreds, socket, self: hello.self, account: hello.account, state: hello.state }
+    return this.ownerUser
+  }
+
+  /** Cria um canal como a dona. */
+  async createChannel(name: string, type: 'text' | 'voice' = 'text'): Promise<Channel> {
+    const owner = await this.asOwner()
+    const res = await owner.socket.emitWithAck('channel:create', { name, type })
+    if (!res.ok) throw new Error(res.error)
+    return res.channel
   }
 
   async boot(): Promise<void> {
@@ -128,6 +158,7 @@ export class TestServer {
 
   /** Para, apaga o DATA_DIR e o banco temporário. */
   async destroy(): Promise<void> {
+    this.ownerUser?.socket.close()
     await this.stop()
     rmSync(this.dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
     await this.database.drop()

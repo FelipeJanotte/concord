@@ -1,6 +1,8 @@
 // Mensagens dos canais de texto e "digitando".
 import { randomUUID } from 'node:crypto'
 import { ATTACHMENTS_PER_MESSAGE, MESSAGE_MAX_LENGTH, type Message } from '../../src/shared/types'
+import { allowed, emitToViewers } from '../access'
+import { signMessage } from '../files-signing'
 import { guard, type ServerModule } from '../context'
 import { limiters } from '../middleware/rate-limit'
 import { findChannel } from '../repo/channels'
@@ -16,9 +18,14 @@ export const messagesModule: ServerModule = {
       if (typeof ack !== 'function') return
       void guard('message:history', async () => {
         const channelId = req?.channelId
-        if (!socket.data.user || typeof channelId !== 'string') return ack({ messages: [], hasMore: false })
+        const user = socket.data.user
+        if (!user || typeof channelId !== 'string') return ack({ messages: [], hasMore: false })
+        // sem permissão de ver: igual a canal inexistente
+        if (!(await allowed(user.accountId, 'view', channelId))) return ack({ messages: [], hasMore: false })
         const before = typeof req.before === 'string' ? req.before : undefined
-        ack(await listMessages(channelId, { before }))
+        const page = await listMessages(channelId, { before })
+        // links dos anexos assinados para esta conta
+        ack({ ...page, messages: page.messages.map((m) => signMessage(m, user.accountId)) })
       })
     })
 
@@ -46,6 +53,9 @@ export const messagesModule: ServerModule = {
         guard('message:send', async () => {
           const channel = await findChannel(channelId, 'text')
           if (!channel) return
+          // Sem permissão a mensagem é ignorada (a tela já esconde o campo de quem não pode enviar).
+          if (!(await allowed(user.accountId, 'send', channel.id))) return
+          if (attachmentIds.length > 0 && !(await allowed(user.accountId, 'attach', channel.id))) return
           const message: Message = {
             id: randomUUID(),
             channelId: channel.id,
@@ -56,7 +66,7 @@ export const messagesModule: ServerModule = {
           }
           // null = algum anexo não é desta pessoa ou já foi usado: nada é gravado.
           const saved = await insertMessage(message, attachmentIds)
-          if (saved) io.emit('message:new', saved)
+          if (saved) await emitToViewers(io, channel.id, 'message:new', saved, { forAccount: signMessage })
         })
       )
     })
@@ -65,7 +75,10 @@ export const messagesModule: ServerModule = {
       const user = socket.data.user
       if (!user || typeof channelId !== 'string') return
       if (!limiters.typing.take(socket.id).ok) return // excesso de "digitando": só ignora
-      socket.broadcast.emit('typing', { channelId, userId: user.id, name: user.name })
+      void guard('typing', async () => {
+        if (!(await allowed(user.accountId, 'send', channelId))) return
+        await emitToViewers(io, channelId, 'typing', { channelId, userId: user.id, name: user.name }, { exceptSocketId: socket.id })
+      })
     })
   }
 }

@@ -10,7 +10,7 @@
  * a API do LiveKit; padrão: LIVEKIT_URL trocando ws→http).
  */
 import { AccessToken, RoomServiceClient, TrackSource } from 'livekit-server-sdk'
-import type { User, VoiceCredentials } from '../src/shared/types'
+import type { User, VoiceCredentials, VoicePermissions } from '../src/shared/types'
 
 export interface LiveKitConfig {
   url: string
@@ -19,8 +19,19 @@ export interface LiveKitConfig {
   apiSecret: string
 }
 
-/** O token só serve para conectar; depois o LiveKit renova a sessão sozinho. */
-const TOKEN_TTL = '10m'
+/**
+ * O token só serve para conectar; depois o LiveKit renova a sessão sozinho. Curto de
+ * propósito: quem foi tirado da sala não consegue voltar com um token guardado.
+ */
+const TOKEN_TTL = '60s'
+
+/** O que a pessoa pode publicar na sala (v2): microfone com `speak`, tela com `share`. */
+export function publishSources({ canSpeak, canShare }: VoicePermissions): TrackSource[] {
+  return [
+    ...(canSpeak ? [TrackSource.MICROPHONE] : []),
+    ...(canShare ? [TrackSource.SCREEN_SHARE, TrackSource.SCREEN_SHARE_AUDIO] : [])
+  ]
+}
 
 /** Lê a configuração do ambiente. Devolve null se faltar algo (voz desativada). */
 export function readLiveKitConfig(env: NodeJS.ProcessEnv = process.env): LiveKitConfig | null {
@@ -38,8 +49,15 @@ export function readLiveKitConfig(env: NodeJS.ProcessEnv = process.env): LiveKit
 
 export const liveKitConfig = readLiveKitConfig()
 
-/** Gera as credenciais para `user` entrar na sala do canal `channelId`. */
-export async function createVoiceCredentials(config: LiveKitConfig, user: User, channelId: string): Promise<VoiceCredentials> {
+/** Gera as credenciais para `user` entrar na sala do canal `channelId`, com o que ele pode publicar. */
+export async function createVoiceCredentials(
+  config: LiveKitConfig,
+  user: User,
+  channelId: string,
+  /** obrigatório: esquecer não pode liberar tudo (revisão do #10) */
+  permissions: VoicePermissions
+): Promise<VoiceCredentials> {
+  const sources = publishSources(permissions)
   const at = new AccessToken(config.apiKey, config.apiSecret, {
     identity: user.id,
     name: user.tag ? `${user.name}#${user.tag}` : user.name,
@@ -54,9 +72,9 @@ export async function createVoiceCredentials(config: LiveKitConfig, user: User, 
     roomList: false,
     roomAdmin: false,
     canSubscribe: true,
-    canPublish: true,
-    // Só microfone e tela (B3). Câmera fica de fora até existir na interface.
-    canPublishSources: [TrackSource.MICROPHONE, TrackSource.SCREEN_SHARE, TrackSource.SCREEN_SHARE_AUDIO],
+    // Microfone se pode falar, tela se pode compartilhar (v2). Câmera fica de fora até existir na interface.
+    canPublish: sources.length > 0,
+    canPublishSources: sources,
     canPublishData: false,
     canUpdateOwnMetadata: false
   })
@@ -89,6 +107,33 @@ export async function kickFromRoom(config: LiveKitConfig, channelId: string, ide
     await rooms(config).removeParticipant(channelId, identity)
   } catch (err) {
     logFailure(`remover ${identity} da sala ${channelId}`, err)
+  }
+}
+
+/**
+ * Muda ao vivo o que uma conexão pode publicar (cargo/regra mudou com ela na sala).
+ * Perder `speak` corta o microfone na hora; perder `share` corta a tela.
+ */
+export async function updateVoicePermissions(
+  config: LiveKitConfig,
+  channelId: string,
+  identity: string,
+  permissions: VoicePermissions
+): Promise<void> {
+  const sources = publishSources(permissions)
+  try {
+    // o LiveKit troca as permissões inteiras de uma vez: manda o conjunto completo
+    await rooms(config).updateParticipant(channelId, identity, {
+      permission: {
+        canSubscribe: true,
+        canPublish: sources.length > 0,
+        canPublishSources: sources,
+        canPublishData: false,
+        canUpdateMetadata: false
+      }
+    })
+  } catch (err) {
+    logFailure(`atualizar as permissões de ${identity} na sala ${channelId}`, err)
   }
 }
 

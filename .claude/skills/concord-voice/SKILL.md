@@ -14,21 +14,30 @@ com o LiveKit, que repassa o áudio para os outros. Sem o LiveKit rodando, ningu
 O áudio (e a tela, na B3) passa pelo LiveKit, um SFU self-hosted que roda pelo `docker compose` (ver
 `concord-dev-workflow`). O servidor do Concord não toca na mídia; ele:
 
-1. **Valida e emite o token.** `voice:join {channelId, muted, deafened}` exige `hello`, LiveKit configurado e um
-   canal de voz existente. O ack é `{ ok: true, url, token }` (`JoinVoiceResult` / `VoiceCredentials` em
-   `shared/types/voice.ts`). O JWT (`createVoiceCredentials`) vale 10 min (só para conectar; depois o LiveKit
-   renova a sessão) e libera **uma sala** (`room` = id do canal) com:
+1. **Valida e emite o token.** `voice:join {channelId, muted, deafened}` exige `hello`, LiveKit configurado, um
+   canal de voz existente e as permissões do canal (v2, skill `concord-permissions`): sem `view` responde "Canal de
+   voz não encontrado" (não revela sala privada), sem `connect` "Você não tem permissão para entrar nesta sala".
+   O ack é `{ ok: true, url, token, canSpeak, canShare }` (`JoinVoiceResult` = `VoiceCredentials` +
+   `VoicePermissions` em `shared/types/voice.ts`). O JWT (`createVoiceCredentials`) vale **60 s** (só para
+   conectar; depois o LiveKit renova a sessão — curto para quem foi tirado não voltar com um token guardado) e
+   libera **uma sala** (`room` = id do canal) com:
    - identidade = `User.id` (= `socket.id`; duas conexões da mesma conta não se derrubam no LiveKit);
    - `name` = `nome#tag` e atributo `accountId`;
-   - `canPublishSources` = microfone, tela e áudio da tela (câmera bloqueada); `canPublishData` = false;
-     sem `roomAdmin`/`roomCreate`/`roomList`.
+   - `canPublishSources` (`publishSources`) = microfone se `canSpeak`, tela e áudio da tela se `canShare`
+     (câmera bloqueada); `canPublish` = tem alguma fonte; `canPublishData` = false; sem `roomAdmin`/`roomCreate`/`roomList`.
 2. **Mantém o estado.** O mapa `voice` (socket.id → `VoiceState`) continua sendo a fonte da lista de quem está em
-   cada sala; todos recebem `voice:state` (lista completa) ao entrar, sair, trocar de sala, em `voice:update` e em
-   `voice:sharing` (indicador "ao vivo"; entrar ou trocar de sala zera `sharing`).
+   cada sala; cada conexão recebe `voice:state` **só das salas que pode ver** (`voiceStatesFor`) ao entrar, sair,
+   trocar de sala, em `voice:update` e em `voice:sharing` (indicador "ao vivo"; entrar ou trocar de sala zera
+   `sharing`). Sem `speak`, a pessoa fica sempre `muted: true` (mesmo mandando `voice:update`); sem `share`,
+   `voice:sharing true` é ignorado.
 3. **Tira da sala no LiveKit** quando a pessoa sai pelo Concord (`voice:leave`, `disconnect`, troca de sala):
-   `kickFromRoom` → `RoomService.RemoveParticipant`. Canal apagado → `closeRoom` → `DeleteRoom`. Sem isso, um
-   cliente modificado continuaria ouvindo depois de "sair". Erros `not_found` são ignorados; outros só geram log
+   `kickFromRoom` → `RoomService.RemoveParticipant`. Canal apagado → `closeRoom` → `DeleteRoom` (sempre, mesmo se
+   a lista estiver vazia: pode haver alguém no LiveKit que ela não conhece). Sem isso, um cliente modificado
+   continuaria ouvindo depois de "sair". Erros `not_found` são ignorados; outros só geram log
    (`[livekit] ... falhou`), nunca derrubam o handler.
+4. **Reaplica permissões ao vivo** (`applyVoiceAccess`, chamado pela v2 a cada mudança de cargos/regras): quem
+   perdeu `connect` sai (e é removido do LiveKit); quem perdeu/ganhou `speak` ou `share` tem as permissões trocadas
+   no LiveKit (`updateVoicePermissions` → `RoomService.UpdateParticipant`, conjunto completo, só quando muda).
 
 Não existe mais `voice:signal`, `voice:peer-left` nem `peers` no ack.
 
@@ -43,8 +52,12 @@ Configuração (`server/.env`, valores de dev em `server/.env.example`):
 Sem as três primeiras, o servidor sobe com `Voz (LiveKit): desativada` e `voice:join` responde
 "A voz não está configurada neste servidor".
 
-Testes: `server/livekit.test.ts` (config e token) e `server/tests/voice.test.ts` (integração com um LiveKit falso
-que registra as chamadas `RemoveParticipant`/`DeleteRoom` e confere o token com `TokenVerifier`).
+Testes: `server/livekit.test.ts` (config e token) e `server/tests/voice.test.ts` (integração com o LiveKit falso
+de `server/tests/fake-livekit.ts`, que registra as chamadas `RemoveParticipant`/`DeleteRoom`/`UpdateParticipant`;
+o token é conferido com `TokenVerifier`). Permissões na voz (token sem microfone/tela, atualização ao vivo, saída
+ao perder `connect`): `server/tests/permissions.test.ts`. Para um teste novo com voz:
+`TestServer.start({ env: liveKitEnv(await livekit.start()) })` e crie as salas com `server.createChannel(nome, 'voice')`
+(só a dona cria canal).
 
 ## Cliente (`livekit-client`) — `src/renderer/src/lib/voice.ts`
 
@@ -94,6 +107,30 @@ clica na sala ─► createLocalAudioTrack(echoCancellation/noiseSuppression/aut
 - **Queda do socket do Concord:** `lib/client.ts` chama `voice.teardown()` (sem avisar o servidor).
 - Dependências injetáveis (`new VoiceClient({ createRoom, createMicTrack })`): os testes em
   `lib/voice.test.ts` usam Room, microfone e faixas falsos.
+
+## Permissões de voz no app (v2)
+
+O servidor decide `canSpeak` (`speak`) e `canShare` (`share`) e o token do LiveKit já sai com elas (seção do
+servidor acima). O app acompanha:
+
+- **Entrar sem `speak`:** o `join` lê `canSpeak`/`canShare` do ack (ausentes = `true`, servidor antigo) e, sem
+  `speak`, descarta o microfone antes de conectar. Publicar mesmo assim faria o `livekit-client` lançar
+  `PublishTrackError ... insufficient permissions (403)` e a entrada falharia. A pessoa entra **só ouvindo**:
+  `store.voiceCanSpeak = false`, aviso "Você não tem permissão para falar nesta sala: entrou só para ouvir.", botão de
+  microfone cortado e que só avisa (o deafen ainda pode ser tirado). O `voice:update` sempre vai com `muted: true`.
+- **Sem `share`:** `store.voiceCanShare = false`, o botão "Compartilhar a tela" some e o `toggleScreenShare` só avisa.
+- **Mudança com a pessoa na sala:** o servidor troca as permissões no LiveKit (`UpdateParticipant`), e o app recebe
+  `RoomEvent.ParticipantPermissionsChanged` (só o da própria conexão conta). `permissionsFrom`
+  (`lib/voice-permissions.ts`) aplica a mesma regra do `hasPermissionsToPublish` do `livekit-client`: precisa de
+  `canPublish` e a fonte na lista; lista vazia = qualquer fonte; `MICROPHONE` = 2 e `SCREEN_SHARE` = 3 no protocolo.
+  Ao **perder `speak`**: despublica e libera o microfone. Ao **recuperar**: abre o microfone de novo (mudo se estava
+  mudo), liga a supressão de ruído e publica. O `voice.onPermissionsChange` atualiza a store, avisa a pessoa e reenvia
+  o `voice:update` (o servidor mantém silenciado quem não pode falar). Ao **perder `share`** compartilhando: o LiveKit
+  despublica a tela, e o "ao vivo" é desligado.
+- **Saída forçada** (`voice:state` sem a própria conexão, ex.: perdeu `connect`): sai localmente, zera o estado e toca
+  o som de saída (B16).
+- **Testes:** `lib/voice-permissions.test.ts`, `lib/voice.test.ts` (bloco "permissões de voz (v2)"),
+  `lib/actions/voice-permissions.test.ts` e `components/VoiceView.test.tsx`.
 
 ## Compartilhar a tela (B3)
 

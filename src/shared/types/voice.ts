@@ -19,7 +19,17 @@ export interface VoiceCredentials {
   token: string
 }
 
-export type JoinVoiceResult = ({ ok: true } & VoiceCredentials) | { ok: false; error: string }
+/**
+ * Permissões da pessoa na sala (v2), decididas pelo servidor; o token do LiveKit já sai com elas.
+ * `canSpeak` false: entra só para ouvir (não publica o microfone).
+ * `canShare` false: não compartilha a tela.
+ */
+export interface VoicePermissions {
+  canSpeak: boolean
+  canShare: boolean
+}
+
+export type JoinVoiceResult = ({ ok: true } & VoiceCredentials & VoicePermissions) | { ok: false; error: string }
 
 // ---------- Eventos ----------
 

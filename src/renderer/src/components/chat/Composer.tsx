@@ -4,6 +4,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { MESSAGE_MAX_LENGTH, type Channel } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { addFiles, notifyTyping, sendMessage } from '@/lib/client'
+import { useCan } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
 import { AttachmentPreview } from './AttachmentPreview'
@@ -18,7 +19,9 @@ export function Composer({ channel }: { channel: Channel }) {
   const uploads = useApp(useShallow((s) => s.drafts[channel.id] ?? EMPTY))
   const uploading = uploads.some((u) => u.status === 'uploading')
   const ready = uploads.some((u) => u.status === 'done')
-  const canSend = !uploading && (!!value.trim() || ready)
+  const allowedSend = useCan('send', channel.id)
+  const allowedAttach = useCan('attach', channel.id)
+  const canSend = allowedSend && !uploading && (!!value.trim() || ready)
 
   useEffect(() => {
     setValue('')
@@ -48,7 +51,18 @@ export function Composer({ channel }: { channel: Channel }) {
     const files = Array.from(e.clipboardData?.files ?? [])
     if (files.length === 0) return // texto normal: deixa colar
     e.preventDefault()
+    if (!allowedAttach) return
     addFiles(channel.id, files)
+  }
+
+  if (!allowedSend) {
+    return (
+      <div className="shrink-0 px-4 pb-6">
+        <div className="rounded-lg bg-composer px-4 py-3 text-[15px] text-muted-foreground">
+          Você não tem permissão para enviar mensagens neste canal.
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -56,16 +70,18 @@ export function Composer({ channel }: { channel: Channel }) {
       <div className="rounded-lg bg-composer">
         <AttachmentPreview channelId={channel.id} uploads={uploads} />
         <div className="flex items-end gap-2 py-1.5 pr-1.5 pl-2">
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            aria-label="Anexar arquivo"
-            title="Anexar arquivo"
-            onClick={() => fileInput.current?.click()}
-            className="text-muted-foreground hover:text-accent-foreground"
-          >
-            <Paperclip />
-          </Button>
+          {allowedAttach && (
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Anexar arquivo"
+              title="Anexar arquivo"
+              onClick={() => fileInput.current?.click()}
+              className="text-muted-foreground hover:text-accent-foreground"
+            >
+              <Paperclip />
+            </Button>
+          )}
           <input
             ref={fileInput}
             type="file"

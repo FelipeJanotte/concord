@@ -51,6 +51,22 @@ cadastro/login (antes de existir socket) e **Socket.IO** para o resto. Detalhes 
 - `Message { id, channelId, author: User, content, createdAt }`: o banco guarda `author_id` (conta) e o histórico junta com a conta, então mostra nome/foto **atuais**. Em `message:new`, `author.id` é o socket de quem enviou; no histórico é o id da conta. Identifique a pessoa sempre por `author.accountId`.
 - Histórico paginado: `message:history { channelId, before? }` → `{ messages, hasMore }`, 50 por página (`HISTORY_PAGE_SIZE`), da mais antiga para a mais nova. A ordem vem da coluna `seq` (ordem de chegada). Sem limite de mensagens guardadas.
 
+## Permissões (v2)
+
+Contrato e regra de cálculo em `src/shared/types/permissions.ts` (`can`, `channelPermissions`, `globalPermissions`,
+`highestPosition`), usados pelo servidor e pela tela. Cargos (`roles`), cargos de cada conta (`member_roles`) e regras
+por canal (`channel_overrides`) ficam no banco; `server/access.ts` guarda o estado em memória e recarrega depois de
+cada mudança. A **dona** (primeira conta) pode tudo; o `@todos` (id fixo `EVERYONE_ROLE_ID`) vale para todo mundo e
+começa com as permissões de canal, sem as de administração (criar/apagar canal exige `manageChannels`).
+`hello`, `voice:state`, `message:new`, `typing` e `channel:created` só chegam a quem pode ver o canal. O estado de
+acesso vem no `hello` (`state.access`) e no `access:updated`, sempre por `accessFor` (cargos e membros inteiros; regras
+só dos canais que a pessoa vê). Mudou o acesso → `access:updated`, `channels:visible` (para quem ganhou/perdeu canais) e
+`applyVoiceAccess` (em `modules/voice.ts`): quem perdeu `connect` sai da voz. `voice:join` devolve `canSpeak`/`canShare`;
+sem `speak` a pessoa aparece sempre silenciada. Ninguém concede permissão global que não tem (`canGrantPermissions`),
+e globais no @todos só a dona. O token do LiveKit sai com microfone só se `speak` e tela só se `share`, e
+`applyVoiceAccess` atualiza isso ao vivo (`RoomService.UpdateParticipant`). Links de anexo são assinados por pessoa e o
+download confere `view` (`server/files-signing.ts`). Pendente: transferência de posse da comunidade.
+
 ## Banco (`server/db/`)
 
 Anexos: o app envia o arquivo por HTTP (`POST /uploads`, corpo = bytes, `Authorization: Bearer <token>`,
@@ -106,6 +122,7 @@ Servidor → cliente (`ServerToClientEvents`): `channel:created`, `channel:delet
 - `unread[channelId]`: bolinha de não lido (mensagem chegou num canal que não está aberto).
 - `view: { kind: 'text' | 'voice', channelId }`: o que aparece no painel central.
 - `myVoiceChannelId`, `joiningVoice`, `muted`, `deafened`, `speaking[userId]`, `sharing`, `screens`, `screenPickerOpen`.
+- `access` (`store/permissions.ts`): `AccessState` do `hello`/`access:updated`, `null` antes de chegar; a tela lê com `useCan`/`useNameColor` de `lib/permissions.ts` (skill `concord-permissions`).
 - `audioInputId`, `audioOutputId`, `userVolumes[accountId]`, `userMuted[accountId]`, `voiceSoundsEnabled`, `voiceSoundsVolume`, `noiseSuppression`, `noiseMode`, `deviceSettingsOpen` (`store/devices.ts`; preferência da máquina, salva em `concord:audio` no `localStorage`).
 - `typing[channelId][userId] = { name, until }`: expira sozinho depois de 3,5 s.
 - `notice`: toast (`notify()` em `client.ts`).

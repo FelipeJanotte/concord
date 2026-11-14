@@ -1,38 +1,87 @@
 /**
  * Salas de voz: valida a entrada, emite o token do LiveKit (o áudio e a tela passam
  * pelo LiveKit, não por aqui) e mantém a lista de quem está em cada sala. Skill `concord-voice`.
+ *
+ * Permissões (v2, skill `concord-permissions`): entrar exige `view` + `connect`; o token
+ * sai com microfone se `speak` e tela se `share`; cada um só vê o `voice:state` das salas
+ * que pode ver; `applyVoiceAccess` reaplica tudo quando cargos ou regras mudam.
  */
-import type { VoiceState } from '../../src/shared/types'
+import { can, channelPermissions, type AccessState, type VoicePermissions, type VoiceState } from '../../src/shared/types'
+import { accessSnapshot, allowed, currentAccess } from '../access'
 import { guard, type AppServer, type AppSocket, type ServerModule } from '../context'
-import { closeRoom, createVoiceCredentials, kickFromRoom, liveKitConfig } from '../livekit'
+import { closeRoom, createVoiceCredentials, kickFromRoom, liveKitConfig, updateVoicePermissions } from '../livekit'
 import { findChannel } from '../repo/channels'
 
 /** socket.id → estado de voz */
 const voice = new Map<string, VoiceState>()
+/** socket.id → o que o token/LiveKit permite publicar agora (para só atualizar o que mudou) */
+const published = new Map<string, VoicePermissions>()
 
 export const voiceStates = (): VoiceState[] => [...voice.values()]
 
-export function emitVoice(io: AppServer): void {
-  io.emit('voice:state', voiceStates())
+function voicePermissions(access: AccessState, accountId: string, channelId: string): VoicePermissions {
+  const perms = channelPermissions(access, accountId, channelId)
+  return { canSpeak: perms.has('speak'), canShare: perms.has('share') }
 }
 
-function leaveVoice(io: AppServer, socket: AppSocket): void {
+/** Estado de voz que a conta pode ver (quem está em sala privada não aparece para quem não vê a sala). */
+export function voiceStatesFor(accountId: string): VoiceState[] {
+  const access = accessSnapshot()
+  return voiceStates().filter((v) => can(access, accountId, 'view', v.channelId))
+}
+
+/** `voice:state` (sempre a lista completa que cada conexão pode ver). */
+export function emitVoice(io: AppServer): void {
+  for (const socket of io.sockets.sockets.values()) {
+    const user = socket.data.user
+    if (user) socket.emit('voice:state', voiceStatesFor(user.accountId))
+  }
+}
+
+/**
+ * Ponto único chamado depois de qualquer mudança de cargos/membros/regras (A4):
+ * quem perdeu `view`/`connect` sai da sala (e do LiveKit); quem continua tem
+ * `speak`/`share` atualizados ao vivo no LiveKit (sem `speak` fica silenciado, sem
+ * `share` a tela para). No fim, cada um recebe o `voice:state` das salas que vê.
+ */
+export function applyVoiceAccess(io: AppServer, access: AccessState): void {
+  for (const state of voiceStates()) {
+    const socket = io.sockets.sockets.get(state.userId)
+    const accountId = socket?.data.user?.accountId
+    if (!socket || !accountId) continue
+    if (!can(access, accountId, 'connect', state.channelId)) {
+      leaveVoice(io, socket, { emit: false })
+      continue
+    }
+    const next = voicePermissions(access, accountId, state.channelId)
+    const before = published.get(socket.id)
+    if (before && before.canSpeak === next.canSpeak && before.canShare === next.canShare) continue
+    published.set(socket.id, next)
+    if (!next.canSpeak) state.muted = true
+    if (!next.canShare) state.sharing = false
+    if (liveKitConfig) void updateVoicePermissions(liveKitConfig, state.channelId, socket.id, next)
+  }
+  emitVoice(io)
+}
+
+function leaveVoice(io: AppServer, socket: AppSocket, { emit = true } = {}): void {
   const state = voice.get(socket.id)
   if (!state) return
   voice.delete(socket.id)
+  published.delete(socket.id)
   if (liveKitConfig) void kickFromRoom(liveKitConfig, state.channelId, socket.id)
-  emitVoice(io)
+  if (emit) emitVoice(io)
 }
 
 /** Tira todo mundo de uma sala (usado quando o canal é apagado). Não emite `voice:state`. */
 export function clearVoiceChannel(_io: AppServer, channelId: string): void {
-  let hadPeople = false
   for (const [sid, state] of voice) {
     if (state.channelId !== channelId) continue
     voice.delete(sid)
-    hadPeople = true
+    published.delete(sid)
   }
-  if (hadPeople && liveKitConfig) void closeRoom(liveKitConfig, channelId)
+  // Sempre encerra: pode haver alguém no LiveKit que a lista não conhece (o 404 é ignorado).
+  if (liveKitConfig) void closeRoom(liveKitConfig, channelId)
 }
 
 export const voiceModule: ServerModule = {
@@ -44,20 +93,29 @@ export const voiceModule: ServerModule = {
         if (!user) return ack({ ok: false, error: 'Não autenticado' })
         if (!liveKitConfig) return ack({ ok: false, error: 'A voz não está configurada neste servidor' })
         const channel = typeof payload?.channelId === 'string' ? await findChannel(payload.channelId, 'voice') : undefined
-        if (!channel) return ack({ ok: false, error: 'Canal de voz não encontrado' })
-        const credentials = await createVoiceCredentials(liveKitConfig, user, channel.id)
+        // Sem permissão de ver, responde como se o canal não existisse (não revela salas privadas).
+        if (!channel || !(await allowed(user.accountId, 'view', channel.id))) {
+          return ack({ ok: false, error: 'Canal de voz não encontrado' })
+        }
+        if (!(await allowed(user.accountId, 'connect', channel.id))) {
+          return ack({ ok: false, error: 'Você não tem permissão para entrar nesta sala' })
+        }
+        // Sem `speak`, entra só para ouvir (e os outros veem silenciado); sem `share`, sem tela.
+        const permissions = voicePermissions(await currentAccess(), user.accountId, channel.id)
+        const credentials = await createVoiceCredentials(liveKitConfig, user, channel.id, permissions)
         if (!socket.connected) return
         // Trocar de sala: sai da anterior (inclusive no LiveKit) antes de entrar na nova.
         if (voice.get(socket.id)?.channelId !== channel.id) leaveVoice(io, socket)
         voice.set(socket.id, {
           userId: socket.id,
           channelId: channel.id,
-          muted: !!payload.muted,
+          muted: !!payload.muted || !permissions.canSpeak,
           deafened: !!payload.deafened,
           // Entrar (ou trocar de sala) começa sem tela; o app avisa com voice:sharing ao publicar.
           sharing: false
         })
-        ack({ ok: true, ...credentials })
+        published.set(socket.id, permissions)
+        ack({ ok: true, ...credentials, ...permissions })
         emitVoice(io)
       })
     })
@@ -67,7 +125,8 @@ export const voiceModule: ServerModule = {
     socket.on('voice:update', (payload) => {
       const state = voice.get(socket.id)
       if (!state) return
-      state.muted = !!payload?.muted
+      // quem não pode falar continua aparecendo silenciado
+      state.muted = !!payload?.muted || published.get(socket.id)?.canSpeak === false
       state.deafened = !!payload?.deafened
       emitVoice(io)
     })
@@ -75,6 +134,8 @@ export const voiceModule: ServerModule = {
     socket.on('voice:sharing', (sharing) => {
       const state = voice.get(socket.id)
       if (!state || typeof sharing !== 'boolean' || state.sharing === sharing) return
+      // sem `share` não aparece "ao vivo" (o LiveKit também não aceita a tela)
+      if (sharing && published.get(socket.id)?.canShare === false) return
       state.sharing = sharing
       emitVoice(io)
     })

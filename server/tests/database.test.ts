@@ -97,9 +97,7 @@ describe('histórico paginado e pedidos simultâneos', () => {
   it('página de 50, cursor "before" e hasMore até o começo do canal', async () => {
     const u = await server.newUser()
     open.push(u.socket)
-    const created = await u.socket.emitWithAck('channel:create', { name: 'muitas', type: 'text' })
-    if (!created.ok) throw new Error(created.error)
-    const channelId = created.channel.id
+    const channelId = (await server.createChannel('muitas')).id
     const last = waitFor(u.socket, 'message:new', (m) => m.content === 'm120', 10_000)
     for (let i = 1; i <= 120; i++) u.socket.emit('message:send', { channelId, content: `m${i}` })
     await last
@@ -150,8 +148,7 @@ describe('histórico paginado e pedidos simultâneos', () => {
   })
 
   it('dois canais com o mesmo nome ao mesmo tempo: só um é criado', async () => {
-    const u = await server.newUser()
-    open.push(u.socket)
+    const u = await server.asOwner()
     const name = `corrida-${randomUUID().slice(0, 6)}`
     const results = await Promise.all(
       Array.from({ length: 4 }, () => u.socket.emitWithAck('channel:create', { name, type: 'text' }))

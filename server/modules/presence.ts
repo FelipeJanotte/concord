@@ -2,12 +2,13 @@
  * Presença: o `hello` (registra a conexão e devolve o estado inicial) e a
  * saída de quem desconecta.
  */
-import type { User } from '../../src/shared/types'
+import { accessFor, type User } from '../../src/shared/types'
 import { avatarUrl, findAccount, toAccountInfo } from '../auth'
 import { guard, users, type ServerModule } from '../context'
 import { listChannels } from '../repo/channels'
 import type { Account } from '../repo/types'
-import { voiceStates } from './voice'
+import { currentAccess, visibleChannels } from '../access'
+import { voiceStatesFor } from './voice'
 
 function userFor(socketId: string, a: Account): User {
   return { id: socketId, accountId: a.id, name: a.name, tag: a.tag, color: a.color, avatarUrl: avatarUrl(a) }
@@ -23,14 +24,25 @@ export const presenceModule: ServerModule = {
           socket.disconnect(true)
           return
         }
-        const channels = await listChannels()
+        const access = await currentAccess()
+        const all = await listChannels()
+        const channels = visibleChannels(access, account.id, all)
         // Desconectou enquanto esperava o banco: não registra um usuário fantasma.
         if (!socket.connected) return
         const isNew = !socket.data.user
         const user = userFor(socket.id, account)
         socket.data.user = user
         users.set(socket.id, user)
-        ack({ self: user, account: toAccountInfo(account), state: { channels, users: [...users.values()], voice: voiceStates() } })
+        ack({
+          self: user,
+          account: toAccountInfo(account),
+          state: {
+            channels,
+            users: [...users.values()],
+            voice: voiceStatesFor(account.id),
+            access: accessFor(access, account.id, all.map((c) => c.id))
+          }
+        })
         if (isNew) socket.broadcast.emit('user:joined', user)
         console.log(`[+] ${account.name}#${account.tag} conectou (${users.size} online)`)
       })

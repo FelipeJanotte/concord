@@ -18,6 +18,8 @@ class FakeRoom {
   localParticipant = {
     identity: 'eu',
     publishTrack: vi.fn(async (_track: unknown, _opts?: unknown) => ({})),
+    unpublishTrack: vi.fn(async (_track: unknown) => ({})),
+    permissions: { canPublish: true, canPublishSources: [2, 3] } as { canPublish: boolean; canPublishSources: number[] },
     setScreenShareEnabled: vi.fn(async (_on: boolean, _opts?: unknown) => undefined)
   }
 
@@ -83,7 +85,13 @@ class FakeRemoteTrack {
   }
 }
 
-const CREDS: JoinVoiceResult = { ok: true, url: 'ws://livekit.test:7880', token: 'jwt-de-teste' }
+const CREDS: JoinVoiceResult = {
+  ok: true,
+  url: 'ws://livekit.test:7880',
+  token: 'jwt-de-teste',
+  canSpeak: true,
+  canShare: true
+}
 
 let socket: FakeSocket
 let rooms: FakeRoom[]
@@ -125,7 +133,7 @@ beforeEach(() => {
 
 describe('join', () => {
   it('pede o token ao servidor, conecta no LiveKit e publica o microfone', async () => {
-    expect(await client.join('sala-1')).toEqual({ micError: null, cancelled: false })
+    expect(await client.join('sala-1')).toEqual({ micError: null, cancelled: false, canSpeak: true, canShare: true })
     expect(socket.sent('voice:join')).toEqual([[{ channelId: 'sala-1', muted: false, deafened: false }]])
     const room = lastRoom()
     expect(room.connect).toHaveBeenCalledWith('ws://livekit.test:7880', 'jwt-de-teste', { autoSubscribe: true })
@@ -195,7 +203,7 @@ describe('join', () => {
     await vi.waitFor(() => expect(rooms).toHaveLength(1))
     c.leave()
     finishConnect(new Error('Client initiated disconnect'))
-    await expect(joining).resolves.toEqual({ micError: null, cancelled: true })
+    await expect(joining).resolves.toEqual({ micError: null, cancelled: true, canSpeak: true, canShare: true })
     expect(lastRoom().disconnect).toHaveBeenCalled()
     expect(lastRoom().localParticipant.publishTrack).not.toHaveBeenCalled()
     expect(mic!.stop).toHaveBeenCalled()
@@ -489,7 +497,7 @@ describe('dispositivos e volume (B4)', () => {
   it('microfone escolhido que sumiu: entra com o padrão do sistema', async () => {
     const c = deviceClient({ failDevice: 'mic-usb' })
     await c.setInputDevice('mic-usb')
-    expect(await c.join('sala-1')).toEqual({ micError: null, cancelled: false })
+    expect(await c.join('sala-1')).toEqual({ micError: null, cancelled: false, canSpeak: true, canShare: true })
     expect(micDevices).toEqual(['mic-usb', null])
     expect(lastRoom().localParticipant.publishTrack).toHaveBeenCalled()
   })
@@ -670,7 +678,7 @@ describe('supressão de ruído automática (B13)', () => {
   it('se o filtro não liga, entra mesmo assim com a supressão nativa', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const c = noiseClient({ processorFails: true })
-    expect(await c.join('sala-1')).toEqual({ micError: null, cancelled: false })
+    expect(await c.join('sala-1')).toEqual({ micError: null, cancelled: false, canSpeak: true, canShare: true })
     expect(lastRoom().localParticipant.publishTrack).toHaveBeenCalled()
     expect(modes).toContain('light-fallback')
     warn.mockRestore()
@@ -792,7 +800,7 @@ describe('revisão do #9: entrada cancelada e troca de sala que falha', () => {
     await vi.waitFor(() => expect(rooms).toHaveLength(1))
     c.teardown() // o handler de disconnect do socket chama isto
     finishConnect()
-    await expect(joining).resolves.toEqual({ micError: null, cancelled: true })
+    await expect(joining).resolves.toEqual({ micError: null, cancelled: true, canSpeak: true, canShare: true })
     expect(lastRoom().localParticipant.publishTrack).not.toHaveBeenCalled()
     expect(c.inRoom).toBe(false)
   })
@@ -803,6 +811,70 @@ describe('revisão do #9: entrada cancelada e troca de sala que falha', () => {
     await client.join('sala-1')
     lastRoom().fire(RoomEvent.Disconnected, DisconnectReason.SERVER_SHUTDOWN)
     expect(dropped).toHaveBeenCalled()
+  })
+})
+
+describe('permissões de voz (v2): speak e share', () => {
+  it('sem speak entra só ouvindo: não publica o microfone (o LiveKit recusaria com 403)', async () => {
+    socket.replyTo('voice:join', () => ({ ...CREDS, canSpeak: false, canShare: true }))
+    const res = await client.join('sala-1')
+    expect(res).toEqual({ micError: null, cancelled: false, canSpeak: false, canShare: true })
+    expect(mic!.stop).toHaveBeenCalled()
+    expect(lastRoom().localParticipant.publishTrack).not.toHaveBeenCalled()
+    expect(client.currentPermissions).toEqual({ canSpeak: false, canShare: true })
+  })
+
+  it('servidor antigo (sem os campos) = pode tudo', async () => {
+    expect(await client.join('sala-1')).toMatchObject({ canSpeak: true, canShare: true })
+    expect(lastRoom().localParticipant.publishTrack).toHaveBeenCalled()
+  })
+
+  it('perder speak na sala: tira e libera o microfone e avisa o app', async () => {
+    const changed = vi.fn()
+    client.onPermissionsChange = changed
+    await client.join('sala-1')
+    const room = lastRoom()
+    const firstMic = mic!
+    room.localParticipant.permissions = { canPublish: true, canPublishSources: [3] }
+    room.fire(RoomEvent.ParticipantPermissionsChanged, {}, room.localParticipant)
+    await vi.waitFor(() => expect(changed).toHaveBeenCalledWith({ canSpeak: false, canShare: true }))
+    expect(room.localParticipant.unpublishTrack).toHaveBeenCalledWith(firstMic)
+    expect(firstMic.stop).toHaveBeenCalled()
+  })
+
+  it('recuperar speak: abre o microfone de novo (mudo se estava mudo) e publica', async () => {
+    socket.replyTo('voice:join', () => ({ ...CREDS, canSpeak: false, canShare: false }))
+    const changed = vi.fn()
+    client.onPermissionsChange = changed
+    client.setMuted(true)
+    await client.join('sala-1')
+    const room = lastRoom()
+    room.localParticipant.permissions = { canPublish: true, canPublishSources: [2] }
+    room.fire(RoomEvent.ParticipantPermissionsChanged, {}, room.localParticipant)
+    await vi.waitFor(() => expect(changed).toHaveBeenCalledWith({ canSpeak: true, canShare: false }))
+    expect(room.localParticipant.publishTrack).toHaveBeenCalledWith(mic, { source: Track.Source.Microphone })
+    expect(mic!.mute).toHaveBeenCalled()
+  })
+
+  it('permissões de outra pessoa e mudança que não muda nada são ignoradas', async () => {
+    const changed = vi.fn()
+    client.onPermissionsChange = changed
+    await client.join('sala-1')
+    const room = lastRoom()
+    room.fire(RoomEvent.ParticipantPermissionsChanged, {}, room.localParticipant) // continua [2, 3]: nada muda
+    // o evento de outra pessoa não pode mexer nas minhas permissões, mesmo que as locais pareçam diferentes
+    room.localParticipant.permissions = { canPublish: true, canPublishSources: [3] }
+    room.fire(RoomEvent.ParticipantPermissionsChanged, {}, { identity: 'ana' })
+    await new Promise((r) => setTimeout(r, 10))
+    expect(changed).not.toHaveBeenCalled()
+  })
+
+  it('sair volta às permissões padrão', async () => {
+    socket.replyTo('voice:join', () => ({ ...CREDS, canSpeak: false, canShare: false }))
+    await client.join('sala-1')
+    client.leave()
+    socket.replyTo('voice:join', () => CREDS)
+    expect(await client.join('sala-2')).toMatchObject({ canSpeak: true, canShare: true })
   })
 })
 

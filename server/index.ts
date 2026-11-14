@@ -23,6 +23,7 @@ import { accountsModule } from './modules/accounts'
 import { backupModule } from './modules/backup'
 import { channelsModule } from './modules/channels'
 import { messagesModule } from './modules/messages'
+import { permissionsModule } from './modules/permissions'
 import { presenceModule } from './modules/presence'
 import { uploadsModule } from './modules/uploads'
 import { voiceModule } from './modules/voice'
@@ -32,6 +33,8 @@ const PORT = Number(process.env.PORT ?? 3001)
 // Módulo novo: crie o arquivo em server/modules/ e acrescente aqui.
 // A ordem importa só no `disconnect`: a voz sai antes da presença.
 const modules: ServerModule[] = [
+  // primeiro: carrega o acesso no boot (os outros consultam no hello)
+  permissionsModule,
   accountsModule,
   uploadsModule,
   channelsModule,
