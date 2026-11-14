@@ -78,5 +78,6 @@ Leia a skill certa antes de mexer em cada área (ficam em `.claude/skills/<nome>
 - `concord-architecture` — visão completa: fluxo de dados, todos os eventos, estado, ciclo de conexão.
 - `concord-add-feature` — passo a passo para adicionar uma funcionalidade de ponta a ponta, com exemplo.
 - `concord-accounts` — contas: cadastro/login com e-mail e senha, sessões, login com Google, perfil `nome#id` e foto, regra do id único e imutável.
+- `concord-permissions` — cargos e permissões (v2): regra de cálculo compartilhada, @todos, dona, regras por canal, hierarquia, eventos `role:*` e o que cada handler bloqueia.
 - `concord-voice` — como a voz WebRTC funciona, limites e depuração.
 - `concord-dev-workflow` — rodar, testar com vários usuários, build e solução de problemas conhecidos.
