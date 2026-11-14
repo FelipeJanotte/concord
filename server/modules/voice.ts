@@ -24,6 +24,18 @@ function voicePermissions(access: AccessState, accountId: string, channelId: str
   return { canSpeak: perms.has('speak'), canShare: perms.has('share') }
 }
 
+/** Sala de voz em que a conexão está (ou undefined). */
+export function voiceChannelOf(socketId: string): string | undefined {
+  return voice.get(socketId)?.channelId
+}
+
+/** Conexões que estão na sala de voz `channelId`. */
+export function voiceSocketsIn(channelId: string): string[] {
+  return voiceStates()
+    .filter((v) => v.channelId === channelId)
+    .map((v) => v.userId)
+}
+
 /** Estado de voz que a conta pode ver (quem está em sala privada não aparece para quem não vê a sala). */
 export function voiceStatesFor(accountId: string): VoiceState[] {
   const access = accessSnapshot()

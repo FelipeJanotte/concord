@@ -103,6 +103,9 @@ Cliente → servidor (`ClientToServerEvents`):
 | `channel:delete` | `channelId` | — | apaga o canal e as mensagens, tira todo mundo da sala de voz; `channel:deleted` + `voice:state` |
 | `message:history` | `{ channelId, before? }` | `{ messages, hasMore }` | página de 50 (sem `before` = mais recentes) |
 | `message:send` (com anexos) | `{ channelId, content, attachmentIds? }` | — | até 10 anexos já enviados por `POST /uploads`, do próprio autor e não usados; tudo ou nada (senão a mensagem é ignorada); texto pode ser vazio se houver anexo |
+| `sound:list` | — | `Sound[]` | coleção de efeitos sonoros (links assinados para quem pede) — skill `concord-sounds` |
+| `sound:play` | `{ channelId, soundId }` | `SoundResult` | exige estar na sala e `speak`; `sound:played` só para quem está nela; não toca por cima do próprio som anterior |
+| `sound:delete` | `soundId` | `SoundResult` | o autor ou `manageMessages`; `sound:deleted` para todos |
 | `message:send` | `{ channelId, content }` | — | valida (canal de texto, até 2000 caracteres); `message:new` para todos |
 | `voice:join` | `{ channelId, muted, deafened }` | `JoinVoiceResult` (`url`, `token` do LiveKit) | exige LiveKit configurado; sai da sala anterior (também no LiveKit), entra na nova; `voice:state` |
 | `voice:leave` | — | — | tira da sala no LiveKit (`RemoveParticipant`) + `voice:state` |
@@ -111,7 +114,9 @@ Cliente → servidor (`ClientToServerEvents`):
 | `typing` | `channelId` | — | broadcast `typing` (o cliente limita a 1 envio a cada 2,5 s) |
 
 Servidor → cliente (`ServerToClientEvents`): `channel:created`, `channel:deleted`, `user:joined`, `user:left`,
-`user:updated` (por `accountId`), `message:new`, `voice:state` (sempre a **lista completa**), `typing`.
+`user:updated` (por `accountId`), `message:new`, `voice:state` (sempre a **lista completa** das salas que a pessoa
+vê), `typing`, `rate:limited`, `access:updated` e `channels:visible` (v2), `sound:created`, `sound:deleted` e
+`sound:played` (soundboard; o último só para a sala).
 
 ## Estado do renderer (`store/`)
 

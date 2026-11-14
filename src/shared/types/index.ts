@@ -11,6 +11,7 @@ import type { LimitsServerEvents } from './limits'
 import type { MessageClientEvents, MessageServerEvents } from './message'
 import type { PermissionsClientEvents, PermissionsServerEvents } from './permissions'
 import type { PresenceClientEvents, PresenceServerEvents } from './presence'
+import type { SoundsClientEvents, SoundsServerEvents } from './sounds'
 import type { VoiceClientEvents, VoiceServerEvents } from './voice'
 
 export * from './account'
@@ -20,6 +21,7 @@ export * from './limits'
 export * from './message'
 export * from './permissions'
 export * from './presence'
+export * from './sounds'
 export * from './voice'
 
 export interface ServerToClientEvents
@@ -29,6 +31,7 @@ export interface ServerToClientEvents
     MessageServerEvents,
     PermissionsServerEvents,
     PresenceServerEvents,
+    SoundsServerEvents,
     VoiceServerEvents {}
 
 export interface ClientToServerEvents
@@ -37,4 +40,5 @@ export interface ClientToServerEvents
     MessageClientEvents,
     PermissionsClientEvents,
     PresenceClientEvents,
+    SoundsClientEvents,
     VoiceClientEvents {}

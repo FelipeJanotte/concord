@@ -20,6 +20,23 @@ export function sendJson(res: ServerResponse, status: number, body: unknown): vo
   res.end(JSON.stringify(body))
 }
 
+/**
+ * Depois de responder um erro (ex.: 413) no meio de um envio: descarta o resto do
+ * corpo para o app conseguir ler a resposta. Fechar a conexão na hora faz o cliente,
+ * ainda enviando, perder a resposta ("fetch failed"). Se o cliente mandar mais que
+ * `maxDiscard` bytes além disso, aí sim fecha.
+ */
+export function discardBody(req: IncomingMessage, maxDiscard: number): void {
+  let discarded = 0
+  req.unpipe()
+  req.removeAllListeners('data')
+  req.on('data', (chunk: Buffer) => {
+    discarded += chunk.length
+    if (discarded > maxDiscard) req.destroy()
+  })
+  req.resume()
+}
+
 /** Lê um corpo JSON pequeno (até `maxBytes`). */
 export function readJson(req: IncomingMessage, maxBytes = 16_384): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
