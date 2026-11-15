@@ -191,13 +191,18 @@ compartilhada continua em destaque e as câmeras vão para a faixa de miniaturas
   simulcast** (`CAMERA_CAPTURE`/`CAMERA_PUBLISH`: não pesa no upload de quem joga). Câmeras da sala (a própria
   inclusa) ficam em `store.cameras` (ids de conexão), separadas de `store.screens`; `attachCamera(userId, el)`
   liga num `<video>`. A câmera parar sozinha (perdeu `video`, desconectou) chama `onCameraEnded`.
+- **Desligar não despublica:** `setCameraEnabled(false)` do `livekit-client` só **silencia** a faixa (a publicação
+  continua; a luz da câmera apaga). Por isso o `VoiceClient` ouve `TrackMuted`/`TrackUnmuted` da fonte câmera (a
+  própria e as remotas): silenciada sai de `store.cameras` (o quadro volta para a foto) e religar põe de volta. Quem
+  entra depois recebe a câmera desligada já silenciada (`track.isMuted`) e não a mostra. Sem isso o quadro ficava
+  com o último frame parado depois de desligar.
 - **Câmera escolhida:** "Câmera" em Configurações de voz (`selectCamera`, salva em `concord:audio.camera`,
   `store.cameraId`); com a câmera ligada troca na hora (`switchActiveDevice('videoinput')`).
 - **Ações** (`lib/actions/voice.ts`): `toggleCamera` (avisa fora da sala/sem permissão; erros do sistema em pt-BR:
   negada, não encontrada, em uso), `attachCamera`. `store.cameraOn` e `store.voiceCanVideo`; sair da sala zera.
 - **Tela:** botão "Ligar a câmera"/"Desligar a câmera" no `VoiceView` (some sem `video`); `CameraVideo` em
   `components/voice/CameraTile.tsx`, usado pelo `ParticipantTile`; a própria câmera aparece espelhada.
-- **Testes:** `lib/voice.test.ts` (bloco "câmera (B21)"), `lib/actions/camera.test.ts`, `components/VoiceView.test.tsx`,
+- **Testes:** `lib/voice.test.ts` (blocos "câmera (B21)" e "câmera desligada e religada (B21)"), `lib/actions/camera.test.ts`, `components/VoiceView.test.tsx`,
   `lib/voice-permissions.test.ts`, `server/livekit.test.ts`, `server/tests/permissions.test.ts` (token e perda ao
   vivo) e `server/db/camera-permission.test.ts` (migration). À mão: duas janelas na mesma sala, as duas ligam a
   câmera e se veem.

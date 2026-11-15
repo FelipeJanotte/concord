@@ -1,6 +1,6 @@
 ---
 name: concord-messages
-description: Como funcionam as mensagens do Concord — envio (message:send, fila por conexão, limites), histórico paginado (message:history), editar a própria mensagem (A15: message:edit/message:edited, edited_at, "(editada)", edição no lugar com Enter/Esc e seta para cima) responder citando (B18: replyToId, ReplyPreview pronto do servidor, faixa "Respondendo a", citação que rola até a original, "mensagem apagada") reações (A16: message:react/message:reactions, tabela message_reactions, chips e seletor de emoji) e menções @nome (B19: <@id>, autocompletar no campo, @todos com mentionEveryone, destaque e notificação em canal). Use ao mexer em server/modules/messages.ts, server/repo/messages.ts, server/db/schema/messages.ts, src/shared/types/message.ts, lib/actions/messages.ts, store/messages.ts, server/modules/reactions.ts, server/repo/reactions.ts, src/shared/types/reactions.ts, src/shared/types/mentions.ts, lib/mentions.ts, components/chat/{Composer,MessageActions,MessageEditor,ReplyPreview,Reactions,MessageText,MentionMenu}.tsx ou no MessageBody/MessageItem do ChatView, ou ao investigar mensagem que não chega, "(editada)" que não aparece, "Você só pode editar as suas mensagens" ou citação errada.
+description: Como funcionam as mensagens do Concord — envio (message:send, fila por conexão, limites), histórico paginado (message:history), editar a própria mensagem (A15: message:edit/message:edited, edited_at, "(editada)", edição no lugar com Enter/Esc e seta para cima) responder citando (B18: replyToId, ReplyPreview pronto do servidor, faixa "Respondendo a", citação que rola até a original, "mensagem apagada") reações (A16: message:react/message:reactions, tabela message_reactions, chips e seletor de emoji) menções @nome (B19: <@id>, autocompletar no campo, @todos com mentionEveryone, destaque e notificação em canal) e links clicáveis (src/shared/links.ts: splitLinks/externalUrl, abrem no navegador padrão, só http/https). Use ao mexer em server/modules/messages.ts, server/repo/messages.ts, server/db/schema/messages.ts, src/shared/types/message.ts, lib/actions/messages.ts, store/messages.ts, server/modules/reactions.ts, server/repo/reactions.ts, src/shared/types/reactions.ts, src/shared/types/mentions.ts, lib/mentions.ts, components/chat/{Composer,MessageActions,MessageEditor,ReplyPreview,Reactions,MessageText,MentionMenu}.tsx ou no MessageBody/MessageItem do ChatView, src/shared/links.ts, setWindowOpenHandler/will-navigate em src/main/index.ts, ou ao investigar link que não fica clicável, link que abre dentro do app, mensagem que não chega, "(editada)" que não aparece, "Você só pode editar as suas mensagens" ou citação errada.
 ---
 
 # Mensagens
@@ -96,6 +96,30 @@ Testes: `src/shared/types/mentions.test.ts`, `src/renderer/src/lib/mentions.test
 `components/chat/mentions.test.tsx` (menu, envio com token, @todos com permissão, setas/Esc, DM, "@Nome",
 destaque, editar, notificação).
 
+## Links clicáveis
+
+Links no texto da mensagem viram `<a>` e abrem no **navegador padrão** do sistema. Nada muda no servidor nem
+no contrato: o texto continua o mesmo, só a tela reconhece o link.
+
+| Arquivo | Papel |
+|---|---|
+| `src/shared/links.ts` | Puras: `splitLinks(texto)` → pedaços `{ text }` / `{ url, href }` e `externalUrl(raw)` (só `http:`/`https:`, senão `null`). Compartilhado porque o processo principal usa a mesma checagem. |
+| `components/chat/MessageText.tsx` | Depois de separar as menções, cada pedaço de texto passa por `splitLinks`; link vira `<a target="_blank" rel="noreferrer noopener">` com `text-primary` sublinhado e o endereço no `title`. |
+| `src/main/index.ts` | `setWindowOpenHandler`: o `target="_blank"` cai aqui e vai para `shell.openExternal` **só se `externalUrl` aceitar** (nunca `file:`, `javascript:`, `ms-settings:`...). `will-navigate`: link que tentasse trocar a página da janela é cancelado e (se http/https) aberto fora. |
+
+Regras de reconhecimento:
+
+- Começa com `http://`, `https://` ou `www.` (este abre como `https://`), em começo de palavra (`xhttps://a.com` não é link).
+- Para no espaço, `<`, `>`, `"` e crase. Pontuação da frase no fim (`.,;:!?'*_~`) fica fora do link.
+- `)` no fim só entra se tiver `(` correspondente no link (`https://pt.wikipedia.org/wiki/Java_(linguagem)` inteiro; `(ver https://a.com)` sem o `)`).
+- `https://` ou `www.` sozinhos não são link.
+
+Onde **não** vale (de propósito, por enquanto): a citação de resposta (`ReplyPreview`) e as mensagens de ferramenta
+mostram texto puro. Prévia do site (embed) está pendente.
+
+Testes: `src/shared/links.test.ts` (reconhecimento, pontuação, parênteses, protocolos recusados) e
+`components/chat/links.test.tsx` (`<a>` com `href`/`target`/`rel`, `www.`, link junto com menção, `javascript:` fica texto).
+
 ## Testes
 
 | Arquivo | Cobre |
@@ -113,4 +137,6 @@ destaque, editar, notificação).
 | Resposta chegou sem citação | `replyToId` de outro canal ou inexistente: o servidor manda sem citação de propósito. |
 | Não consigo reagir | Sem `send` no canal (os chips ficam desligados) ou a mensagem já tem 20 emojis diferentes. |
 | Menção não avisou | Quem escreveu não escolheu no menu (ficou texto), a pessoa não vê o canal, ou é @todos sem a permissão `mentionEveryone` (vira texto). |
-| Pendente | Histórico de edições, editar anexos, responder já mencionando o autor e menção a cargo (@Moderadores). |
+| Link não ficou clicável | Não começa com `http://`, `https://` ou `www.` (ex.: `exemplo.com` sozinho não é reconhecido) ou está colado em outra palavra. |
+| Link abre dentro do app / não abre | O clique tem de passar por `setWindowOpenHandler` (`target="_blank"`); protocolo que não é http/https é ignorado de propósito. |
+| Pendente | Prévia de link (embed), links na citação, histórico de edições, editar anexos, responder já mencionando o autor e menção a cargo (@Moderadores). |

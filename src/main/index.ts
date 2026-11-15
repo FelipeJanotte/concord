@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, session, shell } from 'electron'
 import { join } from 'path'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
+import { externalUrl } from '../shared/links'
 import { googleSignIn } from './google-auth'
 import { setupNotifications } from './notifications'
 import { setupOverlay, teardownOverlay, type OverlayController } from './overlay'
@@ -37,10 +38,20 @@ function createWindow(): void {
   })
   win.on('ready-to-show', () => win.show())
 
-  // Links externos abrem no navegador padrão.
+  // Links externos abrem no navegador padrão; só http/https (nada de file:, javascript: etc.).
   win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url)
+    const safe = externalUrl(url)
+    if (safe) void shell.openExternal(safe)
     return { action: 'deny' }
+  })
+  // Um link que tentasse navegar a própria janela (sem target) também vai para o navegador.
+  win.webContents.on('will-navigate', (event, url) => {
+    if (url === win.webContents.getURL()) return
+    const devServer = process.env['ELECTRON_RENDERER_URL']
+    if (is.dev && devServer && url.startsWith(devServer)) return
+    event.preventDefault()
+    const safe = externalUrl(url)
+    if (safe) void shell.openExternal(safe)
   })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {

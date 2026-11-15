@@ -33,7 +33,8 @@ import {
   type LocalTrackPublication,
   type Participant,
   type RemoteTrack,
-  type RemoteTrackPublication
+  type RemoteTrackPublication,
+  type TrackPublication
 } from 'livekit-client'
 import type { JoinVoiceResult, VoicePermissions } from '@shared/types'
 import { permissionsFrom } from './voice-permissions'
@@ -578,7 +579,8 @@ export class VoiceClient {
       .on(RoomEvent.TrackSubscribed, (track: RemoteTrack, _pub: RemoteTrackPublication, participant: Participant) => {
         if (track.kind === Track.Kind.Video) {
           if (track.source === Track.Source.ScreenShare) this.addScreen(participant.identity, track)
-          else if (track.source === Track.Source.Camera) this.addCamera(participant.identity, track)
+          // câmera desligada (silenciada) de quem já estava na sala: só aparece quando religar (TrackUnmuted)
+          else if (track.source === Track.Source.Camera && !track.isMuted) this.addCamera(participant.identity, track)
           return
         }
         // Áudio: microfone e áudio da tela de cada um.
@@ -602,6 +604,14 @@ export class VoiceClient {
       })
       .on(RoomEvent.LocalTrackPublished, (pub: LocalTrackPublication, participant: Participant) => {
         if (pub.source === Track.Source.ScreenShare && pub.track) this.addScreen(participant.identity, pub.track)
+        if (pub.source === Track.Source.Camera && pub.track) this.addCamera(participant.identity, pub.track)
+      })
+      // `setCameraEnabled(false)` não despublica: silencia a faixa (a publicação fica). Câmera silenciada = sem câmera
+      // na grade; religar só tira o silêncio (não há `LocalTrackPublished`/`TrackSubscribed` de novo).
+      .on(RoomEvent.TrackMuted, (pub: TrackPublication, participant: Participant) => {
+        if (pub.source === Track.Source.Camera && pub.track) this.removeCamera(participant.identity, pub.track)
+      })
+      .on(RoomEvent.TrackUnmuted, (pub: TrackPublication, participant: Participant) => {
         if (pub.source === Track.Source.Camera && pub.track) this.addCamera(participant.identity, pub.track)
       })
       .on(RoomEvent.LocalTrackUnpublished, (pub: LocalTrackPublication, participant: Participant) => {

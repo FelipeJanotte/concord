@@ -1187,3 +1187,37 @@ describe('volume do microfone e de saída', () => {
     expect(ana.setVolume).toHaveBeenLastCalledWith(0)
   })
 })
+
+describe('câmera desligada e religada (B21)', () => {
+  const cameraTrack = (muted = false): FakeRemoteTrack => Object.assign(new FakeRemoteTrack(Track.Kind.Video, Track.Source.Camera), { isMuted: muted })
+  const pub = (track: FakeRemoteTrack) => ({ source: Track.Source.Camera, track })
+
+  it('desligar silencia a faixa (não despublica): sai de store.cameras; religar volta', async () => {
+    await client.join('sala-1')
+    const mine = cameraTrack()
+    lastRoom().fire(RoomEvent.LocalTrackPublished, pub(mine), { identity: 'eu' })
+    const ana = cameraTrack()
+    lastRoom().fire(RoomEvent.TrackSubscribed, ana, {}, { identity: 'ana' })
+    expect(useApp.getState().cameras).toEqual(['eu', 'ana'])
+
+    lastRoom().fire(RoomEvent.TrackMuted, pub(mine), { identity: 'eu' })
+    lastRoom().fire(RoomEvent.TrackMuted, pub(ana), { identity: 'ana' })
+    expect(useApp.getState().cameras).toEqual([])
+
+    lastRoom().fire(RoomEvent.TrackUnmuted, pub(ana), { identity: 'ana' })
+    expect(useApp.getState().cameras).toEqual(['ana'])
+  })
+
+  it('quem entra depois não vê a câmera de quem está com ela desligada', async () => {
+    await client.join('sala-1')
+    lastRoom().fire(RoomEvent.TrackSubscribed, cameraTrack(true), {}, { identity: 'ana' })
+    expect(useApp.getState().cameras).toEqual([])
+  })
+
+  it('silenciar o microfone não mexe nas câmeras', async () => {
+    await client.join('sala-1')
+    lastRoom().fire(RoomEvent.TrackSubscribed, cameraTrack(), {}, { identity: 'ana' })
+    lastRoom().fire(RoomEvent.TrackMuted, { source: Track.Source.Microphone, track: new FakeRemoteTrack() }, { identity: 'ana' })
+    expect(useApp.getState().cameras).toEqual(['ana'])
+  })
+})
