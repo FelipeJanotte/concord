@@ -1,4 +1,4 @@
-// "Configurações de voz": microfone, saída de áudio (B4), supressão de ruído automática (B13), pressione para falar (B20), câmera (B21), sons de entrar/sair da sala (B16) e sobreposição em jogos (B15). O volume de cada pessoa fica no botão direito sobre ela.
+// "Configurações de voz": microfone, saída de áudio (B4), volume do microfone e de saída, supressão de ruído automática (B13), pressione para falar (B20), câmera (B21), sons de entrar/sair da sala (B16) e sobreposição em jogos (B15). O volume de cada pessoa fica no botão direito sobre ela.
 import { useCallback, useEffect, useState } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -11,6 +11,8 @@ import {
   selectAudioInput,
   selectAudioOutput,
   selectCamera,
+  setMicGain,
+  setOutputVolume,
   setNoiseSuppression,
   setOverlayCorner,
   setOverlayEditing,
@@ -20,6 +22,7 @@ import {
   type AudioDevice
 } from '@/lib/client'
 import { OVERLAY_EDIT_SHORTCUT_LABEL, OVERLAY_SHORTCUT_LABEL, type OverlayCorner, type OverlaySize } from '@shared/overlay'
+import { MIC_GAIN_MAX, OUTPUT_VOLUME_MAX } from '@/lib/mic-gain'
 import { useApp } from '@/store'
 import { PushToTalkSettings } from './PushToTalk'
 
@@ -89,6 +92,8 @@ export function DeviceSettings() {
           )}
         </div>
 
+        <VolumeSettings />
+
         <NoiseSuppression />
 
         <PushToTalkSettings />
@@ -102,6 +107,64 @@ export function DeviceSettings() {
         </p>
       </DialogContent>
     </Dialog>
+  )
+}
+
+/** Volume do microfone (0–200%) e de saída (0–100%). Valem na hora, mesmo numa sala. */
+function VolumeSettings() {
+  const mic = useApp((s) => Math.round(s.micGain * 100))
+  const output = useApp((s) => Math.round(s.outputVolume * 100))
+  return (
+    <div className="space-y-3 border-t border-border pt-4">
+      <VolumeSlider
+        id="mic-volume"
+        label="Volume do microfone"
+        value={mic}
+        max={MIC_GAIN_MAX * 100}
+        onChange={(v) => void setMicGain(v / 100)}
+      />
+      <VolumeSlider
+        id="output-volume"
+        label="Volume de saída"
+        value={output}
+        max={OUTPUT_VOLUME_MAX * 100}
+        onChange={(v) => setOutputVolume(v / 100)}
+      />
+      <p className="text-xs text-muted-foreground">
+        O volume de saída vale para a voz de todos, o áudio das telas, os efeitos sonoros e os sons da sala.
+      </p>
+    </div>
+  )
+}
+
+function VolumeSlider({ id, label, value, max, onChange }: { id: string; label: string; value: number; max: number; onChange: (v: number) => void }) {
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between">
+        <Label htmlFor={id}>{label}</Label>
+        <button
+          type="button"
+          className="text-xs text-muted-foreground hover:text-foreground disabled:invisible"
+          disabled={value === 100}
+          onClick={() => onChange(100)}
+        >
+          Voltar para 100%
+        </button>
+      </div>
+      <div className="flex items-center gap-3">
+        <input
+          id={id}
+          type="range"
+          min={0}
+          max={max}
+          step={5}
+          value={value}
+          onChange={(e) => onChange(Number(e.target.value))}
+          className="flex-1 accent-primary"
+        />
+        <span className="w-10 text-right text-xs text-muted-foreground tabular-nums">{value}%</span>
+      </div>
+    </div>
   )
 }
 
