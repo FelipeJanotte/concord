@@ -225,6 +225,22 @@ compartilhada continua em destaque e as câmeras vão para a faixa de miniaturas
   câmera e se veem.
 - **Pendente:** câmera no painel da chamada privada (B8), câmera em destaque/tela cheia e fundo desfocado.
 
+## Controles fora da sala: "Voz conectada"
+
+Na sala de voz os controles ficam embaixo da grade (`VoiceView`); em **qualquer outra tela** (chat de texto, Home,
+ferramentas) ficam no painel "Voz conectada" (`VoiceStatusPanel` em `components/UserPanel.tsx`, em cima da conta nas
+duas barras laterais), como no Discord:
+
+- linha de cima: "Voz conectada", o nome da sala (clique volta para ela; chamada privada abre a conversa),
+  Configurações de voz e Desconectar;
+- linha de baixo: **Câmera** (só com `voiceCanVideo`), **Compartilhar a tela** (só com `voiceCanShare`) e **Efeitos
+  sonoros**, verdes quando ligados (`aria-pressed`). Microfone e áudio ficam nos botões do `UserPanel`.
+- **O `ScreenPicker` e o `Soundboard` ficam montados uma vez só, no `UserPanel`** (junto do `DeviceSettings`), e não
+  mais dentro da `VoiceView`/`CallPanel`: antes, fora da sala o `toggleScreenShare` abria `screenPickerOpen` sem
+  nenhum seletor na tela. Não monte de novo em outra tela (abriria duas janelas).
+- **Testes:** `components/voice-panel.test.tsx` (botões, permissões, câmera, seletor de tela e sons abrindo do painel,
+  parar de compartilhar). Testes que abrem essas janelas a partir da sala ou da chamada montam o `<Soundboard />` junto.
+
 ## Dispositivos, volume e menu de botão direito (B4)
 
 **Só cliente:** nada vai para o servidor e não há evento novo.
