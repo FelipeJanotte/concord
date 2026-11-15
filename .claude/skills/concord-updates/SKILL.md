@@ -3,51 +3,6 @@ name: concord-updates
 description: Como funciona a atualização automática do Concord (A13) — electron-updater lendo os GitHub Releases, verificação ao abrir e a cada 4 h, download em segundo plano, faixa "Reiniciar para atualizar", e como publicar uma versão (subir a versão do package.json + tag vX.Y.Z → workflow release.yml gera o instalador e o latest.yml). Use ao mexer em src/main/updater.ts, src/shared/updater.ts, window.api.updater (preload), lib/actions/updates.ts, store/updates.ts, components/UpdateBanner.tsx, electron-builder.yml (publish), .github/workflows/release.yml ou nos scripts dist/release, ou ao investigar app que não atualiza, release que falhou ou "A tag não bate com a versão".
 ---
 
-# Atualização automática (A13)
+A documentação desta área fica em **`docs/areas/updates.md`**. Leia esse arquivo antes de mexer no código.
 
-Quem instalou o Concord recebe as versões novas sem reinstalar: o app procura nos **GitHub Releases** do
-repositório, baixa em segundo plano e mostra no topo **"A versão X do Concord está pronta. Reiniciar para
-atualizar"**. Se a pessoa clicar em "Depois", a versão entra sozinha da próxima vez que o app fechar.
-
-## Arquivos
-
-| Arquivo | Papel |
-|---|---|
-| `src/shared/updater.ts` | `UpdateStatus` (`idle`, `checking`, `downloading` com `percent`, `ready` com `version`, `error`), `UPDATE_CHECK_INTERVAL_MS` (4 h), `UpdaterBridge`. |
-| `src/main/updater.ts` | `createUpdaterController` (lógica, testável): `autoDownload` e `autoInstallOnAppQuit` ligados, eventos do electron-updater → situação, "pronta" não volta atrás, erro com texto amigável (motivo no log `[atualização]`), `install` só com a versão baixada. `setupUpdater`: importa o `electron-updater` sob demanda, IPC `update-get`/`update-install` e o aviso `update-status`. **Em modo dev (não empacotado) não procura.** |
-| `src/main/index.ts` | Chama `setupUpdater(() => mainWindow)`. |
-| `src/preload/index.ts` / `index.d.ts` | `window.api.updater` (`getStatus`, `onStatus`, `install`). |
-| `src/renderer/src/lib/actions/updates.ts` | `startUpdates` (no `main.tsx`), `installUpdate`, `dismissUpdate`. `updatesEnv.bridge` é substituído nos testes. |
-| `src/renderer/src/store/updates.ts` | `update` (a situação) e `updateDismissed` (versão escondida pelo "Depois"). |
-| `src/renderer/src/components/UpdateBanner.tsx` | A faixa no topo do app (só com `ready`). |
-| `electron-builder.yml` | `publish: github` (FelipeJanotte/concord): o instalador e o `latest.yml` vão para a release. |
-| `.github/workflows/release.yml` | Tag `vX.Y.Z` → Windows: confere se a tag bate com o `package.json`, `npm ci`, typecheck e `npm run release` (com o `GITHUB_TOKEN`). |
-| `package.json` | `dist` (só gera, `--publish never`) e `release` (gera e publica, `--publish always`). `electron-updater` fica em `dependencies` (vai no app). |
-
-## Publicar uma versão
-
-1. Suba a versão no `package.json` (ex.: `0.2.0`) num PR e mergeie na `main`.
-2. Na `main` atualizada: `git tag v0.2.0 && git push origin v0.2.0`.
-3. O workflow **Release** gera `concord-0.2.0-setup.exe` + `latest.yml` e publica a release. Quem tem uma
-   versão anterior instalada recebe a faixa em até 4 h (ou ao abrir o app).
-
-A primeira versão com a A13 precisa ser instalada à mão (as anteriores não sabem se atualizar).
-
-## Testes
-
-| Arquivo | Cobre |
-|---|---|
-| `src/main/updater.test.ts` | Atualizador falso: opções ligadas, procura ao abrir e a cada 4 h, dev não procura, etapas e percentual, "pronta" não volta, sem versão nova, erro (texto + log), promessa que falha, instalar só pronta. |
-| `src/renderer/src/components/updates.test.tsx` | Situação da ponte, parar de ouvir, faixa só pronta, "Reiniciar para atualizar", "Depois" e versão mais nova, fora do Electron. |
-
-O caminho de verdade (baixar e instalar) só dá para conferir com duas releases publicadas.
-
-## Problemas conhecidos / depuração
-
-| Sintoma | Causa e solução |
-|---|---|
-| App não atualiza | Rodando em dev (`npm run dev` nunca atualiza); versão instalada anterior à A13; ou a release não tem o `latest.yml` (publicada à mão). Log `[atualização]` no terminal/arquivo do main. |
-| Workflow falhou em "Conferir a versão" | A tag não bate com o `package.json`: suba a versão primeiro, apague a tag (`git push --delete origin vX.Y.Z`) e crie de novo. |
-| Windows avisa "editor desconhecido" | O instalador não é assinado (certificado de assinatura é pago). O SmartScreen avisa na primeira instalação; as atualizações seguem normais. |
-| `[atualização] não iniciou: ... setting 'autoDownload'` | O electron-updater é CommonJS: no `import()` do main o `autoUpdater` só vem em `default`. `pickAutoUpdater` (`src/main/updater.ts`) acha nos dois lugares; não troque por `const { autoUpdater } = await import(...)`. |
-| Pendente | Assinatura do código, canal "beta" e notas da versão na faixa. |
+Esta skill existe só para te trazer até lá: nada de conteúdo aqui, para não haver duas versões da mesma regra.
