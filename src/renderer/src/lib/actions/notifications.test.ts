@@ -3,7 +3,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CallInfo, DmEntry, FriendEntry, Message, User } from '@shared/types'
 import type { NativeNotification, NotificationTarget } from '@shared/notifications'
-import { bindNotificationEvents, notificationEnv, openNotificationTarget, stopNotifications } from '@/lib/actions/notifications'
+import {
+  bindNotificationEvents,
+  loadNotificationPreferences,
+  notificationEnv,
+  openNotificationTarget,
+  setChannelNotifications,
+  stopNotifications
+} from '@/lib/actions/notifications'
 import { setSocket } from '@/lib/core'
 import { badgeCount, callNotification, friendRequestNotification, messageNotification, messagePreview } from '@/lib/notifications'
 import { initialState, useApp } from '@/store'
@@ -27,11 +34,51 @@ describe('regras', () => {
     expect(messagePreview(msg({ content: '', attachments: [{}, {}] as never }))).toBe('📎 2 anexos')
   })
 
-  it('conversa privada fora de foco avisa e abre a conversa; com foco, minha ou de canal, não', () => {
+  it('conversa privada fora de foco avisa e abre a conversa; com foco ou minha, não', () => {
     expect(messageNotification(msg(), st(), false)).toEqual({ title: 'Ana', body: 'oi, tudo bem?', target: { kind: 'dm', channelId: 'dm-ana' } })
     expect(messageNotification(msg(), st(), true)).toBeNull()
     expect(messageNotification(msg({ author: me }), st(), false)).toBeNull()
-    expect(messageNotification(msg({ channelId: 'geral' }), st(), false)).toBeNull()
+  })
+
+  it('canal: toda mensagem por padrão; "só menções" e "nenhuma" filtram (conversa privada sempre avisa)', () => {
+    useApp.setState({ channels: [{ id: 'geral', name: 'geral', type: 'text', createdAt: 0 }] })
+    const plain = msg({ channelId: 'geral', content: 'bora jogar?' })
+    const mention = msg({ channelId: 'geral', content: '<@todos> reunião' })
+    expect(st().channelNotifications).toBe('all')
+    expect(messageNotification(plain, st(), false)).toEqual({ title: 'Ana em #geral', body: 'bora jogar?', target: { kind: 'channel', channelId: 'geral' } })
+    expect(messageNotification(plain, st(), true)).toBeNull()
+
+    useApp.setState({ channelNotifications: 'mentions' })
+    expect(messageNotification(plain, st(), false)).toBeNull()
+    expect(messageNotification(mention, st(), false)?.body).toBe('@todos reunião')
+
+    useApp.setState({ channelNotifications: 'none' })
+    expect(messageNotification(mention, st(), false)).toBeNull()
+    expect(messageNotification(msg(), st(), false)?.title).toBe('Ana')
+  })
+
+  it('preferência salva nesta máquina; valor estranho no armazenamento volta ao padrão', () => {
+    const data = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => data.get(k) ?? null,
+      setItem: (k: string, v: string) => void data.set(k, v),
+      removeItem: (k: string) => void data.delete(k)
+    })
+    setChannelNotifications('mentions')
+    expect(st().channelNotifications).toBe('mentions')
+    expect(JSON.parse(localStorage.getItem('concord:notifications') ?? '{}')).toEqual({ channels: 'mentions' })
+    useApp.setState({ channelNotifications: 'all' })
+    loadNotificationPreferences()
+    expect(st().channelNotifications).toBe('mentions')
+    localStorage.setItem('concord:notifications', '{"channels":"qualquer"}')
+    loadNotificationPreferences()
+    expect(st().channelNotifications).toBe('all')
+    localStorage.setItem('concord:notifications', 'não é json')
+    loadNotificationPreferences()
+    expect(st().channelNotifications).toBe('all')
+    setChannelNotifications('qualquer' as never)
+    expect(st().channelNotifications).toBe('all')
+    vi.unstubAllGlobals()
   })
 
   it('chamada: só tocando para mim, sem som do sistema', () => {

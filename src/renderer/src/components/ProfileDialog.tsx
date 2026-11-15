@@ -16,6 +16,7 @@ import { logout, notify, updateProfile } from '@/lib/client'
 import { randomTag } from '@/lib/image'
 import { useApp } from '@/store'
 import { AvatarPicker } from './AvatarPicker'
+import { ChannelNotificationSetting } from './settings/NotificationSettings'
 
 interface Props {
   open: boolean
@@ -132,6 +133,8 @@ export function ProfileDialog({ open, onOpenChange }: Props) {
               <span className="mt-1 block">O id é fixo e diferencia você de outras pessoas com o mesmo nome.</span>
             )}
           </p>
+
+          {!choosingTag && <ChannelNotificationSetting />}
 
           {error && <p className="text-sm text-destructive">{error}</p>}
 

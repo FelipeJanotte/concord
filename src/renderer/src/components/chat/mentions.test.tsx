@@ -150,8 +150,8 @@ describe('na mensagem', () => {
 })
 
 describe('notificação', () => {
-  it('menção num canal (ou @todos) notifica fora de foco com o nome do canal; sem menção, não', () => {
-    const st = { ...initialState, self: me, channels: [geral], dms: [] }
+  it('no modo "só menções": menção num canal (ou @todos) notifica com o nome do canal; sem menção, não', () => {
+    const st = { ...initialState, self: me, channels: [geral], dms: [], channelNotifications: 'mentions' as const }
     const mention = msg('m1', ana, `<@${ME}> olha isso`, { mentions: [{ accountId: ME, name: 'Eu' }] })
     expect(messageNotification(mention, st, false)).toEqual({
       title: 'Ana em #geral',

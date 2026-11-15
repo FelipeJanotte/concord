@@ -10,7 +10,7 @@ import type { AppState } from '@/store'
 import { findDm } from './dms'
 import { homeBadge } from './home'
 
-type St = Pick<AppState, 'self' | 'dms' | 'friends' | 'unread' | 'calls'> & Partial<Pick<AppState, 'channels'>>
+type St = Pick<AppState, 'self' | 'dms' | 'friends' | 'unread' | 'calls'> & Partial<Pick<AppState, 'channels' | 'channelNotifications'>>
 
 /** Texto curto da mensagem para a notificação (anexo sem texto vira "📎 1 anexo"). */
 export function messagePreview(message: Message): string {
@@ -24,13 +24,16 @@ export function messagePreview(message: Message): string {
 
 /**
  * Mensagem nova de outra pessoa, com a janela fora de foco: em conversa privada, sempre; em canal da
- * comunidade, só quando me menciona (ou @todos, B19). O resto fica só na bolinha de não lido.
+ * comunidade, conforme `channelNotifications`: toda mensagem (padrão), só quando me menciona (@eu ou
+ * @todos, B19) ou nada. O que não notifica fica só na bolinha de não lido.
  */
 export function messageNotification(message: Message, st: St, focused: boolean): NativeNotification | null {
   if (focused || !st.self || message.author.accountId === st.self.accountId) return null
   const dm = findDm(st.dms, message.channelId)
   if (dm) return { title: dm.other.name, body: messagePreview(message), target: { kind: 'dm', channelId: dm.channel.id } }
-  if (!mentionsAccount(message.content, st.self.accountId)) return null
+  const mode = st.channelNotifications ?? 'all'
+  if (mode === 'none') return null
+  if (mode === 'mentions' && !mentionsAccount(message.content, st.self.accountId)) return null
   const channel = st.channels?.find((c) => c.id === message.channelId)
   return {
     title: channel ? `${message.author.name} em #${channel.name}` : message.author.name,

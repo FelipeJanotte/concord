@@ -5,9 +5,9 @@
  * `notificationEnv`, que os testes substituem. Fora do Electron (navegador), não faz nada.
  */
 import type { NativeNotification, NotificationsBridge, NotificationTarget } from '@shared/notifications'
-import { useApp } from '@/store'
+import { useApp, type ChannelNotifyMode } from '@/store'
 import { badgeCount, callNotification, drawBadge, friendRequestNotification, messageNotification } from '../notifications'
-import { get, type AppSocket } from '../core'
+import { get, set, type AppSocket } from '../core'
 import { selectTextChannel } from './channels'
 import { openDmChat, showFriends } from './navigation'
 
@@ -70,4 +70,35 @@ export function bindNotificationEvents(s: AppSocket): void {
     syncBadge()
   }
   if (!stopClick) stopClick = notificationEnv.bridge()?.onClick(openNotificationTarget) ?? null
+}
+
+// ---------- preferência: mensagens de canal ----------
+
+const STORAGE_KEY = 'concord:notifications'
+const MODES: readonly ChannelNotifyMode[] = ['all', 'mentions', 'none']
+
+/** Lê a preferência salva nesta máquina (padrão: toda mensagem). Chamado uma vez ao carregar. */
+export function loadNotificationPreferences(): void {
+  let mode: ChannelNotifyMode = 'all'
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null
+    const saved = raw ? (JSON.parse(raw) as { channels?: unknown }).channels : undefined
+    if (MODES.includes(saved as ChannelNotifyMode)) mode = saved as ChannelNotifyMode
+  } catch {
+    // salvo corrompido ou armazenamento bloqueado: fica o padrão
+  }
+  set({ channelNotifications: mode })
+}
+
+loadNotificationPreferences()
+
+/** "Notificar mensagens de canal": toda mensagem, só menções ou nada. Vale nesta máquina. */
+export function setChannelNotifications(mode: ChannelNotifyMode): void {
+  if (!MODES.includes(mode)) return
+  set({ channelNotifications: mode })
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ channels: mode }))
+  } catch {
+    // modo privado / armazenamento bloqueado: vale só até fechar o app
+  }
 }

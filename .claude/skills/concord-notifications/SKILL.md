@@ -24,8 +24,13 @@ da Home + chamadas tocando para mim).
 
 - **Só com a janela fora de foco** (`document.hasFocus()` falso). Com o app na frente, a própria tela já mostra o
   não lido, o cartão da chamada e o selo da Home.
-- **Mensagem:** de outra pessoa, em conversa privada (`dm`) sempre; em canal da comunidade **só quando me menciona ou
-  é @todos** (B19, título "Ana em #geral", clique abre o canal: alvo `channel`). O resto fica só na bolinha.
+- **Mensagem:** de outra pessoa, em conversa privada (`dm`) sempre; em canal da comunidade conforme a preferência
+  **"Notificar mensagens de canal"** (`store.channelNotifications`): `all` = toda mensagem (**padrão**), `mentions` =
+  só quando me menciona ou é @todos (B19), `none` = nada. Título "Ana em #geral", clique abre o canal (alvo
+  `channel`). O que não notifica fica só na bolinha.
+- **Preferência:** fica em "Minha conta" (`components/settings/NotificationSettings.tsx`, `ChannelNotificationSetting`),
+  vale nesta máquina: `setChannelNotifications`/`loadNotificationPreferences` em `lib/actions/notifications.ts`
+  (`localStorage` `concord:notifications` = `{ channels }`; valor estranho volta a `all`); estado em `store/notifications.ts`.
   Título = nome da pessoa; texto = a mensagem (espaços juntos, até 120) ou "📎 N anexos". Clique abre a conversa.
 - **Chamada:** `call:updated` com `status: 'ringing'` e eu como `calleeId`. Notificação **sem som** do sistema (o app
   já toca o toque da B8). Clique abre a conversa (onde fica o "Atender").
@@ -45,7 +50,8 @@ da Home + chamadas tocando para mim).
 | Arquivo | Cobre |
 |---|---|
 | `src/main/notifications.test.ts` | Electron falso: validação, notificação mostrada e clique (restaura, foca, manda o alvo), selo no Windows (imagem, piscar e parar ao focar, imagem que não é PNG ignorada, descer não pisca) e no macOS. |
-| `src/renderer/src/lib/actions/notifications.test.ts` | Regras (texto, conversa × canal × minha, foco, chamada só tocando para mim, pedido, selo) e a ligação (eventos → notificação, pedido sem repetir, selo acompanha a store e zera ao sair, clique abre a conversa/amigos). |
+| `src/renderer/src/lib/actions/notifications.test.ts` | Regras (texto, conversa × canal × minha, foco, modos de canal `all`/`mentions`/`none`, preferência salva, chamada só tocando para mim, pedido, selo) e a ligação (eventos → notificação, pedido sem repetir, selo acompanha a store e zera ao sair, clique abre a conversa/amigos). |
+| `src/renderer/src/components/settings/NotificationSettings.test.tsx` | A escolha em "Minha conta" mostra o modo atual e troca na hora. |
 
 À mão: duas contas (skill `concord-dev-workflow`); minimize a janela de A; B manda mensagem na conversa, liga e
 envia pedido → A vê as três notificações e o número na barra de tarefas; clicar abre a conversa/Amigos.
@@ -57,4 +63,5 @@ envia pedido → A vê as três notificações e o número na barra de tarefas; 
 | Nenhuma notificação no Windows | "Notificações" do Windows desligadas para o app (Configurações → Sistema → Notificações) ou modo "Não incomodar". O `AppUserModelId` (`com.concord.app`) é definido no `main`; no app empacotado o instalador cria o atalho que o Windows exige. |
 | Aparece com o app aberto | Não deveria: a regra exige a janela fora de foco. Confira `notificationEnv.isFocused`. |
 | Selo não some | Ele segue o não lido da Home e as chamadas tocando; abrir a conversa ou responder o pedido zera. Sair da conta também zera. |
-| Pendente | Interruptor para desligar as notificações no app (hoje só pelo Windows) e som próprio por tipo. |
+| Mensagem de canal não notifica | "Notificar mensagens de canal" em "Minha conta" está em "Só menções" ou "Nenhuma", ou a janela estava em foco. |
+| Pendente | Escolha por canal (silenciar um canal só), desligar tudo no app (hoje só pelo Windows) e som próprio por tipo. |
