@@ -28,7 +28,7 @@ app ──POST /sounds (bytes, Bearer, X-Sound-Name, X-Sound-Emoji)──► ser
        ◄── { ok, sound }   e   sound:created para todos (cada um com o link assinado para si)
 
 app (na sala) ──sound:play {channelId, soundId}──► servidor
-       está na sala? pode falar (speak)? som existe? som anterior dele já acabou? limite 1/3 s?
+       está na sala? pode falar (speak)? não está silenciado por moderador? som existe? som anterior dele já acabou? limite 1/3 s?
        ──sound:played {channelId, soundId, by, accountId}──► só as conexões daquela sala
 cada app baixa GET /sounds/<id>?a&e&s (link assinado) e toca localmente
 ```
@@ -44,7 +44,8 @@ cada app baixa GET /sounds/<id>?a&e&s (link assinado) e toca localmente
   `server/files-signing.ts`); `GET /sounds/<id>` sem assinatura válida dá 404. A coleção é da comunidade inteira (não
   depende de canal).
 - **Tocar:** exige estar **naquela sala** (`Entre na sala de voz para tocar sons`) e poder **falar** nela
-  (`speak`, v2). **Sobreposição:** a mesma conta não toca outro som antes do anterior terminar (o servidor guarda
+  (`speak`, v2). Quem foi **silenciado por um moderador** (B6, `isServerMuted`) também não toca sons, em nenhuma
+  sala (`Um moderador silenciou você nas salas de voz`). **Sobreposição:** a mesma conta não toca outro som antes do anterior terminar (o servidor guarda
   até quando o som dela toca → `Espere o som anterior terminar`); pessoas diferentes podem tocar ao mesmo tempo. É **por conta, de propósito**: a mesma conta em duas janelas (até em salas diferentes) espera nas duas.
   **Na tela (B17):** o volume e o "Silenciar" que eu dei para uma pessoa (B4) valem também para os sons que ela toca.
   Além disso, `LIMITS.sound` = 1 a cada 3 s por conta.
@@ -75,8 +76,8 @@ até o som acabar (`durationMs`). Toca com `soundOutput.play(link completo, { vo
 na B4 (`setSinkId`), o volume que dei para quem tocou (`userVolumes[conta]`, 100% se não mexi); com deafen ou com a
 pessoa silenciada só para mim (`userMuted`), não toca (o indicador aparece igual).
 
-**Bloqueios na janela:** fora da sala → "Entre numa sala de voz para tocar sons."; sem `speak` → "Você não pode falar
-nesta sala, então não toca sons." (botões desligados). Lixeira só para quem enviou ou tem `manageMessages`.
+**Bloqueios na janela:** fora da sala → "Entre numa sala de voz para tocar sons."; sem `speak` (ou silenciado por um
+moderador, que chega como `canSpeak: false`) → "Você não pode falar nesta sala, então não toca sons." (botões desligados). Lixeira só para quem enviou ou tem `manageMessages`.
 
 **Enviar:** `checkSoundFile` antes de enviar (tamanho e duração; o tipo quem confere é o servidor, pelos bytes) e
 `uploadSound` limpa o nome (1–32) e o emoji (`cleanSoundEmoji`). O som enviado já entra na coleção (o
@@ -90,7 +91,7 @@ nesta sala, então não toca sons." (botões desligados). Lixeira só para quem 
 | `server/repo/sounds.test.ts` | Gravar/listar/apagar/contar, nome repetido e os `check` do banco. |
 | `src/renderer/src/lib/actions/sounds.test.ts` | App: coleção (ordem, criado/apagado, recarregar ao abrir), `sound:played` (link, saída, volume por pessoa, deafen, silenciado, outra sala, indicador até acabar), tocar/apagar e enviar (nome sugerido, tamanho, duração, token, recusas, erro do servidor). |
 | `src/renderer/src/components/voice/soundboard.test.tsx` | Tela: grade (tocar, erro, bloqueios, vazia), apagar (só o meu; `manageMessages`), enviar (prévia, nome, emoji pela grade, sem emoji, recusa local, erro), seletor de emoji (escolher/tirar, categorias, lista válida e sem repetir) e indicador. `VoiceView.test.tsx`: botão e indicador na sala. `call/call.test.tsx`: botão no painel da chamada, texto da janela e o som indo para a sala da conversa. |
-| `server/tests/sounds.test.ts` | Servidor real com LiveKit falso: envio e recusas (5 s, 512 KB, não-áudio, nome, emoji, limite por conta, CORS), lista e download assinados, tocar só para a sala, na chamada de uma conversa privada (só a outra pessoa; bloqueio recusa), fora da sala, sobreposição, sem `speak`, apagar (autor, outra pessoa, `manageMessages`). |
+| `server/tests/sounds.test.ts` | Servidor real com LiveKit falso: envio e recusas (5 s, 512 KB, não-áudio, nome, emoji, limite por conta, CORS), lista e download assinados, tocar só para a sala, na chamada de uma conversa privada (só a outra pessoa; bloqueio recusa), fora da sala, sobreposição, sem `speak`, silenciado por um moderador (e liberado ao tirar), apagar (autor, outra pessoa, `manageMessages`). |
 
 Áudios de teste são gerados na hora (`server/tests/audio-fixtures.ts`, `wav(segundos)`), sem binários no repositório.
 
