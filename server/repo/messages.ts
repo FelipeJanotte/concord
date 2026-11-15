@@ -6,7 +6,7 @@
  * conta não existe mais (ou em mensagens importadas de antes das contas).
  */
 import { and, desc, eq, isNull, lt } from 'drizzle-orm'
-import { HISTORY_PAGE_SIZE, type Attachment, type Message } from '../../src/shared/types'
+import { HISTORY_PAGE_SIZE, type Attachment, type Message, type ToolPayload } from '../../src/shared/types'
 import { db } from '../db/client'
 import { accounts, attachments, messages } from '../db/schema'
 import { avatarUrl } from './accounts'
@@ -125,6 +125,16 @@ export async function findMessageMeta(id: string): Promise<{ channelId: string; 
     .from(messages)
     .where(eq(messages.id, id))
   return row
+}
+
+/** Canal e resultado de uma mensagem de ferramenta (`kind: 'tool'`). Id inválido ou mensagem comum = undefined. */
+export async function findToolMessage(id: string): Promise<{ channelId: string; tool: ToolPayload } | undefined> {
+  if (!isUuid(id)) return undefined
+  const [row] = await db()
+    .select({ channelId: messages.channelId, tool: messages.tool })
+    .from(messages)
+    .where(and(eq(messages.id, id), eq(messages.kind, 'tool')))
+  return row?.tool ? { channelId: row.channelId, tool: row.tool } : undefined
 }
 
 /**

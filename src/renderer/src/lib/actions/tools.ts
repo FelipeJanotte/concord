@@ -1,11 +1,22 @@
 // Ferramentas do grupo (v4): pede o sorteio ao servidor. O resultado chega para todos pelo `message:new`
 // (mensagem `kind: 'tool'`); a resposta daqui serve para o painel fechar ou mostrar o erro.
-import { pollResultText, type Message, type PollResult, type TeamPlayer, type ToolResult } from '@shared/types'
-import { getSocket, requireSocket, set, type AppSocket } from '../core'
+import {
+  pollResultText,
+  type Message,
+  type MoveTeamsSkip,
+  type PollResult,
+  type TeamPlayer,
+  type ToolResult
+} from '@shared/types'
+import { get, getSocket, notify, requireSocket, set, type AppSocket } from '../core'
+import { joinVoice } from './voice'
 
 export interface DrawTeamsOptions {
   channelId: string
-  /** nomes digitados ou importados (sala de voz, online); vazios e espaços extras são limpos aqui */
+  /**
+   * nomes digitados ou importados (sala de voz, online); vazios e espaços extras são limpos aqui.
+   * Quem veio da sala de voz ou da lista de online vai com `accountId` (para "mover os times" achar a pessoa).
+   */
   players: TeamPlayer[]
   teamCount: number
   lanes?: boolean
@@ -16,7 +27,11 @@ export async function drawTeams({ channelId, players, teamCount, lanes = false }
   const clean = players
     .map((p) => ({ ...p, name: p.name.replace(/\s+/g, ' ').trim() }))
     .filter((p) => p.name)
-    .map((p) => (lanes && p.lanes?.length ? { name: p.name, lanes: p.lanes } : { name: p.name }))
+    .map((p) => ({
+      name: p.name,
+      ...(lanes && p.lanes?.length ? { lanes: p.lanes } : {}),
+      ...(p.accountId ? { accountId: p.accountId } : {})
+    }))
   const res = await requireSocket().emitWithAck('tools:teams', { channelId, players: clean, teamCount, lanes })
   if (!res.ok) throw new Error(res.error)
   return res.message
@@ -67,6 +82,27 @@ function applyPoll(channelId: string, messageId: string, result: PollResult): vo
 export function bindToolsEvents(s: AppSocket): void {
   // votos ou encerramento mudaram (já filtrado para quem vê o canal)
   s.on('poll:updated', ({ messageId, channelId, result }) => applyPoll(channelId, messageId, result))
+
+  // alguém levou os times para as salas de voz: troca de sala (só se ainda estou na voz)
+  s.on('tools:moved', ({ channelId, by }) => {
+    const { myVoiceChannelId } = get()
+    if (!myVoiceChannelId || myVoiceChannelId === channelId) return
+    notify(`${by} levou você para a sala do seu time.`, 'info')
+    void joinVoice(channelId)
+  })
+}
+
+// ---------- Mover os times para salas de voz ----------
+
+/**
+ * Leva cada time do sorteio `messageId` para uma sala de voz (`channelIds[i]` = sala do time i;
+ * `null` = esse time fica onde está). Devolve quantas pessoas trocaram de sala e quem foi pulado
+ * (com o motivo, para a tela mostrar com `MOVE_TEAMS_SKIP_LABELS`). Lança `Error` com a mensagem do servidor.
+ */
+export async function moveTeams(messageId: string, channelIds: (string | null)[]): Promise<{ moved: number; skipped: MoveTeamsSkip[] }> {
+  const res = await requireSocket().emitWithAck('tools:move-teams', { messageId, channelIds })
+  if (!res.ok) throw new Error(res.error)
+  return { moved: res.moved, skipped: res.skipped }
 }
 
 /** Cria uma enquete no canal. Opções vazias são ignoradas pelo servidor. */

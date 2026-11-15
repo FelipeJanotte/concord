@@ -1,6 +1,6 @@
 ---
 name: concord-tools
-description: Como funcionam as ferramentas do grupo do Concord (v4) — sorteio no servidor com crypto.randomInt, resultado postado como mensagem kind 'tool' (Message.tool tipado + content por extenso), o sorteador de times (A8: validação, Fisher–Yates, times equilibrados, lanes sem repetir com preferências), dado, moeda, sortear 1 nome e enquete (votos anônimos, poll:vote/close/mine/updated), e os eventos tools:*. Use ao mexer em server/modules/tools.ts, server/modules/polls.ts, server/repo/polls.ts, server/tools/**, src/shared/types/tools.ts, no kind/tool de src/shared/types/message.ts e server/db/schema/messages.ts, na barra de úteis/painel/cartão do resultado (B7/B10), ao criar uma ferramenta nova, ou ao investigar sorteio recusado, "Muitos sorteios seguidos" ou resultado diferente entre telas.
+description: Como funcionam as ferramentas do grupo do Concord (v4) — sorteio no servidor com crypto.randomInt, resultado postado como mensagem kind 'tool' (Message.tool tipado + content por extenso), o sorteador de times (A8: validação, Fisher–Yates, times equilibrados, lanes sem repetir com preferências, accountId de cada pessoa), mover os times para salas de voz (tools:move-teams/tools:moved), dado, moeda, sortear 1 nome e enquete (votos anônimos, poll:vote/close/mine/updated), e os eventos tools:*. Use ao mexer em server/modules/tools.ts, server/tools/move.ts, server/modules/polls.ts, server/repo/polls.ts, server/tools/**, src/shared/types/tools.ts, no kind/tool de src/shared/types/message.ts e server/db/schema/messages.ts, na barra de úteis/painel/cartão do resultado (B7/B10), ao criar uma ferramenta nova, ou ao investigar sorteio recusado, "Muitos sorteios seguidos", resultado diferente entre telas ou alguém que não foi levado para a sala do time.
 ---
 
 # Ferramentas do grupo (v4: A8 servidor do sorteador; B10 painel e cartão; a barra de úteis é da B7)
@@ -22,9 +22,11 @@ O app **não consegue** criar mensagem de ferramenta pelo `message:send`: o serv
 | `src/shared/types/tools.ts` | Contrato: times (`LANES`, `LANE_LABELS`, `TeamsRequest`...), dado (`DiceRequest`/`DiceResult`), moeda (`CoinRequest`/`CoinResult`), sortear 1 (`PickRequest`/`PickResult`), limites, `ToolPayload` (união por ferramenta), `ToolResult`, textos por extenso (`teamsResultText`, `diceResultText`, `coinResultText`, `pickResultText`, `toolResultText`), eventos `tools:*`. |
 | `src/shared/types/message.ts` | `MessageKind`, `Message.kind?` (ausente = `text`) e `Message.tool?`. |
 | `server/tools/teams.ts` | Funções puras: `validateTeams`, `shuffle` (Fisher–Yates), `drawTeams` (acaso injetado: `Rand`). |
+| `server/tools/move.ts` | Mover times (puras): `validateMoveRequest` (formato, salas diferentes) e `planMoves` (quem do sorteio é quem na voz: pela conta ou pelo nome/`nome#tag`). |
 | `server/tools/random.ts` | Funções puras: `validateDice`/`rollDice`, `validateCoin`/`flipCoins`, `validatePick`/`pickOne`. |
-| `server/modules/tools.ts` | Registro `TOOLS` (evento → validar + sortear) e `runTool`, o fluxo único de todas: canal, `send`, valida (antes do limite), limita, sorteia com `crypto.randomInt`, grava e emite. |
-| `src/renderer/src/lib/actions/tools.ts` | Ações do app: `drawTeams`, `rollDice(channelId, sides, count?)`, `flipCoin(channelId, count?)`, `pickOne(channelId, opções ou texto com uma por linha)`. |
+| `server/modules/tools.ts` | Registro `TOOLS` (evento → validar + sortear) e `runTool`, o fluxo único de todas: canal, `send`, valida (antes do limite), limita, sorteia com `crypto.randomInt`, grava e emite. Também `moveTeams` (`tools:move-teams`). |
+| `server/repo/messages.ts` (`findToolMessage`) | Canal e `tool` de uma mensagem de ferramenta (para achar o sorteio a mover). |
+| `src/renderer/src/lib/actions/tools.ts` | Ações do app: `drawTeams` (leva o `accountId` de quem veio da voz/online), `moveTeams(messageId, channelIds)` e o listener `tools:moved`, `rollDice(channelId, sides, count?)`, `flipCoin(channelId, count?)`, `pickOne(channelId, opções ou texto com uma por linha)`. |
 | `server/db/schema/messages.ts` | Colunas `kind` e `tool` (jsonb), com checks: `kind` conhecido e `tool` preenchido **só e sempre** em `kind = 'tool'` (migration `0007_tools`). |
 | `server/repo/messages.ts` | Grava `kind`/`tool`; na leitura, só põe os campos em mensagens de ferramenta (mensagem de texto continua igual). |
 | `server/tools/poll.ts` | Enquete (puras): `validatePoll`, `newPoll` (sem votos), `validateChoices` (voto). |
@@ -46,6 +48,34 @@ O app **não consegue** criar mensagem de ferramenta pelo `message:send`: o serv
 
 Todas respondem `ToolResult` (`{ ok, message }` ou `{ ok: false, error }`), seguem as mesmas regras de canal abaixo e
 dividem o mesmo limite (`LIMITS.tool`). Pedido inválido devolve o erro de validação **sem gastar** o limite.
+
+## Mover os times para salas de voz (`tools:move-teams`)
+
+Depois do sorteio, leva cada time para uma sala de voz: `{ messageId, channelIds }`, com `channelIds[i]` = sala do
+time `i` (na ordem de `result.teams`) ou `null` (o time fica onde está). Resposta `MoveTeamsResult`:
+`{ ok: true, moved, skipped: [{ name, reason }] }` (textos dos motivos em `MOVE_TEAMS_SKIP_LABELS`) ou o erro.
+
+**Como acha cada pessoa** (`planMoves`): entre as conexões que estão em salas de voz **da comunidade que quem pede
+vê** (chamada privada não entra). Com `accountId` no resultado do sorteio (o painel manda quando importa da sala de
+voz ou da lista de online: `TeamPlayer.accountId` → `TeamMember.accountId`), pela conta; sem, pelo nome ou por
+`nome#tag`, sem diferenciar maiúsculas. Nome que bate com duas contas = `ambiguous` (não move ninguém errado); a
+mesma conta duas vezes no sorteio = vale a primeira. Todas as conexões da conta que estão na voz vão juntas.
+
+**Quem pode mover quem:** a si mesmo, sempre; os outros, pela regra da moderação (`canModerate`: `manageMembers`
+e cargo acima; a dona move todos e não é movida) → senão `not-allowed`. A pessoa precisa de `view` + `connect` na
+sala do time → senão `no-access`. Fora da voz → `not-in-voice`. Quem já está na sala do time não conta em `moved`
+nem é pulado. Um pulado não cancela os outros.
+
+**Erros do pedido** (nada é movido nem gasta limite): "Pedido inválido", "Escolha a sala de pelo menos um time",
+"Escolha uma sala diferente para cada time", "Sorteio de times não encontrado" (não existe, não é de times ou é de
+um canal que eu não vejo), "Escolha uma sala para cada time" (quantidade ≠ times), "Sala de voz não encontrada"
+(não é voz ou eu não vejo). Pedido válido gasta `LIMITS.moderation` (o mesmo da moderação).
+
+**Como move:** o servidor **não** troca ninguém de sala no LiveKit. Ele manda `tools:moved { channelId, by }` só
+para cada conexão a mover; o app (`lib/actions/tools.ts`) avisa "<by> levou você para a sala do seu time." e chama
+`joinVoice(channelId)`, que passa pelo `voice:join` de sempre (confere a permissão de novo, emite o token novo e
+sai da sala antiga). Se a pessoa já saiu da voz ou já está na sala, o app ignora. Como o `joinVoice` abre a tela da
+sala, quem é movido passa a ver a sala nova.
 
 ## Enquete: votar e encerrar (`modules/polls.ts`)
 
@@ -100,10 +130,12 @@ No app (`lib/actions/tools.ts`): `createPoll(channelId, pergunta, opções, mult
 | `src/shared/types/tools.test.ts` | Texto por extenso de cada ferramenta e o corte em `MESSAGE_MAX_LENGTH`. |
 | `server/tests/tools.test.ts` | Servidor real: mesma mensagem para todos + histórico (times e dado), moeda e sortear 1, erros sem postar, canal de voz/privado/sem `send`, conversa privada, `message:send` não forja ferramenta. |
 | `server/tests/limits.test.ts` | `LIMITS.tool` com os limites reais, compartilhado entre ferramentas; pedido inválido não conta. |
-| `src/renderer/src/lib/actions/tools.test.ts` | Ações do app (`drawTeams`, `rollDice`, `flipCoin`, `pickOne`): parâmetros, padrões e erro. |
+| `src/renderer/src/lib/actions/tools.test.ts` | Ações do app (`drawTeams` com `accountId`, `rollDice`, `flipCoin`, `pickOne`, `moveTeams`): parâmetros, padrões e erro; `tools:moved` troca de sala e avisa (fora da voz ou já na sala: ignora). |
 | `server/tools/poll.test.ts` | Validação da enquete e da escolha do voto. |
 | `server/repo/polls.test.ts` | Votos, troca e retirada, múltipla, votos simultâneos, encerrar, `votesOf`, check do banco e cascade. |
 | `server/tests/polls.test.ts` | Servidor real: criar e votar (anônimo, `mine`), único × múltiplo, histórico + `poll:mine`, encerrar (autor, dona, recusas), canal privado e sem `send`. |
+| `server/tools/move.test.ts` | `validateMoveRequest` (formatos, salas repetidas, `null`) e `planMoves` (nome, `nome#tag`, conta, ambíguo, conta repetida, time sem sala). |
+| `server/tests/move-teams.test.ts` | Servidor real + LiveKit falso: a dona move pela conta e pelo nome, quem já está na sala, sem `manageMembers` só a si, moderador × dona, sem `connect` na sala do time, nome ambíguo, erros do pedido, sorteio de canal que não vejo. |
 | `src/renderer/src/lib/actions/polls.test.ts` | App: `poll:updated` na mensagem, criar, votar, encerrar, `loadMyPollVotes`. |
 
 ## Pendente
@@ -112,4 +144,14 @@ No app (`lib/actions/tools.ts`): `createPoll(channelId, pergunta, opções, mult
   já existem (B7). As ações do app já existem
   (`lib/actions/tools.ts`, lançam `Error` com a mensagem do servidor). O cartão lê `message.tool` quando
   `message.kind === 'tool'` e escolhe pelo `message.tool.tool`.
-- Próxima ferramenta: mover os times sorteados para salas de voz (usa o resultado do sorteador + moderação da v2).
+- Mover os times: o botão "Mover para as salas" no cartão/painel do sorteador (B10) usa `moveTeams` e mostra
+  `skipped` com `MOVE_TEAMS_SKIP_LABELS`; ao importar da sala de voz, mande o `accountId` de cada pessoa.
+
+## Depuração (mover times)
+
+| Sintoma | Causa e solução |
+|---|---|
+| Pessoa em `skipped` com `not-in-voice` | Ela não está em sala, está numa chamada privada ou numa sala que você não vê; ou o nome no sorteio não bate (use `nome#tag` ou importe da sala). |
+| `ambiguous` | Duas contas na voz com o mesmo nome: sorteie com `accountId` (importar da sala) ou digite `nome#tag`. |
+| `not-allowed` | Sem `manageMembers`, ou a pessoa tem cargo igual/acima do seu, ou é a dona. |
+| Recebeu `tools:moved` mas não trocou de sala | O `voice:join` foi recusado (perdeu `connect` no meio) ou o LiveKit falhou: o aviso do `joinVoice` aparece na tela. |
