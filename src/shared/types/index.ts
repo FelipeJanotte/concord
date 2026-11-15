@@ -16,6 +16,7 @@ import type { ModerationClientEvents, ModerationServerEvents } from './moderatio
 import type { PermissionsClientEvents, PermissionsServerEvents } from './permissions'
 import type { PreferencesClientEvents, PreferencesServerEvents } from './preferences'
 import type { PresenceClientEvents, PresenceServerEvents } from './presence'
+import type { ReactionsClientEvents, ReactionsServerEvents } from './reactions'
 import type { SoundsClientEvents, SoundsServerEvents } from './sounds'
 import type { ToolsClientEvents, ToolsServerEvents } from './tools'
 import type { VoiceClientEvents, VoiceServerEvents } from './voice'
@@ -32,6 +33,7 @@ export * from './moderation'
 export * from './permissions'
 export * from './preferences'
 export * from './presence'
+export * from './reactions'
 export * from './sounds'
 export * from './theme'
 export * from './tools'
@@ -49,6 +51,7 @@ export interface ServerToClientEvents
     PermissionsServerEvents,
     PreferencesServerEvents,
     PresenceServerEvents,
+    ReactionsServerEvents,
     SoundsServerEvents,
     ToolsServerEvents,
     VoiceServerEvents {}
@@ -64,6 +67,7 @@ export interface ClientToServerEvents
     PermissionsClientEvents,
     PreferencesClientEvents,
     PresenceClientEvents,
+    ReactionsClientEvents,
     SoundsClientEvents,
     ToolsClientEvents,
     VoiceClientEvents {}

@@ -2,6 +2,7 @@
 import type { User } from './account'
 import type { Attachment } from './attachment'
 import type { OkResult } from './permissions'
+import type { Reaction } from './reactions'
 import type { ToolPayload } from './tools'
 
 export const MESSAGE_MAX_LENGTH = 2000
@@ -56,6 +57,8 @@ export interface Message {
   editedAt?: number
   /** a mensagem que esta responde (B18); ausente = não é resposta */
   replyTo?: ReplyPreview
+  /** reações (A16), na ordem em que cada emoji apareceu; ausente = nenhuma */
+  reactions?: Reaction[]
 }
 
 /** `message:send`: texto e/ou anexos já enviados por `POST /uploads` (do próprio usuário, ainda não usados). */

@@ -11,6 +11,7 @@ import { db } from '../db/client'
 import { accounts, attachments, messages } from '../db/schema'
 import { avatarUrl } from './accounts'
 import { attachmentsByMessage, toAttachment } from './attachments'
+import { reactionsByMessage } from './reactions'
 import { isUuid } from './util'
 
 export interface HistoryOptions {
@@ -51,6 +52,7 @@ export async function listMessages(
   const hasMore = rows.length > size
   const page = rows.slice(0, size).reverse()
   const files = await attachmentsByMessage(page.map(({ m }) => m.id))
+  const reactions = await reactionsByMessage(page.map(({ m }) => m.id))
   const replies = await replyPreviews(page.map(({ m }) => m.replyToId).filter((id): id is string => !!id))
   return {
     hasMore,
@@ -62,6 +64,7 @@ export async function listMessages(
       ...(m.kind === 'tool' && m.tool ? { kind: 'tool' as const, tool: m.tool } : {}),
       createdAt: m.createdAt.getTime(),
       ...(m.editedAt ? { editedAt: m.editedAt.getTime() } : {}),
+      ...(reactions.get(m.id) ? { reactions: reactions.get(m.id) } : {}),
       ...(m.replyToId ? { replyTo: replies.get(m.replyToId) ?? deletedReply(m.replyToId) } : {}),
       author: a
         ? { id: a.id, accountId: a.id, name: a.name, tag: a.tag, color: a.color, avatarUrl: avatarUrl(a) }

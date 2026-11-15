@@ -18,6 +18,8 @@ export interface MessagesState {
   replyingTo: Record<string, ReplyPreview>
   /** mensagem sendo editada no lugar (A15); só uma por vez */
   editingMessageId: string | null
+  /** mensagem com o seletor de reação aberto (A16); só um por vez */
+  reactionPickerFor: string | null
 }
 
 export const messagesInitial: MessagesState = {
@@ -26,5 +28,6 @@ export const messagesInitial: MessagesState = {
   loadingOlder: {},
   typing: {},
   replyingTo: {},
-  editingMessageId: null
+  editingMessageId: null,
+  reactionPickerFor: null
 }

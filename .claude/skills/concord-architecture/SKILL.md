@@ -51,7 +51,7 @@ cadastro/login (antes de existir socket) e **Socket.IO** para o resto. Detalhes 
 - `Channel { id, name, type: 'text' | 'voice', createdAt }`
 - `User { id, accountId, name, tag, color, avatarUrl }`: `id` é o `socket.id` (presença/voz); `accountId` identifica a conta. A pessoa aparece como `nome#tag`. A tag (1 a 5 letras/números) é **única entre todas as contas e imutável**: é o que diferencia pessoas com o mesmo nome. Exceção: conta criada pelo Google recebe tag provisória (`tagLocked: false`) e escolhe a definitiva uma única vez.
 - `AccountInfo`: dados da própria conta (e-mail, `hasPassword`, `hasGoogle`, `tagLocked`), recebidos só pelo dono no `hello`.
-- `Message { id, channelId, author: User, content, attachments, createdAt, kind?, tool?, editedAt?, replyTo? }` (`editedAt` = editada, A15; `replyTo` = resumo da mensagem respondida, B18; skill `concord-messages`) (`kind: 'tool'` = resultado de ferramenta da v4, com `tool` tipado; ausente = texto): o banco guarda `author_id` (conta) e o histórico junta com a conta, então mostra nome/foto **atuais**. Em `message:new`, `author.id` é o socket de quem enviou; no histórico é o id da conta. Identifique a pessoa sempre por `author.accountId`.
+- `Message { id, channelId, author: User, content, attachments, createdAt, kind?, tool?, editedAt?, replyTo? }` (`editedAt` = editada, A15; `replyTo` = resumo da mensagem respondida, B18; `reactions` = reações, A16; skill `concord-messages`) (`kind: 'tool'` = resultado de ferramenta da v4, com `tool` tipado; ausente = texto): o banco guarda `author_id` (conta) e o histórico junta com a conta, então mostra nome/foto **atuais**. Em `message:new`, `author.id` é o socket de quem enviou; no histórico é o id da conta. Identifique a pessoa sempre por `author.accountId`.
 - Histórico paginado: `message:history { channelId, before? }` → `{ messages, hasMore }`, 50 por página (`HISTORY_PAGE_SIZE`), da mais antiga para a mais nova. A ordem vem da coluna `seq` (ordem de chegada). Sem limite de mensagens guardadas.
 
 ## Permissões (v2)
@@ -129,6 +129,7 @@ Cliente → servidor (`ClientToServerEvents`):
 | `call:accept` / `call:decline` / `call:cancel` / `call:end` | `channelId` | `CallResult` / `OkResult` | atender (`active`), recusar, cancelar, desligar; o fim manda `call:ended` e tira os dois da sala da conversa |
 | `call:list` | — | `CallInfo[]` | chamadas em andamento das minhas conversas (o app pede depois do `hello`) |
 | `message:edit` | `{ messageId, content }` | `OkResult` | só o autor, só texto, ainda com `view`+`send`; `message:edited { channelId, messageId, content, editedAt }` para quem vê o canal (A15, skill `concord-messages`) |
+| `message:react` | `{ messageId, emoji, on }` | `OkResult` | liga/tira a minha reação (`view` + `send`, até 20 emojis diferentes, `LIMITS.reaction`); `message:reactions { channelId, messageId, reactions }` (lista inteira) para quem vê o canal (A16, skill `concord-messages`) |
 | `message:delete` | `{ messageId }` | `OkResult` | o autor ou `manageMessages` (em DM só o autor); apaga os anexos; `message:deleted` para quem vê o canal |
 
 Servidor → cliente (`ServerToClientEvents`): `channel:created`, `channel:deleted`, `user:joined`, `user:left`,

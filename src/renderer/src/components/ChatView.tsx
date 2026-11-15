@@ -12,6 +12,7 @@ import { Composer } from './chat/Composer'
 import { MessageActions } from './chat/MessageActions'
 import { MessageAttachments } from './chat/MessageAttachments'
 import { MessageEditor } from './chat/MessageEditor'
+import { Reactions } from './chat/Reactions'
 import { messageElementId, ReplyQuote } from './chat/ReplyPreview'
 import { ToolResultCard } from './tools/ToolResultCard'
 import { UserAvatar } from './UserAvatar'
@@ -204,7 +205,14 @@ function DayDivider({ ts }: { ts: number }) {
 function MessageBody({ message }: { message: Message }) {
   const editing = useApp((s) => s.editingMessageId === message.id)
   // resultado de ferramenta (v4): cartão próprio em vez do texto por extenso
-  if (message.kind === 'tool' && message.tool) return <ToolResultCard message={message} />
+  if (message.kind === 'tool' && message.tool) {
+    return (
+      <>
+        <ToolResultCard message={message} />
+        <Reactions message={message} />
+      </>
+    )
+  }
   return (
     <>
       {editing ? (
@@ -222,6 +230,7 @@ function MessageBody({ message }: { message: Message }) {
         )
       )}
       <MessageAttachments attachments={message.attachments ?? []} />
+      <Reactions message={message} />
     </>
   )
 }
