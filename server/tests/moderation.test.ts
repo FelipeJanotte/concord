@@ -9,10 +9,12 @@ import { expectNoEvent, TestServer, waitFor, type ClientSocket, type TestUser } 
 
 const livekit = new FakeLiveKit()
 let server: TestServer
+let liveKitApiUrl = ''
 const open: ClientSocket[] = []
 
 beforeAll(async () => {
   const apiUrl = await livekit.start()
+  liveKitApiUrl = apiUrl
   server = await withEnv(
     { LIVEKIT_URL, LIVEKIT_API_URL: apiUrl, LIVEKIT_API_KEY, LIVEKIT_API_SECRET },
     () => TestServer.start()
@@ -248,5 +250,39 @@ describe('apagar mensagem', () => {
       ok: false,
       error: 'Mensagem não encontrada'
     })
+  })
+})
+
+describe('silêncio pelo servidor guardado no banco', () => {
+  const restart = (): Promise<void> =>
+    // o LiveKit falso entra pelo ambiente: reiniciar precisa das mesmas variáveis
+    withEnv({ LIVEKIT_URL, LIVEKIT_API_URL: liveKitApiUrl, LIVEKIT_API_KEY, LIVEKIT_API_SECRET }, () => server.restart())
+
+  async function reconnect(u: TestUser): Promise<TestUser> {
+    const socket = await server.connect(u.token)
+    open.push(socket)
+    const hello = await socket.emitWithAck('hello')
+    return { ...u, socket, self: hello.self, account: hello.account, state: hello.state }
+  }
+
+  it('continua valendo depois de reiniciar o servidor; tirar o silêncio também fica guardado', async () => {
+    const owner = await server.asOwner()
+    const ana = await user('Ana')
+    const sala = await room()
+    await join(ana, sala.id)
+    expect(await owner.socket.emitWithAck('moderation:voice-mute', { accountId: ana.self.accountId, muted: true })).toEqual({ ok: true })
+
+    await restart()
+    const ana2 = await reconnect(ana)
+    expect((await join(ana2, sala.id)).canSpeak).toBe(false)
+    const owner2 = await server.asOwner()
+    const states = waitFor(owner2.socket, 'voice:state', (s) => stateOf(s, ana2)?.serverMuted === false)
+    expect(await owner2.socket.emitWithAck('moderation:voice-mute', { accountId: ana.self.accountId, muted: false })).toEqual({ ok: true })
+    await states
+
+    await restart()
+    const ana3 = await reconnect(ana)
+    expect((await join(ana3, sala.id)).canSpeak).toBe(true)
+    ana3.socket.emit('voice:leave')
   })
 })

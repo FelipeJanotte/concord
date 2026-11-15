@@ -300,7 +300,7 @@ Itens pequenos que ficaram anotados nas skills (cada um com a skill da área atu
 | Várias lanes preferidas por pessoa no sorteador (o contrato já aceita a lista) | A | B10 | `concord-tools` |
 | Atalho no `+` do composer abrindo o painel das ferramentas | A | v4 | `concord-tools` |
 | Overlay: escolher outro atalho, arrastar a posição e acompanhar a troca de tema ao vivo | A | B15 | `concord-overlay` |
-| Silêncio pelo servidor guardado no banco (hoje some ao reiniciar o servidor) | B | B6 | `concord-moderation` |
+| Silêncio pelo servidor guardado no banco ✅ (branch `v6/silencio-no-banco`; tabela `server_mutes`) | B | B6 | `concord-moderation` |
 
 ## Verificação (em toda task)
 

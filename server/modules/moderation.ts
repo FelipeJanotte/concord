@@ -64,7 +64,7 @@ export const moderationModule: ServerModule = {
           const visible = await Promise.all(rooms.map((id) => allowed(actor.accountId, 'view', id)))
           if (!visible.some(Boolean)) return ack(fail('Essa pessoa não está numa sala de voz'))
         }
-        setServerMuted(io, accountId, payload.muted)
+        await setServerMuted(io, accountId, payload.muted, actor.accountId)
         ack({ ok: true })
       })
     })

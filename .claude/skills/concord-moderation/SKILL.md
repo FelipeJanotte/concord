@@ -1,6 +1,6 @@
 ---
 name: concord-moderation
-description: Como funciona a moderação do Concord (v2, B6) — expulsar da voz, silenciar pelo servidor (para todos, por conta, também no LiveKit) e apagar mensagem (autor ou manageMessages; em DM só o autor), com as regras canModerate/canDeleteMessage, eventos moderation:voice-kick, moderation:voice-mute, moderation:kicked, message:delete e message:deleted. Use ao mexer em server/modules/moderation.ts, em kickFromVoice/setServerMuted/serverMuted de server/modules/voice.ts, em deleteMessage/findMessageMeta de server/repo/messages.ts, em src/shared/types/moderation.ts, lib/actions/moderation.ts, components/voice/ModerationMenu.tsx, components/chat/MessageActions.tsx, ou ao investigar "Você não pode expulsar essa pessoa", alguém que não consegue se dessilenciar, mensagem que não some para os outros ou anexo que fica no disco.
+description: Como funciona a moderação do Concord (v2, B6) — expulsar da voz, silenciar pelo servidor (para todos, por conta, também no LiveKit, guardado no banco em server_mutes) e apagar mensagem (autor ou manageMessages; em DM só o autor), com as regras canModerate/canDeleteMessage, eventos moderation:voice-kick, moderation:voice-mute, moderation:kicked, message:delete e message:deleted. Use ao mexer em server/modules/moderation.ts, em kickFromVoice/setServerMuted/serverMuted de server/modules/voice.ts, em server/repo/moderation.ts ou server/db/schema/moderation.ts, em deleteMessage/findMessageMeta de server/repo/messages.ts, em src/shared/types/moderation.ts, lib/actions/moderation.ts, components/voice/ModerationMenu.tsx, components/chat/MessageActions.tsx, ou ao investigar "Você não pode expulsar essa pessoa", alguém que não consegue se dessilenciar, mensagem que não some para os outros ou anexo que fica no disco.
 ---
 
 # Moderação (v2, B6)
@@ -19,7 +19,9 @@ Três ações para manter a comunidade em ordem, todas decididas no **servidor**
 | `src/shared/types/moderation.ts` | Contrato: `canModerate(access, actor, target)`, `canDeleteMessage(access, actor, authorAccountId)`, `ModerationClientEvents`/`ModerationServerEvents`. |
 | `src/shared/types/voice.ts` | `VoiceState.serverMuted?` (ausente = false). |
 | `server/modules/moderation.ts` | Handlers `moderation:voice-kick`, `moderation:voice-mute`, `message:delete`; limite `LIMITS.moderation`. |
-| `server/modules/voice.ts` | `serverMuted` (Set de contas, em memória), `isServerMuted`, `kickFromVoice`, `setServerMuted`. O silêncio entra no `voicePermissions` (`canSpeak = speak && !serverMuted`). |
+| `server/modules/voice.ts` | `serverMuted` (Set de contas: cache do banco, carregado no `init` do módulo), `isServerMuted`, `kickFromVoice`, `setServerMuted` (async: grava no banco e depois aplica). O silêncio entra no `voicePermissions` (`canSpeak = speak && !serverMuted`). |
+| `server/db/schema/moderation.ts` | Tabela `server_mutes`: `account_id` (chave; apagar a conta apaga o silêncio), `muted_by` (quem silenciou; vira null se essa conta for apagada), `created_at`. Migration `0012_server_mutes`. |
+| `server/repo/moderation.ts` | `listServerMutes()` (boot) e `setServerMute(accountId, muted, mutedBy)` (repetir não duplica; id inválido ou conta inexistente não faz nada). |
 | `server/repo/messages.ts` | `findMessageMeta` (canal e autor) e `deleteMessage` (apaga e devolve os ids dos anexos). |
 | `src/renderer/src/lib/actions/moderation.ts` | `kickFromVoice`, `setServerMuted`, `deleteMessage` (erro do servidor vira exceção) e os listeners `message:deleted` / `moderation:kicked`. |
 | `src/renderer/src/lib/actions/voice.ts` | `mutedByModerator` (do meu `VoiceState.serverMuted`): troca os avisos genéricos por "Um moderador silenciou você nas salas de voz." |
@@ -51,7 +53,9 @@ Silenciar exige que a pessoa esteja numa sala que eu vejo; **tirar** o silêncio
 
 ## Fluxo do silêncio pelo servidor
 
-1. `setServerMuted(io, accountId, true)` põe a conta no Set e chama `applyVoiceAccess`.
+1. `setServerMuted(io, accountId, true, quemSilenciou)` grava em `server_mutes`, põe a conta no Set e chama `applyVoiceAccess`.
+   Se a gravação falhar, nada muda (o erro vai para o `guard`). Ao subir, o servidor carrega a tabela no Set: o
+   silêncio **sobrevive a reiniciar o servidor**.
 2. Para cada conexão dela em sala: `voicePermissions` agora dá `canSpeak: false` → `UpdateParticipant` no LiveKit
    sem a fonte `MICROPHONE` (o microfone é despublicado e não volta: **mais forte** que `mutePublishedTrack`, que a
    pessoa desfaria), `muted: true` e `serverMuted: true` no `VoiceState`.
@@ -77,8 +81,8 @@ Silenciar exige que a pessoa esteja numa sala que eu vejo; **tirar** o silêncio
 ## Limites e problemas conhecidos
 
 - `LIMITS.moderation`: 20 ações seguidas por conta, depois 1 por segundo (vale para as três ações).
-- O silêncio pelo servidor fica **em memória**: reiniciar o servidor tira todos os silêncios. Persistir no banco fica
-  para depois (tabela por conta, como os cargos).
+- O silêncio pelo servidor fica no banco (`server_mutes`) e vale até alguém tirar, mesmo depois de reiniciar o servidor.
+  O `muted_by` é guardado para um futuro log de moderação; ainda não aparece na tela.
 - Não há "expulsar da comunidade" nem banimento: só da sala de voz.
 - Apagar não tem "desfazer" nem registro de quem apagou (log de moderação fica para depois).
 
@@ -86,7 +90,8 @@ Silenciar exige que a pessoa esteja numa sala que eu vejo; **tirar** o silêncio
 
 | Arquivo | Cobre |
 |---|---|
-| `server/tests/moderation.test.ts` | Servidor real + LiveKit falso: expulsar (aviso com o nome, sai da lista, `RemoveParticipant`), hierarquia (sem permissão, dona, cargo igual, si mesmo), quem não está em sala; silenciar (lista e `UpdateParticipant` sem microfone, não se dessilencia, vale ao voltar, tirar devolve a fala), validação; apagar (autor, `manageMessages`, canal que não vê sem vazar evento, arquivo do anexo apagado, id inválido). |
+| `server/tests/moderation.test.ts` | Servidor real + LiveKit falso: expulsar (aviso com o nome, sai da lista, `RemoveParticipant`), hierarquia (sem permissão, dona, cargo igual, si mesmo), quem não está em sala; silenciar (lista e `UpdateParticipant` sem microfone, não se dessilencia, vale ao voltar, tirar devolve a fala, **continua depois de reiniciar o servidor e tirar também fica guardado**), validação; apagar (autor, `manageMessages`, canal que não vê sem vazar evento, arquivo do anexo apagado, id inválido). |
+| `server/repo/moderation.test.ts` | Repo no banco de verdade: gravar/repetir/tirar, id inválido e conta inexistente, apagar a conta silenciada (some) e a de quem silenciou (fica). |
 | `src/renderer/src/lib/actions/moderation.test.ts` | `message:deleted` na store, `moderation:kicked` (sai e avisa uma vez; de outra sala ignora), avisos de "silenciado por moderador" e o payload das ações. |
 | `src/renderer/src/components/voice/moderation.test.tsx` | Itens do botão direito (aparecem/somem pela hierarquia, mandam os eventos, confirmação), escudo na grade, lixeira (autor, `manageMessages`, DM sem moderação). |
 
@@ -101,5 +106,5 @@ B sai e vê "<dona> tirou você da sala de voz.". B manda uma mensagem e apaga p
 | "Você não pode expulsar/silenciar essa pessoa" | Sem `manageMembers`, ou o cargo mais alto do alvo é igual ou maior que o seu, ou é a dona. |
 | "Essa pessoa não está numa sala de voz" | Ela não está em sala, ou está numa sala que você não vê. |
 | Pessoa silenciada continua falando | O LiveKit não recebeu o `UpdateParticipant`: veja o log `[livekit]` do servidor (`LIVEKIT_API_URL`, chave). |
-| Silêncio sumiu sozinho | O servidor reiniciou (o silêncio fica em memória). |
+| Silêncio sumiu sozinho | Alguém tirou, ou a conta foi apagada. Confira a tabela `server_mutes` (o servidor só lê no boot: editar o banco à mão exige reiniciar). |
 | Mensagem apagada continua na tela de alguém | Essa conexão não vê o canal agora ou estava sem histórico carregado (ao carregar, ela já não vem). |
