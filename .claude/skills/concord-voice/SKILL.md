@@ -180,6 +180,15 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
     que está em destaque).
   - "Ver grade": todas as telas lado a lado na grade (antes dos participantes); clicar numa volta ao destaque.
   - Escolha e grade são estado local do `VoiceGrid` (não salvos): ao trocar de sala, volta ao automático.
+- **Grade centralizada com tamanho automático** (`TileGrid` em `VoiceGrid.tsx` + `lib/tile-layout.ts`): os quadros
+  (pessoas e, na "Ver grade", as telas) ficam centralizados na horizontal e na vertical, e o tamanho sai de
+  `bestTileLayout(quantos, largura, altura)`: testa de 1 a N colunas e fica com a que deixa o quadro 16:9 maior sem
+  passar da área (empate: menos colunas). A área é medida com `useElementSize` (`ResizeObserver`), então os quadros
+  crescem/encolhem com a janela e com quem entra/sai; a última linha fica no meio. Largura vai em `--tile-w`
+  (`data-columns` mostra as colunas). Gente demais: mínimo de 160 px e a grade rola (`align-content: safe center`
+  não corta o topo). No painel da chamada privada (`CallPanel`, sem altura definida) a `VoiceGrid` recebe
+  `fill={false}`: só a largura conta, com máximo de 320 px, e no empate prefere mais colunas (lado a lado). Antes de
+  medir (ou sem `ResizeObserver`), 240 px.
 - **Tela cheia** (`lib/fullscreen.ts`: `useFullscreen`, `toggleFullscreen`): vai para tela cheia o **quadro inteiro**
   do `ScreenStage` (não só o `<video>`), então a barra com o seletor e "Sair da tela cheia" continua à vista. Botão,
   duplo clique no vídeo ou Esc. Recusa do sistema vira o aviso "Não foi possível abrir em tela cheia.". **No
@@ -190,7 +199,8 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
 - **Testes:** `src/main/screen-share.test.ts` (controlador, sem Electron), `lib/voice.test.ts` (bloco "tela"),
   `lib/actions/screen.test.ts` (botão, seletor, erros, aviso único ao servidor), `components/voice/voice.test.tsx`
   (jsdom: seletor, miniatura, `featuredScreen`, destaque com "Assistindo" e seletor, "Assistir" no quadro, "Ver
-  grade", tela que acaba, tela cheia do quadro com botão/duplo clique e a recusa), `src/main/permissions.test.ts`
+  grade", tela que acaba, tela cheia do quadro com botão/duplo clique e a recusa, grade centralizada com o tamanho
+  medido), `lib/tile-layout.test.ts` (colunas e tamanho, limites, sem altura, gente demais), `src/main/permissions.test.ts`
   e `server/tests/voice.test.ts` (`voice:sharing`). À mão: três janelas na mesma sala com o LiveKit rodando; duas
   compartilham, a terceira troca pelo seletor e pelo "Assistir", usa "Ver grade", entra e sai da tela cheia (botão,
   duplo clique, Esc) e o "ao vivo" some ao parar.
