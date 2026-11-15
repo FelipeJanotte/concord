@@ -23,7 +23,7 @@ da Home + chamadas tocando para mim).
   **"Notificar mensagens de canal"** (`store.channelNotifications`): `all` = toda mensagem (**padrão**), `mentions` =
   só quando me menciona ou é @todos (B19), `none` = nada. Título "Ana em #geral", clique abre o canal (alvo
   `channel`). O que não notifica fica só na bolinha.
-- **Preferência:** fica em "Minha conta" (`components/settings/NotificationSettings.tsx`, `ChannelNotificationSetting`),
+- **Preferência:** fica em Configurações → "Notificações" (`components/settings/NotificationSettings.tsx`, `ChannelNotificationSetting`, `docs/areas/settings.md`),
   vale nesta máquina: `setChannelNotifications`/`loadNotificationPreferences` em `lib/actions/notifications.ts`
   (`localStorage` `concord:notifications` = `{ channels }`; valor estranho volta a `all`); estado em `store/notifications.ts`.
   Título = nome da pessoa; texto = a mensagem (espaços juntos, até 120) ou "📎 N anexos". Clique abre a conversa.
@@ -46,7 +46,7 @@ da Home + chamadas tocando para mim).
 |---|---|
 | `src/main/notifications.test.ts` | Electron falso: validação, notificação mostrada e clique (restaura, foca, manda o alvo), selo no Windows (imagem, piscar e parar ao focar, imagem que não é PNG ignorada, descer não pisca) e no macOS. |
 | `src/renderer/src/lib/actions/notifications.test.ts` | Regras (texto, conversa × canal × minha, foco, modos de canal `all`/`mentions`/`none`, preferência salva, chamada só tocando para mim, pedido, selo) e a ligação (eventos → notificação, pedido sem repetir, selo acompanha a store e zera ao sair, clique abre a conversa/amigos). |
-| `src/renderer/src/components/settings/NotificationSettings.test.tsx` | A escolha em "Minha conta" mostra o modo atual e troca na hora. |
+| `src/renderer/src/components/settings/NotificationSettings.test.tsx` | A escolha em Configurações → "Notificações" mostra o modo atual e troca na hora. |
 
 À mão: duas contas (`docs/areas/dev-workflow.md`); minimize a janela de A; B manda mensagem na conversa, liga e
 envia pedido → A vê as três notificações e o número na barra de tarefas; clicar abre a conversa/Amigos.
@@ -58,5 +58,5 @@ envia pedido → A vê as três notificações e o número na barra de tarefas; 
 | Nenhuma notificação no Windows | "Notificações" do Windows desligadas para o app (Configurações → Sistema → Notificações) ou modo "Não incomodar". O `AppUserModelId` (`com.concord.app`) é definido no `main`; no app empacotado o instalador cria o atalho que o Windows exige. |
 | Aparece com o app aberto | Não deveria: a regra exige a janela fora de foco. Confira `notificationEnv.isFocused`. |
 | Selo não some | Ele segue o não lido da Home e as chamadas tocando; abrir a conversa ou responder o pedido zera. Sair da conta também zera. |
-| Mensagem de canal não notifica | "Notificar mensagens de canal" em "Minha conta" está em "Só menções" ou "Nenhuma", ou a janela estava em foco. |
+| Mensagem de canal não notifica | "Notificar mensagens de canal" em Configurações → "Notificações" está em "Só menções" ou "Nenhuma", ou a janela estava em foco. |
 | Pendente | Escolha por canal (silenciar um canal só), desligar tudo no app (hoje só pelo Windows) e som próprio por tipo. |

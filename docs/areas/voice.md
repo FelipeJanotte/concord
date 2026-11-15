@@ -245,7 +245,7 @@ duas barras laterais), como no Discord:
   Configurações de voz e Desconectar;
 - linha de baixo: **Câmera** (só com `voiceCanVideo`), **Compartilhar a tela** (só com `voiceCanShare`) e **Efeitos
   sonoros**, verdes quando ligados (`aria-pressed`). Microfone e áudio ficam nos botões do `UserPanel`.
-- **O `ScreenPicker` e o `Soundboard` ficam montados uma vez só, no `UserPanel`** (junto do `DeviceSettings`), e não
+- **O `ScreenPicker` e o `Soundboard` ficam montados uma vez só, no `UserPanel`** (junto das Configurações, `UserSettingsDialog`), e não
   mais dentro da `VoiceView`/`CallPanel`: antes, fora da sala o `toggleScreenShare` abria `screenPickerOpen` sem
   nenhum seletor na tela. Não monte de novo em outra tela (abriria duas janelas).
 - **Testes:** `components/voice-panel.test.tsx` (botões, permissões, câmera, seletor de tela e sons abrindo do painel,
@@ -255,9 +255,10 @@ duas barras laterais), como no Discord:
 
 **Só cliente:** nada vai para o servidor e não há evento novo.
 
-- **Configurações de voz** (`components/voice/DeviceSettings.tsx`): microfone e saída. Aberto pelo botão de ondas
-  sonoras na `VoiceView` e no painel "Voz conectada" (`VoiceStatusPanel`). Fica montado no `UserPanel`, então dá
-  para escolher o microfone antes de entrar numa sala. Fora da rede local, a voz precisa do LiveKit com TURN e domínio com HTTPS (A14: `docs/areas/deploy.md`).
+- **Voz e vídeo** (`components/settings/VoiceSettings.tsx`, seção das Configurações, `docs/areas/settings.md`):
+  microfone e saída. O botão de ondas sonoras na `VoiceView`, no painel da chamada e no "Voz conectada"
+  (`VoiceStatusPanel`) abre as Configurações direto nessa seção (`openDeviceSettings`). As Configurações ficam
+  montadas no `UserPanel`, então dá para escolher o microfone antes de entrar numa sala. Fora da rede local, a voz precisa do LiveKit com TURN e domínio com HTTPS (A14: `docs/areas/deploy.md`).
   Também tem a seção "Sobreposição em jogos" (overlay, B15:
   `docs/areas/overlay.md`).
   **Altura:** a janela tem muitas seções (dispositivos, volumes, ruído, pressione para falar, sons, sobreposição) e
@@ -277,8 +278,8 @@ duas barras laterais), como no Discord:
 | Peça | Papel |
 |---|---|
 | `lib/voice.ts` | `listDevices(kind)`, `setInputDevice(id)`, `setOutputDevice(id)`, `setUserVolume(accountId, 0–1)`, `setUserMuted(accountId, bool)`. `null` = padrão do sistema. |
-| `lib/actions/devices.ts` | `listAudioDevices`, `selectAudioInput`, `selectAudioOutput`, `setUserVolume`, `setUserMuted`, `open/closeDeviceSettings`, `canChooseAudioOutput`, `loadAudioPreferences`. |
-| `store/devices.ts` | `audioInputId`, `audioOutputId`, `userVolumes[accountId]`, `userMuted[accountId]`, `deviceSettingsOpen`. |
+| `lib/actions/devices.ts` | `listAudioDevices`, `selectAudioInput`, `selectAudioOutput`, `setUserVolume`, `setUserMuted`, `openDeviceSettings` (abre as Configurações em "Voz e vídeo"), `canChooseAudioOutput`, `loadAudioPreferences`. |
+| `store/devices.ts` | `audioInputId`, `audioOutputId`, `userVolumes[accountId]`, `userMuted[accountId]`. |
 
 - **Microfone:** fora da sala, a escolha vale para a próxima entrada (`createMicTrack(deviceId)`); dentro, troca na
   hora com `room.switchActiveDevice('audioinput', id)` (sem microfone, "só ouvindo", não mexe). Se o escolhido
@@ -300,7 +301,7 @@ duas barras laterais), como no Discord:
   vêm vazios: viram "Microfone 1", "Saída 1" e o diálogo explica. Ligar/desligar um fone com o diálogo aberto
   atualiza a lista (`devicechange`). Escolha salva de um aparelho desconectado aparece como "Dispositivo desconectado".
 - **Testes:** `lib/voice.test.ts` (blocos "dispositivos e volume" e "silenciar alguém"), `lib/actions/devices.test.ts`
-  (preferências, silenciar, erros, filtro da lista), `components/voice/DeviceSettings.test.tsx` (jsdom: seletores,
+  (preferências, silenciar, erros, filtro da lista), `components/settings/VoiceSettings.test.tsx` (jsdom: seletores,
   desconectado, sem `setSinkId`, altura limitada com as seções na área que rola) e `components/voice/MemberContextMenu.test.tsx` (jsdom: menu no tile e na barra
   lateral, só "Ver perfil" em si mesmo, volume, silenciar mantendo o volume e o menu aberto, cartão de perfil).
   À mão: trocar de fone no meio da conversa e conferir que o outro continua ouvindo; botão direito numa pessoa,
@@ -308,7 +309,7 @@ duas barras laterais), como no Discord:
 
 ## Volume do microfone e volume de saída
 
-Dois controles em Configurações de voz (`VolumeSettings` em `DeviceSettings.tsx`), cada um com "Voltar para 100%".
+Dois controles em Configurações de voz (`VolumeSettings` em `settings/VoiceSettings.tsx`), cada um com "Voltar para 100%".
 **Só cliente:** nenhum evento novo; salvos em `concord:audio` como `micGain` e `outputVolume`.
 
 | Peça | Papel |
@@ -331,7 +332,7 @@ Dois controles em Configurações de voz (`VolumeSettings` em `DeviceSettings.ts
 - **Testes:** `lib/mic-gain.test.ts` (limites, ligação dos nós, `setGain`, `destroy`), `lib/noise/noise.test.ts` (nó de
   volume no processador de ruído), `lib/voice.test.ts` (bloco "volume do microfone e de saída": com/sem supressão,
   antes de publicar, troca ao desligar a supressão, limites, pessoa × saída, áudio da tela),
-  `lib/actions/devices.test.ts` (salvar, reabrir, dados ruins, erro), `components/voice/DeviceSettings.test.tsx`
+  `lib/actions/devices.test.ts` (salvar, reabrir, dados ruins, erro), `components/settings/VoiceSettings.test.tsx`
   (controles, "Voltar para 100%", "Testar" com o volume de saída), `sounds.test.ts` e `voice-sounds.test.ts`.
   À mão: numa sala com outra janela, subir o microfone para 200% e baixar para 0% (o outro ouve mudar na hora, com e
   sem a supressão de ruído); baixar a saída e conferir voz, tela e efeitos sonoros.
@@ -355,7 +356,7 @@ Um som curto quando alguém **entra** na sala de voz em que estou (duas notas su
 - **Testes:** `lib/sounds/sounds.test.ts` (notas, volume, junção, saída escolhida, sem `setSinkId`, erro de áudio;
   `roomChanges`), `lib/actions/voice-sounds.test.ts` (com socket falso: entra/sai, outras salas, fora de sala,
   lista da minha entrada, deafen, interruptor, trocar de sala, própria entrada/saída, falha ao entrar, queda, Testar),
-  `lib/actions/devices.test.ts` e `components/voice/DeviceSettings.test.tsx` (preferência e controles). À mão: três
+  `lib/actions/devices.test.ts` e `components/settings/VoiceSettings.test.tsx` (preferência e controles). À mão: três
   janelas na mesma sala; a terceira entra e sai e as outras ouvem os dois sons; com deafen, silêncio.
 
 ## Supressão de ruído automática (B13)
@@ -384,7 +385,7 @@ de quem fala (processador da faixa do microfone no `livekit-client`); quem ouve 
   barulho curto; processador com Web Audio falso: crossfade, nativa liga/desliga, motor que falha, PC fraco, erro no
   worklet, destroy, `applyConstraints` recusado), `lib/voice.test.ts` (bloco B13: filtro antes de publicar, contexto
   reaproveitado, falha → entra com a nativa, desligado = cru, ligar/desligar dentro da sala, sair), `lib/actions/devices.test.ts`
-  e `components/voice/DeviceSettings.test.tsx`. **À mão (o que os testes não medem):** a qualidade e o atraso do filtro
+  e `components/settings/VoiceSettings.test.tsx`. **À mão (o que os testes não medem):** a qualidade e o atraso do filtro
   e o uso de CPU; falar teclando e com ventilador e ouvir na outra janela.
 
 ## Pressione para falar (B20)

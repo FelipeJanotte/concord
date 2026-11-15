@@ -23,8 +23,6 @@ export interface DevicesState {
   noiseSuppression: boolean
   /** o que a supressão está fazendo agora; 'off' = desligada; null = fora de sala */
   noiseMode: 'off' | 'light' | 'advanced' | 'light-fallback' | null
-  /** diálogo "Configurações de voz" aberto */
-  deviceSettingsOpen: boolean
 }
 
 export const devicesInitial: DevicesState = {
@@ -38,6 +36,5 @@ export const devicesInitial: DevicesState = {
   micGain: 1,
   outputVolume: 1,
   noiseSuppression: true,
-  noiseMode: null,
-  deviceSettingsOpen: false
+  noiseMode: null
 }

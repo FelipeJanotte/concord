@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// Diálogo "Configurações de voz" (B4): microfone e saída de áudio.
+// Configurações → "Voz e vídeo" (B4 e seguintes): dispositivos, volumes, ruído, sons e sobreposição.
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -7,7 +7,7 @@ import type { User, VoiceState } from '@shared/types'
 import { chimes } from '@/lib/actions/voice-sounds'
 import { voice } from '@/lib/voice'
 import { initialState, useApp } from '@/store'
-import { DeviceSettings } from './DeviceSettings'
+import { VoiceSettings } from './VoiceSettings'
 
 const user = (id: string, accountId: string, name: string): User => ({ id, accountId, name, tag: id, color: '#5865f2', avatarUrl: null })
 const state = (userId: string, channelId = 'sala'): VoiceState => ({ userId, channelId, muted: false, deafened: false, sharing: false })
@@ -49,32 +49,11 @@ afterEach(() => {
 })
 
 async function openDialog(): Promise<void> {
-  render(<DeviceSettings />)
-  act(() => useApp.setState({ deviceSettingsOpen: true }))
+  render(<VoiceSettings />)
   await screen.findByRole('option', { name: 'Headset USB' })
 }
 
-describe('DeviceSettings', () => {
-  it('não corta em tela baixa: altura limitada, título fixo e as seções numa área que rola', async () => {
-    await openDialog()
-    const dialog = screen.getByRole('dialog', { name: 'Configurações de voz' })
-    expect(dialog.className).toContain('max-h-[85vh]')
-    const body = screen.getByTestId('device-settings-body')
-    expect(body.className).toContain('overflow-y-auto')
-    expect(body.className).toContain('min-h-0')
-    // o título fica fora (sempre à vista); da primeira à última seção, tudo dentro da área que rola
-    expect(body.contains(screen.getByText('Configurações de voz'))).toBe(false)
-    for (const el of [
-      screen.getByLabelText('Microfone'),
-      screen.getByRole('slider', { name: 'Volume do microfone' }),
-      screen.getByLabelText('Supressão de ruído automática'),
-      screen.getByLabelText('Mostrar quem está falando por cima dos jogos'),
-      screen.getByText(/clique com o botão direito na pessoa/)
-    ]) {
-      expect(body.contains(el)).toBe(true)
-    }
-  })
-
+describe('VoiceSettings', () => {
   it('lista microfones e saídas, com "Padrão do sistema" selecionado', async () => {
     await openDialog()
     const mic = screen.getByLabelText('Microfone') as HTMLSelectElement
@@ -111,8 +90,7 @@ describe('DeviceSettings', () => {
 
   it('sem permissão de microfone, explica por que os nomes não aparecem', async () => {
     vi.mocked(voice.listDevices).mockImplementation(async (kind) => [device('x1', kind, '')])
-    render(<DeviceSettings />)
-    act(() => useApp.setState({ deviceSettingsOpen: true }))
+    render(<VoiceSettings />)
     expect(await screen.findByText(/nomes dos dispositivos aparecem depois/)).toBeTruthy()
     expect(screen.getByRole('option', { name: 'Microfone 1' })).toBeTruthy()
   })
@@ -191,8 +169,7 @@ describe('DeviceSettings', () => {
 describe('sobreposição em jogos (B15)', () => {
   it('liga, escolhe canto e tamanho (desligado, os seletores ficam bloqueados) e explica o atalho', async () => {
     localStorage.clear()
-    useApp.setState({ deviceSettingsOpen: true })
-    render(<DeviceSettings />)
+    render(<VoiceSettings />)
     const corner = screen.getByLabelText('Posição do overlay') as HTMLSelectElement
     expect(corner.disabled).toBe(true)
     expect(screen.getByText('Shift + `')).toBeTruthy()
@@ -209,8 +186,8 @@ describe('sobreposição em jogos (B15)', () => {
     const w = window as unknown as { api?: unknown }
     w.api = { overlay: { setEditing, setConfig: vi.fn(), setRoom: vi.fn() } }
     try {
-      useApp.setState({ deviceSettingsOpen: true, overlayEnabled: false })
-      render(<DeviceSettings />)
+      useApp.setState({ overlayEnabled: false })
+      render(<VoiceSettings />)
       const move = screen.getByRole("button", { name: "Mover" }) as HTMLButtonElement
       expect(move.disabled).toBe(true)
       act(() => useApp.setState({ overlayEnabled: true }))
@@ -231,8 +208,8 @@ describe('sobreposição em jogos (B15)', () => {
   })
 
   it("fora do app (sem a ponte) não mostra Mover", () => {
-    useApp.setState({ deviceSettingsOpen: true, overlayEnabled: true })
-    render(<DeviceSettings />)
+    useApp.setState({ overlayEnabled: true })
+    render(<VoiceSettings />)
     expect(screen.queryByRole("button", { name: "Mover" })).toBeNull()
   })
 })

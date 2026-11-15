@@ -11,7 +11,7 @@ pode mudar) e um **id** (`tag`, 1 a 5 letras/números) e aparece como `Nome#id`.
    (`'O id não pode ser alterado'`), mesmo que o cliente tente.
 3. **Exceção única:** conta criada pelo Google nasce com id provisório aleatório (`tagLocked: false`). Ela pode
    escolher o id definitivo **uma vez** pelo `account:update`; qualquer envio de `tag` trava (`tagLocked = true`),
-   mesmo mantendo o provisório. O `UserPanel` abre o `ProfileDialog` sozinho enquanto `tagLocked === false`.
+   mesmo mantendo o provisório. O `UserPanel` abre as Configurações sozinho, só em "Minha conta" (sem o menu), enquanto `tagLocked === false` (`docs/areas/settings.md`).
 4. Nome: sem `#`, espaços colapsados, de 2 a 32 caracteres (`NAME_MAX`). O nome **não** precisa ser único.
 5. Senha: mínimo `PASSWORD_MIN` (8), máximo 200.
 6. Para identificar uma pessoa use **`accountId`**, nunca `User.id` (que é o `socket.id` e muda a cada conexão).
@@ -39,7 +39,7 @@ Constantes compartilhadas em `src/shared/types/account.ts`: `NAME_MAX`, `TAG_MAX
 | `src/renderer/src/lib/actions/account.ts` | `updateProfile`, `resolveAvatarUrl`, listener `user:updated` |
 | `src/renderer/src/lib/image.ts` | `fileToAvatarDataUrl` (recorte quadrado 256×256 em WebP) e `randomTag` |
 | `components/LoginScreen.tsx` | abas Entrar / Criar conta, botão Google, troca de servidor, tela "Entrando..." |
-| `components/ProfileDialog.tsx` | "Minha conta": nome, foto, id com cadeado (ou campo de escolha única), sair da conta |
+| `components/settings/AccountSettings.tsx` | Configurações → "Minha conta" (era `ProfileDialog`): nome, foto, id com cadeado (ou campo de escolha única), Salvar e sair da conta |
 | `components/AvatarPicker.tsx` | foto clicável + trocar/remover (usado no cadastro e no perfil) |
 | `components/UserAvatar.tsx` | mostra a foto (`AvatarImage`) com as iniciais como fallback |
 
@@ -114,7 +114,7 @@ A `MemberList` deduplica por `accountId` (a mesma conta pode estar em duas janel
 3. `server/auth.ts`: validar em `updateProfile()` (entra no `patch`) e incluir em `toAccountInfo()`;
    `server/modules/presence.ts`: `userFor()`; `server/modules/accounts.ts`: payload de `user:updated`.
 4. `lib/actions/account.ts`: nada novo se couber no `updateProfile`/`user:updated`.
-5. UI em `ProfileDialog`. Textos em pt-BR, tokens de cor do tema.
+5. UI em `components/settings/AccountSettings.tsx` (seção "Minha conta" das Configurações). Textos em pt-BR, tokens de cor do tema.
 
 ## Testar
 
