@@ -19,7 +19,8 @@ v4, lidas de um registro. É só tela: não há evento novo. Amizades e conversa
 | `components/tools/registry.ts` | `TOOLS: ToolDefinition[]` (`id`, `name`, `icon`, `Panel`): as cinco ferramentas da v4 (B10, `docs/areas/tools.md`). |
 | `components/tools/ToolView.tsx` | Cabeçalho + painel da ferramenta aberta. |
 | `components/voice/MemberContextMenu.tsx` | Item `MessageItem`: "Mensagem" ou "Adicionar amigo". |
-| `App.tsx` | Layout: barra de úteis → barra lateral da seção → área central → lista de membros (só na comunidade). |
+| `App.tsx` | Layout: barra de úteis → barra lateral da seção → área central → lista de membros (só na comunidade). Barras com largura ajustável (`ResizableSide`, ver "Barras laterais redimensionáveis"). |
+| `lib/side-width.ts`, `components/ResizableSide.tsx` | Largura das barras laterais: limites, guardar na máquina e a alça de arrastar. |
 
 ## Por que `section` e não `view.kind`
 
@@ -58,6 +59,29 @@ Assim, ir para a Home e voltar mantém o canal ou a sala abertos, e a Home lembr
 Depois de volume/silenciar/moderação: **"Mensagem"** se é amiga ou já há conversa (e não está bloqueada);
 **"Adicionar amigo"** (pedido para `nome#tag`) se não há relação nenhuma; nada com pedido pendente ou bloqueio.
 
+## Barras laterais redimensionáveis
+
+Arrastar a borda muda a largura da barra lateral (canais ou Home), da lista de membros e do painel "Chat" da sala de
+voz. Duplo clique na alça volta ao padrão. A largura fica na máquina (`localStorage`), uma chave por painel; a barra
+de canais e a da Home dividem a mesma (`navigation`), então trocar de seção não faz o layout pular. Só tela: sem evento.
+
+| Painel | Chave (`localStorage`) | Padrão | Mín. | Máx. | Alça |
+|---|---|---|---|---|---|
+| Barra lateral (canais/Home) | `concord:side-width:navigation` | 240 | 200 | 400 | borda direita |
+| Lista de membros | `concord:side-width:members` | 240 | 200 | 400 | borda esquerda |
+| Chat da sala de voz | `concord:side-width:voice-chat` | 360 | 280 | 640 | borda esquerda |
+
+- `lib/side-width.ts`: `SIDE_PANELS` (tabela acima), `clampWidth`, `loadSideWidth`/`saveSideWidth` (com `try/catch`:
+  sem armazenamento vale o padrão; valor guardado inválido volta ao padrão, fora dos limites é corrigido).
+- `components/ResizableSide.tsx`: `<ResizableSide panel edge label className?>` envolve o painel (que passa a ter
+  `flex-1 min-w-0` em vez de largura fixa) e desenha a alça `role="separator"` (`aria-valuenow/min/max`). Arraste
+  com `setPointerCapture`; grava só ao soltar. Montado em `App.tsx` (barra lateral e `MemberList`, que leva o
+  `hidden lg:flex`) e no `VoiceView` (chat da sala).
+- **Por que não o `resizable` do shadcn** (`react-resizable-panels`): trabalha com porcentagem do grupo inteiro; aqui
+  os painéis têm largura em px e a área central é que absorve, e a lista de membros some abaixo de `lg`. A alça
+  própria tem ~60 linhas e nenhuma dependência.
+- Painel novo redimensionável: uma linha em `SIDE_PANELS` e envolver o painel com `ResizableSide`.
+
 ## Ferramenta nova na barra (B10 e seguintes)
 
 1. Crie o painel em `components/tools/<Nome>Panel.tsx` (usa as ações de `lib/actions/tools.ts`).
@@ -70,6 +94,7 @@ Depois de volume/silenciar/moderação: **"Mensagem"** se é amiga ou já há co
 |---|---|
 | `lib/actions/navigation.test.ts` | Seções, a Home lembra a conversa, ferramenta fecha ao escolher canal, `messageAccount` (sucesso e erro), não lido por seção. |
 | `lib/home.test.ts` | `homeBadge`, `communityUnread`, `findDm`, `chatLabel`, `DM_PERMISSIONS`. |
+| `lib/side-width.test.ts`, `components/ResizableSide.test.tsx` | Limites, largura guardada (inválida, sem armazenamento), arrastar nas duas bordas, mínimo/máximo, só grava ao soltar, duplo clique volta ao padrão. |
 | `components/home/home.test.tsx` | Barra (selo, troca de seção, ferramenta do registro), Home (ordem, online, vazio, selo de pedidos), chat da conversa (@nome, sem cargos, busca o histórico), tela Amigos (abas, ações, confirmações, adicionar), botão direito ("Mensagem", "Adicionar amigo", nada quando bloqueada). |
 
 À mão (duas contas, `docs/areas/dev-workflow.md`): A adiciona B pelo `nome#id` → B vê o selo no Início e aceita em

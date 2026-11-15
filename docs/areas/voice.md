@@ -165,19 +165,28 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
   deafen). O `ScreenVideo` (em `ScreenTile.tsx`) liga a faixa num `<video muted>` com `attachScreen(userId, el)` (de `@/lib/client`).
 - **Parar:** botão de novo (`stopScreenShare`) ou pelo sistema (janela fechada): `LocalTrackUnpublished` chama
   `voice.onScreenShareEnded`, que desliga `sharing` e avisa o servidor uma vez só.
-- **Assistir** (`components/voice/VoiceGrid.tsx` + `ScreenTile.tsx`): `featuredScreen(telas, eu, escolhida, grade)`
-  decide a tela em destaque: a escolhida (se ainda ao vivo), senão a primeira de **outra pessoa** (a própria só se
-  for a única); `null` = sem telas ou "Ver grade".
-  - `ScreenStage` (destaque): barra de cima **sempre à vista** com "Ao vivo", "Assistindo: Tela de Fulano", o
-    seletor "Telas ao vivo" (um botão por tela, com mais de uma; `aria-pressed` na atual), "Ver grade" e "Tela
-    cheia". Embaixo, a fileira "Membros da chamada" (`role="group"`), **centralizada**, com as miniaturas das
-    outras telas (`ScreenTile`, clicar = assistir) e os participantes. A centralização usa `ml-auto` no primeiro e
+- **Assistir** (`components/voice/VoiceGrid.tsx` + `ScreenTile.tsx` + `lib/featured-screens.ts`): podem ficar
+  **várias telas em destaque ao mesmo tempo**. `featuredScreens(telas, eu, escolhidas, grade)` devolve a lista em
+  ordem: as escolhidas que ainda estão ao vivo; se nenhuma, a primeira de **outra pessoa** (a própria só se for a
+  única); `[]` = sem telas ou "Ver grade". `toggleFeatured` põe no fim/tira do destaque (a última não sai) e
+  `moveScreen(ordem, arrastada, destino)` leva a arrastada para o lugar do destino.
+  - `ScreenStage` (destaque, prop `featured`): barra de cima **sempre à vista** com "Ao vivo", "Assistindo: Tela de
+    Ana e Tela de Bia" (`Intl.ListFormat` pt-BR), o seletor "Telas ao vivo" (um botão por tela, com mais de uma;
+    clicar **põe ou tira do destaque**, `aria-pressed` nas que estão; a única em destaque fica desabilitada),
+    "Ver grade" e "Tela cheia". Cada tela em destaque é um `ScreenPane` (`data-screen-pane`) com o próprio
+    `<video>`, todos dividindo o espaço (`flex-1`).
+  - **Organizar** (com 2 ou mais em destaque): arrastar uma tela sobre outra muda a ordem (HTML5 drag and drop; o id
+    arrastado fica num `ref` do `ScreenStage`, sem `dataTransfer`) e o botão "Empilhar as telas"/"Pôr as telas lado
+    a lado" (`Rows2`/`Columns2`, `data-arrangement` = `side-by-side`|`stacked`) alterna lado a lado e empilhadas.
+    Cada tela mostra o nome embaixo. Ordem e arranjo são locais do `VoiceGrid` (não salvos).
+  - Embaixo, a fileira "Membros da chamada" (`role="group"`), **centralizada**, com as miniaturas das
+    telas que não estão em destaque (`ScreenTile`, clicar = assistir **só** essa) e os participantes. A centralização usa `ml-auto` no primeiro e
     `mr-auto` no último filho (não `justify-center`, que cortaria o começo quando a fileira rola de lado).
   - "Esconder membros"/"Mostrar membros" (ícones `UserX`/`Users`, `aria-pressed`, ao lado de "Ver grade"; some em
     tela cheia): esconde/mostra essa fileira para a tela ganhar espaço. Props `membersHidden`/`onToggleMembers` do
     `ScreenStage`; o estado (`membersHidden`) é local do `VoiceGrid`, não salvo. Na grade todos aparecem sempre.
-  - No quadro de quem compartilha, o "Ao vivo" vira o botão "Assistir" quando a tela dela já chegou (e não é a
-    que está em destaque).
+  - No quadro de quem compartilha, o "Ao vivo" vira o botão "Assistir" (só essa) quando a tela dela já chegou (e
+    não está em destaque).
   - "Ver grade": todas as telas lado a lado na grade (antes dos participantes); clicar numa volta ao destaque.
   - Escolha e grade são estado local do `VoiceGrid` (não salvos): ao trocar de sala, volta ao automático.
 - **Grade centralizada com tamanho automático** (`TileGrid` em `VoiceGrid.tsx` + `lib/tile-layout.ts`): os quadros
@@ -198,11 +207,13 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
 - `sharing` no servidor é só indicador (o cliente avisa); quem pode publicar a tela é decidido pelo token do LiveKit.
 - **Testes:** `src/main/screen-share.test.ts` (controlador, sem Electron), `lib/voice.test.ts` (bloco "tela"),
   `lib/actions/screen.test.ts` (botão, seletor, erros, aviso único ao servidor), `components/voice/voice.test.tsx`
-  (jsdom: seletor, miniatura, `featuredScreen`, destaque com "Assistindo" e seletor, "Assistir" no quadro, "Ver
+  (jsdom: seletor, miniatura, destaque com "Assistindo" e seletor, duas telas em destaque, arrastar para reordenar,
+  lado a lado/empilhadas, uma das telas em destaque que acaba, "Assistir" no quadro, "Ver
   grade", esconder/mostrar membros, tela que acaba, tela cheia do quadro com botão/duplo clique e a recusa, grade centralizada com o tamanho
-  medido), `lib/tile-layout.test.ts` (colunas e tamanho, limites, sem altura, gente demais), `src/main/permissions.test.ts`
+  medido), `lib/featured-screens.test.ts` (escolha, pôr/tirar, reordenar), `lib/tile-layout.test.ts` (colunas e tamanho, limites, sem altura, gente demais), `src/main/permissions.test.ts`
   e `server/tests/voice.test.ts` (`voice:sharing`). À mão: três janelas na mesma sala com o LiveKit rodando; duas
-  compartilham, a terceira troca pelo seletor e pelo "Assistir", usa "Ver grade", entra e sai da tela cheia (botão,
+  compartilham, a terceira põe as duas em destaque pelo seletor, arrasta para trocar a ordem, empilha, troca pelo
+  "Assistir", usa "Ver grade", entra e sai da tela cheia (botão,
   duplo clique, Esc) e o "ao vivo" some ao parar.
 
 ## Câmera na sala de voz (B21)
@@ -230,7 +241,7 @@ compartilhada continua em destaque e as câmeras vão para a faixa de miniaturas
 - **Tela:** botão "Ligar a câmera"/"Desligar a câmera" no `VoiceView` e no "Voz conectada" (some sem `video`);
   ícone mostra o estado atual, como microfone/áudio: desligada `VideoOff` (riscada), ligada `Video`
   (teste em `components/camera-icon.test.tsx`). Os `ControlButton` (56px, redondos) têm `shrink-0` e a
-  fileira dos controles tem `flex-wrap`: com o chat da sala aberto (painel de 360 px) ou em janela estreita eles
+  fileira dos controles tem `flex-wrap`: com o chat da sala aberto (painel de 360 px por padrão, redimensionável: `docs/areas/home.md`) ou em janela estreita eles
   quebram linha em vez de virar ovais achatados (mesmo teste; o `CallPanel` usa a mesma regra); `CameraVideo` em
   `components/voice/CameraTile.tsx`, usado pelo `ParticipantTile`; a própria câmera aparece espelhada.
 - **Testes:** `lib/voice.test.ts` (blocos "câmera (B21)" e "câmera desligada e religada (B21)"), `lib/actions/camera.test.ts`, `components/VoiceView.test.tsx`,

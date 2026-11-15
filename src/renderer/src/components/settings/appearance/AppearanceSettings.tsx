@@ -4,19 +4,27 @@
  * servidor); sair da seção ou fechar as Configurações manda o que estiver pendente.
  */
 import { useEffect, useState } from 'react'
-import { Copy, Plus, Trash2, X } from 'lucide-react'
+import { Copy, Plus, Sparkles, Trash2, X } from 'lucide-react'
 import { decodeThemeCode, encodeThemeCode, THEME_STOPS_MAX, type ThemeConfig } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { flushPendingTheme, notify, saveThemes, setTheme } from '@/lib/client'
 import { addSavedTheme, addStop, copyName, removeSavedTheme, removeStop, sameTheme, setStop } from '@/lib/theme/editor'
+import { translucencyEnv } from '@/lib/theme/apply'
 import { THEME_PRESETS } from '@/lib/theme/presets'
+import { surpriseTheme } from '@/lib/theme/surprise'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
 import { SettingsHeading } from '../SettingsHeading'
 import { ThemeSwatch } from './ThemeSwatch'
 
 const sectionTitle = 'mb-2 text-xs font-bold tracking-wide text-muted-foreground uppercase'
+
+/** Liga/desliga o vidro (sem deixar `translucent: false` no tema: ausente = opaco). */
+function withGlass(theme: ThemeConfig, on: boolean): ThemeConfig {
+  const { translucent: _old, ...rest } = theme
+  return on ? { ...rest, translucent: true } : rest
+}
 
 function ThemeCard({ name, theme, active, onPick }: { name: string; theme: ThemeConfig; active: boolean; onPick: () => void }) {
   return (
@@ -36,6 +44,7 @@ function ThemeCard({ name, theme, active, onPick }: { name: string; theme: Theme
 }
 
 export function AppearanceSettings() {
+  const glassSupported = !!translucencyEnv.bridge()?.supported
   const theme = useApp((s) => s.theme)
   // sair da seção (outra seção ou fechar) manda o tema que ainda estiver pendente
   useEffect(() => () => void flushPendingTheme(), [])
@@ -92,7 +101,12 @@ export function AppearanceSettings() {
       <SettingsHeading title="Aparência" description="Escolha um tema pronto ou crie o seu. O tema acompanha sua conta em qualquer computador." />
 
       <section>
-        <h3 className={sectionTitle}>Temas prontos</h3>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h3 className={cn(sectionTitle, 'mb-0')}>Temas prontos</h3>
+          <Button size="sm" variant="secondary" onClick={() => change(surpriseTheme(Math.random, theme))}>
+            <Sparkles /> Surpreenda-me
+          </Button>
+        </div>
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
           {THEME_PRESETS.map((p) => (
             <ThemeCard key={p.id} name={p.name} theme={p.theme} active={sameTheme(p.theme, theme)} onPick={() => change(p.theme)} />
@@ -168,7 +182,21 @@ export function AppearanceSettings() {
               className="h-8 w-10 cursor-pointer rounded border border-border bg-transparent"
             />
           </label>
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+            <input
+              type="checkbox"
+              checked={!!theme.translucent}
+              onChange={(e) => change(withGlass(theme, e.target.checked))}
+              className="size-4 accent-primary"
+            />
+            Translúcido (vidro)
+          </label>
         </div>
+        {theme.translucent && !glassSupported && (
+          <p className="text-xs text-muted-foreground">
+            O vidro precisa do Windows 11 (22H2 ou mais novo) ou do macOS. Neste computador o tema aparece opaco; nos outros, translúcido.
+          </p>
+        )}
 
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm text-foreground">Gradiente</span>

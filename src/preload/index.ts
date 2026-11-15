@@ -1,8 +1,10 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import { release } from 'os'
 import type { OverlayBridge, OverlayConfig, OverlayPosition, OverlayRoom, OverlayViewBridge } from '../shared/overlay'
 import type { PttBinding, PttConfig, PushToTalkBridge } from '../shared/push-to-talk'
 import type { NativeNotification, NotificationsBridge, NotificationTarget } from '../shared/notifications'
 import type { ScreenShareBridge, ScreenSource } from '../shared/screen'
+import { supportsTranslucency, type TranslucencyBridge } from '../shared/translucency'
 import type { UpdaterBridge, UpdateStatus } from '../shared/updater'
 
 const screen: ScreenShareBridge = {
@@ -82,6 +84,12 @@ const updater: UpdaterBridge = {
   install: (): void => ipcRenderer.send('update-install')
 }
 
+/** Tema translúcido (vidro): se o sistema tem o efeito e liga/desliga na janela (ver src/main/translucency.ts). */
+const translucency: TranslucencyBridge = {
+  supported: supportsTranslucency(process.platform, release()),
+  set: (on: boolean): void => ipcRenderer.send('window-translucency', on)
+}
+
 const api = {
   platform: process.platform,
   /** Abre o navegador para o login com Google e devolve o código (fluxo loopback + PKCE). */
@@ -96,7 +104,8 @@ const api = {
   notifications,
   updater,
   /** Pressione para falar (ver src/main/push-to-talk.ts). */
-  pushToTalk
+  pushToTalk,
+  translucency
 }
 
 if (process.contextIsolated) {

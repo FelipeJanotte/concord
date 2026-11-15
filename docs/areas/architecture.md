@@ -39,7 +39,8 @@ código ao renderer (IPC `google-sign-in`), cuida do compartilhamento de tela (I
 notificações nativas e o selo do ícone (IPC `notify`/`badge`/`notification-click`, `docs/areas/notifications.md`)
 a janela do overlay em jogos (IPC `overlay-*`, atalho global, segunda página do renderer; skill
 `docs/areas/overlay.md`), a atualização automática (IPC `update-*`, `docs/areas/updates.md`) e o pressione para falar
-(IPC `ptt-*`, gancho de teclado/mouse do sistema com `uiohook-napi`; `docs/areas/voice.md`). Toda a rede com o servidor acontece no renderer: **HTTP** para
+(IPC `ptt-*`, gancho de teclado/mouse do sistema com `uiohook-napi`; `docs/areas/voice.md`) e o vidro do tema translúcido
+(IPC `window-translucency`, `docs/areas/themes.md`). Toda a rede com o servidor acontece no renderer: **HTTP** para
 cadastro/login (antes de existir socket) e **Socket.IO** para o resto. Detalhes das contas: `docs/areas/accounts.md`.
 
 ## Modelo de dados (`src/shared/types/`)
@@ -163,8 +164,8 @@ vê), `typing`, `rate:limited`, `access:updated` e `channels:visible` (v2), `sou
 
 ## Layout (`App.tsx`)
 
-`ServerRail` (72px) | `ChannelSidebar` (240px: seções texto/voz, `VoiceStatusPanel` com câmera/tela/efeitos sonoros fora da sala, `UserPanel` com `UserSettingsDialog` (Configurações: conta, voz e vídeo, aparência, notificações)/`ScreenPicker`/`Soundboard` montados) |
-`main` (`ChatView` ou `VoiceView`, com `key` = id do canal) | `MemberList` (240px, aparece só a partir de `lg`).
+`UtilityRail` (72px) | `ChannelSidebar`/`HomeSidebar` (240px por padrão, redimensionável: seções texto/voz, `VoiceStatusPanel` com câmera/tela/efeitos sonoros fora da sala, `UserPanel` com `UserSettingsDialog` (Configurações: conta, voz e vídeo, aparência, notificações)/`ScreenPicker`/`Soundboard` montados) |
+`main` (`ChatView` ou `VoiceView`, com `key` = id do canal) | `MemberList` (240px por padrão, redimensionável, aparece só a partir de `lg`). Larguras: `ResizableSide` + `lib/side-width.ts` (`docs/areas/home.md`, "Barras laterais redimensionáveis").
 
 ## Limitações conhecidas (de propósito, nesta versão)
 
