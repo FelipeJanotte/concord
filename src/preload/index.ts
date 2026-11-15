@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { OverlayBridge, OverlayConfig, OverlayRoom, OverlayViewBridge } from '../shared/overlay'
 import type { ScreenShareBridge, ScreenSource } from '../shared/screen'
 
 const screen: ScreenShareBridge = {
@@ -7,13 +8,36 @@ const screen: ScreenShareBridge = {
   canShareAudio: process.platform === 'win32'
 }
 
+/** Overlay (B15), lado da janela principal: manda configuração e a sala; ouve o atalho. */
+const overlay: OverlayBridge = {
+  setConfig: (config: OverlayConfig): void => ipcRenderer.send('overlay-config', config),
+  setRoom: (room: OverlayRoom | null): void => ipcRenderer.send('overlay-room', room),
+  onToggled: (listener) => {
+    const handler = (_e: unknown, enabled: boolean): void => listener(enabled)
+    ipcRenderer.on('overlay-toggled', handler)
+    return () => ipcRenderer.removeListener('overlay-toggled', handler)
+  }
+}
+
+/** Overlay (B15), lado da página do overlay: recebe a sala e a configuração. */
+const overlayView: OverlayViewBridge = {
+  onUpdate: (listener) => {
+    const handler = (_e: unknown, room: OverlayRoom | null, config: OverlayConfig): void => listener(room, config)
+    ipcRenderer.on('overlay-update', handler)
+    return () => ipcRenderer.removeListener('overlay-update', handler)
+  }
+}
+
 const api = {
   platform: process.platform,
   /** Abre o navegador para o login com Google e devolve o código (fluxo loopback + PKCE). */
   googleSignIn: (clientId: string): Promise<{ code: string; codeVerifier: string; redirectUri: string }> =>
     ipcRenderer.invoke('google-sign-in', clientId),
   /** Compartilhamento de tela: lista telas/janelas e escolhe a fonte (ver src/main/screen-share.ts). */
-  screen
+  screen,
+  /** Sobreposição em jogos (ver src/main/overlay.ts). */
+  overlay,
+  overlayView
 }
 
 if (process.contextIsolated) {

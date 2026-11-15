@@ -17,6 +17,7 @@ import { bindPreferencesEvents, loadPreferences } from './actions/preferences'
 import { bindLimitEvents } from './actions/limits'
 import { bindMessageEvents, loadHistory } from './actions/messages'
 import { bindModerationEvents } from './actions/moderation'
+import { loadOverlayPreferences } from './actions/overlay'
 import { bindCallsEvents, loadCalls } from './actions/calls'
 import { bindPermissionsEvents } from './actions/permissions'
 import { bindPresenceEvents } from './actions/presence'
@@ -212,6 +213,7 @@ export function disconnect(): void {
   set({ ...initialState })
   // Dispositivos são preferência da máquina, não da conta: continuam valendo depois de sair.
   loadAudioPreferences()
+  loadOverlayPreferences() // B15: o overlay também é preferência da máquina
 }
 
 // ---------- Ações por domínio ----------
@@ -232,5 +234,6 @@ export * from './actions/friends'
 export * from './actions/tools'
 export * from './actions/preferences'
 export * from './actions/sounds'
+export * from './actions/overlay'
 export { previewVoiceSound } from './actions/voice-sounds'
 export { resolveServerUrl } from './core'

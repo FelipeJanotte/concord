@@ -2,7 +2,12 @@ import { app, BrowserWindow, ipcMain, session, shell } from 'electron'
 import { join } from 'path'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { googleSignIn } from './google-auth'
+import { setupOverlay, teardownOverlay, type OverlayController } from './overlay'
 import { setupScreenShare } from './screen-share'
+
+/** A janela principal (o overlay manda para ela o aviso do atalho). */
+let mainWindow: BrowserWindow | null = null
+let overlay: OverlayController | null = null
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -20,6 +25,12 @@ function createWindow(): void {
     }
   })
 
+  mainWindow = win
+  win.on('closed', () => {
+    if (mainWindow === win) mainWindow = null
+    // o overlay é uma janela também: sem destruir, o app não fecharia
+    overlay?.destroy()
+  })
   win.on('ready-to-show', () => win.show())
 
   // Links externos abrem no navegador padrão.
@@ -53,6 +64,7 @@ app.whenReady().then(() => {
   })
 
   setupScreenShare()
+  overlay = setupOverlay(() => mainWindow)
 
   createWindow()
 
@@ -60,6 +72,8 @@ app.whenReady().then(() => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })
+
+app.on('will-quit', () => teardownOverlay())
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()

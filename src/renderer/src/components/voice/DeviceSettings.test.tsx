@@ -135,3 +135,20 @@ describe('DeviceSettings', () => {
     expect(screen.getByText('Desligada: o microfone vai sem filtro.')).toBeTruthy()
   })
 })
+
+describe('sobreposição em jogos (B15)', () => {
+  it('liga, escolhe canto e tamanho (desligado, os seletores ficam bloqueados) e explica o atalho', async () => {
+    localStorage.clear()
+    useApp.setState({ deviceSettingsOpen: true })
+    render(<DeviceSettings />)
+    const corner = screen.getByLabelText('Posição do overlay') as HTMLSelectElement
+    expect(corner.disabled).toBe(true)
+    expect(screen.getByText('Shift + `')).toBeTruthy()
+    await userEvent.click(screen.getByLabelText('Mostrar quem está falando por cima dos jogos'))
+    expect(useApp.getState().overlayEnabled).toBe(true)
+    await userEvent.selectOptions(corner, 'bottom-right')
+    await userEvent.selectOptions(screen.getByLabelText('Tamanho do overlay'), 'large')
+    expect(useApp.getState()).toMatchObject({ overlayCorner: 'bottom-right', overlaySize: 'large' })
+    expect(JSON.parse(localStorage.getItem('concord:overlay')!)).toEqual({ enabled: true, corner: 'bottom-right', size: 'large' })
+  })
+})
