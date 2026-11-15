@@ -208,6 +208,67 @@ describe('silenciar pelo servidor', () => {
     expect((await join(ana, sala.id)).canSpeak).toBe(true)
   })
 
+  it('tirar o silêncio desmuta na hora, sem a pessoa precisar se desmutar', async () => {
+    const owner = await server.asOwner()
+    const ana = await user('Ana')
+    const sala = await room()
+    await join(ana, sala.id)
+
+    const muted = waitFor(owner.socket, 'voice:state', (s) => stateOf(s, ana)?.serverMuted === true)
+    await owner.socket.emitWithAck('moderation:voice-mute', { accountId: ana.self.accountId, muted: true })
+    await muted
+    // enquanto silenciada, o app dela manda sempre "mutado" (ex.: ao ligar/desligar o áudio)
+    const deaf = waitFor(owner.socket, 'voice:state', (s) => stateOf(s, ana)?.deafened === true)
+    ana.socket.emit('voice:update', { muted: true, deafened: true })
+    await deaf
+    const undeaf = waitFor(owner.socket, 'voice:state', (s) => stateOf(s, ana)?.deafened === false)
+    ana.socket.emit('voice:update', { muted: true, deafened: false })
+    await undeaf
+
+    // o moderador tira o silêncio: a lista já vem com ela desmutada (ela não mandou nada)
+    const unmuted = waitFor(owner.socket, 'voice:state', (s) => stateOf(s, ana)?.serverMuted === false)
+    await owner.socket.emitWithAck('moderation:voice-mute', { accountId: ana.self.accountId, muted: false })
+    expect(stateOf((await unmuted)[0], ana)).toMatchObject({ muted: false, serverMuted: false })
+    // e o LiveKit volta a aceitar o microfone (fonte 2)
+    await livekit.waitCall(
+      'UpdateParticipant',
+      (b) =>
+        b.identity === ana.self.id &&
+        ((b.permission as { canPublishSources?: unknown[] })?.canPublishSources ?? []).some((s) => s === 2 || s === 'MICROPHONE')
+    )
+  })
+
+  it('quem já tinha se mutado antes do silêncio continua mutado quando o silêncio acaba', async () => {
+    const owner = await server.asOwner()
+    const ana = await user('Ana')
+    const sala = await room()
+    await join(ana, sala.id)
+    const selfMuted = waitFor(owner.socket, 'voice:state', (s) => stateOf(s, ana)?.muted === true)
+    ana.socket.emit('voice:update', { muted: true, deafened: false })
+    await selfMuted
+
+    const muted = waitFor(owner.socket, 'voice:state', (s) => stateOf(s, ana)?.serverMuted === true)
+    await owner.socket.emitWithAck('moderation:voice-mute', { accountId: ana.self.accountId, muted: true })
+    await muted
+    const unmuted = waitFor(owner.socket, 'voice:state', (s) => stateOf(s, ana)?.serverMuted === false)
+    await owner.socket.emitWithAck('moderation:voice-mute', { accountId: ana.self.accountId, muted: false })
+    expect(stateOf((await unmuted)[0], ana)).toMatchObject({ muted: true, serverMuted: false })
+  })
+
+  it('entrou já silenciada: quando o silêncio acaba, fica como entrou (desmutada)', async () => {
+    const owner = await server.asOwner()
+    const ana = await user('Ana')
+    const sala = await room()
+    await join(ana, sala.id)
+    await owner.socket.emitWithAck('moderation:voice-mute', { accountId: ana.self.accountId, muted: true })
+    ana.socket.emit('voice:leave')
+    expect((await join(ana, sala.id)).canSpeak).toBe(false)
+
+    const unmuted = waitFor(owner.socket, 'voice:state', (s) => stateOf(s, ana)?.serverMuted === false)
+    await owner.socket.emitWithAck('moderation:voice-mute', { accountId: ana.self.accountId, muted: false })
+    expect(stateOf((await unmuted)[0], ana)).toMatchObject({ muted: false })
+  })
+
   it('só silencia quem está numa sala; sem permissão ou acima de mim, não', async () => {
     const owner = await server.asOwner()
     const ana = await user('Ana')
