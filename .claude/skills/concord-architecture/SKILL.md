@@ -43,7 +43,8 @@ O processo main não fala com o servidor do Concord. Ele só abre o navegador pa
 código ao renderer (IPC `google-sign-in`), cuida do compartilhamento de tela (IPC `screen-*`), mostra as
 notificações nativas e o selo do ícone (IPC `notify`/`badge`/`notification-click`, skill `concord-notifications`)
 e a janela do overlay em jogos (IPC `overlay-*`, atalho global, segunda página do renderer; skill
-`concord-overlay`). Toda a rede com o servidor acontece no renderer: **HTTP** para
+`concord-overlay`) e o pressione para falar (IPC `ptt-*`, gancho de teclado/mouse do sistema com `uiohook-napi`;
+skill `concord-voice`). Toda a rede com o servidor acontece no renderer: **HTTP** para
 cadastro/login (antes de existir socket) e **Socket.IO** para o resto. Detalhes das contas: skill `concord-accounts`.
 
 ## Modelo de dados (`src/shared/types/`)

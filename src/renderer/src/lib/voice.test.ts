@@ -946,3 +946,31 @@ describe('bug: trocar de sala aparecia "removido" e não entrava', () => {
     expect(dropped).toHaveBeenCalledWith('Você foi removido da sala de voz.')
   })
 })
+
+describe('pressione para falar (B20)', () => {
+  it('portão fechado: entra com o microfone mudo, mas avisa o servidor como não silenciado', async () => {
+    client.setMicGate(false)
+    await client.join('sala-1')
+    expect(mic!.mute).toHaveBeenCalled()
+    expect(socket.sent('voice:join')[0][0]).toMatchObject({ muted: false })
+  })
+
+  it('abrir e fechar o portão liga e desliga o microfone e o "falando" da própria pessoa', async () => {
+    await client.join('sala-1')
+    lastRoom().fire(RoomEvent.ActiveSpeakersChanged, [speaker('eu'), speaker('outro')])
+    client.setMicGate(false)
+    expect(mic!.mute).toHaveBeenCalled()
+    expect(useApp.getState().speaking).toEqual({ outro: true })
+    client.setMicGate(true)
+    expect(mic!.unmute).toHaveBeenCalled()
+    expect(useApp.getState().speaking).toEqual({ eu: true, outro: true })
+  })
+
+  it('silenciado continua mudo mesmo com a tecla pressionada', async () => {
+    await client.join('sala-1')
+    client.setMuted(true)
+    mic!.unmute.mockClear()
+    client.setMicGate(true)
+    expect(mic!.unmute).not.toHaveBeenCalled()
+  })
+})

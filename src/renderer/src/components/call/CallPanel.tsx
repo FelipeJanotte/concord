@@ -23,6 +23,7 @@ import {
 import { useApp } from '@/store'
 import { UserAvatar } from '../UserAvatar'
 import { ControlButton } from '../VoiceView'
+import { PushToTalkHint } from '../voice/PushToTalk'
 import { ScreenPicker } from '../voice/ScreenPicker'
 import { VoiceGrid } from '../voice/VoiceGrid'
 
@@ -79,6 +80,7 @@ export function CallPanel({ dm }: { dm: DmEntry }) {
           <p className="py-6 text-center text-muted-foreground">Ninguém na chamada ainda.</p>
         )}
       </div>
+      {inRoom && <PushToTalkHint />}
       <div className="flex items-center justify-center gap-3 pb-4">
         {inRoom ? (
           <InCallControls onHangUp={() => report(hangUp(channelId), 'Não foi possível desligar')} />

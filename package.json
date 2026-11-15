@@ -23,7 +23,8 @@
     "db:restore": "tsx server/scripts/restore-pglite.ts"
   },
   "dependencies": {
-    "@electron-toolkit/utils": "^4.0.0"
+    "@electron-toolkit/utils": "^4.0.0",
+    "uiohook-napi": "^1.5.5"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.16",
