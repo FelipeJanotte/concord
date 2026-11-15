@@ -1,12 +1,13 @@
-// Enviar um som para a coleção (B17): escolher o arquivo, ouvir a prévia, nome e emoji.
+// Enviar um som para a coleção (B17): escolher o arquivo, ouvir a prévia, nome e emoji (escolhido na grade).
 // O app confere tamanho e duração antes; o servidor confere tudo de novo (tipo pelos bytes).
 import { useEffect, useState, type FormEvent } from 'react'
-import { Loader2 } from 'lucide-react'
-import { SOUND_EMOJI_MAX, SOUND_NAME_MAX } from '@shared/types'
+import { Loader2, Volume2 } from 'lucide-react'
+import { SOUND_NAME_MAX } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { checkSoundFile, soundNameFromFile, uploadSound } from '@/lib/client'
+import { EmojiPicker } from './EmojiPicker'
 
 const ACCEPT = 'audio/mpeg,audio/ogg,audio/wav,audio/x-wav,audio/webm,.mp3,.ogg,.wav,.webm'
 
@@ -64,15 +65,21 @@ export function SoundUploadForm({ onDone }: { onDone: () => void }) {
         />
         {preview && <audio controls src={preview} aria-label="Prévia do som" className="mt-1 w-full" />}
       </div>
-      <div className="flex gap-3">
-        <div className="flex flex-1 flex-col gap-1.5">
-          <Label htmlFor="sound-name">Nome</Label>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="sound-name">Nome</Label>
+        <div className="flex items-center gap-2">
+          <span
+            aria-label={emoji ? `Emoji escolhido: ${emoji}` : 'Sem emoji'}
+            className="flex size-10 shrink-0 items-center justify-center rounded-md bg-accent text-xl"
+          >
+            {emoji || <Volume2 className="size-5 text-muted-foreground" />}
+          </span>
           <Input id="sound-name" value={name} maxLength={SOUND_NAME_MAX} onChange={(e) => setName(e.target.value)} placeholder="Buzina" />
         </div>
-        <div className="flex w-24 flex-col gap-1.5">
-          <Label htmlFor="sound-emoji">Emoji</Label>
-          <Input id="sound-emoji" value={emoji} maxLength={SOUND_EMOJI_MAX * 2} onChange={(e) => setEmoji(e.target.value)} placeholder="📯" />
-        </div>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <span className="text-sm font-medium">Emoji (opcional: clique para escolher, de novo para tirar)</span>
+        <EmojiPicker value={emoji} onChange={setEmoji} />
       </div>
       {error && (
         <p role="alert" className="text-sm text-destructive">

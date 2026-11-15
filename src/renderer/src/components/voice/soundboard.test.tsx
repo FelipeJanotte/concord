@@ -4,11 +4,12 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AccessState, Sound, User } from '@shared/types'
+import { cleanSoundEmoji, type AccessState, type Sound, type User } from '@shared/types'
 import { soundTransport } from '@/lib/actions/sounds'
 import { setSocket, TOKEN_KEY } from '@/lib/core'
 import { initialState, useApp } from '@/store'
 import { FakeSocket } from '@/test/fake-socket'
+import { EMOJI_GROUPS, EmojiPicker } from './EmojiPicker'
 import { Soundboard, SoundsPlayingBar } from './Soundboard'
 
 const me: User = { id: 'sock-eu', accountId: 'acc-eu', name: 'Eu', tag: 'eu', color: '#fff', avatarUrl: null }
@@ -133,7 +134,8 @@ describe('enviar um som', () => {
     pick(new File([new Uint8Array(100)], 'air_horn.ogg', { type: 'audio/ogg' }))
     expect(await screen.findByLabelText('Prévia do som')).toBeTruthy()
     expect(screen.getByLabelText('Nome')).toHaveProperty('value', 'air horn')
-    await userEvent.type(screen.getByLabelText('Emoji'), '📢')
+    await userEvent.click(screen.getByRole('button', { name: '📢' }))
+    expect(screen.getByLabelText('Emoji escolhido: 📢')).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: 'Enviar' }))
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ name: 'air horn', emoji: '📢', token: 'tok' }))
     expect(await screen.findByRole('button', { name: 'Tocar air horn' })).toBeTruthy()
@@ -174,5 +176,41 @@ describe('indicador', () => {
     setup()
     render(<SoundsPlayingBar />)
     expect(screen.queryByRole('status')).toBeNull()
+  })
+})
+
+describe('seletor de emoji', () => {
+  it('clicar escolhe, clicar no escolhido tira, e as categorias trocam a grade', async () => {
+    const changes: string[] = []
+    const { rerender } = render(<EmojiPicker value="" onChange={(e) => changes.push(e)} />)
+    await userEvent.click(screen.getByRole('button', { name: '🔊' }))
+    rerender(<EmojiPicker value="🔊" onChange={(e) => changes.push(e)} />)
+    expect(screen.getByRole('button', { name: '🔊' }).getAttribute('aria-pressed')).toBe('true')
+    await userEvent.click(screen.getByRole('button', { name: '🔊' }))
+    expect(changes).toEqual(['🔊', ''])
+    await userEvent.click(screen.getByRole('tab', { name: 'Bichos' }))
+    expect(screen.getByRole('group', { name: 'Emojis: Bichos' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '🐐' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '🔊' })).toBeNull()
+  })
+
+  it('todos os emojis da lista passam na regra do servidor e não se repetem', () => {
+    const all = EMOJI_GROUPS.flatMap((g) => g.emojis)
+    expect(new Set(all).size).toBe(all.length)
+    for (const e of all) expect(cleanSoundEmoji(e)).toBe(e)
+  })
+
+  it('no formulário: sem emoji, o envio vai sem emoji', async () => {
+    setup()
+    localStorage.setItem(TOKEN_KEY, 'tok')
+    vi.spyOn(soundTransport, 'duration').mockResolvedValue(3000)
+    const send = vi.spyOn(soundTransport, 'send').mockResolvedValue(sound('s9', 'Bip', 'acc-eu'))
+    render(<Soundboard />)
+    await userEvent.click(screen.getByRole('button', { name: 'Enviar um som' }))
+    expect(screen.getByLabelText('Sem emoji')).toBeTruthy()
+    fireEvent.change(screen.getByLabelText(/Arquivo/), { target: { files: [new File([new Uint8Array(10)], 'bip.ogg', { type: 'audio/ogg' })] } })
+    await screen.findByLabelText('Prévia do som')
+    await userEvent.click(screen.getByRole('button', { name: 'Enviar' }))
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ name: 'bip', emoji: null }))
   })
 })
