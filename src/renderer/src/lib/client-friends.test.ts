@@ -22,9 +22,11 @@ const friend: FriendEntry = {
 const dm: DmEntry = { channel: { id: 'c1', name: 'x'.repeat(32), type: 'dm', createdAt: 1 }, other: friend.account }
 
 describe('connect', () => {
-  it('pede friend:list e dm:list logo depois do hello e guarda as listas', async () => {
+  it('pede friend:list, dm:list e o tema da conta logo depois do hello', async () => {
     fake.replyTo('friend:list', () => [friend])
     fake.replyTo('dm:list', () => [dm])
+    const ocean = { base: 'escuro' as const, accent: '#38bdf8', background: { stops: ['#0c2a4a'], angle: 180 }, intensity: 50 }
+    fake.replyTo('preferences:get', () => ({ theme: ocean, savedThemes: [] }))
     const done = connect('http://localhost:3001', 'token')
     ;(fake.receive as (event: string) => void)('connect')
     const [hello] = fake.sent('hello')[0] as [(res: HelloResponse) => void]
@@ -37,5 +39,8 @@ describe('connect', () => {
     await vi.waitFor(() => expect(useApp.getState().friendsLoaded).toBe(true))
     expect(useApp.getState()).toMatchObject({ friends: [friend], dms: [dm] })
     expect(fake.sent('friend:list')).toHaveLength(1)
+    // v5: o tema da conta também chega logo depois do hello
+    await vi.waitFor(() => expect(useApp.getState().preferencesLoaded).toBe(true))
+    expect(useApp.getState().theme.accent).toBe('#38bdf8')
   })
 })

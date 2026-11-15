@@ -138,6 +138,7 @@ vê), `typing`, `rate:limited`, `access:updated` e `channels:visible` (v2), `sou
 - `view: { kind: 'text' | 'voice', channelId }`: o que aparece no painel central.
 - `myVoiceChannelId`, `joiningVoice`, `muted`, `deafened`, `speaking[userId]`, `sharing`, `screens`, `screenPickerOpen`.
 - `access` (`store/permissions.ts`): `AccessState` do `hello`/`access:updated`, `null` antes de chegar; a tela lê com `useCan`/`useNameColor` de `lib/permissions.ts` (skill `concord-permissions`).
+- `theme`, `savedThemes`, `preferencesLoaded` (`store/preferences.ts`, v5): tema da conta, carregado depois do `hello` e aplicado como variáveis CSS (`lib/theme`, skill `concord-themes`); antes do login vale o último tema da máquina.
 - `audioInputId`, `audioOutputId`, `userVolumes[accountId]`, `userMuted[accountId]`, `voiceSoundsEnabled`, `voiceSoundsVolume`, `noiseSuppression`, `noiseMode`, `deviceSettingsOpen` (`store/devices.ts`; preferência da máquina, salva em `concord:audio` no `localStorage`).
 - `friends`, `dms`, `friendsLoaded` (`store/friends.ts`, v3): carregados por `loadFriendsAndDms` logo depois do `hello`; `friend:*`, `dm:created` e `message:new` (a conversa sobe para o topo) mantêm em dia. Abas da tela "Amigos" com `friendGroups` (`lib/friends.ts`).
 - `typing[channelId][userId] = { name, until }`: expira sozinho depois de 3,5 s.
