@@ -6,6 +6,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { joinVoice, leaveVoice, openDeviceSettings, openSoundboard, toggleCamera, toggleDeafen, toggleMute, toggleScreenShare } from '@/lib/client'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
+import { PushToTalkHint } from './voice/PushToTalk'
 import { ScreenPicker } from './voice/ScreenPicker'
 import { Soundboard, SoundsPlayingBar } from './voice/Soundboard'
 import { VoiceGrid } from './voice/VoiceGrid'
@@ -43,6 +44,7 @@ export function VoiceView({ channelId }: { channelId: string }) {
       </div>
 
       {connected && <SoundsPlayingBar />}
+      {connected && <PushToTalkHint />}
       <div className="flex shrink-0 items-center justify-center gap-3 pb-6">
         {connected ? (
           <>

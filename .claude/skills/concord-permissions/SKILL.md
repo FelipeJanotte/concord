@@ -31,7 +31,7 @@ cargos atribuídos; cada canal pode **liberar** ou **negar** permissões por car
   `manageRoles` (cargos abaixo do seu), `manageMembers` (atribuir cargos abaixo do seu; silenciar/expulsar da voz na
   B6), `manageMessages` (apagar mensagem de outras pessoas, B6).
 - **Por canal:** `view`, `send`, `attach`, `connect`, `speak`, `share`, `video` (câmera, B21; comunidades antigas
-  ganharam `video` onde havia `share` pela migration `0009_camera_permission`).
+  ganharam `video` onde havia `share` pela migration `0010_camera_permission`).
 - **@todos:** id fixo `EVERYONE_ROLE_ID` (`00000000-…`), posição 0, sempre existe, não pode ser apagado nem
   renomeado (só mudam as permissões). Numa comunidade nova tem todas as permissões **de canal** e nenhuma global.
 - **Dona:** a primeira conta criada (`accounts.created_at` mais antigo). Pode tudo, não pode ser rebaixada.

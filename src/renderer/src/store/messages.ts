@@ -1,5 +1,5 @@
 // Histórico de mensagens e "digitando".
-import type { Message } from '@shared/types'
+import type { Message, ReplyPreview } from '@shared/types'
 
 export interface TypingEntry {
   name: string
@@ -14,11 +14,17 @@ export interface MessagesState {
   /** carregando uma página mais antiga (spinner no topo do chat) */
   loadingOlder: Record<string, boolean>
   typing: Record<string, Record<string, TypingEntry>>
+  /** respondendo a esta mensagem no campo de cada canal (B18) */
+  replyingTo: Record<string, ReplyPreview>
+  /** mensagem sendo editada no lugar (A15); só uma por vez */
+  editingMessageId: string | null
 }
 
 export const messagesInitial: MessagesState = {
   messages: {},
   hasMoreHistory: {},
   loadingOlder: {},
-  typing: {}
+  typing: {},
+  replyingTo: {},
+  editingMessageId: null
 }

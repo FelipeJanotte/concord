@@ -1,0 +1,5 @@
+# Arquivos que rodam em Linux (deploy, A14): sempre com quebra de linha LF, mesmo clonados no Windows.
+*.sh text eol=lf
+Dockerfile text eol=lf
+deploy/** text eol=lf
+docker-compose*.yml text eol=lf

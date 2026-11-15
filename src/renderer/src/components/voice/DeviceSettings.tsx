@@ -1,4 +1,4 @@
-// "Configurações de voz": microfone, saída de áudio (B4), supressão de ruído automática (B13) câmera (B21), sons de entrar/sair da sala (B16) e sobreposição em jogos (B15). O volume de cada pessoa fica no botão direito sobre ela.
+// "Configurações de voz": microfone, saída de áudio (B4), supressão de ruído automática (B13), pressione para falar (B20), câmera (B21), sons de entrar/sair da sala (B16) e sobreposição em jogos (B15). O volume de cada pessoa fica no botão direito sobre ela.
 import { useCallback, useEffect, useState } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -20,6 +20,7 @@ import {
 } from '@/lib/client'
 import { OVERLAY_SHORTCUT_LABEL, type OverlayCorner, type OverlaySize } from '@shared/overlay'
 import { useApp } from '@/store'
+import { PushToTalkSettings } from './PushToTalk'
 
 const DEFAULT = '__default__'
 
@@ -88,6 +89,8 @@ export function DeviceSettings() {
         </div>
 
         <NoiseSuppression />
+
+        <PushToTalkSettings />
 
         <JoinLeaveSounds />
 

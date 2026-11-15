@@ -1,5 +1,5 @@
 // Histórico, envio de mensagens e "digitando".
-import type { Message } from '@shared/types'
+import { replyPreviewText, type Message } from '@shared/types'
 import { omit } from '../utils'
 import { get, getSocket, notify, requireSocket, set, type AppSocket } from '../core'
 import { isChatOnScreen } from './navigation'
@@ -19,6 +19,25 @@ export function bindMessageEvents(s: AppSocket): void {
         typing: typingInChannel?.[message.author.id]
           ? { ...st.typing, [message.channelId]: omit(typingInChannel, message.author.id) }
           : st.typing
+      }
+    })
+  )
+
+  // editada (A15): troca o texto e atualiza as citações que apontam para ela (B18)
+  s.on('message:edited', ({ channelId, messageId, content, editedAt }) => applyEdit(channelId, messageId, content, editedAt))
+
+  // apagada (B6): as respostas a ela passam a citar "mensagem apagada" (a lista em si é tratada em moderation.ts)
+  s.on('message:deleted', ({ channelId, messageId }) =>
+    set((st) => {
+      const list = st.messages[channelId]
+      if (!list?.some((m) => m.replyTo?.id === messageId)) return {}
+      return {
+        messages: {
+          ...st.messages,
+          [channelId]: list.map((m) =>
+            m.replyTo?.id === messageId ? { ...m, replyTo: { id: messageId, authorName: '', authorAccountId: null, content: '', deleted: true } } : m
+          )
+        }
       }
     })
   )
@@ -94,11 +113,15 @@ export function sendMessage(channelId: string, content: string): boolean {
   if (isUploading(channelId)) return false
   const attachmentIds = readyAttachmentIds(channelId)
   if (!text && attachmentIds.length === 0) return false
-  requireSocket().emit(
-    'message:send',
-    attachmentIds.length ? { channelId, content: text, attachmentIds } : { channelId, content: text }
-  )
+  const replyToId = get().replyingTo[channelId]?.id
+  requireSocket().emit('message:send', {
+    channelId,
+    content: text,
+    ...(attachmentIds.length ? { attachmentIds } : {}),
+    ...(replyToId ? { replyToId } : {})
+  })
   clearDraft(channelId, { cancel: false })
+  if (replyToId) cancelReply(channelId)
   lastTypingAt = 0
   return true
 }
@@ -108,4 +131,77 @@ export function notifyTyping(channelId: string): void {
   if (now - lastTypingAt < 2500) return
   lastTypingAt = now
   getSocket()?.emit('typing', channelId)
+}
+
+// ---------- Editar (A15) e responder citando (B18) ----------
+
+/** Troca o texto da mensagem já carregada e das citações a ela no mesmo canal. */
+function applyEdit(channelId: string, messageId: string, content: string, editedAt: number): void {
+  set((st) => {
+    const list = st.messages[channelId]
+    if (!list) return {}
+    const preview = replyPreviewText(content)
+    return {
+      messages: {
+        ...st.messages,
+        [channelId]: list.map((m) => {
+          if (m.id === messageId) return { ...m, content, editedAt }
+          if (m.replyTo?.id === messageId && !m.replyTo.deleted) return { ...m, replyTo: { ...m.replyTo, content: preview } }
+          return m
+        })
+      }
+    }
+  })
+}
+
+/** Começa a responder a esta mensagem: o campo do canal mostra "Respondendo a Fulano". */
+export function startReply(message: Message): void {
+  set((st) => ({
+    editingMessageId: null,
+    replyingTo: {
+      ...st.replyingTo,
+      [message.channelId]: {
+        id: message.id,
+        authorName: message.author.name,
+        authorAccountId: message.author.accountId || null,
+        content: replyPreviewText(message.content)
+      }
+    }
+  }))
+}
+
+export function cancelReply(channelId: string): void {
+  set((st) => ({ replyingTo: omit(st.replyingTo, channelId) }))
+}
+
+/** Abre a edição no lugar (só uma mensagem por vez). */
+export function startEdit(messageId: string): void {
+  set({ editingMessageId: messageId })
+}
+
+export function cancelEdit(): void {
+  set({ editingMessageId: null })
+}
+
+/**
+ * Seta para cima no campo vazio: edita a minha última mensagem de texto do canal (como no Discord).
+ * Devolve true se abriu a edição.
+ */
+export function editLastMessage(channelId: string): boolean {
+  const st = get()
+  const me = st.self?.accountId
+  const last = [...(st.messages[channelId] ?? [])].reverse().find((m) => m.author.accountId === me && (m.kind ?? 'text') === 'text')
+  if (!last) return false
+  startEdit(last.id)
+  return true
+}
+
+/** Salva a edição. Lança `Error` com a mensagem do servidor; texto igual só fecha a edição. */
+export async function editMessage(message: Message, content: string): Promise<void> {
+  const text = content.trim()
+  if (text === message.content) return cancelEdit()
+  const res = await requireSocket().emitWithAck('message:edit', { messageId: message.id, content: text })
+  if (!res.ok) throw new Error(res.error)
+  applyEdit(message.channelId, message.id, text, Date.now())
+  cancelEdit()
 }

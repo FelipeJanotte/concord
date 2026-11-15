@@ -18,6 +18,7 @@ import { bindLimitEvents } from './actions/limits'
 import { bindMessageEvents, loadHistory } from './actions/messages'
 import { bindModerationEvents } from './actions/moderation'
 import { loadOverlayPreferences } from './actions/overlay'
+import { loadPushToTalkPreferences } from './actions/push-to-talk'
 import { bindNotificationEvents, stopNotifications } from './actions/notifications'
 import { bindCallsEvents, loadCalls } from './actions/calls'
 import { bindPermissionsEvents } from './actions/permissions'
@@ -217,6 +218,7 @@ export function disconnect(): void {
   // Dispositivos são preferência da máquina, não da conta: continuam valendo depois de sair.
   loadAudioPreferences()
   loadOverlayPreferences() // B15: o overlay também é preferência da máquina
+  loadPushToTalkPreferences() // B20: pressione para falar também
 }
 
 // ---------- Ações por domínio ----------
@@ -238,6 +240,8 @@ export * from './actions/tools'
 export * from './actions/preferences'
 export * from './actions/sounds'
 export * from './actions/overlay'
+export * from './actions/updates'
+export { choosePttKey, setPttSounds, setPushToTalk } from './actions/push-to-talk'
 export * from './actions/notifications'
 export { previewVoiceSound } from './actions/voice-sounds'
 export { resolveServerUrl } from './core'

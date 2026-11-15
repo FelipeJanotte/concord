@@ -42,8 +42,9 @@ No renderer, `lib/core.ts` guarda o socket atual, `set`/`get` e `notify`.
 O processo main não fala com o servidor do Concord. Ele só abre o navegador para o login com Google e devolve o
 código ao renderer (IPC `google-sign-in`), cuida do compartilhamento de tela (IPC `screen-*`), mostra as
 notificações nativas e o selo do ícone (IPC `notify`/`badge`/`notification-click`, skill `concord-notifications`)
-e a janela do overlay em jogos (IPC `overlay-*`, atalho global, segunda página do renderer; skill
-`concord-overlay`). Toda a rede com o servidor acontece no renderer: **HTTP** para
+a janela do overlay em jogos (IPC `overlay-*`, atalho global, segunda página do renderer; skill
+`concord-overlay`), a atualização automática (IPC `update-*`, skill `concord-updates`) e o pressione para falar
+(IPC `ptt-*`, gancho de teclado/mouse do sistema com `uiohook-napi`; skill `concord-voice`). Toda a rede com o servidor acontece no renderer: **HTTP** para
 cadastro/login (antes de existir socket) e **Socket.IO** para o resto. Detalhes das contas: skill `concord-accounts`.
 
 ## Modelo de dados (`src/shared/types/`)
@@ -51,7 +52,7 @@ cadastro/login (antes de existir socket) e **Socket.IO** para o resto. Detalhes 
 - `Channel { id, name, type: 'text' | 'voice', createdAt }`
 - `User { id, accountId, name, tag, color, avatarUrl }`: `id` é o `socket.id` (presença/voz); `accountId` identifica a conta. A pessoa aparece como `nome#tag`. A tag (1 a 5 letras/números) é **única entre todas as contas e imutável**: é o que diferencia pessoas com o mesmo nome. Exceção: conta criada pelo Google recebe tag provisória (`tagLocked: false`) e escolhe a definitiva uma única vez.
 - `AccountInfo`: dados da própria conta (e-mail, `hasPassword`, `hasGoogle`, `tagLocked`), recebidos só pelo dono no `hello`.
-- `Message { id, channelId, author: User, content, attachments, createdAt, kind?, tool? }` (`kind: 'tool'` = resultado de ferramenta da v4, com `tool` tipado; ausente = texto): o banco guarda `author_id` (conta) e o histórico junta com a conta, então mostra nome/foto **atuais**. Em `message:new`, `author.id` é o socket de quem enviou; no histórico é o id da conta. Identifique a pessoa sempre por `author.accountId`.
+- `Message { id, channelId, author: User, content, attachments, createdAt, kind?, tool?, editedAt?, replyTo? }` (`editedAt` = editada, A15; `replyTo` = resumo da mensagem respondida, B18; skill `concord-messages`) (`kind: 'tool'` = resultado de ferramenta da v4, com `tool` tipado; ausente = texto): o banco guarda `author_id` (conta) e o histórico junta com a conta, então mostra nome/foto **atuais**. Em `message:new`, `author.id` é o socket de quem enviou; no histórico é o id da conta. Identifique a pessoa sempre por `author.accountId`.
 - Histórico paginado: `message:history { channelId, before? }` → `{ messages, hasMore }`, 50 por página (`HISTORY_PAGE_SIZE`), da mais antiga para a mais nova. A ordem vem da coluna `seq` (ordem de chegada). Sem limite de mensagens guardadas.
 
 ## Permissões (v2)
@@ -117,7 +118,7 @@ Cliente → servidor (`ClientToServerEvents`):
 | `tools:dice` / `tools:coin` / `tools:pick` | `{ channelId, sides, count }` / `{ channelId, count }` / `{ channelId, options }` | `ToolResult` | dado, moeda e sortear 1 nome; mesmo fluxo e limite do `tools:teams` — skill `concord-tools` |
 | `tools:move-teams` | `{ messageId, channelIds: (id \| null)[] }` | `MoveTeamsResult` (`moved`, `skipped`) | leva cada time de um sorteio postado para uma sala de voz: avisa cada conexão com `tools:moved` e o app troca de sala pelo `voice:join`; outros só com `canModerate` — skill `concord-tools` |
 | `tools:poll` / `poll:vote` / `poll:close` / `poll:mine` | `{ channelId, question, options, multiple? }` / `{ messageId, choices }` / `messageId` / `messageIds[]` | `ToolResult` / `PollVoteResult` / `PollCloseResult` / `Record<id, number[]>` | enquete (votos anônimos; votar exige `send`; encerrar: autor ou `manageMessages`) — skill `concord-tools` |
-| `message:send` | `{ channelId, content }` | — | valida (canal de texto ou conversa privada `dm`, até 2000 caracteres); `message:new` só para quem vê o canal |
+| `message:send` | `{ channelId, content, replyToId? }` | — | valida (canal de texto ou conversa privada `dm`, até 2000 caracteres); `message:new` só para quem vê o canal |
 | `voice:join` | `{ channelId, muted, deafened }` | `JoinVoiceResult` (`url`, `token` do LiveKit, `canSpeak`/`canShare`/`canVideo`) | exige LiveKit configurado; sala de voz **ou conversa privada `dm`** (só os dois membros, sem bloqueio); sai da sala anterior (também no LiveKit), entra na nova; `voice:state` (sala de DM só para os membros) |
 | `voice:leave` | — | — | tira da sala no LiveKit (`RemoveParticipant`) + `voice:state` |
 | `voice:update` | `{ muted, deafened }` | — | `voice:state` |
@@ -128,6 +129,7 @@ Cliente → servidor (`ClientToServerEvents`):
 | `call:invite` | `channelId` (conversa) | `CallResult` | membro, sem bloqueio, um por conversa e por pessoa; `call:updated` (`ringing`) para as duas contas; `missed` depois de `CALL_RING_MS` — skill `concord-calls` |
 | `call:accept` / `call:decline` / `call:cancel` / `call:end` | `channelId` | `CallResult` / `OkResult` | atender (`active`), recusar, cancelar, desligar; o fim manda `call:ended` e tira os dois da sala da conversa |
 | `call:list` | — | `CallInfo[]` | chamadas em andamento das minhas conversas (o app pede depois do `hello`) |
+| `message:edit` | `{ messageId, content }` | `OkResult` | só o autor, só texto, ainda com `view`+`send`; `message:edited { channelId, messageId, content, editedAt }` para quem vê o canal (A15, skill `concord-messages`) |
 | `message:delete` | `{ messageId }` | `OkResult` | o autor ou `manageMessages` (em DM só o autor); apaga os anexos; `message:deleted` para quem vê o canal |
 
 Servidor → cliente (`ServerToClientEvents`): `channel:created`, `channel:deleted`, `user:joined`, `user:left`,

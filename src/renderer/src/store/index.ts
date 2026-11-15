@@ -15,9 +15,11 @@ import { toolsInitial, type ToolsState } from './tools'
 import { navigationInitial, type NavigationState } from './navigation'
 import { overlayInitial, type OverlayState } from './overlay'
 import { messagesInitial, type MessagesState } from './messages'
+import { pushToTalkInitial, type PushToTalkState } from './push-to-talk'
 import { permissionsInitial, type PermissionsState } from './permissions'
 import { sessionInitial, type SessionState } from './session'
 import { soundsInitial, type SoundsState } from './sounds'
+import { updatesInitial, type UpdatesState } from './updates'
 import { uploadsInitial, type UploadsState } from './uploads'
 import { voiceInitial, type VoiceSliceState } from './voice'
 
@@ -28,7 +30,7 @@ export type { ConnectionStatus, Notice } from './session'
 export type { PendingUpload } from './uploads'
 export type { PlayingSound } from './sounds'
 
-export interface AppState extends SessionState, ChannelsState, MessagesState, UploadsState, VoiceSliceState, DevicesState, PermissionsState, FriendsState, ToolsState, PreferencesState, NavigationState, CallsState, SoundsState, OverlayState {}
+export interface AppState extends SessionState, ChannelsState, MessagesState, UploadsState, VoiceSliceState, DevicesState, PermissionsState, FriendsState, ToolsState, PreferencesState, NavigationState, CallsState, SoundsState, OverlayState, UpdatesState, PushToTalkState {}
 
 export const initialState: AppState = {
   ...sessionInitial,
@@ -44,7 +46,9 @@ export const initialState: AppState = {
   ...navigationInitial,
   ...callsInitial,
   ...soundsInitial,
-  ...overlayInitial
+  ...overlayInitial,
+  ...updatesInitial,
+  ...pushToTalkInitial
 }
 
 export const useApp = create<AppState>()(() => initialState)

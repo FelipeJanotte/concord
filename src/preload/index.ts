@@ -1,7 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { OverlayBridge, OverlayConfig, OverlayRoom, OverlayViewBridge } from '../shared/overlay'
+import type { PttBinding, PttConfig, PushToTalkBridge } from '../shared/push-to-talk'
 import type { NativeNotification, NotificationsBridge, NotificationTarget } from '../shared/notifications'
 import type { ScreenShareBridge, ScreenSource } from '../shared/screen'
+import type { UpdaterBridge, UpdateStatus } from '../shared/updater'
 
 const screen: ScreenShareBridge = {
   getSources: (): Promise<ScreenSource[]> => ipcRenderer.invoke('screen-sources'),
@@ -29,6 +31,22 @@ const overlayView: OverlayViewBridge = {
   }
 }
 
+/** Pressione para falar (B20): configura a escuta e recebe pressionado/solto. */
+const pushToTalk: PushToTalkBridge = {
+  setConfig: (config: PttConfig): void => ipcRenderer.send('ptt-config', config),
+  capture: (): Promise<PttBinding | null> => ipcRenderer.invoke('ptt-capture'),
+  onChange: (listener) => {
+    const handler = (_e: unknown, pressed: boolean): void => listener(pressed)
+    ipcRenderer.on('ptt-change', handler)
+    return () => ipcRenderer.removeListener('ptt-change', handler)
+  },
+  onUnavailable: (listener) => {
+    const handler = (): void => listener()
+    ipcRenderer.on('ptt-unavailable', handler)
+    return () => ipcRenderer.removeListener('ptt-unavailable', handler)
+  }
+}
+
 const notifications: NotificationsBridge = {
   show: (notification: NativeNotification): void => ipcRenderer.send('notify', notification),
   setBadge: (count: number, overlay: string | null): void => ipcRenderer.send('badge', count, overlay),
@@ -37,6 +55,17 @@ const notifications: NotificationsBridge = {
     ipcRenderer.on('notification-click', handler)
     return () => ipcRenderer.removeListener('notification-click', handler)
   }
+}
+
+/** Atualização automática (A13, ver src/main/updater.ts). */
+const updater: UpdaterBridge = {
+  getStatus: (): Promise<UpdateStatus> => ipcRenderer.invoke('update-get'),
+  onStatus: (listener) => {
+    const handler = (_e: unknown, status: UpdateStatus): void => listener(status)
+    ipcRenderer.on('update-status', handler)
+    return () => ipcRenderer.removeListener('update-status', handler)
+  },
+  install: (): void => ipcRenderer.send('update-install')
 }
 
 const api = {
@@ -50,7 +79,10 @@ const api = {
   overlay,
   overlayView,
   /** Notificações nativas e selo no ícone (ver src/main/notifications.ts). */
-  notifications
+  notifications,
+  updater,
+  /** Pressione para falar (ver src/main/push-to-talk.ts). */
+  pushToTalk
 }
 
 if (process.contextIsolated) {

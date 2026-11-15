@@ -1,12 +1,12 @@
-// B21: a migration 0009 dá a câmera (`video`) a quem já podia compartilhar a tela nas comunidades existentes.
+// B21: a migration 0010 dá a câmera (`video`) a quem já podia compartilhar a tela nas comunidades existentes.
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PGlite } from '@electric-sql/pglite'
 import { describe, expect, it } from 'vitest'
 
-const sql = readFileSync(join(__dirname, 'migrations', '0009_camera_permission.sql'), 'utf8')
+const sql = readFileSync(join(__dirname, 'migrations', '0010_camera_permission.sql'), 'utf8')
 
-describe('migration 0009_camera_permission', () => {
+describe('migration 0010_camera_permission', () => {
   it('acrescenta video em cargo com share, sem duplicar e sem mexer nos outros', async () => {
     const db = new PGlite()
     await db.exec(`CREATE TABLE "roles" ("id" text PRIMARY KEY, "permissions" text[] NOT NULL DEFAULT '{}')`)

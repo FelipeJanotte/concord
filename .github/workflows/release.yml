@@ -1,0 +1,44 @@
+# Release (A13): ao criar uma tag vX.Y.Z (igual à versão do package.json), gera o instalador do Windows
+# e publica no GitHub Releases com o latest.yml. Os apps instalados acham a versão nova sozinhos.
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: instalador do Windows
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Conferir a versão
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "A tag ($GITHUB_REF_NAME) não bate com a versão do package.json ($pkg). Suba a versão antes de criar a tag."
+            exit 1
+          fi
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Gerar e publicar
+        run: npm run release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

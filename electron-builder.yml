@@ -16,3 +16,10 @@ nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: always
+# Atualização automática (A13): o instalador e o latest.yml vão para os GitHub Releases, e o
+# electron-updater do app instalado procura a versão nova lá. Publicar: tag vX.Y.Z (workflow release.yml).
+publish:
+  provider: github
+  owner: FelipeJanotte
+  repo: concord
+  releaseType: release
