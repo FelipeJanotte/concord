@@ -39,8 +39,9 @@ Gerenciador de pacotes: **npm** (não use pnpm/yarn; o projeto foi revertido do 
 | `src/main/screen-share.ts` | Compartilhar tela: IPC `screen-sources`/`screen-select` e `setDisplayMediaRequestHandler` (entrega a fonte escolhida no seletor). |
 | `src/main/notifications.ts`, `src/shared/notifications.ts` | Notificações (B9): IPC `notify`/`badge`, notificação nativa com clique que abre a conversa/Amigos e selo no ícone (overlay + piscar no Windows). Regras no renderer em `lib/notifications.ts` e `lib/actions/notifications.ts`. |
 | `src/main/overlay.ts`, `src/shared/overlay.ts` | Sobreposição em jogos (B15): janela transparente sempre no topo que não recebe cliques, com quem está na minha sala e quem fala; IPC `overlay-config`/`overlay-room`/`overlay-update`/`overlay-toggled` e atalho global Shift + crase. Página própria: `src/renderer/overlay.html` + `src/renderer/src/overlay/` (2ª entrada no `electron.vite.config.ts`); lado do app em `lib/actions/overlay.ts` e `store/overlay.ts`. |
+| `src/main/updater.ts`, `src/shared/updater.ts` | Atualização automática (A13): electron-updater nos GitHub Releases (ao abrir e a cada 4 h), IPC `update-get`/`update-install`/`update-status`; faixa `components/UpdateBanner.tsx`, `lib/actions/updates.ts`, `store/updates.ts`. Publicar: tag `vX.Y.Z` → `.github/workflows/release.yml`. |
 | `src/main/google-auth.ts` | Login com Google: navegador do sistema + loopback 127.0.0.1 + PKCE; devolve o código para o servidor trocar. |
-| `src/preload/` | Ponte `contextBridge` (`window.api.platform`, `window.api.googleSignIn`, `window.api.screen`, `window.api.notifications` (B9) e `window.api.overlay`/`overlayView` (B15); tipos da tela em `src/shared/screen.ts`). |
+| `src/preload/` | Ponte `contextBridge` (`window.api.platform`, `window.api.googleSignIn`, `window.api.screen`, `window.api.notifications` (B9), `window.api.overlay`/`overlayView` (B15) e `window.api.updater` (A13); tipos da tela em `src/shared/screen.ts`). |
 | `src/renderer/src/store/` | Estado global zustand (`useApp`), um slice por domínio composto em `index.ts`. Só dados, sem ações. |
 | `src/renderer/src/lib/client.ts` | Login/sessão e conexão Socket.IO; chama os `bind<Dominio>Events` e **reexporta todas as ações**. Componentes importam ações daqui. |
 | `src/renderer/src/lib/actions/` | Ações e listeners por domínio (`account`, `channels`, `devices`, `friends` (amizades + DMs, v3), `tools` (sorteador, v4), `messages`, `moderation` (B6), `calls` (B8: ligar, atender, toque), `navigation` (B7: seção da barra de úteis, Home, abrir conversa), `permissions`, `presence`, `uploads`, `voice`, `sounds` (soundboard, B17)). `voice-sounds.ts`: sons de entrar/sair da sala. `devices.ts`: microfone, saída, volume e silenciar por pessoa (preferências em `concord:audio`). `uploads.ts`: rascunho de anexos por canal, envio com progresso (`transport.send`, XHR). |
@@ -75,7 +76,8 @@ npm run db:generate # gera a migration depois de mudar server/db/schema (ver con
 npm run db:import-json [arquivo]  # importa um db.json antigo para o banco
 npm run db:restore [arquivo]      # restaura um backup do PGlite (servidor parado)
 npm run build       # typecheck + build em out/
-npm run dist        # instalador Windows em dist/
+npm run dist        # instalador Windows em dist/ (sem publicar)
+npm run release     # instalador + publica no GitHub Releases (usado pelo workflow da tag vX.Y.Z)
 ```
 
 ## Regras do projeto
@@ -133,4 +135,5 @@ Leia a skill certa antes de mexer em cada área (ficam em `.claude/skills/<nome>
 - `concord-voice` — como a voz funciona (LiveKit no servidor, token por sala), compartilhamento de tela, dispositivos e volume por pessoa, limites e depuração.
 - `concord-notifications` — notificações (B9): quando avisar (conversa, chamada, pedido de amizade, só fora de foco), clique e selo no ícone.
 - `concord-overlay` — sobreposição em jogos (B15): janela transparente com quem fala, atalho global, canto/tamanho e o limite da tela cheia exclusiva.
+- `concord-updates` — atualização automática (A13): electron-updater, faixa "Reiniciar para atualizar" e como publicar uma versão (tag vX.Y.Z).
 - `concord-dev-workflow` — rodar, testar com vários usuários, build e solução de problemas conhecidos.

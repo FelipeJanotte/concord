@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { OverlayBridge, OverlayConfig, OverlayRoom, OverlayViewBridge } from '../shared/overlay'
 import type { NativeNotification, NotificationsBridge, NotificationTarget } from '../shared/notifications'
 import type { ScreenShareBridge, ScreenSource } from '../shared/screen'
+import type { UpdaterBridge, UpdateStatus } from '../shared/updater'
 
 const screen: ScreenShareBridge = {
   getSources: (): Promise<ScreenSource[]> => ipcRenderer.invoke('screen-sources'),
@@ -39,6 +40,17 @@ const notifications: NotificationsBridge = {
   }
 }
 
+/** Atualização automática (A13, ver src/main/updater.ts). */
+const updater: UpdaterBridge = {
+  getStatus: (): Promise<UpdateStatus> => ipcRenderer.invoke('update-get'),
+  onStatus: (listener) => {
+    const handler = (_e: unknown, status: UpdateStatus): void => listener(status)
+    ipcRenderer.on('update-status', handler)
+    return () => ipcRenderer.removeListener('update-status', handler)
+  },
+  install: (): void => ipcRenderer.send('update-install')
+}
+
 const api = {
   platform: process.platform,
   /** Abre o navegador para o login com Google e devolve o código (fluxo loopback + PKCE). */
@@ -50,7 +62,8 @@ const api = {
   overlay,
   overlayView,
   /** Notificações nativas e selo no ícone (ver src/main/notifications.ts). */
-  notifications
+  notifications,
+  updater
 }
 
 if (process.contextIsolated) {
