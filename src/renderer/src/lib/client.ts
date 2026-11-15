@@ -29,11 +29,13 @@ import { bindVoiceEvents, OUT_OF_VOICE } from './actions/voice'
 import { clearAllDrafts } from './actions/uploads'
 import { loadAudioPreferences } from './actions/devices'
 import { baseUrl, get, getSocket, notify, SERVER_KEY, set, setSocket, TOKEN_KEY, type AppSocket } from './core'
+import { defaultServerUrl } from './default-server'
 import { voice } from './voice'
 
 // ---------- Contas (HTTP) ----------
 
-export const DEFAULT_SERVER = 'http://localhost:3001'
+/** Servidor da tela de login quando ainda não há um salvo: `VITE_DEFAULT_SERVER` do build ou o local. */
+export const DEFAULT_SERVER = defaultServerUrl(import.meta.env.VITE_DEFAULT_SERVER)
 
 export function savedServerUrl(): string {
   return localStorage.getItem(SERVER_KEY) ?? DEFAULT_SERVER

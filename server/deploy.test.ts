@@ -92,3 +92,18 @@ describe('LiveKit, Caddy, imagem e banco', () => {
     expect(initScript).toContain('ALTER DEFAULT PRIVILEGES')
   })
 })
+
+describe('vercel.json (versão web do app)', () => {
+  const vercel = JSON.parse(read('vercel.json')) as Record<string, unknown>
+  const viteConfig = read('electron.vite.config.ts')
+
+  it('gera o renderer e publica out/renderer (onde o electron-vite põe a página)', () => {
+    expect(vercel.buildCommand).toBe('npx electron-vite build')
+    expect(vercel.outputDirectory).toBe('out/renderer')
+    expect(viteConfig).toContain("index: resolve('src/renderer/index.html')")
+  })
+
+  it('não baixa o binário do Electron na instalação (o site não precisa dele)', () => {
+    expect(vercel.installCommand).toMatch(/^ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci$/)
+  })
+})

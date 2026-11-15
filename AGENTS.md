@@ -60,6 +60,7 @@ Gerenciador de pacotes: **npm** (não use pnpm/yarn; o projeto foi revertido do 
 | `src/renderer/src/lib/sounds/` | Sons da interface gerados pela Web Audio (`ChimePlayer`) e `roomChanges` (quem entrou/saiu da minha sala). Ligados em `lib/actions/voice-sounds.ts`. `Ringer` (`ringtone.ts`): toque das chamadas (B8). |
 | `src/renderer/src/lib/noise/` | Supressão de ruído automática: `NoiseDecider` (quando ligar o filtro forte), `AutoNoiseProcessor` (processador do microfone no LiveKit) e o motor RNNoise (WASM empacotado). |
 | `src/renderer/src/components/ui/` | Componentes shadcn/ui (estilo new-york, importando de `radix-ui`). |
+| `vercel.json`, `src/renderer/src/lib/default-server.ts`, `src/renderer/src/env.d.ts` | Versão web opcional (skill `concord-deploy`): a Vercel publica só `out/renderer`; `VITE_DEFAULT_SERVER` no build define o servidor padrão da tela de login (também no instalador). |
 | `docker-compose.yml`, `livekit.yaml`, `.env.example` | Infra local: PostgreSQL 17 e LiveKit (SFU). Credenciais de dev espelhadas em `server/.env.example`; `.env` na raiz (modelo `.env.example`) é do compose: `LIVEKIT_NODE_IP` para a voz de quem vem de outra máquina. |
 | `.github/workflows/ci.yml` | CI (A12): typecheck + testes em todo PR e push na `main` (Ubuntu, Node 22, PGlite, sem Docker). |
 | `Dockerfile`, `docker-compose.prod.yml`, `deploy/` | Hospedagem pela internet (A14): imagem do servidor, compose de produção (servidor + Postgres com backup + LiveKit com TURN + Caddy/HTTPS), `deploy/.env.example` e o guia `deploy/README.md`. |

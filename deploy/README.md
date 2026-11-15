@@ -37,6 +37,14 @@ funcionando mesmo atrás de roteadores e firewalls (o LiveKit tem TURN embutido)
 
 Fotos, anexos e sons ficam no volume `concord-data`; inclua-o na sua rotina de cópia da máquina.
 
+## Versão web (Vercel), opcional
+
+Além do app instalado, dá para publicar a tela do Concord como site e os amigos entram pelo navegador. **O servidor
+continua nesta máquina** (a Vercel só serve a página). Importe o repositório na Vercel (o `vercel.json` já tem
+os comandos) e defina a variável `VITE_DEFAULT_SERVER=https://concord.seudominio.com.br` para a tela de login já
+vir com o seu servidor. O servidor precisa estar em `https://` (o compose acima já faz isso). No navegador não há
+login com Google, pressione para falar, overlay nem notificações nativas. Detalhes: skill `concord-deploy`.
+
 ## Problemas comuns
 
 | Sintoma | Causa e solução |
