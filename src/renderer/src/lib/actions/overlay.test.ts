@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 // Overlay em jogos no app (B15): o que vai para o overlay (minha sala), preferência salva e atalho.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { OverlayConfig, OverlayRoom } from '@shared/overlay'
+import type { OverlayConfig, OverlayPosition, OverlayRoom } from '@shared/overlay'
 import type { Channel, DmEntry, User, VoiceState } from '@shared/types'
-import { loadOverlayPreferences, OVERLAY_KEY, overlayEnv, overlayRoom, setOverlayCorner, setOverlayEnabled, startOverlay, syncOverlay } from '@/lib/actions/overlay'
+import { loadOverlayPreferences, OVERLAY_KEY, overlayEnv, overlayRoom, setOverlayCorner, setOverlayEditing, setOverlayEnabled, startOverlay, syncOverlay } from '@/lib/actions/overlay'
 import { initialState, useApp } from '@/store'
 
 const user = (id: string, name: string, avatarUrl: string | null = null): User => ({ id, accountId: `acc-${id}`, name, tag: id, color: '#123456', avatarUrl })
@@ -53,7 +53,7 @@ describe('preferência', () => {
   it('salva e lê de volta; valores estranhos voltam ao padrão', () => {
     setOverlayEnabled(true)
     setOverlayCorner('bottom-right')
-    expect(JSON.parse(localStorage.getItem(OVERLAY_KEY)!)).toEqual({ enabled: true, corner: 'bottom-right', size: 'medium' })
+    expect(JSON.parse(localStorage.getItem(OVERLAY_KEY)!)).toEqual({ enabled: true, corner: 'bottom-right', size: 'medium', position: null })
     useApp.setState({ ...initialState })
     loadOverlayPreferences()
     expect(useApp.getState()).toMatchObject({ overlayEnabled: true, overlayCorner: 'bottom-right' })
@@ -76,10 +76,13 @@ describe('sincronia com o processo principal', () => {
       onToggled: (fn) => {
         toggled = fn
         return () => (toggled = null)
-      }
+      },
+      setEditing: () => {},
+      onEditing: () => () => {},
+      onMoved: () => () => {}
     })
     const stop = startOverlay()
-    expect(configs).toEqual([{ enabled: false, corner: 'top-left', size: 'medium' }])
+    expect(configs).toEqual([{ enabled: false, corner: 'top-left', size: 'medium', position: null }])
     expect(rooms).toEqual([null])
 
     useApp.setState({ myVoiceChannelId: 'jogos', users: [user('s1', 'Ana')], voice: [vs('s1', 'jogos')] })
@@ -105,6 +108,72 @@ describe('sincronia com o processo principal', () => {
     vi.spyOn(overlayEnv, 'bridge').mockReturnValue(null)
     const stop = startOverlay()
     expect(() => syncOverlay()).not.toThrow()
+    expect(() => setOverlayEditing(true)).not.toThrow()
     stop()
+  })
+})
+
+describe('mover (como no Discord)', () => {
+  function bridge() {
+    const calls = { configs: [] as OverlayConfig[], editing: [] as boolean[] }
+    let onEditing: ((e: boolean) => void) | null = null
+    let onMoved: ((p: OverlayPosition) => void) | null = null
+    vi.spyOn(overlayEnv, 'bridge').mockReturnValue({
+      setConfig: (c) => calls.configs.push(c),
+      setRoom: () => {},
+      onToggled: () => () => {},
+      setEditing: (e) => calls.editing.push(e),
+      onEditing: (fn) => {
+        onEditing = fn
+        return () => (onEditing = null)
+      },
+      onMoved: (fn) => {
+        onMoved = fn
+        return () => (onMoved = null)
+      }
+    })
+    return { calls, editing: (e: boolean) => onEditing?.(e), moved: (p: unknown) => onMoved?.(p as OverlayPosition), listening: () => !!onEditing && !!onMoved }
+  }
+
+  it('o botão manda a configuração atual antes de pedir o modo de mover', () => {
+    const b = bridge()
+    const stop = startOverlay()
+    useApp.setState({ overlayEnabled: true })
+    setOverlayEditing(true)
+    expect(b.calls.configs.at(-1)?.enabled).toBe(true)
+    expect(b.calls.editing).toEqual([true])
+    setOverlayEditing(false)
+    expect(b.calls.editing).toEqual([true, false])
+    stop()
+  })
+
+  it('o modo de mover chega na store; soltar salva a posição; parar de ouvir limpa', () => {
+    const b = bridge()
+    const stop = startOverlay()
+    b.editing(true)
+    expect(useApp.getState().overlayEditing).toBe(true)
+    b.moved({ x: 420.7, y: 99 })
+    expect(useApp.getState().overlayPosition).toEqual({ x: 421, y: 99 })
+    expect(JSON.parse(localStorage.getItem(OVERLAY_KEY)!).position).toEqual({ x: 421, y: 99 })
+    expect(b.calls.configs.at(-1)?.position).toEqual({ x: 421, y: 99 })
+    b.moved({ x: 'a', y: 1 }) // inválido: ignora
+    expect(useApp.getState().overlayPosition).toEqual({ x: 421, y: 99 })
+    stop()
+    expect(b.listening()).toBe(false)
+    expect(useApp.getState().overlayEditing).toBe(false)
+  })
+
+  it('escolher um canto volta para o canto; a posição volta depois de reabrir; posição ruim é ignorada', () => {
+    useApp.setState({ overlayPosition: { x: 10, y: 20 } })
+    setOverlayEnabled(true)
+    useApp.setState({ overlayPosition: null })
+    loadOverlayPreferences()
+    expect(useApp.getState().overlayPosition).toEqual({ x: 10, y: 20 })
+    setOverlayCorner('top-right')
+    expect(useApp.getState().overlayPosition).toBeNull()
+    expect(JSON.parse(localStorage.getItem(OVERLAY_KEY)!).position).toBeNull()
+    localStorage.setItem(OVERLAY_KEY, '{"enabled":true,"position":{"x":"1","y":null}}')
+    loadOverlayPreferences()
+    expect(useApp.getState().overlayPosition).toBeNull()
   })
 })

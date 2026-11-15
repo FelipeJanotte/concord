@@ -15,12 +15,13 @@ import {
   setOutputVolume,
   setNoiseSuppression,
   setOverlayCorner,
+  setOverlayEditing,
   setOverlayEnabled,
   setOverlaySize,
   setVoiceSounds,
   type AudioDevice
 } from '@/lib/client'
-import { OVERLAY_SHORTCUT_LABEL, type OverlayCorner, type OverlaySize } from '@shared/overlay'
+import { OVERLAY_EDIT_SHORTCUT_LABEL, OVERLAY_SHORTCUT_LABEL, type OverlayCorner, type OverlaySize } from '@shared/overlay'
 import { MIC_GAIN_MAX, OUTPUT_VOLUME_MAX } from '@/lib/mic-gain'
 import { useApp } from '@/store'
 import { PushToTalkSettings } from './PushToTalk'
@@ -233,6 +234,8 @@ function JoinLeaveSounds() {
   )
 }
 
+/** valor do seletor de posição quando o overlay foi arrastado (não é um canto) */
+const CUSTOM = '__custom__'
 const CORNERS: Record<OverlayCorner, string> = {
   'top-left': 'Canto superior esquerdo',
   'top-right': 'Canto superior direito',
@@ -246,6 +249,10 @@ function GameOverlay() {
   const enabled = useApp((s) => s.overlayEnabled)
   const corner = useApp((s) => s.overlayCorner)
   const size = useApp((s) => s.overlaySize)
+  const moved = useApp((s) => s.overlayPosition !== null)
+  const editing = useApp((s) => s.overlayEditing)
+  // o modo de mover só existe no app (precisa da janela do overlay)
+  const canMove = typeof window !== 'undefined' && !!window.api?.overlay
   const selectClass = 'h-9 rounded-md border border-border bg-input px-2 text-sm text-foreground disabled:opacity-60'
   return (
     <div className="space-y-2 border-t border-border pt-4">
@@ -254,7 +261,14 @@ function GameOverlay() {
         Mostrar quem está falando por cima dos jogos
       </label>
       <div className="flex flex-wrap gap-2 pl-6">
-        <select aria-label="Posição do overlay" value={corner} disabled={!enabled} onChange={(e) => setOverlayCorner(e.target.value as OverlayCorner)} className={selectClass}>
+        <select
+          aria-label="Posição do overlay"
+          value={moved ? CUSTOM : corner}
+          disabled={!enabled}
+          onChange={(e) => e.target.value !== CUSTOM && setOverlayCorner(e.target.value as OverlayCorner)}
+          className={selectClass}
+        >
+          {moved && <option value={CUSTOM}>Onde você arrastou</option>}
           {(Object.keys(CORNERS) as OverlayCorner[]).map((c) => (
             <option key={c} value={c}>
               {CORNERS[c]}
@@ -268,10 +282,21 @@ function GameOverlay() {
             </option>
           ))}
         </select>
+        {canMove && (
+          <Button variant={editing ? 'default' : 'secondary'} size="sm" className="h-9" disabled={!enabled} onClick={() => setOverlayEditing(!editing)}>
+            {editing ? 'Concluir' : 'Mover'}
+          </Button>
+        )}
       </div>
+      {editing && (
+        <p className="pl-6 text-xs text-foreground" aria-live="polite">
+          Arraste a sobreposição para onde quiser na tela. Termine com “Concluir”, Esc ou <kbd className="rounded bg-accent px-1">{OVERLAY_EDIT_SHORTCUT_LABEL}</kbd>.
+        </p>
+      )}
       <p className="pl-6 text-xs text-muted-foreground">
-        Aparece quando você está numa sala de voz. Liga e desliga também pelo atalho <kbd className="rounded bg-accent px-1">{OVERLAY_SHORTCUT_LABEL}</kbd>, mesmo dentro do jogo. Funciona com o jogo em janela ou em
-        tela cheia sem bordas; em tela cheia exclusiva o Windows não deixa nada aparecer por cima.
+        Aparece quando você está numa sala de voz. Liga e desliga também pelo atalho <kbd className="rounded bg-accent px-1">{OVERLAY_SHORTCUT_LABEL}</kbd>, mesmo dentro do jogo; para mover
+        dentro do jogo, use <kbd className="rounded bg-accent px-1">{OVERLAY_EDIT_SHORTCUT_LABEL}</kbd>. Funciona com o jogo em janela ou em tela cheia sem bordas; em tela cheia exclusiva o Windows
+        não deixa nada aparecer por cima.
       </p>
     </div>
   )
