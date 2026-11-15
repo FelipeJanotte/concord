@@ -119,6 +119,7 @@ Cliente → servidor (`ClientToServerEvents`):
 | `voice:update` | `{ muted, deafened }` | — | `voice:state` |
 | `voice:sharing` | `boolean` | — | liga/desliga o "ao vivo" (só para quem está numa sala); `voice:state` |
 | `typing` | `channelId` | — | broadcast `typing` (o cliente limita a 1 envio a cada 2,5 s) |
+| `moderation:voice-move` | `{ userId, channelId }` | `OkResult` | mesma regra do expulsar + sala de voz que quem move vê e em que a pessoa pode entrar; `moderation:moved` só para a conexão movida, que troca de sala pelo `voice:join` — `docs/areas/moderation.md` |
 | `moderation:voice-kick` | `{ userId }` | `OkResult` | `manageMembers` + cargo acima (`canModerate`); `moderation:kicked` para a conexão expulsa, tira da sala (também no LiveKit) + `voice:state` — `docs/areas/moderation.md` |
 | `moderation:voice-mute` | `{ accountId, muted }` | `OkResult` | silencia a conta para todos (sem microfone no LiveKit, `VoiceState.serverMuted`; guardado em `server_mutes`, sobrevive a reiniciar) + `voice:state` |
 | `call:invite` | `channelId` (conversa) | `CallResult` | membro, sem bloqueio, um por conversa e por pessoa; `call:updated` (`ringing`) para as duas contas; `missed` depois de `CALL_RING_MS` — `docs/areas/calls.md` |
@@ -131,7 +132,7 @@ Cliente → servidor (`ClientToServerEvents`):
 Servidor → cliente (`ServerToClientEvents`): `channel:created`, `channel:deleted`, `user:joined`, `user:left`,
 `user:updated` (por `accountId`), `message:new`, `voice:state` (sempre a **lista completa** das salas que a pessoa
 vê), `typing`, `rate:limited`, `access:updated` e `channels:visible` (v2), `sound:created`, `sound:deleted` e
-`sound:played` (soundboard; o último só para a sala) `preferences:updated` (outras janelas da mesma conta), `friend:updated`, `friend:removed` e `friend:presence` (amizades; online só para amigos), `poll:updated` (enquete: contagens novas, para quem vê o canal), `tools:moved` (só para a conexão levada à sala do time), `dm:created` (conversa nova, para a outra pessoa e as minhas outras janelas), `message:deleted` (para quem vê o canal) e `moderation:kicked` (só para a conexão expulsa da voz), `call:updated` e `call:ended` (chamadas privadas, para as duas contas; o fim chega antes do `voice:state`).
+`sound:played` (soundboard; o último só para a sala) `preferences:updated` (outras janelas da mesma conta), `friend:updated`, `friend:removed` e `friend:presence` (amizades; online só para amigos), `poll:updated` (enquete: contagens novas, para quem vê o canal), `tools:moved` (só para a conexão levada à sala do time), `dm:created` (conversa nova, para a outra pessoa e as minhas outras janelas), `message:deleted` (para quem vê o canal) , `moderation:kicked` (só para a conexão expulsa da voz) e `moderation:moved` (só para a conexão movida para outra sala), `call:updated` e `call:ended` (chamadas privadas, para as duas contas; o fim chega antes do `voice:state`).
 
 ## Estado do renderer (`store/`)
 

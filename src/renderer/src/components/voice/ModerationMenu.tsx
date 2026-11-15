@@ -1,13 +1,21 @@
 /**
- * Moderação da voz (B6) no menu de botão direito sobre uma pessoa: "Silenciar para todos" e
- * "Expulsar da voz". Só aparece para quem pode moderar a pessoa (`canModerate`: gerenciar membros
+ * Moderação da voz (B6) no menu de botão direito sobre uma pessoa: "Mover para" (outra sala de voz),
+ * "Silenciar para todos" e "Expulsar da voz". Só aparece para quem pode moderar a pessoa (`canModerate`: gerenciar membros
  * e cargo acima do dela) e enquanto ela está numa sala de voz que eu vejo.
  */
-import { MicOff, PhoneOff, ShieldAlert } from 'lucide-react'
+import { ArrowRightLeft, MicOff, PhoneOff, ShieldAlert, Volume2 } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { canModerate } from '@shared/types'
-import { ContextMenuCheckboxItem, ContextMenuItem, ContextMenuSeparator } from '@/components/ui/context-menu'
-import { kickFromVoice, notify, setServerMuted } from '@/lib/client'
+import {
+  ContextMenuCheckboxItem,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger
+} from '@/components/ui/context-menu'
+import { kickFromVoice, moveToVoice, notify, setServerMuted } from '@/lib/client'
+import { allows } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
 
@@ -31,6 +39,7 @@ export function ModerationItems({ accountId, name }: { accountId: string; name: 
   return (
     <>
       <ContextMenuSeparator />
+      <MoveToItems accountId={accountId} connections={connections} />
       <ContextMenuCheckboxItem
         checked={serverMuted}
         onCheckedChange={(checked) =>
@@ -54,6 +63,51 @@ export function ModerationItems({ accountId, name }: { accountId: string; name: 
         Expulsar da voz
       </ContextMenuItem>
     </>
+  )
+}
+
+/**
+ * "Mover para ▸": as salas de voz que eu vejo, menos aquela em que a pessoa já está e as que ela não
+ * pode ver/entrar (o servidor confere de novo). Chamada privada não aparece (não é sala da comunidade).
+ */
+function MoveToItems({ accountId, connections }: { accountId: string; connections: { userId: string; channelId: string }[] }) {
+  const rooms = useApp(
+    useShallow((s) =>
+      s.channels.filter(
+        (c) =>
+          c.type === 'voice' &&
+          connections.some((v) => v.channelId !== c.id) &&
+          allows(s.access, accountId, 'view', c.id) &&
+          allows(s.access, accountId, 'connect', c.id)
+      )
+    )
+  )
+  // só move de sala da comunidade (quem está numa chamada privada não aparece aqui)
+  const fromRooms = useApp(useShallow((s) => connections.filter((v) => s.channels.some((c) => c.id === v.channelId))))
+  if (rooms.length === 0 || fromRooms.length === 0) return null
+  return (
+    <ContextMenuSub>
+      <ContextMenuSubTrigger>
+        <ArrowRightLeft />
+        Mover para
+      </ContextMenuSubTrigger>
+      <ContextMenuSubContent aria-label="Mover para">
+        {rooms.map((room) => (
+          <ContextMenuItem
+            key={room.id}
+            onSelect={() => {
+              for (const v of fromRooms) {
+                if (v.channelId === room.id) continue
+                moveToVoice(v.userId, room.id).catch((err: unknown) => report(err, 'Não foi possível mover'))
+              }
+            }}
+          >
+            <Volume2 />
+            {room.name}
+          </ContextMenuItem>
+        ))}
+      </ContextMenuSubContent>
+    </ContextMenuSub>
   )
 }
 
