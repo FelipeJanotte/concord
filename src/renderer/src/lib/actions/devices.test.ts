@@ -79,7 +79,7 @@ describe('escolher dispositivo', () => {
     await selectAudioInput('mic-usb')
     await selectAudioOutput('fone')
     expect(useApp.getState()).toMatchObject({ audioInputId: 'mic-usb', audioOutputId: 'fone' })
-    expect(saved()).toEqual({ input: 'mic-usb', output: 'fone', volumes: {}, muted: [], sounds: { enabled: true, volume: 0.5 }, noise: true })
+    expect(saved()).toEqual({ input: 'mic-usb', output: 'fone', camera: null, volumes: {}, muted: [], sounds: { enabled: true, volume: 0.5 }, noise: true })
     expect(voice.setInputDevice).toHaveBeenCalledWith('mic-usb')
     expect(voice.setOutputDevice).toHaveBeenCalledWith('fone')
 
@@ -129,14 +129,17 @@ describe('listAudioDevices', () => {
     vi.spyOn(voice, 'listDevices').mockImplementation(async (kind) =>
       kind === 'audioinput'
         ? [device('default', kind, 'Padrão'), device('communications', kind), device('m1', kind, 'Headset USB'), device('m2', kind)]
-        : [device('o1', kind)]
+        : kind === 'videoinput'
+          ? [device('default', kind), device('c1', kind)]
+          : [device('o1', kind)]
     )
     expect(await listAudioDevices()).toEqual({
       inputs: [
         { deviceId: 'm1', label: 'Headset USB' },
         { deviceId: 'm2', label: 'Microfone 2' }
       ],
-      outputs: [{ deviceId: 'o1', label: 'Saída 1' }]
+      outputs: [{ deviceId: 'o1', label: 'Saída 1' }],
+      cameras: [{ deviceId: 'c1', label: 'Câmera 1' }]
     })
   })
 })

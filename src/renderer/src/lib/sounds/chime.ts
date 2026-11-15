@@ -3,14 +3,18 @@
  * nada para baixar, nenhuma licença para conferir e o app não cresce).
  *
  * - `join`: duas notas subindo (alguém entrou na sala);
- * - `leave`: as mesmas notas descendo (alguém saiu).
+ * - `leave`: as mesmas notas descendo (alguém saiu);
+ * - `ptt-on`/`ptt-off`: uma nota curta, aguda/grave (pressione para falar abriu/fechou o microfone, B20).
  */
-export type UiSound = 'join' | 'leave'
+export type UiSound = 'join' | 'leave' | 'ptt-on' | 'ptt-off'
 
 /** Dó5 e Sol5: intervalo de quinta, soa "positivo" subindo e "fechando" descendo. */
-const NOTES: Record<UiSound, [number, number]> = {
+const NOTES: Record<UiSound, number[]> = {
   join: [523.25, 783.99],
-  leave: [783.99, 523.25]
+  leave: [783.99, 523.25],
+  // Lá5 e Mi5, uma nota só: aviso discreto, toca a cada vez que a tecla é pressionada/solta
+  'ptt-on': [880],
+  'ptt-off': [659.25]
 }
 /** Atraso entre as duas notas e duração de cada uma (segundos). */
 const NOTE_GAP = 0.09

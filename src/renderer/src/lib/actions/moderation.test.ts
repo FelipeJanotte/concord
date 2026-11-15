@@ -81,12 +81,12 @@ describe('silenciado por um moderador', () => {
   it('perder a fala por moderador (LiveKit) usa o mesmo aviso; sem moderador, o aviso comum', () => {
     useApp.setState({ myVoiceChannelId: 'sala', voiceCanSpeak: true })
     socket.receive('voice:state', [state({ muted: true, serverMuted: true })])
-    voice.onPermissionsChange?.({ canSpeak: false, canShare: true })
+    voice.onPermissionsChange?.({ canSpeak: false, canShare: true, canVideo: true })
     expect(useApp.getState().notice?.text).toBe('Um moderador silenciou você nas salas de voz.')
 
     useApp.setState({ voiceCanSpeak: true })
     socket.receive('voice:state', [state({ serverMuted: false })])
-    voice.onPermissionsChange?.({ canSpeak: false, canShare: true })
+    voice.onPermissionsChange?.({ canSpeak: false, canShare: true, canVideo: true })
     expect(useApp.getState().notice?.text).toBe('Você não pode mais falar nesta sala.')
   })
 })

@@ -65,6 +65,13 @@ describe('ChimePlayer', () => {
     expect(ctx.oscillators.slice(2).map((o) => o.frequency.calls[0][1])).toEqual([783.99, 523.25])
   })
 
+  it('pressione para falar (B20): uma nota só, aguda ao abrir e grave ao fechar', () => {
+    const { p, ctx } = player()
+    p.play('ptt-on', { volume: 1, outputId: null })
+    p.play('ptt-off', { volume: 1, outputId: null })
+    expect(ctx.oscillators.map((o) => o.frequency.calls[0][1])).toEqual([880, 659.25])
+  })
+
   it('o volume escala o pico (100% ainda é baixo) e zero não toca', () => {
     const { p, ctx } = player()
     p.play('join', { volume: 1, outputId: null })

@@ -1,11 +1,12 @@
 import type { ReactNode } from 'react'
-import { AudioLines, HeadphoneOff, Headphones, Loader2, Mic, MicOff, MonitorOff, MonitorUp, Music, PhoneOff, Volume2 } from 'lucide-react'
+import { AudioLines, HeadphoneOff, Video, VideoOff, Headphones, Loader2, Mic, MicOff, MonitorOff, MonitorUp, Music, PhoneOff, Volume2 } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { joinVoice, leaveVoice, openDeviceSettings, openSoundboard, toggleDeafen, toggleMute, toggleScreenShare } from '@/lib/client'
+import { joinVoice, leaveVoice, openDeviceSettings, openSoundboard, toggleCamera, toggleDeafen, toggleMute, toggleScreenShare } from '@/lib/client'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
+import { PushToTalkHint } from './voice/PushToTalk'
 import { ScreenPicker } from './voice/ScreenPicker'
 import { Soundboard, SoundsPlayingBar } from './voice/Soundboard'
 import { VoiceGrid } from './voice/VoiceGrid'
@@ -19,6 +20,8 @@ export function VoiceView({ channelId }: { channelId: string }) {
   const canShare = useApp((s) => s.voiceCanShare)
   const deafened = useApp((s) => s.deafened)
   const sharing = useApp((s) => s.sharing)
+  const canVideo = useApp((s) => s.voiceCanVideo)
+  const cameraOn = useApp((s) => s.cameraOn)
 
   if (!channel) return null
 
@@ -41,6 +44,7 @@ export function VoiceView({ channelId }: { channelId: string }) {
       </div>
 
       {connected && <SoundsPlayingBar />}
+      {connected && <PushToTalkHint />}
       <div className="flex shrink-0 items-center justify-center gap-3 pb-6">
         {connected ? (
           <>
@@ -50,6 +54,11 @@ export function VoiceView({ channelId }: { channelId: string }) {
             <ControlButton label={deafened ? 'Ativar áudio' : 'Desativar áudio'} onClick={toggleDeafen} off={deafened}>
               {deafened ? <HeadphoneOff /> : <Headphones />}
             </ControlButton>
+            {canVideo && (
+              <ControlButton label={cameraOn ? 'Desligar a câmera' : 'Ligar a câmera'} onClick={() => void toggleCamera()} active={cameraOn}>
+                {cameraOn ? <VideoOff /> : <Video />}
+              </ControlButton>
+            )}
             {canShare && (
               <ControlButton label={sharing ? 'Parar de compartilhar' : 'Compartilhar a tela'} onClick={toggleScreenShare} active={sharing}>
                 {sharing ? <MonitorOff /> : <MonitorUp />}
@@ -90,7 +99,7 @@ export function ControlButton({
   label: string
   onClick: () => void
   off?: boolean
-  /** ligado (ex.: compartilhando a tela) */
+  /** ligado (ex.: compartilhando a tela, câmera ligada) */
   active?: boolean
   danger?: boolean
   children: ReactNode

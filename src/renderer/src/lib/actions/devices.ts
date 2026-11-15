@@ -1,5 +1,5 @@
 /**
- * Dispositivos de áudio e volume por pessoa (B4). Tudo é preferência desta máquina:
+ * Dispositivos de áudio, câmera (B21) e volume por pessoa (B4). Tudo é preferência desta máquina:
  * fica no localStorage (`concord:audio`) e é aplicado ao VoiceClient ao abrir o app.
  * Nada vai para o servidor.
  */
@@ -19,6 +19,8 @@ export interface AudioDevice {
 interface SavedAudio {
   input: string | null
   output: string | null
+  /** câmera escolhida (B21) */
+  camera: string | null
   volumes: Record<string, number>
   /** contas silenciadas */
   muted: string[]
@@ -32,6 +34,7 @@ function readSaved(): SavedAudio {
   const empty: SavedAudio = {
     input: null,
     output: null,
+    camera: null,
     volumes: {},
     muted: [],
     sounds: { enabled: true, volume: 0.5 },
@@ -48,6 +51,7 @@ function readSaved(): SavedAudio {
     return {
       input: typeof data.input === 'string' && data.input ? data.input : null,
       output: typeof data.output === 'string' && data.output ? data.output : null,
+      camera: typeof data.camera === 'string' && data.camera ? data.camera : null,
       volumes,
       muted: Array.isArray(data.muted) ? data.muted.filter((id): id is string => typeof id === 'string' && !!id) : [],
       sounds: {
@@ -65,13 +69,14 @@ function readSaved(): SavedAudio {
 }
 
 function save(): void {
-  const { audioInputId, audioOutputId, userVolumes, userMuted, voiceSoundsEnabled, voiceSoundsVolume, noiseSuppression } = get()
+  const { audioInputId, audioOutputId, cameraId, userVolumes, userMuted, voiceSoundsEnabled, voiceSoundsVolume, noiseSuppression } = get()
   try {
     localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
         input: audioInputId,
         output: audioOutputId,
+        camera: cameraId,
         volumes: userVolumes,
         muted: Object.keys(userMuted),
         sounds: { enabled: voiceSoundsEnabled, volume: voiceSoundsVolume },
@@ -91,6 +96,7 @@ export function loadAudioPreferences(): void {
   set({
     audioInputId: saved.input,
     audioOutputId: saved.output,
+    cameraId: saved.camera,
     userVolumes: saved.volumes,
     userMuted,
     voiceSoundsEnabled: saved.sounds.enabled,
@@ -100,6 +106,7 @@ export function loadAudioPreferences(): void {
   void voice.setNoiseSuppression(saved.noise)
   void voice.setInputDevice(saved.input)
   void voice.setOutputDevice(saved.output)
+  void voice.setCameraDevice(saved.camera)
   for (const [accountId, v] of Object.entries(saved.volumes)) voice.setUserVolume(accountId, v)
   for (const accountId of saved.muted) voice.setUserMuted(accountId, true)
 }
@@ -115,14 +122,18 @@ export function canChooseAudioOutput(): boolean {
  * Microfones e saídas disponíveis. Sem permissão de microfone o sistema não
  * informa os nomes: aparecem como "Microfone 1", "Saída 2"...
  */
-export async function listAudioDevices(): Promise<{ inputs: AudioDevice[]; outputs: AudioDevice[] }> {
-  const [inputs, outputs] = await Promise.all([voice.listDevices('audioinput'), voice.listDevices('audiooutput')])
+export async function listAudioDevices(): Promise<{ inputs: AudioDevice[]; outputs: AudioDevice[]; cameras: AudioDevice[] }> {
+  const [inputs, outputs, cameras] = await Promise.all([
+    voice.listDevices('audioinput'),
+    voice.listDevices('audiooutput'),
+    voice.listDevices('videoinput')
+  ])
   const clean = (list: MediaDeviceInfo[], fallback: string): AudioDevice[] =>
     list
       // 'default' e 'communications' são apelidos do Windows; a opção "Padrão do sistema" já cobre.
       .filter((d) => d.deviceId && d.deviceId !== 'default' && d.deviceId !== 'communications')
       .map((d, i) => ({ deviceId: d.deviceId, label: d.label || `${fallback} ${i + 1}` }))
-  return { inputs: clean(inputs, 'Microfone'), outputs: clean(outputs, 'Saída') }
+  return { inputs: clean(inputs, 'Microfone'), outputs: clean(outputs, 'Saída'), cameras: clean(cameras, 'Câmera') }
 }
 
 export async function selectAudioInput(deviceId: string | null): Promise<void> {
@@ -133,6 +144,18 @@ export async function selectAudioInput(deviceId: string | null): Promise<void> {
   } catch (err) {
     console.error('[voz] não foi possível trocar o microfone:', err)
     notify('Não foi possível usar esse microfone.')
+  }
+}
+
+/** Câmera usada ao ligar a câmera na sala (B21); troca na hora se já estiver ligada. */
+export async function selectCamera(deviceId: string | null): Promise<void> {
+  set({ cameraId: deviceId })
+  save()
+  try {
+    await voice.setCameraDevice(deviceId)
+  } catch (err) {
+    console.error('[câmera] não foi possível trocar a câmera:', err)
+    notify('Não foi possível usar essa câmera.')
   }
 }
 

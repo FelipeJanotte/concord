@@ -72,3 +72,34 @@ describe('efeitos sonoros na sala (B17)', () => {
     expect(screen.queryByRole('button', { name: 'Efeitos sonoros' })).toBeNull()
   })
 })
+
+describe('câmera (B21)', () => {
+  it('botão de câmera com a permissão video; sem ela, some', () => {
+    renderView()
+    expect(screen.getByRole('button', { name: 'Ligar a câmera' }).getAttribute('aria-pressed')).toBe('false')
+    cleanup()
+    useApp.setState({ cameraOn: true })
+    renderView()
+    expect(screen.getByRole('button', { name: 'Desligar a câmera' }).getAttribute('aria-pressed')).toBe('true')
+    cleanup()
+    useApp.setState({ voiceCanVideo: false, cameraOn: false })
+    renderView()
+    expect(screen.queryByRole('button', { name: 'Ligar a câmera' })).toBeNull()
+  })
+
+  it('quem está com a câmera ligada aparece em vídeo no quadro (a minha espelhada)', () => {
+    useApp.setState({
+      users: [me, { ...me, id: 'ana', accountId: 'acc-ana', name: 'Ana' }],
+      voice: [
+        { userId: 'eu', channelId: 'sala', muted: false, deafened: false, sharing: false },
+        { userId: 'ana', channelId: 'sala', muted: false, deafened: false, sharing: false }
+      ],
+      cameras: ['eu', 'ana']
+    })
+    renderView()
+    const ana = screen.getByLabelText('Câmera de Ana')
+    expect(ana.tagName).toBe('VIDEO')
+    expect(ana.className).not.toContain('-scale-x-100')
+    expect(screen.getByLabelText('Sua câmera').className).toContain('-scale-x-100')
+  })
+})

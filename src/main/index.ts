@@ -4,11 +4,14 @@ import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { googleSignIn } from './google-auth'
 import { setupNotifications } from './notifications'
 import { setupOverlay, teardownOverlay, type OverlayController } from './overlay'
+import { setupPushToTalk, type PushToTalkController } from './push-to-talk'
 import { setupScreenShare } from './screen-share'
+import { setupUpdater } from './updater'
 
 /** A janela principal (as notificações trazem ela de volta no clique; o overlay manda o aviso do atalho). */
 let mainWindow: BrowserWindow | null = null
 let overlay: OverlayController | null = null
+let pushToTalk: PushToTalkController | null = null
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -67,6 +70,8 @@ app.whenReady().then(() => {
   setupScreenShare()
   overlay = setupOverlay(() => mainWindow)
   setupNotifications(() => mainWindow)
+  void setupUpdater(() => mainWindow).catch((err: unknown) => console.warn('[atualização] não iniciou:', err))
+  pushToTalk = setupPushToTalk(() => mainWindow)
 
   createWindow()
 
@@ -75,7 +80,10 @@ app.whenReady().then(() => {
   })
 })
 
-app.on('will-quit', () => teardownOverlay())
+app.on('will-quit', () => {
+  teardownOverlay()
+  pushToTalk?.destroy()
+})
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()

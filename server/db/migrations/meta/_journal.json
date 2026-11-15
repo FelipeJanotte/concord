@@ -75,8 +75,15 @@
     {
       "idx": 10,
       "version": "7",
-      "when": 1794753144030,
-      "tag": "0010_reactions",
+      "when": 1794764065179,
+      "tag": "0010_camera_permission",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794764484738,
+      "tag": "0011_reactions",
       "breakpoints": true
     }
   ]

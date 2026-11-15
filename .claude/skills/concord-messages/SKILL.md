@@ -56,7 +56,7 @@ Cada pessoa pode reagir com vários emojis diferentes na mesma mensagem (um de c
 | Arquivo | Papel |
 |---|---|
 | `src/shared/types/reactions.ts` | `Reaction { emoji, accountIds }` (o tamanho é a contagem), `cleanReactionEmoji` (1–8 code points, sem espaços), `REACTIONS_PER_MESSAGE_MAX` (20), eventos. `Message.reactions?`. |
-| `server/db/schema/reactions.ts` | Tabela `message_reactions` (mensagem, conta, emoji; chave nas três; cascade com mensagem e conta) — migration `0010_reactions`. |
+| `server/db/schema/reactions.ts` | Tabela `message_reactions` (mensagem, conta, emoji; chave nas três; cascade com mensagem e conta) — migration `0011_reactions`. |
 | `server/repo/reactions.ts` | `reactionsByMessage` (no `listMessages`) e `setReaction` (transação: liga sem duplicar ou tira; devolve a lista inteira ou `'limit'`). |
 | `server/modules/reactions.ts` | `message:react`: valida, `view` (senão "Mensagem não encontrada") e `send` ("Você não pode reagir neste canal"), `LIMITS.reaction` (20 seguidas, 2/s), 20 emojis diferentes por mensagem; `message:reactions` por `emitToViewers`. |
 | `src/renderer/src/lib/actions/reactions.ts` | Listener `message:reactions` (lista vazia tira o campo), `toggleReaction` (liga o que não tenho, tira o que tenho), `hasReacted`, `openReactionPicker` (`reactionPickerFor` na store, um por vez). |

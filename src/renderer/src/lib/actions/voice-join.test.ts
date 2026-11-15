@@ -24,7 +24,7 @@ afterEach(() => {
 
 describe('item 1: entrada interrompida não é sucesso', () => {
   it('cancelada (saiu/trocou/caiu no meio): não grava a sala nem toca som', async () => {
-    vi.spyOn(voice, 'join').mockResolvedValue({ micError: null, cancelled: true, canSpeak: true, canShare: true })
+    vi.spyOn(voice, 'join').mockResolvedValue({ micError: null, cancelled: true, canSpeak: true, canShare: true, canVideo: true })
     await joinVoice('sala-a')
     expect(useApp.getState()).toMatchObject({ myVoiceChannelId: null, joiningVoice: false })
     expect(chimes.play).not.toHaveBeenCalled()
@@ -34,7 +34,7 @@ describe('item 1: entrada interrompida não é sucesso', () => {
     vi.spyOn(voice, 'join').mockImplementation(async () => {
       // o handler de disconnect zera a sala enquanto o LiveKit ainda conecta
       useApp.setState({ myVoiceChannelId: null, status: 'reconnecting' })
-      return { micError: null, cancelled: true, canSpeak: true, canShare: true }
+      return { micError: null, cancelled: true, canSpeak: true, canShare: true, canVideo: true }
     })
     await joinVoice('sala-a')
     expect(useApp.getState().myVoiceChannelId).toBeNull()
@@ -43,7 +43,7 @@ describe('item 1: entrada interrompida não é sucesso', () => {
   it('entrada concluída grava a sala', async () => {
     vi.spyOn(voice, 'join').mockImplementation(async () => {
       inRoom = true
-      return { micError: null, cancelled: false, canSpeak: true, canShare: true }
+      return { micError: null, cancelled: false, canSpeak: true, canShare: true, canVideo: true }
     })
     await joinVoice('sala-a')
     expect(useApp.getState().myVoiceChannelId).toBe('sala-a')

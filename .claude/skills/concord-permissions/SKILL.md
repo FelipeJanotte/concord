@@ -30,7 +30,8 @@ cargos atribuídos; cada canal pode **liberar** ou **negar** permissões por car
 - **Globais:** `manageChannels` (criar/apagar canal, editar regras de canal; **sempre vê** todos os canais),
   `manageRoles` (cargos abaixo do seu), `manageMembers` (atribuir cargos abaixo do seu; silenciar/expulsar da voz na
   B6), `manageMessages` (apagar mensagem de outras pessoas, B6), `mentionEveryone` (mencionar @todos, B19: sem ela o `<@todos>` vira texto comum).
-- **Por canal:** `view`, `send`, `attach`, `connect`, `speak`, `share`.
+- **Por canal:** `view`, `send`, `attach`, `connect`, `speak`, `share`, `video` (câmera, B21; comunidades antigas
+  ganharam `video` onde havia `share` pela migration `0010_camera_permission`).
 - **@todos:** id fixo `EVERYONE_ROLE_ID` (`00000000-…`), posição 0, sempre existe, não pode ser apagado nem
   renomeado (só mudam as permissões). Numa comunidade nova tem todas as permissões **de canal** e nenhuma global.
 - **Dona:** a primeira conta criada (`accounts.created_at` mais antigo). Pode tudo, não pode ser rebaixada.
@@ -63,7 +64,7 @@ com cor, ou null).
 4. Regras do canal para os cargos da pessoa: junta todos os `deny` e tira, junta todos os `allow` e põe
    (**liberar vence negar** entre cargos; regra de cargo vence a do @todos).
 5. `manageChannels` sempre ganha `view` (admin não se tranca para fora).
-6. Dependências: sem `view` → nada; sem `send` → sem `attach`; sem `connect` → sem `speak` e `share`.
+6. Dependências: sem `view` → nada; sem `send` → sem `attach`; sem `connect` → sem `speak`, `share` e `video`.
 
 **Conversas privadas (canal `dm`, v3) não seguem esta regra**: `server/access.ts` guarda os membros de cada DM
 (`dmMembersOf`) e, nelas, só os dois membros veem (nem a dona); as outras permissões de canal também exigem que
@@ -103,7 +104,7 @@ Depois de qualquer evento acima: recarrega o estado → `access:updated` (por `a
 quem perdeu `connect` na sala em que está **sai da voz** (e do LiveKit); quem continua e teve `speak`/`share`
 alterado recebe as permissões novas no LiveKit na hora (`updateVoicePermissions`; sem `speak` fica silenciado, sem
 `share` a tela para); no fim todos recebem o `voice:state` filtrado de novo. O token da entrada já sai com
-microfone só se `speak` e tela só se `share` (`publishSources` em `server/livekit.ts`). No app, `replaceChannels` limpa rascunho, histórico, não lidos e a
+microfone só se `speak`, tela só se `share` e câmera só se `video` (`publishSources` em `server/livekit.ts`). No app, `replaceChannels` limpa rascunho, histórico, não lidos e a
 tela aberta dos canais que sumiram, e sai da voz se a sala sumiu. Apagar canal também recarrega o acesso (as regras
 dele saem por cascade).
 

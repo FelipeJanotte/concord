@@ -23,7 +23,7 @@ afterEach(async () => {
   for (const r of access.roles) if (r.id !== EVERYONE_ROLE_ID) await owner.socket.emitWithAck('role:delete', r.id)
   await owner.socket.emitWithAck('role:update', {
     id: EVERYONE_ROLE_ID,
-    permissions: ['view', 'send', 'attach', 'connect', 'speak', 'share']
+    permissions: ['view', 'send', 'attach', 'connect', 'speak', 'share', 'video']
   })
 })
 
@@ -132,15 +132,34 @@ describe('LiveKit: o que a pessoa pode publicar', () => {
     const res = await b.socket.emitWithAck('voice:join', { channelId: room.id, muted: false, deafened: false })
     if (!res.ok) throw new Error(res.error)
     const claims = await verifier.verify(res.token)
-    expect(claims.video?.canPublishSources).toEqual(['screen_share', 'screen_share_audio'])
+    expect(claims.video?.canPublishSources).toEqual(['screen_share', 'screen_share_audio', 'camera'])
     expect(claims.video?.canPublish).toBe(true)
     b.socket.emit('voice:leave')
 
     const mute = await server.createChannel('Plateia', 'voice')
-    await overrides(mute.id, [{ roleId: EVERYONE_ROLE_ID, deny: ['speak', 'share'] }])
+    await overrides(mute.id, [{ roleId: EVERYONE_ROLE_ID, deny: ['speak', 'share', 'video'] }])
     const res2 = await b.socket.emitWithAck('voice:join', { channelId: mute.id, muted: false, deafened: false })
     if (!res2.ok) throw new Error(res2.error)
     expect((await verifier.verify(res2.token)).video).toMatchObject({ canPublish: false, canPublishSources: [] })
+    b.socket.emit('voice:leave')
+  })
+
+  it('câmera (B21) só com "ligar a câmera"; perder com a pessoa na sala tira a câmera do LiveKit', async () => {
+    const b = await user()
+    const room = await server.createChannel('Sem câmera', 'voice')
+    await overrides(room.id, [{ roleId: EVERYONE_ROLE_ID, deny: ['video'] }])
+    const res = await b.socket.emitWithAck('voice:join', { channelId: room.id, muted: false, deafened: false })
+    if (!res.ok) throw new Error(res.error)
+    expect(res).toMatchObject({ canSpeak: true, canShare: true, canVideo: false })
+    expect((await verifier.verify(res.token)).video?.canPublishSources).not.toContain('camera')
+    b.socket.emit('voice:leave')
+
+    const live = await server.createChannel('Câmeras', 'voice')
+    const joined = await b.socket.emitWithAck('voice:join', { channelId: live.id, muted: false, deafened: false })
+    expect(joined).toMatchObject({ ok: true, canVideo: true })
+    await overrides(live.id, [{ roleId: EVERYONE_ROLE_ID, deny: ['video'] }])
+    const call = await livekit.waitCall('UpdateParticipant', (body) => body.identity === b.socket.id)
+    expect(call.body).toMatchObject({ room: live.id, permission: { canPublishSources: ['MICROPHONE', 'SCREEN_SHARE', 'SCREEN_SHARE_AUDIO'] } })
     b.socket.emit('voice:leave')
   })
 
@@ -155,7 +174,7 @@ describe('LiveKit: o que a pessoa pode publicar', () => {
     const call = await livekit.waitCall('UpdateParticipant', (body) => body.identity === b.socket.id)
     expect(call.body).toMatchObject({
       room: room.id,
-      permission: { canPublishSources: ['SCREEN_SHARE', 'SCREEN_SHARE_AUDIO'] }
+      permission: { canPublishSources: ['SCREEN_SHARE', 'SCREEN_SHARE_AUDIO', 'CAMERA'] }
     })
     await muted
     b.socket.emit('voice:leave')

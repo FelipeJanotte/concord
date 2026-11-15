@@ -4,7 +4,7 @@
  * - cada pessoa recebe cargos e membros inteiros, mas só as regras dos canais que vê
  *   (`accessFor`), para não revelar que existem canais privados;
  * - o estado vem dentro do `hello` (`ServerState.access`); `access:get` só para recarregar;
- * - `voice:join` devolve `canSpeak`/`canShare`: sem `speak` o app entra só para ouvir;
+ * - `voice:join` devolve `canSpeak`/`canShare`/`canVideo`: sem `speak` o app entra só para ouvir;
  *   no token do LiveKit, microfone (`speak`) e tela (`share`) são liberados separadamente;
  * - perdeu `view`/`connect` na sala → sai; perdeu `speak`/`share` → o servidor atualiza
  *   o participante no LiveKit (ponto único: `applyVoiceAccess` em server/modules/voice.ts);
@@ -22,7 +22,7 @@ import type { Channel } from './channel'
 /** Permissões da comunidade inteira. */
 export const GLOBAL_PERMISSIONS = ['manageChannels', 'manageRoles', 'manageMembers', 'manageMessages', 'mentionEveryone'] as const
 /** Permissões que cada canal pode liberar ou negar por cargo. */
-export const CHANNEL_PERMISSIONS = ['view', 'send', 'attach', 'connect', 'speak', 'share'] as const
+export const CHANNEL_PERMISSIONS = ['view', 'send', 'attach', 'connect', 'speak', 'share', 'video'] as const
 
 export type GlobalPermission = (typeof GLOBAL_PERMISSIONS)[number]
 export type ChannelPermission = (typeof CHANNEL_PERMISSIONS)[number]
@@ -40,7 +40,8 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   attach: 'Enviar anexos',
   connect: 'Entrar na voz',
   speak: 'Falar na voz',
-  share: 'Compartilhar a tela'
+  share: 'Compartilhar a tela',
+  video: 'Ligar a câmera'
 }
 
 /** Id fixo do cargo @todos (existe sempre, não pode ser apagado; todo mundo tem). */
@@ -132,6 +133,7 @@ export function channelPermissions(access: AccessState, accountId: string, chann
   if (!perms.has('connect')) {
     perms.delete('speak')
     perms.delete('share')
+    perms.delete('video')
   }
   return perms
 }

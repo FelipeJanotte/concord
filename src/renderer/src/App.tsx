@@ -12,6 +12,7 @@ import { MemberList } from '@/components/MemberList'
 import { UtilityRail } from '@/components/rail/UtilityRail'
 import { Toast } from '@/components/Toast'
 import { ToolView } from '@/components/tools/ToolView'
+import { UpdateBanner } from '@/components/UpdateBanner'
 import { VoiceView } from '@/components/VoiceView'
 import { useApp } from '@/store'
 
@@ -39,6 +40,7 @@ function MainLayout() {
 
   return (
     <div className="flex h-full flex-col">
+      <UpdateBanner />
       {status === 'reconnecting' && (
         <div className="flex h-7 shrink-0 items-center justify-center gap-2 bg-destructive text-xs font-medium text-white">
           <Loader2 className="size-3.5 animate-spin" />

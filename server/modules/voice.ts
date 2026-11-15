@@ -27,13 +27,13 @@ export const voiceStates = (): VoiceState[] => [...voice.values()]
 
 function voicePermissions(access: AccessState, accountId: string, channelId: string): VoicePermissions {
   const perms = channelPermissions(access, accountId, channelId)
-  return { canSpeak: perms.has('speak') && !serverMuted.has(accountId), canShare: perms.has('share') }
+  return { canSpeak: perms.has('speak') && !serverMuted.has(accountId), canShare: perms.has('share'), canVideo: perms.has('video') }
 }
 
 /** Permissões de voz em qualquer sala: numa DM valem os membros e o bloqueio (`allowed`), não os cargos. */
 async function voicePermissionsIn(accountId: string, channelId: string): Promise<VoicePermissions> {
   if (!dmMembersOf(channelId)) return voicePermissions(await currentAccess(), accountId, channelId)
-  return { canSpeak: await allowed(accountId, 'speak', channelId), canShare: await allowed(accountId, 'share', channelId) }
+  return { canSpeak: await allowed(accountId, 'speak', channelId), canShare: await allowed(accountId, 'share', channelId), canVideo: await allowed(accountId, 'video', channelId) }
 }
 
 /** A conta vê a sala? Numa DM, só os dois membros (nem a dona); nas outras, a regra dos cargos. */
@@ -97,7 +97,7 @@ export function applyVoiceAccess(io: AppServer, access: AccessState): void {
     state.serverMuted = serverMuted.has(accountId)
     const next = voicePermissions(access, accountId, state.channelId)
     const before = published.get(socket.id)
-    if (before && before.canSpeak === next.canSpeak && before.canShare === next.canShare) continue
+    if (before && before.canSpeak === next.canSpeak && before.canShare === next.canShare && before.canVideo === next.canVideo) continue
     published.set(socket.id, next)
     if (!next.canSpeak) state.muted = true
     if (!next.canShare) state.sharing = false

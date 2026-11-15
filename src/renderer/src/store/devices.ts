@@ -5,6 +5,8 @@ export interface DevicesState {
   audioInputId: string | null
   /** saída (alto-falante/fone) escolhida; null = padrão do sistema */
   audioOutputId: string | null
+  /** câmera escolhida (B21); null = padrão do sistema */
+  cameraId: string | null
   /** volume da voz de cada pessoa, por conta (0 a 1); quem não aparece está em 100% */
   userVolumes: Record<string, number>
   /** contas que silenciei só para mim (o volume em `userVolumes` fica guardado para quando voltar) */
@@ -24,6 +26,7 @@ export interface DevicesState {
 export const devicesInitial: DevicesState = {
   audioInputId: null,
   audioOutputId: null,
+  cameraId: null,
   userVolumes: {},
   userMuted: {},
   voiceSoundsEnabled: true,
