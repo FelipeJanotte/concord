@@ -4,6 +4,7 @@ import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { externalUrl } from '../shared/links'
 import { googleSignIn } from './google-auth'
 import { setupNotifications } from './notifications'
+import { allowPermission } from './permissions'
 import { setupOverlay, teardownOverlay, type OverlayController } from './overlay'
 import { setupPushToTalk, type PushToTalkController } from './push-to-talk'
 import { setupScreenShare } from './screen-share'
@@ -68,9 +69,9 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  // Libera o microfone para os canais de voz.
+  // Microfone/câmera, notificações e tela cheia (lista em ./permissions); o resto é negado.
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-    callback(permission === 'media' || permission === 'notifications')
+    callback(allowPermission(permission))
   })
 
   ipcMain.handle('google-sign-in', (_event, clientId: unknown) => {

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// Componentes da tela compartilhada: seletor, tile da tela e grade da sala.
+// Componentes da tela compartilhada: seletor, miniatura/destaque da tela (escolher qual ver, grade, tela cheia) e grade da sala.
 import { act, cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -11,7 +11,7 @@ import { initialState, useApp } from '@/store'
 import { FakeSocket } from '@/test/fake-socket'
 import { ScreenPicker } from './ScreenPicker'
 import { ScreenTile } from './ScreenTile'
-import { VoiceGrid } from './VoiceGrid'
+import { featuredScreen, VoiceGrid } from './VoiceGrid'
 
 const user = (id: string, name: string): User => ({ id, accountId: `acc-${id}`, name, tag: id, color: '#5865f2', avatarUrl: null })
 const state = (userId: string, extra: Partial<VoiceState> = {}): VoiceState => ({
@@ -120,60 +120,138 @@ describe('ScreenPicker', () => {
 })
 
 describe('ScreenTile', () => {
-  it('liga a tela da pessoa no <video> e desliga ao sair', () => {
+  it('liga a tela da pessoa no <video>, desliga ao sair e clicar assiste', async () => {
     const detach = vi.fn()
     vi.mocked(voice.attachScreen).mockReturnValue(detach)
-    const { unmount } = render(<ScreenTile userId="ana" featured />)
+    const onSelect = vi.fn()
+    const { unmount } = render(<ScreenTile userId="ana" onSelect={onSelect} />)
     const video = screen.getByLabelText('Tela de Ana')
     expect(voice.attachScreen).toHaveBeenCalledWith('ana', video)
     expect(screen.getByText('Ao vivo')).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: 'Assistir: Tela de Ana' }))
+    expect(onSelect).toHaveBeenCalled()
     unmount()
     expect(detach).toHaveBeenCalled()
   })
 
   it('a própria tela aparece como "Sua tela"', () => {
-    render(<ScreenTile userId="eu" featured />)
+    render(<ScreenTile userId="eu" onSelect={() => {}} />)
     expect(screen.getByText('Sua tela')).toBeTruthy()
+  })
+})
+
+describe('featuredScreen', () => {
+  it('escolhida se ainda ao vivo; senão a primeira de outra pessoa; a própria só sozinha; grade = nenhuma', () => {
+    expect(featuredScreen([], 'eu', null, false)).toBeNull()
+    expect(featuredScreen(['eu', 'ana', 'bia'], 'eu', null, false)).toBe('ana')
+    expect(featuredScreen(['eu', 'ana', 'bia'], 'eu', 'bia', false)).toBe('bia')
+    expect(featuredScreen(['eu', 'ana'], 'eu', 'bia', false)).toBe('ana') // a escolhida acabou
+    expect(featuredScreen(['eu'], 'eu', null, false)).toBe('eu')
+    expect(featuredScreen(['ana'], 'eu', 'ana', true)).toBeNull()
   })
 })
 
 describe('VoiceGrid', () => {
   const members = [state('eu'), state('ana', { sharing: true }), state('bia', { sharing: true })]
+  const stageLabel = (): string | null => screen.getByText(/^Assistindo:/).textContent
 
-  it('sem telas: só os participantes, com "ao vivo" em quem compartilha', () => {
+  it('sem telas: só os participantes, com "ao vivo" em quem compartilha (sem "Assistir": a tela ainda não chegou)', () => {
     render(<VoiceGrid members={members} />)
     expect(screen.getByText('Ana')).toBeTruthy()
     expect(screen.getAllByText('Ao vivo')).toHaveLength(2)
     expect(screen.queryByLabelText(/^Tela de/)).toBeNull()
+    expect(screen.queryByRole('button', { name: /Assistir/ })).toBeNull()
   })
 
-  it('com telas: a de outra pessoa em destaque, as outras em miniatura', async () => {
+  it('com telas: a de outra pessoa em destaque, com "Assistindo", o seletor das telas ao vivo e a tela cheia sempre à vista', async () => {
     useApp.setState({ screens: ['eu', 'ana', 'bia'] })
     render(<VoiceGrid members={members} />)
-    // Destaque = primeira tela que não é a própria.
+    expect(stageLabel()).toBe('Assistindo: Tela de Ana')
+    const chips = within(screen.getByRole('group', { name: 'Telas ao vivo' })).getAllByRole('button')
+    expect(chips.map((c) => [c.textContent, c.getAttribute('aria-pressed')])).toEqual([
+      ['Sua tela', 'false'],
+      ['Tela de Ana', 'true'],
+      ['Tela de Bia', 'false']
+    ])
     expect(screen.getByRole('button', { name: 'Tela cheia' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Ver a tela de Eu' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Ver a tela de Bia' })).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'Ver a tela de Ana' })).toBeNull()
 
-    await userEvent.click(screen.getByRole('button', { name: 'Ver a tela de Bia' }))
-    expect(screen.getByRole('button', { name: 'Ver a tela de Ana' })).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'Ver a tela de Bia' })).toBeNull()
+    // pelo seletor
+    await userEvent.click(within(screen.getByRole('group', { name: 'Telas ao vivo' })).getByRole('button', { name: 'Tela de Bia' }))
+    expect(stageLabel()).toBe('Assistindo: Tela de Bia')
+    // pela miniatura
+    await userEvent.click(screen.getByRole('button', { name: 'Assistir: Sua tela' }))
+    expect(stageLabel()).toBe('Assistindo: Sua tela')
+    // pelo "Ao vivo" de quem compartilha
+    await userEvent.click(screen.getByRole('button', { name: 'Assistir a tela de Ana' }))
+    expect(stageLabel()).toBe('Assistindo: Tela de Ana')
+    expect(screen.queryByRole('button', { name: 'Assistir a tela de Ana' })).toBeNull() // já está assistindo
   })
 
-  it('se só a própria tela existe, ela fica em destaque', () => {
+  it('uma tela só: sem seletor', () => {
     useApp.setState({ screens: ['eu'] })
     render(<VoiceGrid members={members} />)
-    expect(screen.getByText('Sua tela')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Tela cheia' })).toBeTruthy()
+    expect(stageLabel()).toBe('Assistindo: Sua tela')
+    expect(screen.queryByRole('group', { name: 'Telas ao vivo' })).toBeNull()
+  })
+
+  it('"Ver grade" mostra todas as telas lado a lado; clicar numa volta ao destaque', async () => {
+    useApp.setState({ screens: ['ana', 'bia'] })
+    render(<VoiceGrid members={members} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Ver grade' }))
+    expect(screen.queryByText(/^Assistindo:/)).toBeNull()
+    expect(screen.getByRole('button', { name: 'Assistir: Tela de Ana' })).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: 'Assistir: Tela de Bia' }))
+    expect(stageLabel()).toBe('Assistindo: Tela de Bia')
   })
 
   it('a tela escolhida acabou: volta para outra', async () => {
     useApp.setState({ screens: ['ana', 'bia'] })
     render(<VoiceGrid members={members} />)
-    await userEvent.click(screen.getByRole('button', { name: 'Ver a tela de Bia' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Assistir: Tela de Bia' }))
     act(() => useApp.setState({ screens: ['ana'] }))
-    expect(screen.queryByRole('button', { name: /Ver a tela de/ })).toBeNull()
-    expect(screen.getByLabelText('Tela de Ana')).toBeTruthy()
+    expect(stageLabel()).toBe('Assistindo: Tela de Ana')
+  })
+
+  it('tela cheia: põe o quadro inteiro (com a barra) em tela cheia; o botão e o duplo clique alternam', async () => {
+    useApp.setState({ screens: ['ana'] })
+    let fullscreen: Element | null = null
+    Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: () => fullscreen })
+    const request = vi.fn(async function (this: Element) {
+      fullscreen = this
+      document.dispatchEvent(new Event('fullscreenchange'))
+    })
+    const exit = vi.fn(async () => {
+      fullscreen = null
+      document.dispatchEvent(new Event('fullscreenchange'))
+    })
+    Element.prototype.requestFullscreen = request as never
+    document.exitFullscreen = exit
+    try {
+      render(<VoiceGrid members={members} />)
+      await userEvent.click(screen.getByRole('button', { name: 'Tela cheia' }))
+      expect(request).toHaveBeenCalledTimes(1)
+      const stage = request.mock.contexts[0] as HTMLElement
+      expect(stage.contains(screen.getByText(/^Assistindo:/))).toBe(true) // a barra vai junto
+      expect(stage.dataset.fullscreen).toBe('true')
+      expect(screen.queryByRole('button', { name: 'Ver grade' })).toBeNull()
+      await userEvent.click(screen.getByRole('button', { name: 'Sair da tela cheia' }))
+      expect(exit).toHaveBeenCalledTimes(1)
+      expect(screen.getByRole('button', { name: 'Tela cheia' })).toBeTruthy()
+      await userEvent.dblClick(screen.getByLabelText('Tela de Ana'))
+      expect(request).toHaveBeenCalledTimes(2)
+    } finally {
+      delete (document as unknown as Record<string, unknown>).fullscreenElement
+    }
+  })
+
+  it('tela cheia recusada pelo sistema vira aviso', async () => {
+    useApp.setState({ screens: ['ana'] })
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    Element.prototype.requestFullscreen = vi.fn(async () => {
+      throw new TypeError('Permissions check failed')
+    }) as never
+    render(<VoiceGrid members={members} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Tela cheia' }))
+    expect(useApp.getState().notice?.text).toBe('Não foi possível abrir em tela cheia.')
   })
 })
