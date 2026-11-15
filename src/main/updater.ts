@@ -80,12 +80,23 @@ export function createUpdaterController({ updater, isPackaged, send, setInterval
   }
 }
 
+/**
+ * O `autoUpdater` do módulo importado. O electron-updater é CommonJS: no `import()` do main (ESM) o
+ * `autoUpdater` não vira export nomeado (é um getter) e só existe em `default`. Sem isso ele chegava
+ * `undefined` e a atualização nem ligava ("Cannot set properties of undefined (setting 'autoDownload')").
+ */
+export function pickAutoUpdater(mod: unknown): UpdaterLike {
+  const m = mod as { autoUpdater?: unknown; default?: { autoUpdater?: unknown } } | null
+  const updater = m?.autoUpdater ?? m?.default?.autoUpdater
+  if (!updater) throw new Error('electron-updater sem autoUpdater')
+  return updater as UpdaterLike
+}
+
 /** Liga ao Electron (IPC `update-get`/`update-install`, aviso `update-status`). */
 export async function setupUpdater(getWindow: () => BrowserWindow | null): Promise<void> {
   // import dinâmico: o electron-updater só é carregado no app de verdade (não nos testes)
-  const { autoUpdater } = await import('electron-updater')
   const controller = createUpdaterController({
-    updater: autoUpdater as unknown as UpdaterLike,
+    updater: pickAutoUpdater(await import('electron-updater')),
     isPackaged: app.isPackaged,
     send: (status) => getWindow()?.webContents.send('update-status', status)
   })

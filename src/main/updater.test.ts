@@ -6,7 +6,7 @@ import type { UpdateStatus } from '../shared/updater'
 
 vi.mock('electron', () => ({ app: {}, ipcMain: {} }))
 
-const { createUpdaterController } = await import('./updater')
+const { createUpdaterController, pickAutoUpdater } = await import('./updater')
 
 class FakeUpdater extends EventEmitter {
   autoDownload = false
@@ -93,5 +93,18 @@ describe('createUpdaterController', () => {
     updater.emit('update-downloaded', { version: '2.0.0' })
     controller.install()
     expect(updater.quitAndInstall).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('pickAutoUpdater (interop com o electron-updater, que é CommonJS)', () => {
+  it('acha o autoUpdater como export nomeado ou só no default (import() no main ESM)', () => {
+    const updater = new FakeUpdater()
+    expect(pickAutoUpdater({ autoUpdater: updater })).toBe(updater)
+    expect(pickAutoUpdater({ autoUpdater: undefined, default: { autoUpdater: updater } })).toBe(updater)
+  })
+
+  it('módulo sem autoUpdater: erro claro em vez de "Cannot set properties of undefined"', () => {
+    expect(() => pickAutoUpdater({ default: {} })).toThrow('electron-updater sem autoUpdater')
+    expect(() => pickAutoUpdater(null)).toThrow('electron-updater sem autoUpdater')
   })
 })

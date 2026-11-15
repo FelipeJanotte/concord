@@ -49,4 +49,5 @@ O caminho de verdade (baixar e instalar) só dá para conferir com duas releases
 | App não atualiza | Rodando em dev (`npm run dev` nunca atualiza); versão instalada anterior à A13; ou a release não tem o `latest.yml` (publicada à mão). Log `[atualização]` no terminal/arquivo do main. |
 | Workflow falhou em "Conferir a versão" | A tag não bate com o `package.json`: suba a versão primeiro, apague a tag (`git push --delete origin vX.Y.Z`) e crie de novo. |
 | Windows avisa "editor desconhecido" | O instalador não é assinado (certificado de assinatura é pago). O SmartScreen avisa na primeira instalação; as atualizações seguem normais. |
+| `[atualização] não iniciou: ... setting 'autoDownload'` | O electron-updater é CommonJS: no `import()` do main o `autoUpdater` só vem em `default`. `pickAutoUpdater` (`src/main/updater.ts`) acha nos dois lugares; não troque por `const { autoUpdater } = await import(...)`. |
 | Pendente | Assinatura do código, canal "beta" e notas da versão na faixa. |
