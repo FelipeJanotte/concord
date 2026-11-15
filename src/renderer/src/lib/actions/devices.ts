@@ -5,6 +5,7 @@
  */
 import { get, notify, set } from '../core'
 import { voice } from '../voice'
+import { openSettings } from './settings'
 import { clampMicGain, clampOutputVolume } from '../mic-gain'
 
 // O que a supressão de ruído está fazendo agora (aparece em Configurações de voz).
@@ -255,10 +256,7 @@ export async function setNoiseSuppression(enabled: boolean): Promise<void> {
   }
 }
 
+/** Botões de configurações de voz (sala, chamada, "Voz conectada"): abre as configurações em "Voz e vídeo". */
 export function openDeviceSettings(): void {
-  set({ deviceSettingsOpen: true })
-}
-
-export function closeDeviceSettings(): void {
-  set({ deviceSettingsOpen: false })
+  openSettings('voice')
 }

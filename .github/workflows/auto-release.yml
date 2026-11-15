@@ -1,0 +1,74 @@
+name: Release automática
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    name: criar a tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.next.outputs.tag }}
+      notes: ${{ steps.pr.outputs.notes }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: PR que entrou
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          pr="$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" --jq '.[0] // empty')"
+          if [ -n "$pr" ]; then
+            labels="$(echo "$pr" | jq -r '[.labels[].name] | join(",")')"
+            notes="$(echo "$pr" | jq -r '"\(.title) (#\(.number))"')"
+          else
+            labels=""
+            notes="$(git log -1 --format=%s "$GITHUB_SHA")"
+          fi
+          echo "labels=$labels" >> "$GITHUB_OUTPUT"
+          {
+            echo "notes<<FIM_DAS_NOTAS"
+            echo "$notes"
+            echo "FIM_DAS_NOTAS"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Próxima versão e tag
+        id: next
+        env:
+          LABELS: ${{ steps.pr.outputs.labels }}
+        run: |
+          version="$(node .github/scripts/next-version.mjs "$LABELS")"
+          if [ -z "$version" ]; then
+            echo "PR com o label \"sem release\": nada a publicar."
+            exit 0
+          fi
+          git tag "v$version" "$GITHUB_SHA"
+          git push origin "v$version"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "Versão v$version criada."
+
+  release:
+    name: publicar
+    needs: tag
+    if: needs.tag.outputs.tag != ''
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.tag.outputs.tag }}
+      notes: ${{ needs.tag.outputs.notes }}
+    secrets: inherit

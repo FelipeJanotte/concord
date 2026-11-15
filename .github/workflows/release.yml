@@ -1,10 +1,19 @@
-# Release (A13): ao criar uma tag vX.Y.Z (igual à versão do package.json), gera o instalador do Windows
-# e publica no GitHub Releases com o latest.yml. Os apps instalados acham a versão nova sozinhos.
 name: Release
 
 on:
   push:
     tags: ['v*.*.*']
+  workflow_call:
+    inputs:
+      tag:
+        description: tag a publicar (vX.Y.Z)
+        required: true
+        type: string
+      notes:
+        description: notas da versão (título do PR)
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: write
@@ -14,31 +23,49 @@ jobs:
     name: instalador do Windows
     runs-on: windows-latest
     timeout-minutes: 30
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
-      - name: Conferir a versão
-        shell: bash
-        run: |
-          tag="${GITHUB_REF_NAME#v}"
-          pkg="$(node -p "require('./package.json').version")"
-          if [ "$tag" != "$pkg" ]; then
-            echo "A tag ($GITHUB_REF_NAME) não bate com a versão do package.json ($pkg). Suba a versão antes de criar a tag."
-            exit 1
-          fi
-
       - name: Instalar dependências
         run: npm ci
 
+      - name: Usar a versão da tag
+        shell: bash
+        run: |
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Tag inválida: $TAG (esperado vX.Y.Z)"
+            exit 1
+          fi
+          npm version "${TAG#v}" --no-git-tag-version --allow-same-version
+          echo "Gerando a versão $(node -p "require('./package.json').version")"
+
       - name: Typecheck
         run: npm run typecheck
+
+      - name: Criar a release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NOTES: ${{ inputs.notes }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Release $TAG já existe: o electron-builder só envia os arquivos."
+          else
+            gh release create "$TAG" --verify-tag --title "${TAG#v}" --notes "${NOTES:-$TAG}"
+          fi
 
       - name: Gerar e publicar
         run: npm run release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VITE_DEFAULT_SERVER: ${{ vars.VITE_DEFAULT_SERVER }}
+

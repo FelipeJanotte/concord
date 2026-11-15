@@ -51,6 +51,15 @@ voice.onPermissionsChange = ({ canSpeak, canShare, canVideo }) => {
   }
 }
 
+/** Depois do fim do silêncio: lê as permissões já e de novo em `UNMUTE_RESYNC_MS` (se ainda faltar). */
+export const UNMUTE_RESYNC_MS = 1500
+function resyncAfterUnmute(): void {
+  void voice.syncPermissions()
+  setTimeout(() => {
+    if (get().myVoiceChannelId && !get().voiceCanSpeak && !mutedByModerator) void voice.syncPermissions()
+  }, UNMUTE_RESYNC_MS)
+}
+
 export function bindVoiceEvents(s: AppSocket): void {
   mutedByModerator = false // conexão nova: o próximo voice:state diz de novo
   s.on('voice:state', (states) => {
@@ -58,7 +67,13 @@ export function bindVoiceEvents(s: AppSocket): void {
     set({ voice: states })
     handleVoiceStateChange(prev, states) // sons de entrar/sair (B16)
     const mine = states.find((v) => v.userId === get().self?.id)
-    if (mine) mutedByModerator = !!mine.serverMuted
+    if (mine) {
+      const wasMutedByModerator = mutedByModerator
+      mutedByModerator = !!mine.serverMuted
+      // O moderador tirou o silêncio: o microfone volta sozinho (sem precisar se desmutar). O normal é
+      // o LiveKit avisar a permissão nova; se ainda não chegou, relê agora e de novo um pouco depois.
+      if (wasMutedByModerator && !mutedByModerator && !get().voiceCanSpeak) resyncAfterUnmute()
+    }
     // O servidor tirou esta conexão da sala (ex.: perdeu a permissão de entrar, v2): sai localmente.
     const { myVoiceChannelId, joiningVoice, self } = get()
     if (myVoiceChannelId && !joiningVoice && self && !states.some((v) => v.userId === self.id)) {
@@ -79,10 +94,14 @@ function describeMediaError(err: unknown): string {
   return err instanceof Error ? err.message : 'Falha ao entrar no canal de voz'
 }
 
-export async function joinVoice(channelId: string): Promise<void> {
+/**
+ * Entra na sala de voz. `show: false` = entra sem mudar a tela (ex.: um moderador me moveu e eu
+ * estava no chat de texto: a voz troca, a tela fica onde estava).
+ */
+export async function joinVoice(channelId: string, { show = true }: { show?: boolean } = {}): Promise<void> {
   const st = get()
   // chamada de uma conversa (B8): a tela continua na conversa; sala da comunidade abre a tela da sala
-  if (!findDm(st.dms, channelId)) set({ section: 'community', toolId: null, view: { kind: 'voice', channelId } })
+  if (show && !findDm(st.dms, channelId)) set({ section: 'community', toolId: null, view: { kind: 'voice', channelId } })
   if (st.myVoiceChannelId === channelId || st.joiningVoice) return
   set({ joiningVoice: true })
   try {

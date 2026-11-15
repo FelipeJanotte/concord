@@ -30,7 +30,6 @@ describe('overlayRoom', () => {
       speaking: { s1: true }
     })
     expect(overlayRoom(useApp.getState())).toEqual({
-      channelName: 'Jogos',
       members: [
         { id: 's1', name: 'Ana', avatarUrl: 'http://srv:3001/avatars/acc-s1?v=2', color: '#123456', speaking: true, muted: true, deafened: false },
         { id: 's2', name: 'Bia', avatarUrl: null, color: '#123456', speaking: false, muted: false, deafened: true }
@@ -39,11 +38,11 @@ describe('overlayRoom', () => {
     })
   })
 
-  it('chamada privada mostra com quem; mais de 12 pessoas vira "+N"', () => {
+  it('chamada privada (só as pessoas, sem nome da sala); mais de 12 pessoas vira "+N"', () => {
     const users = Array.from({ length: 15 }, (_, i) => user(`u${i}`, `P${i}`))
     useApp.setState({ myVoiceChannelId: 'dm-ana', users, voice: users.map((u) => vs(u.id, 'dm-ana')) })
     const room = overlayRoom(useApp.getState())!
-    expect(room.channelName).toBe('Chamada com Ana')
+    expect(room).not.toHaveProperty('channelName')
     expect(room.members).toHaveLength(12)
     expect(room.more).toBe(3)
   })

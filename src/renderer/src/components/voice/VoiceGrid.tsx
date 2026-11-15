@@ -2,10 +2,11 @@
 // alguém compartilhando, uma tela fica em destaque (`ScreenStage`: barra "Assistindo", seletor das
 // telas ao vivo, tela cheia, esconder/mostrar membros) e a fileira de membros centralizada embaixo; "Ver grade" mostra todas lado a lado, e clicar numa tela (ou no "Ao vivo"
 // de uma pessoa) volta a assistir aquela em destaque.
-import { useState } from 'react'
+import { useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { HeadphoneOff, MicOff, VolumeX } from 'lucide-react'
 import type { VoiceState } from '@shared/types'
 import { UserAvatar } from '@/components/UserAvatar'
+import { bestTileLayout, useElementSize } from '@/lib/tile-layout'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
 import { CameraVideo } from './CameraTile'
@@ -23,9 +24,36 @@ export function featuredScreen(screens: string[], selfId: string | undefined, ch
   return screens.find((id) => id !== selfId) ?? screens[0]
 }
 
-const GRID = 'grid content-center gap-4 [grid-template-columns:repeat(auto-fill,minmax(240px,1fr))]'
+/** Sem altura definida (painel da chamada privada), os quadros não passam disso. */
+const MAX_TILE_WITHOUT_HEIGHT = 320
 
-export function VoiceGrid({ members }: { members: VoiceState[] }) {
+/**
+ * Quadros centralizados (na horizontal e na vertical) com o tamanho calculado pelo espaço disponível
+ * (`bestTileLayout`): poucas pessoas = quadros grandes; muitas = menores, e a última linha fica no meio.
+ * `fill` = a grade ocupa a altura do pai (sala de voz); sem isso, só a largura conta.
+ */
+function TileGrid({ count, fill, children }: { count: number; fill: boolean; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const { width, height } = useElementSize(ref)
+  const layout = width > 0 ? bestTileLayout(count, width, fill && height > 0 ? height : Infinity, fill ? {} : { maxWidth: MAX_TILE_WITHOUT_HEIGHT }) : null
+  return (
+    <div
+      ref={ref}
+      data-tile-grid=""
+      data-columns={layout?.columns}
+      style={layout ? ({ '--tile-w': `${layout.width}px` } as CSSProperties) : undefined}
+      className={cn(
+        // "safe center": com mais quadros do que cabem, começa do topo (rola) em vez de cortar em cima
+        'flex flex-wrap justify-center gap-4 [align-content:safe_center] [&>*]:w-[var(--tile-w,240px)] [&>*]:max-w-full',
+        fill && 'h-full min-h-0'
+      )}
+    >
+      {children}
+    </div>
+  )
+}
+
+export function VoiceGrid({ members, fill = true }: { members: VoiceState[]; fill?: boolean }) {
   const screens = useApp((s) => s.screens)
   const selfId = useApp((s) => s.self?.id)
   const [chosen, setChosen] = useState<string | null>(null)
@@ -43,14 +71,14 @@ export function VoiceGrid({ members }: { members: VoiceState[] }) {
 
   if (!featured) {
     return (
-      <div className={GRID}>
+      <TileGrid count={screens.length + members.length} fill={fill}>
         {screens.map((id) => (
           <ScreenTile key={`tela-${id}`} userId={id} onSelect={() => watch(id)} />
         ))}
         {members.map((m) => (
           <ParticipantTile key={m.userId} state={m} onWatch={watchable(m.userId)} />
         ))}
-      </div>
+      </TileGrid>
     )
   }
 

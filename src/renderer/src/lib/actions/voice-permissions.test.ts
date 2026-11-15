@@ -5,7 +5,7 @@ import { setSocket } from '@/lib/core'
 import { voice } from '@/lib/voice'
 import { initialState, useApp } from '@/store'
 import { FakeSocket } from '@/test/fake-socket'
-import { bindVoiceEvents, joinVoice, toggleMute, toggleScreenShare } from './voice'
+import { bindVoiceEvents, joinVoice, toggleMute, toggleScreenShare, UNMUTE_RESYNC_MS } from './voice'
 import { chimes, resetVoiceSoundsForTests } from './voice-sounds'
 
 const me: User = { id: 'eu', accountId: 'acc-eu', name: 'Eu', tag: 'eu', color: '#000', avatarUrl: null }
@@ -104,5 +104,51 @@ describe('saída forçada pelo servidor', () => {
     expect(voice.teardown).toHaveBeenCalled()
     expect(chimes.play).toHaveBeenCalledWith('leave', expect.anything())
     expect(useApp.getState().notice?.text).toBe('Você saiu da sala de voz.')
+  })
+})
+
+describe('fim do silêncio do moderador (B6)', () => {
+  const mineSilenced = (serverMuted: boolean): VoiceState => ({ ...st('eu'), muted: serverMuted, serverMuted })
+
+  it('o servidor avisa que o silêncio acabou: relê as permissões do LiveKit já e, se ainda faltar, de novo depois', async () => {
+    vi.useFakeTimers()
+    try {
+      const sync = vi.spyOn(voice, 'syncPermissions').mockResolvedValue()
+      await join({ canSpeak: false, canShare: true, canVideo: true })
+      socket.receive('voice:state', [mineSilenced(true)])
+      expect(sync).not.toHaveBeenCalled()
+      socket.receive('voice:state', [mineSilenced(false)])
+      expect(sync).toHaveBeenCalledTimes(1)
+      vi.advanceTimersByTime(UNMUTE_RESYNC_MS)
+      expect(sync).toHaveBeenCalledTimes(2) // o LiveKit ainda não tinha avisado
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('se a permissão já chegou pelo LiveKit, não relê de novo', async () => {
+    vi.useFakeTimers()
+    try {
+      const sync = vi.spyOn(voice, 'syncPermissions').mockResolvedValue()
+      await join({ canSpeak: false, canShare: true, canVideo: true })
+      socket.receive('voice:state', [mineSilenced(true)])
+      socket.receive('voice:state', [mineSilenced(false)])
+      voice.onPermissionsChange?.({ canSpeak: true, canShare: true, canVideo: true })
+      vi.advanceTimersByTime(UNMUTE_RESYNC_MS)
+      expect(sync).toHaveBeenCalledTimes(1)
+      // e o app avisa o servidor que está desmutado (não precisa clicar)
+      expect(socket.sent('voice:update').at(-1)?.[0]).toEqual({ muted: false, deafened: false })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('sem silêncio antes (ou podendo falar), não faz nada', async () => {
+    const sync = vi.spyOn(voice, 'syncPermissions').mockResolvedValue()
+    await join({ canSpeak: true, canShare: true, canVideo: true })
+    socket.receive('voice:state', [mineSilenced(false)])
+    socket.receive('voice:state', [mineSilenced(true)])
+    socket.receive('voice:state', [mineSilenced(false)])
+    expect(sync).not.toHaveBeenCalled()
   })
 })

@@ -20,7 +20,6 @@ import {
   type OverlaySize
 } from '@shared/overlay'
 import { useApp, type AppState } from '@/store'
-import { findDm } from '../dms'
 import { get, resolveServerUrl, set } from '../core'
 
 export const OVERLAY_KEY = 'concord:overlay'
@@ -29,14 +28,12 @@ export const overlayEnv = {
   bridge: (): OverlayBridge | null => (typeof window !== 'undefined' ? (window.api?.overlay ?? null) : null)
 }
 
-type St = Pick<AppState, 'myVoiceChannelId' | 'voice' | 'users' | 'speaking' | 'channels' | 'dms' | 'serverUrl'>
+type St = Pick<AppState, 'myVoiceChannelId' | 'voice' | 'users' | 'speaking' | 'serverUrl'>
 
-/** O que o overlay mostra: a minha sala de voz, ou null fora de sala. */
+/** O que o overlay mostra: quem está na minha sala de voz (sem o nome da sala), ou null fora de sala. */
 export function overlayRoom(st: St): OverlayRoom | null {
   const channelId = st.myVoiceChannelId
   if (!channelId) return null
-  const dm = findDm(st.dms, channelId)
-  const channelName = dm ? `Chamada com ${dm.other.name}` : (st.channels.find((c) => c.id === channelId)?.name ?? 'Sala de voz')
   const states = st.voice.filter((v) => v.channelId === channelId)
   const members = states.map((v) => {
     const user = st.users.find((u) => u.id === v.userId)
@@ -50,7 +47,7 @@ export function overlayRoom(st: St): OverlayRoom | null {
       deafened: v.deafened
     }
   })
-  return { channelName, members: members.slice(0, OVERLAY_MAX_MEMBERS), more: Math.max(0, members.length - OVERLAY_MAX_MEMBERS) }
+  return { members: members.slice(0, OVERLAY_MAX_MEMBERS), more: Math.max(0, members.length - OVERLAY_MAX_MEMBERS) }
 }
 
 export function overlayConfig(st: Pick<AppState, 'overlayEnabled' | 'overlayCorner' | 'overlaySize' | 'overlayPosition'>): OverlayConfig {

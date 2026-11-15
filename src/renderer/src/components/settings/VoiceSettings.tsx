@@ -1,11 +1,11 @@
-// "Configurações de voz": microfone, saída de áudio (B4), volume do microfone e de saída, supressão de ruído automática (B13), pressione para falar (B20), câmera (B21), sons de entrar/sair da sala (B16) e sobreposição em jogos (B15). O volume de cada pessoa fica no botão direito sobre ela.
+// Configurações → "Voz e vídeo": microfone, saída de áudio (B4), câmera (B21), volume do microfone e de saída,
+// supressão de ruído automática (B13), pressione para falar (B20), sons de entrar/sair da sala (B16) e
+// sobreposição em jogos (B15). O volume de cada pessoa fica no botão direito sobre ela.
 import { useCallback, useEffect, useState } from 'react'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import {
   canChooseAudioOutput,
-  closeDeviceSettings,
   listAudioDevices,
   previewVoiceSound,
   selectAudioInput,
@@ -24,12 +24,12 @@ import {
 import { OVERLAY_EDIT_SHORTCUT_LABEL, OVERLAY_SHORTCUT_LABEL, type OverlayCorner, type OverlaySize } from '@shared/overlay'
 import { MIC_GAIN_MAX, OUTPUT_VOLUME_MAX } from '@/lib/mic-gain'
 import { useApp } from '@/store'
-import { PushToTalkSettings } from './PushToTalk'
+import { PushToTalkSettings } from '../voice/PushToTalk'
+import { SettingsHeading } from './SettingsHeading'
 
 const DEFAULT = '__default__'
 
-export function DeviceSettings() {
-  const open = useApp((s) => s.deviceSettingsOpen)
+export function VoiceSettings() {
   const inputId = useApp((s) => s.audioInputId)
   const outputId = useApp((s) => s.audioOutputId)
   const cameraId = useApp((s) => s.cameraId)
@@ -46,67 +46,53 @@ export function DeviceSettings() {
     }
   }, [])
 
+  // ao abrir a seção lista os aparelhos; fone conectado/desconectado com ela aberta atualiza a lista
   useEffect(() => {
-    if (!open) return
     void refresh()
-    // Fone conectado/desconectado com o diálogo aberto: atualiza a lista.
     const media = typeof navigator !== 'undefined' ? navigator.mediaDevices : undefined
     media?.addEventListener?.('devicechange', refresh)
     return () => media?.removeEventListener?.('devicechange', refresh)
-  }, [open, refresh])
+  }, [refresh])
 
   const namesHidden = !!devices && [...devices.inputs, ...devices.outputs].every((d) => /^(Microfone|Saída) \d+$/.test(d.label))
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && closeDeviceSettings()}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Configurações de voz</DialogTitle>
-          <DialogDescription>Valem neste computador. A troca vale na hora, mesmo com você numa sala.</DialogDescription>
-        </DialogHeader>
+    <div className="space-y-4">
+      <SettingsHeading title="Voz e vídeo" description="Valem neste computador. A troca vale na hora, mesmo com você numa sala." />
 
-        {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p className="text-sm text-destructive">{error}</p>}
 
-        <div className="space-y-4">
+      <div className="space-y-4">
+        <DeviceSelect id="audio-input" label="Microfone" value={inputId} devices={devices?.inputs} onChange={(id) => void selectAudioInput(id)} />
+        {outputSupported && (
           <DeviceSelect
-            id="audio-input"
-            label="Microfone"
-            value={inputId}
-            devices={devices?.inputs}
-            onChange={(id) => void selectAudioInput(id)}
+            id="audio-output"
+            label="Saída de áudio"
+            value={outputId}
+            devices={devices?.outputs}
+            onChange={(id) => void selectAudioOutput(id)}
           />
-          {outputSupported && (
-            <DeviceSelect
-              id="audio-output"
-              label="Saída de áudio"
-              value={outputId}
-              devices={devices?.outputs}
-              onChange={(id) => void selectAudioOutput(id)}
-            />
-          )}
-          <DeviceSelect id="camera" label="Câmera" value={cameraId} devices={devices?.cameras} onChange={(id) => void selectCamera(id)} />
-          {namesHidden && (
-            <p className="text-xs text-muted-foreground">
-              Os nomes dos dispositivos aparecem depois que o Concord puder usar o microfone (entre numa sala de voz uma vez).
-            </p>
-          )}
-        </div>
+        )}
+        <DeviceSelect id="camera" label="Câmera" value={cameraId} devices={devices?.cameras} onChange={(id) => void selectCamera(id)} />
+        {namesHidden && (
+          <p className="text-xs text-muted-foreground">
+            Os nomes dos dispositivos aparecem depois que o Concord puder usar o microfone (entre numa sala de voz uma vez).
+          </p>
+        )}
+      </div>
 
-        <VolumeSettings />
+      <VolumeSettings />
 
-        <NoiseSuppression />
+      <NoiseSuppression />
 
-        <PushToTalkSettings />
+      <PushToTalkSettings />
 
-        <JoinLeaveSounds />
+      <JoinLeaveSounds />
 
-        <GameOverlay />
+      <GameOverlay />
 
-        <p className="text-xs text-muted-foreground">
-          Para ajustar o volume ou silenciar alguém, clique com o botão direito na pessoa.
-        </p>
-      </DialogContent>
-    </Dialog>
+      <p className="text-xs text-muted-foreground">Para ajustar o volume ou silenciar alguém, clique com o botão direito na pessoa.</p>
+    </div>
   )
 }
 

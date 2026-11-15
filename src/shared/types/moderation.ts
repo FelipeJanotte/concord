@@ -1,7 +1,10 @@
 /**
- * CONTRATO — v2, B6 (moderação): expulsar da voz, silenciar pelo servidor e apagar mensagem.
+ * CONTRATO — v2, B6 (moderação): expulsar da voz, mover para outra sala, silenciar pelo servidor e apagar mensagem.
  *
  * Regras (o servidor confere tudo; a tela só esconde o que daria erro):
+ * - mover para outra sala de voz: mesma regra do expulsar; a sala de destino tem de ser de voz, visível para
+ *   quem move, e a pessoa tem de poder ver e entrar nela (`connect`). Chamada privada não entra. Quem é
+ *   movido recebe `moderation:moved` e o app troca de sala pelo `voice:join` de sempre;
  * - expulsar e silenciar exigem `manageMembers` e alguém **abaixo** de quem modera
  *   (`canModerate`): ninguém mexe na dona, em quem está no seu nível ou acima, nem em si mesmo;
  * - silenciar vale para a **conta** (todas as conexões dela) e continua valendo se ela sair e
@@ -37,11 +40,15 @@ export interface ModerationServerEvents {
   'message:deleted': (payload: { channelId: string; messageId: string }) => void
   /** só para a conexão expulsa, logo antes do `voice:state` sem ela */
   'moderation:kicked': (payload: { channelId: string; by: string }) => void
+  /** só para a conexão movida: entre na sala `channelId` (quem moveu = `by`) */
+  'moderation:moved': (payload: { channelId: string; by: string }) => void
 }
 
 export interface ModerationClientEvents {
   /** tira a conexão `userId` (socket.id, igual ao `VoiceState.userId`) da sala de voz */
   'moderation:voice-kick': (payload: { userId: string }, ack: (res: OkResult) => void) => void
+  /** leva a conexão `userId` para a sala de voz `channelId` */
+  'moderation:voice-move': (payload: { userId: string; channelId: string }, ack: (res: OkResult) => void) => void
   /** silencia (ou tira o silêncio) da conta para todos, em qualquer sala de voz */
   'moderation:voice-mute': (payload: { accountId: string; muted: boolean }, ack: (res: OkResult) => void) => void
   /** apaga a mensagem (autor ou manageMessages) */

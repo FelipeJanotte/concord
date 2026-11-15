@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type DragEvent } from 'react'
-import { Hash, Loader2, Upload } from 'lucide-react'
+import { Hash, Loader2, Upload, Volume2 } from 'lucide-react'
 import { mentionsAccount, type Channel, type DmEntry, type Message } from '@shared/types'
 import { addFiles, loadHistory, loadOlderMessages } from '@/lib/client'
 import { chatLabel, findDm } from '@/lib/dms'
@@ -25,7 +25,11 @@ const LOAD_OLDER_THRESHOLD = 200
 
 const hasFiles = (e: DragEvent): boolean => Array.from(e.dataTransfer?.types ?? []).includes('Files')
 
-export function ChatView({ channelId }: { channelId: string }) {
+/**
+ * Chat de um canal: texto da comunidade, conversa privada ou o chat da sala de voz. `embedded` = dentro
+ * do painel "Chat" da sala de voz (`VoiceView`): sem o cabeçalho próprio (o painel já tem o seu).
+ */
+export function ChatView({ channelId, embedded = false }: { channelId: string; embedded?: boolean }) {
   // canal da comunidade ou conversa privada (B7: os canais `dm` só existem em `dms`)
   const dm = useApp((s) => findDm(s.dms, channelId))
   const channel = useApp((s) => s.channels.find((c) => c.id === channelId)) ?? dm?.channel
@@ -78,16 +82,18 @@ export function ChatView({ channelId }: { channelId: string }) {
 
   return (
     <>
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-black/25 px-4 shadow-sm">
-        {dm ? (
-          <UserAvatar user={dm.other} size="sm" />
-        ) : (
-          <Hash className="size-6 text-muted-foreground" />
-        )}
-        <h1 className="font-semibold text-accent-foreground">{dm ? dm.other.name : channel.name}</h1>
-        {dm && <CallButton dm={dm} />}
-      </header>
-      {dm && <CallPanel dm={dm} />}
+      {!embedded && (
+        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-black/25 px-4 shadow-sm">
+          {dm ? (
+            <UserAvatar user={dm.other} size="sm" />
+          ) : (
+            <Hash className="size-6 text-muted-foreground" />
+          )}
+          <h1 className="font-semibold text-accent-foreground">{dm ? dm.other.name : channel.name}</h1>
+          {dm && <CallButton dm={dm} />}
+        </header>
+      )}
+      {dm && !embedded && <CallPanel dm={dm} />}
 
       <div
         data-testid="chat-drop-zone"
@@ -179,6 +185,17 @@ function ChannelWelcome({ channel, dm }: { channel: Channel; dm?: DmEntry }) {
           {dm.other.name}#{dm.other.tag}
         </p>
         <p className="mt-2 text-muted-foreground">Este é o começo da sua conversa com @{dm.other.name}.</p>
+      </div>
+    )
+  }
+  if (channel.type === 'voice') {
+    return (
+      <div className="mx-4 mt-6 mb-2">
+        <div className="mb-3 flex size-12 items-center justify-center rounded-full bg-accent">
+          <Volume2 className="size-7 text-accent-foreground" />
+        </div>
+        <h2 className="text-xl font-bold text-accent-foreground">Chat de {channel.name}</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Este é o começo do chat da sala de voz {channel.name}. Quem vê a sala vê as mensagens, mesmo sem entrar na voz.</p>
       </div>
     )
   }

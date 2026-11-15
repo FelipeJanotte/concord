@@ -1221,3 +1221,28 @@ describe('câmera desligada e religada (B21)', () => {
     expect(useApp.getState().cameras).toEqual(['ana'])
   })
 })
+
+describe('syncPermissions (fim do silêncio do moderador)', () => {
+  it('relê as permissões da sala: voltou o speak, abre e publica o microfone sem esperar o evento do LiveKit', async () => {
+    socket.replyTo('voice:join', () => ({ ...CREDS, canSpeak: false }))
+    const changed = vi.fn()
+    client.onPermissionsChange = changed
+    await client.join('sala-1')
+    const room = lastRoom()
+    expect(room.localParticipant.publishTrack).not.toHaveBeenCalled()
+    room.localParticipant.permissions = { canPublish: true, canPublishSources: [1, 2, 3] } // o LiveKit já trocou, sem evento
+    await client.syncPermissions()
+    expect(room.localParticipant.publishTrack).toHaveBeenCalledWith(mic, { source: Track.Source.Microphone })
+    expect(changed).toHaveBeenCalledWith({ canSpeak: true, canShare: true, canVideo: true })
+  })
+
+  it('sem mudança, ou fora da sala, não faz nada', async () => {
+    await expect(client.syncPermissions()).resolves.toBeUndefined()
+    const changed = vi.fn()
+    client.onPermissionsChange = changed
+    await client.join('sala-1')
+    await client.syncPermissions()
+    expect(changed).not.toHaveBeenCalled()
+    expect(lastRoom().localParticipant.publishTrack).toHaveBeenCalledTimes(1) // só o da entrada
+  })
+})

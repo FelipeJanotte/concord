@@ -1,7 +1,8 @@
-// Notificações (B9): o que avisar das mensagens de canal. Fica em "Minha conta"; vale nesta máquina.
+// Notificações (B9): o que avisar das mensagens de canal. Fica em Configurações → "Notificações"; vale nesta máquina.
 import { Label } from '@/components/ui/label'
 import { setChannelNotifications } from '@/lib/client'
 import { useApp, type ChannelNotifyMode } from '@/store'
+import { SettingsHeading } from './SettingsHeading'
 
 const OPTIONS: { value: ChannelNotifyMode; label: string }[] = [
   { value: 'all', label: 'Todas as mensagens' },
@@ -31,6 +32,16 @@ export function ChannelNotificationSetting() {
       <p className="text-xs text-muted-foreground">
         Só com o Concord em segundo plano. Conversas privadas e chamadas sempre avisam. Vale neste computador.
       </p>
+    </div>
+  )
+}
+
+/** Configurações → "Notificações". */
+export function NotificationSettings() {
+  return (
+    <div className="space-y-5">
+      <SettingsHeading title="Notificações" description="Avisos do Windows/macOS quando o Concord está em segundo plano." />
+      <ChannelNotificationSetting />
     </div>
   )
 }

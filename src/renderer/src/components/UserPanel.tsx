@@ -1,15 +1,13 @@
-import { useEffect, useState, type ReactNode } from 'react'
-import { AudioLines, HeadphoneOff, Headphones, Mic, MicOff, MonitorOff, MonitorUp, Music, Palette, PhoneOff, Settings, Signal, Video, VideoOff } from 'lucide-react'
-import { joinVoice, leaveVoice, openDeviceSettings, openDmChat, openSoundboard, toggleCamera, toggleDeafen, toggleMute, toggleScreenShare } from '@/lib/client'
+import { useEffect, type ReactNode } from 'react'
+import { AudioLines, HeadphoneOff, Headphones, Mic, MicOff, MonitorOff, MonitorUp, Music, PhoneOff, Settings, Signal, Video, VideoOff } from 'lucide-react'
+import { joinVoice, leaveVoice, openDeviceSettings, openDmChat, openSettings, openSoundboard, toggleCamera, toggleDeafen, toggleMute, toggleScreenShare } from '@/lib/client'
 import { findDm } from '@/lib/dms'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
 import { IconButton } from './IconButton'
-import { ProfileDialog } from './ProfileDialog'
-import { AppearanceDialog } from './settings/appearance/AppearanceDialog'
+import { UserSettingsDialog } from './settings/UserSettingsDialog'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 import { UserAvatar } from './UserAvatar'
-import { DeviceSettings } from './voice/DeviceSettings'
 import { ScreenPicker } from './voice/ScreenPicker'
 import { Soundboard } from './voice/Soundboard'
 
@@ -98,19 +96,17 @@ export function UserPanel() {
   const muted = useApp((s) => s.muted || s.noMic || (!!s.myVoiceChannelId && !s.voiceCanSpeak))
   const deafened = useApp((s) => s.deafened)
   const speaking = useApp((s) => (s.self ? !!s.speaking[s.self.id] : false))
-  const [profileOpen, setProfileOpen] = useState(false)
-  const [appearanceOpen, setAppearanceOpen] = useState(false)
-  // Conta nova do Google: abre o perfil para escolher o id definitivo.
+  // Conta nova do Google: abre as Configurações em "Minha conta" para escolher o id definitivo.
   const mustChooseTag = useApp((s) => s.account?.tagLocked === false)
   useEffect(() => {
-    if (mustChooseTag) setProfileOpen(true)
+    if (mustChooseTag) openSettings('account')
   }, [mustChooseTag])
   if (!self) return null
 
   return (
     <div className="flex h-[52px] shrink-0 items-center gap-1 bg-panel px-2">
       <button
-        onClick={() => setProfileOpen(true)}
+        onClick={() => openSettings('account')}
         className="flex min-w-0 flex-1 items-center gap-2 rounded-md py-1 pr-1 pl-0.5 text-left hover:bg-accent/50"
         title="Minha conta"
       >
@@ -129,17 +125,13 @@ export function UserPanel() {
       <IconButton label={deafened ? 'Ativar áudio' : 'Desativar áudio'} onClick={toggleDeafen} danger={deafened}>
         {deafened ? <HeadphoneOff /> : <Headphones />}
       </IconButton>
-      <IconButton label="Minha conta" onClick={() => setProfileOpen(true)}>
+      <IconButton label="Configurações" onClick={() => openSettings()}>
         <Settings />
       </IconButton>
-      <IconButton label="Aparência" onClick={() => setAppearanceOpen(true)}>
-        <Palette />
-      </IconButton>
-      <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
-      <AppearanceDialog open={appearanceOpen} onOpenChange={setAppearanceOpen} />
-      {/* Sempre montados (uma vez só, em qualquer tela): o microfone e a saída podem ser escolhidos antes
-          de entrar numa sala, e compartilhar a tela / efeitos sonoros abrem também do chat de texto. */}
-      <DeviceSettings />
+      {/* Sempre montados (uma vez só, em qualquer tela): as Configurações (conta, voz e vídeo, aparência,
+          notificações; o microfone pode ser escolhido antes de entrar numa sala) e compartilhar a tela /
+          efeitos sonoros, que abrem também do chat de texto. */}
+      <UserSettingsDialog />
       <ScreenPicker />
       <Soundboard />
     </div>

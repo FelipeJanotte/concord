@@ -86,13 +86,14 @@ describe('createUpdaterController', () => {
     await vi.waitFor(() => expect(log).toHaveBeenCalledWith('[atualização] 404'))
   })
 
-  it('instalar só com a versão já baixada', () => {
+  it('instalar só com a versão já baixada, em silêncio e abrindo o app de novo', () => {
     const { updater, controller } = setup()
     controller.install()
     expect(updater.quitAndInstall).not.toHaveBeenCalled()
     updater.emit('update-downloaded', { version: '2.0.0' })
     controller.install()
     expect(updater.quitAndInstall).toHaveBeenCalledTimes(1)
+    expect(updater.quitAndInstall).toHaveBeenCalledWith(true, true)
   })
 })
 

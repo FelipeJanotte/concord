@@ -59,9 +59,9 @@ export const messagesModule: ServerModule = {
       const replyToId = typeof payload.replyToId === 'string' ? payload.replyToId : undefined
       queue = queue.then(() =>
         guard('message:send', async () => {
-          // canal de texto da comunidade ou conversa privada (v3); voz não tem chat
+          // canal de texto, chat da sala de voz (como no Discord) ou conversa privada (v3)
           const channel = await findChannel(channelId)
-          if (!channel || channel.type === 'voice') return
+          if (!channel) return
           // Sem permissão a mensagem é ignorada (a tela já esconde o campo de quem não pode enviar).
           if (!(await allowed(user.accountId, 'send', channel.id))) return
           if (attachmentIds.length > 0 && !(await allowed(user.accountId, 'attach', channel.id))) return
