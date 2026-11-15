@@ -20,6 +20,9 @@ export default defineConfig({
     // Os testes de integração (server/tests/) sobem o servidor real em cada arquivo.
     testTimeout: 15_000,
     // Subir o servidor real (beforeAll) com dezenas de arquivos em paralelo chega a passar de 30 s.
-    hookTimeout: 60_000
+    hookTimeout: 60_000,
+    // Cada arquivo de integração sobe um servidor (tsx + PGlite): com um worker por núcleo a CPU satura e os
+    // prazos estouram. Metade dos núcleos termina no mesmo tempo, sem estourar.
+    maxWorkers: '50%'
   }
 })

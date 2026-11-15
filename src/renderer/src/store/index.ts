@@ -9,6 +9,7 @@ import { create } from 'zustand'
 import { channelsInitial, type ChannelsState } from './channels'
 import { devicesInitial, type DevicesState } from './devices'
 import { friendsInitial, type FriendsState } from './friends'
+import { toolsInitial, type ToolsState } from './tools'
 import { messagesInitial, type MessagesState } from './messages'
 import { permissionsInitial, type PermissionsState } from './permissions'
 import { sessionInitial, type SessionState } from './session'
@@ -20,7 +21,7 @@ export type { TypingEntry } from './messages'
 export type { ConnectionStatus, Notice } from './session'
 export type { PendingUpload } from './uploads'
 
-export interface AppState extends SessionState, ChannelsState, MessagesState, UploadsState, VoiceSliceState, DevicesState, PermissionsState, FriendsState {}
+export interface AppState extends SessionState, ChannelsState, MessagesState, UploadsState, VoiceSliceState, DevicesState, PermissionsState, FriendsState, ToolsState {}
 
 export const initialState: AppState = {
   ...sessionInitial,
@@ -30,7 +31,8 @@ export const initialState: AppState = {
   ...voiceInitial,
   ...devicesInitial,
   ...permissionsInitial,
-  ...friendsInitial
+  ...friendsInitial,
+  ...toolsInitial
 }
 
 export const useApp = create<AppState>()(() => initialState)

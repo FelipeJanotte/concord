@@ -112,6 +112,7 @@ Cliente → servidor (`ClientToServerEvents`):
 | `dm:list` / `dm:open` | — / `accountId` | `DmEntry[]` / `DmOpenResult` | conversas privadas (v3): abrir só entre amigos ou se já existe; mensagens usam os `message:*` de sempre — skill `concord-dms` |
 | `tools:teams` | `{ channelId, players, teamCount, lanes? }` | `ToolResult` | sorteio no servidor; posta mensagem `kind: 'tool'` (`message:new` para quem vê o canal) — skill `concord-tools` |
 | `tools:dice` / `tools:coin` / `tools:pick` | `{ channelId, sides, count }` / `{ channelId, count }` / `{ channelId, options }` | `ToolResult` | dado, moeda e sortear 1 nome; mesmo fluxo e limite do `tools:teams` — skill `concord-tools` |
+| `tools:poll` / `poll:vote` / `poll:close` / `poll:mine` | `{ channelId, question, options, multiple? }` / `{ messageId, choices }` / `messageId` / `messageIds[]` | `ToolResult` / `PollVoteResult` / `PollCloseResult` / `Record<id, number[]>` | enquete (votos anônimos; votar exige `send`; encerrar: autor ou `manageMessages`) — skill `concord-tools` |
 | `message:send` | `{ channelId, content }` | — | valida (canal de texto ou conversa privada `dm`, até 2000 caracteres); `message:new` só para quem vê o canal |
 | `voice:join` | `{ channelId, muted, deafened }` | `JoinVoiceResult` (`url`, `token` do LiveKit) | exige LiveKit configurado; sala de voz **ou conversa privada `dm`** (só os dois membros, sem bloqueio); sai da sala anterior (também no LiveKit), entra na nova; `voice:state` (sala de DM só para os membros) |
 | `voice:leave` | — | — | tira da sala no LiveKit (`RemoveParticipant`) + `voice:state` |
@@ -122,7 +123,7 @@ Cliente → servidor (`ClientToServerEvents`):
 Servidor → cliente (`ServerToClientEvents`): `channel:created`, `channel:deleted`, `user:joined`, `user:left`,
 `user:updated` (por `accountId`), `message:new`, `voice:state` (sempre a **lista completa** das salas que a pessoa
 vê), `typing`, `rate:limited`, `access:updated` e `channels:visible` (v2), `sound:created`, `sound:deleted` e
-`sound:played` (soundboard; o último só para a sala) `preferences:updated` (outras janelas da mesma conta), `friend:updated`, `friend:removed` e `friend:presence` (amizades; online só para amigos), `dm:created` (conversa nova, para a outra pessoa e as minhas outras janelas).
+`sound:played` (soundboard; o último só para a sala) `preferences:updated` (outras janelas da mesma conta), `friend:updated`, `friend:removed` e `friend:presence` (amizades; online só para amigos), `poll:updated` (enquete: contagens novas, para quem vê o canal), `dm:created` (conversa nova, para a outra pessoa e as minhas outras janelas).
 
 ## Estado do renderer (`store/`)
 

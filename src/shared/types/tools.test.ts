@@ -1,7 +1,7 @@
 // Texto por extenso do resultado do sorteador (vai no content da mensagem).
 import { describe, expect, it } from 'vitest'
 import { MESSAGE_MAX_LENGTH } from './message'
-import { coinResultText, diceResultText, pickResultText, teamsResultText, toolResultText } from './tools'
+import { coinResultText, diceResultText, pickResultText, pollResultText, teamsResultText, toolResultText } from './tools'
 
 describe('teamsResultText', () => {
   it('um time por linha, com a lane quando existe', () => {
@@ -43,5 +43,14 @@ describe('textos das outras ferramentas', () => {
     expect(toolResultText({ tool: 'pick', result: { options: ['Ana', 'Bia'], picked: 'Ana' } })).toBe('🎯 Sorteado: Ana (entre 2 opções)')
     expect(toolResultText({ tool: 'dice', result: { sides: 6, rolls: [4], total: 4 } })).toBe('🎲 d6: 4')
     expect(toolResultText({ tool: 'teams', result: { lanes: false, teams: [{ members: [{ name: 'Ana' }] }] } })).toBe('Times sorteados\nTime 1: Ana')
+  })
+})
+
+describe('pollResultText', () => {
+  const base = { question: 'Qual mapa?', options: ['Dust 2', 'Mirage'], multiple: false, counts: [3, 1], voters: 4, closed: false }
+  it('pergunta, contagem por opção e pessoas (singular/plural); marca encerrada', () => {
+    expect(pollResultText(base)).toBe('📊 Enquete: Qual mapa? — Dust 2: 3, Mirage: 1 (4 pessoas)')
+    expect(pollResultText({ ...base, counts: [1, 0], voters: 1, closed: true })).toBe('📊 Enquete (encerrada): Qual mapa? — Dust 2: 1, Mirage: 0 (1 pessoa)')
+    expect(toolResultText({ tool: 'poll', result: base })).toBe(pollResultText(base))
   })
 })

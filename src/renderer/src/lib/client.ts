@@ -12,6 +12,7 @@ import { initialState } from '@/store'
 import { bindAccountEvents } from './actions/account'
 import { bindChannelEvents, firstTextView } from './actions/channels'
 import { bindFriendsEvents, loadFriendsAndDms } from './actions/friends'
+import { bindToolsEvents } from './actions/tools'
 import { bindLimitEvents } from './actions/limits'
 import { bindMessageEvents, loadHistory } from './actions/messages'
 import { bindPermissionsEvents } from './actions/permissions'
@@ -127,6 +128,7 @@ export function connect(url: string, token: string): Promise<void> {
   bindLimitEvents(s)
   bindPermissionsEvents(s)
   bindFriendsEvents(s)
+  bindToolsEvents(s)
 
   return new Promise((resolve, reject) => {
     let settled = false
