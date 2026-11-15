@@ -2,7 +2,11 @@ import { app, BrowserWindow, ipcMain, session, shell } from 'electron'
 import { join } from 'path'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { googleSignIn } from './google-auth'
+import { setupNotifications } from './notifications'
 import { setupScreenShare } from './screen-share'
+
+/** A janela principal (as notificações trazem ela de volta no clique). */
+let mainWindow: BrowserWindow | null = null
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -20,6 +24,10 @@ function createWindow(): void {
     }
   })
 
+  mainWindow = win
+  win.on('closed', () => {
+    if (mainWindow === win) mainWindow = null
+  })
   win.on('ready-to-show', () => win.show())
 
   // Links externos abrem no navegador padrão.
@@ -53,6 +61,7 @@ app.whenReady().then(() => {
   })
 
   setupScreenShare()
+  setupNotifications(() => mainWindow)
 
   createWindow()
 
