@@ -39,6 +39,14 @@ O áudio (e a tela, na B3) passa pelo LiveKit, um SFU self-hosted que roda pelo 
    perdeu `connect` sai (e é removido do LiveKit); quem perdeu/ganhou `speak` ou `share` tem as permissões trocadas
    no LiveKit (`updateVoicePermissions` → `RoomService.UpdateParticipant`, conjunto completo, só quando muda).
 
+5. **Chamada numa conversa privada (v3, servidor da B8).** O `voice:join` também aceita um canal `dm` (sala LiveKit =
+   id da conversa). Nele, cargos e regras não valem: só os dois membros entram (`allowed`, que usa os membros da DM),
+   e só se ninguém tiver bloqueado o outro. O bloqueio responde "Não foi possível entrar na chamada", sem dizer quem
+   bloqueou. Para quem não é membro, inclusive a dona, a resposta é "Canal de voz não encontrado". As permissões de
+   falar e compartilhar vêm de `voicePermissionsIn`; o `voice:state` da sala vai só para os membros (`seesRoom`).
+   O `applyVoiceAccess` ignora DMs. Quando alguém bloqueia, o `friend:block` chama `leaveDmVoice`, que tira os dois
+   da sala e do LiveKit. Canal de texto continua sem voz.
+
 Não existe mais `voice:signal`, `voice:peer-left` nem `peers` no ack.
 
 Configuração (`server/.env`, valores de dev em `server/.env.example`):
@@ -55,7 +63,8 @@ Sem as três primeiras, o servidor sobe com `Voz (LiveKit): desativada` e `voice
 Testes: `server/livekit.test.ts` (config e token) e `server/tests/voice.test.ts` (integração com o LiveKit falso
 de `server/tests/fake-livekit.ts`, que registra as chamadas `RemoveParticipant`/`DeleteRoom`/`UpdateParticipant`;
 o token é conferido com `TokenVerifier`). Permissões na voz (token sem microfone/tela, atualização ao vivo, saída
-ao perder `connect`): `server/tests/permissions.test.ts`. Para um teste novo com voz:
+ao perder `connect`): `server/tests/permissions.test.ts`. Chamada em DM (membros, quem é de fora, bloqueio, cargos
+não afetam): `server/tests/voice-dm.test.ts`. Para um teste novo com voz:
 `TestServer.start({ env: liveKitEnv(await livekit.start()) })` e crie as salas com `server.createChannel(nome, 'voice')`
 (só a dona cria canal).
 
