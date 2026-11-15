@@ -2,7 +2,7 @@
 // Aplicar tema na tela: variáveis CSS no <html>, transição curta e o último tema guardado na máquina.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_THEME, type ThemeConfig } from '@shared/types'
-import { applyTheme, loadLocalTheme, LOCAL_THEME_KEY, saveLocalTheme } from './apply'
+import { applyTheme, glassActive, loadLocalTheme, LOCAL_THEME_KEY, saveLocalTheme, translucencyEnv } from './apply'
 import { deriveTokens } from './derive'
 
 const ocean: ThemeConfig = { base: 'escuro', accent: '#38bdf8', background: { stops: ['#0c2a4a', '#1fa2b8'], angle: 180 }, intensity: 70 }
@@ -13,7 +13,10 @@ beforeEach(() => {
   root.className = ''
   localStorage.clear()
 })
-afterEach(() => vi.useRealTimers())
+afterEach(() => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+})
 
 describe('applyTheme', () => {
   it('escreve todos os tokens, o gradiente e o esquema de cores no <html>', () => {
@@ -52,5 +55,43 @@ describe('tema guardado na máquina', () => {
     expect(loadLocalTheme()).toEqual(DEFAULT_THEME)
     localStorage.setItem(LOCAL_THEME_KEY, 'não é json')
     expect(loadLocalTheme()).toEqual(DEFAULT_THEME)
+  })
+})
+
+describe('tema translúcido (vidro)', () => {
+  const glassTheme: ThemeConfig = { ...ocean, translucent: true }
+
+  it('com o sistema suportando: pede o vidro à janela, superfícies com transparência e marca o <html>', () => {
+    const set = vi.fn()
+    vi.spyOn(translucencyEnv, 'bridge').mockReturnValue({ supported: true, set })
+    applyTheme(glassTheme, { animate: false })
+    expect(set).toHaveBeenLastCalledWith(true)
+    expect(root.dataset.translucent).toBe('true')
+    expect(root.style.getPropertyValue('--sidebar')).toHaveLength(9) // #rrggbbaa
+    expect(root.style.getPropertyValue('--popover')).toHaveLength(7) // menus opacos
+    // voltar para um tema opaco desliga
+    applyTheme(ocean, { animate: false })
+    expect(set).toHaveBeenLastCalledWith(false)
+    expect(root.dataset.translucent).toBeUndefined()
+    expect(root.style.getPropertyValue('--sidebar')).toHaveLength(7)
+  })
+
+  it('sistema sem o efeito (ou navegador): tema opaco, sem marcar o <html>', () => {
+    const set = vi.fn()
+    vi.spyOn(translucencyEnv, 'bridge').mockReturnValue({ supported: false, set })
+    applyTheme(glassTheme, { animate: false })
+    expect(set).toHaveBeenLastCalledWith(false)
+    expect(root.dataset.translucent).toBeUndefined()
+    vi.spyOn(translucencyEnv, 'bridge').mockReturnValue(null)
+    expect(() => applyTheme(glassTheme, { animate: false })).not.toThrow()
+    expect(glassActive(glassTheme)).toBe(false)
+  })
+
+  it('overlay em jogos (windowEffects: false): não mexe no vidro da janela', () => {
+    const set = vi.fn()
+    vi.spyOn(translucencyEnv, 'bridge').mockReturnValue({ supported: true, set })
+    applyTheme(glassTheme, { animate: false, windowEffects: false })
+    expect(set).not.toHaveBeenCalled()
+    expect(root.dataset.translucent).toBeUndefined()
   })
 })

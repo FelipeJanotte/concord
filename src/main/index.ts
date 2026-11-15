@@ -8,6 +8,7 @@ import { allowPermission } from './permissions'
 import { setupOverlay, teardownOverlay, type OverlayController } from './overlay'
 import { setupPushToTalk, type PushToTalkController } from './push-to-talk'
 import { setupScreenShare } from './screen-share'
+import { setupTranslucency } from './translucency'
 import { setupUpdater } from './updater'
 
 /** A janela principal (as notificações trazem ela de volta no clique; o overlay manda o aviso do atalho). */
@@ -80,6 +81,7 @@ app.whenReady().then(() => {
   })
 
   setupScreenShare()
+  setupTranslucency(() => mainWindow)
   overlay = setupOverlay(() => mainWindow)
   setupNotifications(() => mainWindow)
   void setupUpdater(() => mainWindow).catch((err: unknown) => console.warn('[atualização] não iniciou:', err))

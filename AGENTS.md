@@ -25,6 +25,7 @@ Gerenciador de pacotes: **npm** (não use pnpm/yarn; o projeto foi revertido do 
 | `server/modules/reactions.ts` | Reações em mensagens (A16): `message:react` → `message:reactions` (lista inteira) para quem vê o canal. Dados em `server/repo/reactions.ts` (tabela `message_reactions`); contrato em `src/shared/types/reactions.ts`. |
 | `server/modules/preferences.ts` | Preferências da conta (v5): tema ativo e até 10 temas salvos (`preferences:get/update`, sincroniza as janelas da mesma conta). Contrato do tema e funções puras em `src/shared/types/theme.ts`. |
 | `src/renderer/src/components/settings/appearance/` | Seção "Aparência" das Configurações (v5, B12): temas prontos, meus temas, editor ao vivo e compartilhar por código. |
+| `src/main/translucency.ts`, `src/shared/translucency.ts` | Tema translúcido (vidro): `supportsTranslucency` (Windows 11 22H2+ e macOS) e o IPC `window-translucency`, que liga o material da janela (acrílico/vibrancy); `window.api.translucency` no preload. |
 | `src/renderer/src/lib/theme/` | Motor de temas (v5, B11): `deriveTokens` (tokens de cor a partir do `ThemeConfig`, contraste AA garantido), `THEME_PRESETS`, `applyTheme` e o tema guardado na máquina. Sincronia com a conta em `lib/actions/preferences.ts`. |
 | `server/files-signing.ts` | Links de download de anexo assinados por pessoa (HMAC, validade 24 h); o download confere se a conta ainda vê o canal. |
 | `server/modules/calls.ts` | Chamadas privadas (B8): `call:invite/accept/decline/cancel/end/list`, tempo de toque, fim quando a sala da conversa esvazia (`onVoiceRoomsChange` de `voice.ts`) e `endCall` (bloqueio). Contrato em `src/shared/types/calls.ts`. |
@@ -200,7 +201,7 @@ ponteiros para eles):
 - `docs/areas/dms.md` — conversas privadas (v3): canal `dm` com dois membros, quem pode abrir, acesso só dos membros, bloqueio e os eventos `dm:*`.
 - `docs/areas/tools.md` — ferramentas do grupo (v4): sorteio no servidor, mensagem `kind: 'tool'`, sorteador de times (`tools:teams`, lanes e preferências), dado, moeda, sortear 1 nome e como criar uma ferramenta nova.
 - `docs/areas/settings.md` — configurações do usuário: janela única com menu lateral (Minha conta, Voz e vídeo, Aparência, Notificações), `openSettings`/`openDeviceSettings` e a conta nova do Google escolhendo o id.
-- `docs/areas/themes.md` — temas personalizáveis (v5): `ThemeConfig`, `validateTheme`, código de compartilhamento e preferências da conta no servidor.
+- `docs/areas/themes.md` — temas personalizáveis (v5), "Surpreenda-me" e o tema translúcido (vidro): `ThemeConfig`, `validateTheme`, código de compartilhamento e preferências da conta no servidor.
 - `docs/areas/sounds.md` — efeitos sonoros (soundboard): envio por `POST /sounds`, tipo e duração pelos bytes, tocar só para a sala, sobreposição e quem apaga.
 - `docs/areas/calls.md` — chamadas privadas (B8): ligar, tocar, atender, desligar, tempos limite e os eventos `call:*`.
 - `docs/areas/home.md` — navegação (B7): barra de úteis, Home (Amigos e conversas), `section`/`homeView`, "Mensagem" no botão direito e o registro de ferramentas.

@@ -73,6 +73,15 @@ describe('preferências', () => {
     expect((await a.socket.emitWithAck('preferences:update', { savedThemes: [{ id: randomUUID(), name: '', theme: sunset }] })).ok).toBe(false)
   })
 
+  it('tema translúcido (vidro): guardado e devolvido; translucent false vira opaco (sem o campo)', async () => {
+    const a = await user()
+    const glass: ThemeConfig = { ...sunset, accent: '#f97316', translucent: true }
+    expect(await a.socket.emitWithAck('preferences:update', { theme: glass })).toEqual({ ok: true, preferences: { theme: glass, savedThemes: [] } })
+    expect((await a.socket.emitWithAck('preferences:get')).theme).toEqual(glass)
+    const res = await a.socket.emitWithAck('preferences:update', { theme: { ...glass, translucent: false } as unknown as ThemeConfig })
+    expect(res.ok && res.preferences.theme).not.toHaveProperty('translucent')
+  })
+
   it('recusa tema inválido e pedido vazio, sem mudar nada', async () => {
     const a = await user()
     expect(await a.socket.emitWithAck('preferences:update', { theme: { ...sunset, accent: 'laranja' } })).toEqual({

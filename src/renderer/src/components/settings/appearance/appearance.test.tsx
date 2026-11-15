@@ -8,6 +8,7 @@ import { UserPanel } from '@/components/UserPanel'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { flushPendingTheme } from '@/lib/client'
 import { setSocket } from '@/lib/core'
+import { translucencyEnv } from '@/lib/theme/apply'
 import { THEME_PRESETS } from '@/lib/theme/presets'
 import { initialState, useApp } from '@/store'
 import { FakeSocket } from '@/test/fake-socket'
@@ -158,5 +159,45 @@ describe('painel do usuário', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Configurações' })
     await userEvent.click(within(dialog).getByRole('button', { name: 'Aparência' }))
     expect(within(dialog).getByText('Temas prontos')).toBeTruthy()
+  })
+})
+
+describe('Surpreenda-me e vidro', () => {
+  it('"Surpreenda-me" aplica na hora um tema novo e válido (diferente do atual)', async () => {
+    open()
+    const before = theme()
+    await userEvent.click(screen.getByRole('button', { name: /Surpreenda-me/ }))
+    expect(theme()).not.toEqual(before)
+    expect(theme().background.stops.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('"Translúcido (vidro)" liga e desliga o vidro no tema; sem suporte no sistema, avisa que aqui fica opaco', async () => {
+    const restore = vi.spyOn(translucencyEnv, 'bridge').mockReturnValue({ supported: false, set: () => {} })
+    try {
+      open()
+      const box = screen.getByRole('checkbox', { name: 'Translúcido (vidro)' }) as HTMLInputElement
+      expect(box.checked).toBe(false)
+      await userEvent.click(box)
+      expect(theme().translucent).toBe(true)
+      expect(screen.getByText(/O vidro precisa do Windows 11/)).toBeTruthy()
+      await userEvent.click(box)
+      expect(theme()).not.toHaveProperty('translucent')
+      expect(screen.queryByText(/O vidro precisa do Windows 11/)).toBeNull()
+    } finally {
+      restore.mockRestore()
+    }
+  })
+
+  it('com suporte, sem aviso; os temas prontos "Vidro" aparecem na galeria', async () => {
+    const restore = vi.spyOn(translucencyEnv, 'bridge').mockReturnValue({ supported: true, set: () => {} })
+    try {
+      open()
+      await userEvent.click(screen.getByRole('button', { name: 'Vidro' }))
+      expect(theme().translucent).toBe(true)
+      expect(screen.queryByText(/O vidro precisa do Windows 11/)).toBeNull()
+      expect(screen.getByRole('button', { name: 'Vidro claro' })).toBeTruthy()
+    } finally {
+      restore.mockRestore()
+    }
   })
 })

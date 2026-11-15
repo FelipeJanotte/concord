@@ -71,3 +71,25 @@ describe('código de compartilhamento', () => {
     expect(decodeThemeCode(code)).toBeNull()
   })
 })
+
+describe('tema translúcido (vidro)', () => {
+  const base = { base: 'escuro', accent: '#7aa2ff', background: { stops: ['#1b2440'], angle: 150 }, intensity: 45 }
+
+  it('validateTheme guarda `translucent` só quando é true (false ou lixo somem: opaco)', () => {
+    expect(validateTheme({ ...base, translucent: true })).toMatchObject({ translucent: true })
+    expect(validateTheme({ ...base, translucent: false })).not.toHaveProperty('translucent')
+    expect(validateTheme({ ...base, translucent: 'sim' })).not.toHaveProperty('translucent')
+    expect(validateTheme(base)).not.toHaveProperty('translucent')
+  })
+
+  it('código: o vidro vira um "~1" no fim; códigos antigos (sem ele) continuam valendo; outro valor é inválido', () => {
+    const glass = validateTheme({ ...base, translucent: true })!
+    const code = encodeThemeCode(glass)
+    expect(code.endsWith('~1')).toBe(true)
+    expect(decodeThemeCode(code)).toEqual(glass)
+    const opaque = validateTheme(base)!
+    expect(encodeThemeCode(opaque).split('~')).toHaveLength(5)
+    expect(decodeThemeCode(encodeThemeCode(opaque))).toEqual(opaque)
+    expect(decodeThemeCode(code.replace(/~1$/, '~2'))).toBeNull()
+  })
+})

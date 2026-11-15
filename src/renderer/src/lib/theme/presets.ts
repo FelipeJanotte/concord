@@ -58,5 +58,16 @@ export const THEME_PRESETS: ThemePreset[] = [
     id: 'amanhecer',
     name: 'Amanhecer',
     theme: { base: 'claro', accent: '#d9480f', background: { stops: ['#ffe8cc', '#ffc9c9', '#d0bfff'], angle: 160 }, intensity: 70 }
+  },
+  // translúcidos: a área de trabalho aparece desfocada atrás (onde o sistema não tem o efeito, ficam opacos)
+  {
+    id: 'vidro',
+    name: 'Vidro',
+    theme: { base: 'escuro', accent: '#7aa2ff', background: { stops: ['#1b2440', '#3b2f63'], angle: 150 }, intensity: 45, translucent: true }
+  },
+  {
+    id: 'vidro-claro',
+    name: 'Vidro claro',
+    theme: { base: 'claro', accent: '#2f6feb', background: { stops: ['#dbeafe', '#ede9fe'], angle: 150 }, intensity: 45, translucent: true }
   }
 ]

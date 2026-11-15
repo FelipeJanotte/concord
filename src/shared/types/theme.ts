@@ -19,6 +19,12 @@ export interface ThemeConfig {
   background: { stops: string[]; angle: number }
   /** quanto o gradiente aparece sobre a base (0 = base lisa, 100 = gradiente cheio) */
   intensity: number
+  /**
+   * Janela translúcida (vidro: a área de trabalho aparece desfocada atrás). Ausente = opaco; só aparece
+   * quando é `true` (temas e códigos antigos continuam iguais). Onde o sistema não tem o efeito
+   * (Windows 10, Linux, navegador), o app mostra o tema opaco.
+   */
+  translucent?: true
 }
 
 /** Tema salvo pela pessoa (até `SAVED_THEMES_MAX`). */
@@ -43,8 +49,8 @@ export const DEFAULT_THEME: ThemeConfig = {
 const HEX = /^#[0-9a-f]{6}$/i
 
 /**
- * Tema válido e normalizado (cores em minúsculas, ângulo e intensidade inteiros),
- * ou null se qualquer campo estiver errado. Campos extras são descartados.
+ * Tema válido e normalizado (cores em minúsculas, ângulo e intensidade inteiros, `translucent` só quando
+ * `true`), ou null se qualquer campo estiver errado. Campos extras são descartados.
  */
 export function validateTheme(raw: unknown): ThemeConfig | null {
   if (!raw || typeof raw !== 'object') return null
@@ -65,7 +71,8 @@ export function validateTheme(raw: unknown): ThemeConfig | null {
     base: t.base as ThemeBase,
     accent: t.accent.toLowerCase(),
     background: { stops: (stops as string[]).map((s) => s.toLowerCase()), angle: Math.round(angle) },
-    intensity: Math.round(intensity)
+    intensity: Math.round(intensity),
+    ...(t.translucent === true ? { translucent: true as const } : {})
   }
 }
 
@@ -78,9 +85,10 @@ export function cleanThemeName(raw: unknown): string | null {
 
 const CODE_PREFIX = 'concord-tema:'
 
-/** Código curto para compartilhar um tema com amigos (copiar e colar). */
+/** Código curto para compartilhar um tema com amigos (copiar e colar). Translúcido ganha um `~1` no fim. */
 export function encodeThemeCode(theme: ThemeConfig): string {
-  const compact = [theme.base === 'claro' ? 1 : 0, theme.accent.slice(1), theme.background.stops.map((s) => s.slice(1)).join('.'), theme.background.angle, theme.intensity]
+  const compact: (string | number)[] = [theme.base === 'claro' ? 1 : 0, theme.accent.slice(1), theme.background.stops.map((s) => s.slice(1)).join('.'), theme.background.angle, theme.intensity]
+  if (theme.translucent) compact.push(1)
   return CODE_PREFIX + compact.join('~')
 }
 
@@ -90,14 +98,16 @@ export function decodeThemeCode(code: unknown): ThemeConfig | null {
   const text = code.trim()
   if (!text.startsWith(CODE_PREFIX)) return null
   const parts = text.slice(CODE_PREFIX.length).split('~')
-  if (parts.length !== 5) return null
-  const [base, accent, stops, angle, intensity] = parts
+  if (parts.length !== 5 && parts.length !== 6) return null
+  const [base, accent, stops, angle, intensity, glass] = parts
+  if (glass !== undefined && glass !== '1') return null
   if (base !== '0' && base !== '1') return null
   if (!/^\d+$/.test(angle) || !/^\d+$/.test(intensity)) return null
   return validateTheme({
     base: base === '1' ? 'claro' : 'escuro',
     accent: `#${accent}`,
     background: { stops: stops.split('.').map((s) => `#${s}`), angle: Number(angle) },
-    intensity: Number(intensity)
+    intensity: Number(intensity),
+    ...(glass === '1' ? { translucent: true } : {})
   })
 }

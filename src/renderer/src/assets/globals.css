@@ -102,6 +102,12 @@
   background-attachment: fixed;
 }
 
+/* Tema translúcido (vidro, lib/theme/apply): a página não pinta o fundo por trás de tudo, para o material
+   da janela (área de trabalho desfocada) aparecer pelas superfícies semitransparentes. */
+html[data-translucent] body {
+  background-color: transparent;
+}
+
 /* Troca de tema com transição curta (a classe fica no <html> só durante a troca). */
 .theme-transition,
 .theme-transition *,
