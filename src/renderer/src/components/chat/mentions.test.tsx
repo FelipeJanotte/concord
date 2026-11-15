@@ -2,9 +2,9 @@
 // Menções (B19) na tela: autocompletar no campo (quem vê o canal, @todos com permissão, conversa
 // privada), envio com o token, "@Nome" na mensagem, destaque de quem foi mencionado, edição e a
 // notificação da menção num canal.
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { act, cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AccessState, Channel, DmEntry, Message, User } from '@shared/types'
 import { ChatView } from '@/components/ChatView'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -79,6 +79,25 @@ describe('autocompletar no campo', () => {
     expect(screen.queryByRole('listbox')).toBeNull()
     await userEvent.type(box, 'tudo bem?{Enter}')
     expect(socket.sent('message:send')[0][0]).toEqual({ channelId: 'geral', content: `oi <@${ANA}> tudo bem?` })
+  })
+
+  it('digitar logo depois de escolher (antes do próximo quadro) não embaralha o texto', async () => {
+    // segura os requestAnimationFrame: a correção antiga punha o cursor num quadro atrasado
+    const frames: FrameRequestCallback[] = []
+    const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => frames.push(cb))
+    try {
+      setup('geral')
+      const box = screen.getByPlaceholderText('Conversar em #geral') as HTMLTextAreaElement
+      await userEvent.type(box, 'oi @')
+      await userEvent.keyboard('{Enter}')
+      expect(box.selectionStart).toBe('oi @Ana '.length) // já no lugar, sem esperar quadro
+      await userEvent.keyboard('tu')
+      act(() => frames.splice(0).forEach((cb) => cb(0)))
+      await userEvent.keyboard('do bem?')
+      expect(box.value).toBe('oi @Ana tudo bem?')
+    } finally {
+      raf.mockRestore()
+    }
   })
 
   it('@todos só aparece com a permissão; setas mudam a escolha; Esc fecha sem escolher', async () => {

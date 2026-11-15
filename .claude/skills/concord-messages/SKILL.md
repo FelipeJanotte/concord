@@ -137,6 +137,7 @@ Testes: `src/shared/links.test.ts` (reconhecimento, pontuação, parênteses, pr
 | Resposta chegou sem citação | `replyToId` de outro canal ou inexistente: o servidor manda sem citação de propósito. |
 | Não consigo reagir | Sem `send` no canal (os chips ficam desligados) ou a mensagem já tem 20 emojis diferentes. |
 | Menção não avisou | Quem escreveu não escolheu no menu (ficou texto), a pessoa não vê o canal, ou é @todos sem a permissão `mentionEveryone` (vira texto). |
+| Texto embaralhado logo depois de escolher uma menção ("do bem?tu") | Corrigido: o cursor ia para depois da menção num `requestAnimationFrame`, e o que se digitava antes desse quadro ficava fora de ordem (aparecia no CI lento). Agora o `Composer` guarda a posição em `pendingCaret` e aplica num `useLayoutEffect` assim que o texto novo está no campo. Não volte a usar `requestAnimationFrame` para o cursor; teste em `mentions.test.tsx` ("digitar logo depois de escolher"). |
 | Link não ficou clicável | Não começa com `http://`, `https://` ou `www.` (ex.: `exemplo.com` sozinho não é reconhecido) ou está colado em outra palavra. |
 | Link abre dentro do app / não abre | O clique tem de passar por `setWindowOpenHandler` (`target="_blank"`); protocolo que não é http/https é ignorado de propósito. |
 | Pendente | Prévia de link (embed), links na citação, histórico de edições, editar anexos, responder já mencionando o autor e menção a cargo (@Moderadores). |
