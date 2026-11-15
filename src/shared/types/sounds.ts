@@ -59,7 +59,10 @@ export interface SoundsServerEvents {
   'sound:created': (sound: Sound) => void
   /** som apagado (para todos) */
   'sound:deleted': (soundId: string) => void
-  /** alguém tocou um som na sala de voz em que ESTA conexão está */
+  /**
+   * alguém tocou um som na sala de voz em que ESTA conexão está. `by` é a conexão (`User.id`, o socket.id) de quem
+   * tocou, não o nome: o app procura o nome em `users`.
+   */
   'sound:played': (payload: { channelId: string; soundId: string; by: string; accountId: string }) => void
 }
 
