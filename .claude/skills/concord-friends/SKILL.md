@@ -48,7 +48,10 @@ Mensagens de erro pensadas para não vazar informação: quem foi bloqueado rece
 
 ## Pendente
 
-- Tela "Amigos" (Online, Todos, Pendentes, Adicionar) no casco da Home (B7, Dev B) e o slice/ações do app.
+- Tela "Amigos" (Online, Todos, Pendentes, Bloqueados, Adicionar) no casco da Home (B7, Dev B). A camada do app já
+  existe: `store/friends.ts` (`friends`, `friendsLoaded`), ações em `lib/actions/friends.ts` (`sendFriendRequest`,
+  `acceptFriend`, `declineFriend`, `removeFriend`, `blockAccount`, `unblockAccount`; erro vira exceção com a mensagem
+  do servidor) e as abas em `lib/friends.ts` (`friendGroups`, `incomingCount` para o selo da Home).
 - A7 (DMs, skill `concord-dms`): conversa nova só entre amigos; bloqueio (`blockedBetween`) fecha a conversa.
 
 ## Testes
@@ -58,3 +61,6 @@ Mensagens de erro pensadas para não vazar informação: quem foi bloqueado rece
 | `src/shared/types/friends.test.ts` | `parseFriendTarget` (nome com espaços e `#`, recusas). |
 | `server/repo/friends.test.ts` | Dois lados de cada operação, bloqueio dos dois lados, busca por id, `check` do banco. |
 | `server/tests/friends.test.ts` | Servidor real: pedido e avisos, nome/id e erros, pedir de volta aceita, aceitar/recusar/cancelar/desfazer, bloquear (sem vazar) e desbloquear, online só para amigos (primeira janela/última janela), lista. |
+| `src/renderer/src/lib/actions/friends.test.ts` | App (FakeSocket): carga das listas, avisos `friend:*`/`dm:created`, conversa sobe com `message:new`, ações e erros. |
+| `src/renderer/src/lib/friends.test.ts` | Abas (`friendGroups`) e `incomingCount`. |
+| `src/renderer/src/lib/client-friends.test.ts` | `connect()` pede `friend:list` e `dm:list` logo depois do `hello`. |

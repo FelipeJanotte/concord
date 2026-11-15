@@ -11,6 +11,8 @@ import type { AuthConfig, AuthResult, LoginRequest, RegisterRequest } from '@sha
 import { initialState } from '@/store'
 import { bindAccountEvents } from './actions/account'
 import { bindChannelEvents, firstTextView } from './actions/channels'
+import { bindFriendsEvents, loadFriendsAndDms } from './actions/friends'
+import { bindToolsEvents } from './actions/tools'
 import { bindLimitEvents } from './actions/limits'
 import { bindMessageEvents, loadHistory } from './actions/messages'
 import { bindModerationEvents } from './actions/moderation'
@@ -126,6 +128,8 @@ export function connect(url: string, token: string): Promise<void> {
   bindVoiceEvents(s)
   bindLimitEvents(s)
   bindPermissionsEvents(s)
+  bindFriendsEvents(s)
+  bindToolsEvents(s)
   bindModerationEvents(s)
 
   return new Promise((resolve, reject) => {
@@ -154,6 +158,7 @@ export function connect(url: string, token: string): Promise<void> {
           view: keep
         })
         if (keep?.kind === 'text') void loadHistory(keep.channelId)
+        void loadFriendsAndDms().catch(() => {}) // v3: amizades e conversas (o servidor já sabe quem eu sou)
         if (!settled) {
           settled = true
           resolve()
@@ -212,5 +217,7 @@ export * from './actions/permissions'
 export * from './actions/uploads'
 export * from './actions/voice'
 export * from './actions/devices'
+export * from './actions/friends'
+export * from './actions/tools'
 export { previewVoiceSound } from './actions/voice-sounds'
 export { resolveServerUrl } from './core'

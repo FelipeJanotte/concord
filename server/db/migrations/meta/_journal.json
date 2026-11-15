@@ -57,6 +57,13 @@
       "when": 1794686092457,
       "tag": "0007_tools",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794710952201,
+      "tag": "0008_polls",
+      "breakpoints": true
     }
   ]
 }

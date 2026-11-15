@@ -11,7 +11,7 @@
  * token, ao vivo no LiveKit e se a pessoa sair e voltar).
  */
 import { can, channelPermissions, type AccessState, type VoicePermissions, type VoiceState } from '../../src/shared/types'
-import { accessSnapshot, allowed, currentAccess } from '../access'
+import { accessSnapshot, allowed, currentAccess, dmMembersOf } from '../access'
 import { guard, type AppServer, type AppSocket, type ServerModule } from '../context'
 import { closeRoom, createVoiceCredentials, kickFromRoom, liveKitConfig, updateVoicePermissions } from '../livekit'
 import { findChannel } from '../repo/channels'
@@ -30,6 +30,18 @@ function voicePermissions(access: AccessState, accountId: string, channelId: str
   return { canSpeak: perms.has('speak') && !serverMuted.has(accountId), canShare: perms.has('share') }
 }
 
+/** Permissões de voz em qualquer sala: numa DM valem os membros e o bloqueio (`allowed`), não os cargos. */
+async function voicePermissionsIn(accountId: string, channelId: string): Promise<VoicePermissions> {
+  if (!dmMembersOf(channelId)) return voicePermissions(await currentAccess(), accountId, channelId)
+  return { canSpeak: await allowed(accountId, 'speak', channelId), canShare: await allowed(accountId, 'share', channelId) }
+}
+
+/** A conta vê a sala? Numa DM, só os dois membros (nem a dona); nas outras, a regra dos cargos. */
+function seesRoom(access: AccessState, accountId: string, channelId: string): boolean {
+  const dm = dmMembersOf(channelId)
+  return dm ? dm.includes(accountId) : can(access, accountId, 'view', channelId)
+}
+
 /** Sala de voz em que a conexão está (ou undefined). */
 export function voiceChannelOf(socketId: string): string | undefined {
   return voice.get(socketId)?.channelId
@@ -45,7 +57,7 @@ export function voiceSocketsIn(channelId: string): string[] {
 /** Estado de voz que a conta pode ver (quem está em sala privada não aparece para quem não vê a sala). */
 export function voiceStatesFor(accountId: string): VoiceState[] {
   const access = accessSnapshot()
-  return voiceStates().filter((v) => can(access, accountId, 'view', v.channelId))
+  return voiceStates().filter((v) => seesRoom(access, accountId, v.channelId))
 }
 
 /** `voice:state` (sempre a lista completa que cada conexão pode ver). */
@@ -67,6 +79,8 @@ export function applyVoiceAccess(io: AppServer, access: AccessState): void {
     const socket = io.sockets.sockets.get(state.userId)
     const accountId = socket?.data.user?.accountId
     if (!socket || !accountId) continue
+    // conversa privada: cargos e regras não valem (o bloqueio é tratado por `leaveDmVoice`)
+    if (dmMembersOf(state.channelId)) continue
     if (!can(access, accountId, 'connect', state.channelId)) {
       leaveVoice(io, socket, { emit: false })
       continue
@@ -116,6 +130,23 @@ export function setServerMuted(io: AppServer, accountId: string, muted: boolean)
   applyVoiceAccess(io, accessSnapshot())
 }
 
+/**
+ * Bloqueio entre duas contas (v3): quem estiver na sala de voz da conversa delas sai (e do LiveKit).
+ * Chamado pelo `friend:block`; emite `voice:state` se alguém saiu.
+ */
+export function leaveDmVoice(io: AppServer, dmChannelId: string): void {
+  let changed = false
+  for (const state of voiceStates()) {
+    if (state.channelId !== dmChannelId) continue
+    const socket = io.sockets.sockets.get(state.userId)
+    if (socket) {
+      leaveVoice(io, socket, { emit: false })
+      changed = true
+    }
+  }
+  if (changed) emitVoice(io)
+}
+
 /** Tira todo mundo de uma sala (usado quando o canal é apagado). Não emite `voice:state`. */
 export function clearVoiceChannel(_io: AppServer, channelId: string): void {
   for (const [sid, state] of voice) {
@@ -135,16 +166,20 @@ export const voiceModule: ServerModule = {
         const user = socket.data.user
         if (!user) return ack({ ok: false, error: 'Não autenticado' })
         if (!liveKitConfig) return ack({ ok: false, error: 'A voz não está configurada neste servidor' })
-        const channel = typeof payload?.channelId === 'string' ? await findChannel(payload.channelId, 'voice') : undefined
+        const found = typeof payload?.channelId === 'string' ? await findChannel(payload.channelId) : undefined
+        // sala de voz da comunidade ou conversa privada (v3: chamada entre os dois membros)
+        const channel = found && (found.type === 'voice' || found.type === 'dm') ? found : undefined
         // Sem permissão de ver, responde como se o canal não existisse (não revela salas privadas).
         if (!channel || !(await allowed(user.accountId, 'view', channel.id))) {
           return ack({ ok: false, error: 'Canal de voz não encontrado' })
         }
         if (!(await allowed(user.accountId, 'connect', channel.id))) {
-          return ack({ ok: false, error: 'Você não tem permissão para entrar nesta sala' })
+          // numa DM o único motivo é bloqueio: a mensagem não diz quem bloqueou
+          const error = channel.type === 'dm' ? 'Não foi possível entrar na chamada' : 'Você não tem permissão para entrar nesta sala'
+          return ack({ ok: false, error })
         }
         // Sem `speak`, entra só para ouvir (e os outros veem silenciado); sem `share`, sem tela.
-        const permissions = voicePermissions(await currentAccess(), user.accountId, channel.id)
+        const permissions = await voicePermissionsIn(user.accountId, channel.id)
         const credentials = await createVoiceCredentials(liveKitConfig, user, channel.id, permissions)
         if (!socket.connected) return
         // Trocar de sala: sai da anterior (inclusive no LiveKit) antes de entrar na nova.

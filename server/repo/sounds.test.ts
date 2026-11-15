@@ -16,7 +16,7 @@ beforeAll(async () => {
       id: randomUUID(),
       email: `sons-${randomUUID().slice(0, 6)}@teste.com`,
       name: 'Sons',
-      tag: `s${randomUUID().slice(0, 4)}`,
+      tag: `s${randomUUID().slice(0, 8)}`,
       tagLocked: true,
       color: '#5865f2',
       passwordHash: null,

@@ -76,6 +76,8 @@ export const LIMITS = {
   friend: { capacity: 10, perSecond: 1 / 10 },
   /** abrir conversa privada por conta: 20 seguidas, depois 1 por segundo (v3) */
   dm: { capacity: 20, perSecond: 1 },
+  /** votos em enquete por conta: 20 seguidos, depois 2 por segundo (trocar de opção é comum) (v4) */
+  vote: { capacity: 20, perSecond: 2 },
   /** sorteios das ferramentas do grupo por conta: 5 seguidos, depois 1 a cada 3 s (v4) */
   tool: { capacity: 5, perSecond: 1 / 3 },
   /** preferências (tema): 20 seguidas (arrastar o seletor de cor), depois 1 por segundo (v5) */

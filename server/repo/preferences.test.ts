@@ -20,7 +20,7 @@ async function account(): Promise<string> {
       id: randomUUID(),
       email: `pref-${randomUUID().slice(0, 6)}@teste.com`,
       name: 'Pref',
-      tag: `p${randomUUID().slice(0, 4)}`,
+      tag: `p${randomUUID().slice(0, 8)}`,
       tagLocked: true,
       color: '#5865f2',
       passwordHash: null,

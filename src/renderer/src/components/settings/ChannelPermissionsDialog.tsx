@@ -26,7 +26,7 @@ import { RoleDot } from './RoleDot'
 export const PERMISSIONS_BY_TYPE: Record<Channel['type'], ChannelPermission[]> = {
   text: ['view', 'send', 'attach'],
   voice: ['view', 'connect', 'speak', 'share'],
-  /** conversa privada: cargos e regras não valem (só os dois membros), então não há o que editar */
+  // conversa privada não tem regras por cargo (só os dois membros veem; skill concord-dms)
   dm: []
 }
 

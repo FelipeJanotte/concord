@@ -24,7 +24,7 @@ afterAll(async () => {
   await cleanup?.()
 })
 
-async function account(tag = `f${randomUUID().slice(0, 4)}`) {
+async function account(tag = `f${randomUUID().slice(0, 8)}`) {
   return insertAccount({
     id: randomUUID(),
     email: `amigo-${randomUUID().slice(0, 6)}@teste.com`,
