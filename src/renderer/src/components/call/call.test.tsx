@@ -13,7 +13,6 @@ import { setSocket } from '@/lib/core'
 import { voice } from '@/lib/voice'
 import { initialState, useApp } from '@/store'
 import { FakeSocket } from '@/test/fake-socket'
-import { Soundboard } from '@/components/voice/Soundboard'
 import { CallButton } from './CallButton'
 import { CallPanel } from './CallPanel'
 import { IncomingCall } from './IncomingCall'
@@ -88,12 +87,7 @@ describe('painel da chamada na conversa', () => {
   it('chamando: "Chamando Ana..." e cancelar', async () => {
     socket.replyTo('call:cancel', () => ({ ok: true }))
     setup({ calls: { dm1: call({ callerId: 'eu', calleeId: 'ana' }) } })
-    ui(
-      <>
-        <CallPanel dm={dm} />
-        <Soundboard />
-      </>
-    )
+    ui(<CallPanel dm={dm} />)
     expect(screen.getByText('Chamando Ana...')).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: 'Cancelar chamada' }))
     expect(socket.sent('call:cancel')).toEqual([['dm1']])
@@ -104,12 +98,7 @@ describe('painel da chamada na conversa', () => {
     socket.replyTo('call:accept', () => ({ ok: true, call: call({ status: 'active' }) }))
     socket.replyTo('message:history', () => ({ messages: [], hasMore: false }))
     setup({ calls: { dm1: call() } })
-    ui(
-      <>
-        <CallPanel dm={dm} />
-        <Soundboard />
-      </>
-    )
+    ui(<CallPanel dm={dm} />)
     expect(screen.getByText('Ana está ligando...')).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: 'Recusar' }))
     expect(socket.sent('call:decline')).toEqual([['dm1']])
@@ -121,12 +110,7 @@ describe('painel da chamada na conversa', () => {
   it('em andamento: grade de quem está na sala e "Desligar"', async () => {
     socket.replyTo('call:end', () => ({ ok: true }))
     setup({ calls: { dm1: call({ status: 'active' }) }, myVoiceChannelId: 'dm1', voice: [inRoom(me), inRoom(ana)] })
-    ui(
-      <>
-        <CallPanel dm={dm} />
-        <Soundboard />
-      </>
-    )
+    ui(<CallPanel dm={dm} />)
     expect(screen.getByText('Ana')).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: 'Desligar' }))
     expect(socket.sent('call:end')).toEqual([['dm1']])
@@ -134,12 +118,7 @@ describe('painel da chamada na conversa', () => {
 
   it('em andamento sem eu estar na sala (outra janela): "Entrar na chamada"', async () => {
     setup({ calls: { dm1: call({ status: 'active' }) }, voice: [inRoom(ana)] })
-    ui(
-      <>
-        <CallPanel dm={dm} />
-        <Soundboard />
-      </>
-    )
+    ui(<CallPanel dm={dm} />)
     await userEvent.click(screen.getByRole('button', { name: /Entrar na chamada/ }))
     expect(voice.join).toHaveBeenCalledWith('dm1')
   })
@@ -216,12 +195,7 @@ describe('efeitos sonoros na chamada', () => {
     socket.replyTo('sound:list', () => [sound])
     socket.replyTo('sound:play', () => ({ ok: true }))
     setup({ calls: { dm1: call({ status: 'active' }) }, myVoiceChannelId: 'dm1', voice: [inRoom(me), inRoom(ana)] })
-    ui(
-      <>
-        <CallPanel dm={dm} />
-        <Soundboard />
-      </>
-    )
+    ui(<CallPanel dm={dm} />)
     await userEvent.click(screen.getByRole('button', { name: 'Efeitos sonoros' }))
     expect(screen.getByText(/a outra pessoa da chamada/)).toBeTruthy()
     await userEvent.click(await screen.findByRole('button', { name: 'Tocar Buzina' }))

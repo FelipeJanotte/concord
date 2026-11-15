@@ -102,7 +102,7 @@ describe('"Voz conectada" fora da sala', () => {
     expect(stop).toHaveBeenCalled()
   })
 
-  it('efeitos sonoros abre a janela de sons daqui', async () => {
+  it('efeitos sonoros abre o popup de sons daqui', async () => {
     renderPanels()
     await userEvent.click(screen.getByRole('button', { name: 'Efeitos sonoros' }))
     expect(await screen.findByRole('dialog', { name: 'Efeitos sonoros' })).toBeTruthy()
