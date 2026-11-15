@@ -16,7 +16,7 @@ afterAll(async () => {
 })
 
 async function account() {
-  const tag = `d${randomUUID().slice(0, 4)}`
+  const tag = `d${randomUUID().slice(0, 8)}`
   return insertAccount({
     id: randomUUID(),
     email: `dm-${randomUUID().slice(0, 6)}@teste.com`,

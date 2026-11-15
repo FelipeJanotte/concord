@@ -49,7 +49,7 @@ function newAccount(over: Partial<Account> = {}): Account {
     id: randomUUID(),
     email: `pessoa${n}-${randomUUID().slice(0, 6)}@teste.com`,
     name: `Pessoa ${n}`,
-    tag: `t${randomUUID().slice(0, 4)}`,
+    tag: `t${randomUUID().slice(0, 8)}`,
     tagLocked: true,
     color: '#5865f2',
     passwordHash: 'scrypt$a$b',

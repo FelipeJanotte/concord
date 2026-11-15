@@ -41,7 +41,8 @@ describe('tools:teams', () => {
     const [got] = await forB
     expect(got).toEqual(res.message)
     expect(got).toMatchObject({ kind: 'tool', author: { accountId: a.account.id }, tool: { tool: 'teams', result: { lanes: true } } })
-    const teams = got.tool!.result.teams
+    if (got.tool?.tool !== 'teams') throw new Error('esperava o resultado do sorteador de times')
+    const teams = got.tool.result.teams
     expect(teams).toHaveLength(2)
     expect(teams.every((t) => t.members.length === 5 && new Set(t.members.map((m) => m.lane)).size === 5)).toBe(true)
     expect(got.content.split('\n')[0]).toBe('Times sorteados')
@@ -121,5 +122,63 @@ describe('tools:teams', () => {
     expect(m.tool).toBeUndefined()
     const history = await a.socket.emitWithAck('message:history', { channelId: ch.id })
     expect(history.messages[0].kind).toBeUndefined()
+  })
+})
+
+describe('dado, moeda e sortear 1', () => {
+  it('dado: todos recebem o mesmo resultado (kind tool), com valores na faixa, e ele fica no histórico', async () => {
+    const a = await user()
+    const b = await user()
+    const ch = await server.createChannel('dados')
+    const forB = waitFor(b.socket, 'message:new', (m) => m.channelId === ch.id)
+    const res = await a.socket.emitWithAck('tools:dice', { channelId: ch.id, sides: 20, count: 3 })
+    if (!res.ok) throw new Error(res.error)
+    const [got] = await forB
+    expect(got).toEqual(res.message)
+    if (got.tool?.tool !== 'dice') throw new Error('esperava o resultado do dado')
+    const { rolls, total, sides } = got.tool.result
+    expect(sides).toBe(20)
+    expect(rolls).toHaveLength(3)
+    expect(rolls.every((r) => Number.isInteger(r) && r >= 1 && r <= 20)).toBe(true)
+    expect(total).toBe(rolls.reduce((x, y) => x + y, 0))
+    expect(got.content).toBe(`🎲 3d20: ${rolls.join(' + ')} = ${total}`)
+    const history = await b.socket.emitWithAck('message:history', { channelId: ch.id })
+    expect(history.messages.find((m) => m.id === got.id)?.tool).toEqual(got.tool)
+  })
+
+  it('moeda e sortear 1 postam o resultado; erros voltam no ack sem postar', async () => {
+    const a = await user()
+    const ch = await server.createChannel('moedas')
+    const coin = await a.socket.emitWithAck('tools:coin', { channelId: ch.id, count: 2 })
+    if (!coin.ok || coin.message.tool?.tool !== 'coin') throw new Error('moeda falhou')
+    expect(coin.message.tool.result.flips.every((f) => f === 'cara' || f === 'coroa')).toBe(true)
+
+    const pick = await a.socket.emitWithAck('tools:pick', { channelId: ch.id, options: ['Ana', ' Bia ', '', 'Caio'] })
+    if (!pick.ok || pick.message.tool?.tool !== 'pick') throw new Error('sorteio falhou')
+    expect(pick.message.tool.result.options).toEqual(['Ana', 'Bia', 'Caio'])
+    expect(['Ana', 'Bia', 'Caio']).toContain(pick.message.tool.result.picked)
+
+    const silent = expectNoEvent(a.socket, 'message:new', (m) => m.channelId === ch.id)
+    expect(await a.socket.emitWithAck('tools:dice', { channelId: ch.id, sides: 1, count: 1 })).toEqual({
+      ok: false,
+      error: 'O dado precisa ter de 2 a 100 lados'
+    })
+    expect(await a.socket.emitWithAck('tools:coin', { channelId: ch.id, count: 50 })).toEqual({ ok: false, error: 'Jogue de 1 a 10 moedas' })
+    expect(await a.socket.emitWithAck('tools:pick', { channelId: ch.id, options: ['Só uma'] })).toEqual({
+      ok: false,
+      error: 'Coloque pelo menos 2 opções'
+    })
+    await silent
+  })
+
+  it('mesmas regras de canal das outras ferramentas: voz e inexistente recusados', async () => {
+    const a = await user()
+    const voice = await server.createChannel('Sala dos dados', 'voice')
+    const notFound = { ok: false, error: 'Canal não encontrado' }
+    expect(await a.socket.emitWithAck('tools:dice', { channelId: voice.id, sides: 6, count: 1 })).toEqual(notFound)
+    expect(await a.socket.emitWithAck('tools:coin', { channelId: 'lixo', count: 1 })).toEqual(notFound)
+    expect(await a.socket.emitWithAck('tools:pick', { channelId: '11111111-1111-1111-1111-111111111111', options: ['a', 'b'] })).toEqual(
+      notFound
+    )
   })
 })
