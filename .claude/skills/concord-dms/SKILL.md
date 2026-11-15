@@ -57,8 +57,11 @@ uma conversa por par; se dois `dm:open` correm juntos, um recebe violação de u
   camada do app já existe: `dms` em `store/friends.ts` (atividade mais recente primeiro: `dm:created` e `message:new`
   sobem a conversa) e `openDm(accountId)` em `lib/actions/friends.ts` (item "Mensagem" do botão direito).
   `messages`/`unread` já funcionam por `channelId`, então valem para DMs.
-- Chamadas privadas (B8) usam o canal `dm` como sala; ao implementar, o `voice:join` precisa aceitar `dm` e o
-  `voice:state` (`voiceStatesFor`, que usa `can()` direto) precisa respeitar os membros.
+- Chamadas privadas (B8): a parte de **voz no servidor já existe**. O `voice:join` aceita o canal `dm` (sala
+  LiveKit = id da conversa), só os dois membros entram e veem a sala no `voice:state`, e o bloqueio impede entrar
+  ("Não foi possível entrar na chamada") e encerra a chamada em andamento (`leaveDmVoice`, chamado pelo
+  `friend:block`). Falta a B8: tocar/aceitar/recusar (`call:*`), a tela de chamada recebida e a barra de chamada.
+  Detalhes na skill `concord-voice`.
 - O cache de membros fica todo em memória (um processo); com muitos DMs, trocar por consulta com cache LRU.
 
 ## Testes

@@ -25,7 +25,9 @@ import {
   sendRequest,
   unblock
 } from '../repo/friends'
+import { findDm } from '../repo/dms'
 import { isUuid } from '../repo/util'
+import { leaveDmVoice } from './voice'
 
 /** A conta tem alguma conexão aberta (já deu `hello`)? */
 export function isOnline(accountId: string): boolean {
@@ -171,6 +173,9 @@ export const friendsModule: ServerModule = {
         } catch {
           return ack(fail('Conta não encontrada')) // id que não é de conta nenhuma (chave estrangeira)
         }
+        // chamada em andamento na conversa dos dois (v3): o bloqueio encerra para ambos
+        const dm = await findDm(id, otherId)
+        if (dm) leaveDmVoice(io, dm.id)
         ack({ ok: true, entry: await notifyPair(io, id, otherId) })
       })
     })

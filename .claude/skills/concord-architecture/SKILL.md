@@ -112,7 +112,7 @@ Cliente → servidor (`ClientToServerEvents`):
 | `dm:list` / `dm:open` | — / `accountId` | `DmEntry[]` / `DmOpenResult` | conversas privadas (v3): abrir só entre amigos ou se já existe; mensagens usam os `message:*` de sempre — skill `concord-dms` |
 | `tools:teams` | `{ channelId, players, teamCount, lanes? }` | `ToolResult` | sorteio no servidor; posta mensagem `kind: 'tool'` (`message:new` para quem vê o canal) — skill `concord-tools` |
 | `message:send` | `{ channelId, content }` | — | valida (canal de texto ou conversa privada `dm`, até 2000 caracteres); `message:new` só para quem vê o canal |
-| `voice:join` | `{ channelId, muted, deafened }` | `JoinVoiceResult` (`url`, `token` do LiveKit) | exige LiveKit configurado; sai da sala anterior (também no LiveKit), entra na nova; `voice:state` |
+| `voice:join` | `{ channelId, muted, deafened }` | `JoinVoiceResult` (`url`, `token` do LiveKit) | exige LiveKit configurado; sala de voz **ou conversa privada `dm`** (só os dois membros, sem bloqueio); sai da sala anterior (também no LiveKit), entra na nova; `voice:state` (sala de DM só para os membros) |
 | `voice:leave` | — | — | tira da sala no LiveKit (`RemoveParticipant`) + `voice:state` |
 | `voice:update` | `{ muted, deafened }` | — | `voice:state` |
 | `voice:sharing` | `boolean` | — | liga/desliga o "ao vivo" (só para quem está numa sala); `voice:state` |
