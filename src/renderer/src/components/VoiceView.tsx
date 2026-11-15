@@ -7,8 +7,7 @@ import { joinVoice, leaveVoice, openDeviceSettings, openSoundboard, toggleCamera
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
 import { PushToTalkHint } from './voice/PushToTalk'
-import { ScreenPicker } from './voice/ScreenPicker'
-import { Soundboard, SoundsPlayingBar } from './voice/Soundboard'
+import { SoundsPlayingBar } from './voice/Soundboard'
 import { VoiceGrid } from './voice/VoiceGrid'
 
 export function VoiceView({ channelId }: { channelId: string }) {
@@ -81,8 +80,6 @@ export function VoiceView({ channelId }: { channelId: string }) {
           </Button>
         )}
       </div>
-      <ScreenPicker />
-      <Soundboard />
     </div>
   )
 }

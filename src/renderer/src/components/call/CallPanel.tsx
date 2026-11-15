@@ -25,8 +25,7 @@ import { useApp } from '@/store'
 import { UserAvatar } from '../UserAvatar'
 import { ControlButton } from '../VoiceView'
 import { PushToTalkHint } from '../voice/PushToTalk'
-import { ScreenPicker } from '../voice/ScreenPicker'
-import { Soundboard, SoundsPlayingBar } from '../voice/Soundboard'
+import { SoundsPlayingBar } from '../voice/Soundboard'
 import { VoiceGrid } from '../voice/VoiceGrid'
 
 function report(action: Promise<void>, fallback: string): void {
@@ -95,8 +94,6 @@ export function CallPanel({ dm }: { dm: DmEntry }) {
           </Button>
         )}
       </div>
-      <ScreenPicker />
-      <Soundboard />
     </Frame>
   )
 }
