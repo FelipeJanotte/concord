@@ -24,7 +24,7 @@ Três ações para manter a comunidade em ordem, todas decididas no **servidor**
 | `src/renderer/src/lib/actions/moderation.ts` | `kickFromVoice`, `setServerMuted`, `deleteMessage` (erro do servidor vira exceção) e os listeners `message:deleted` / `moderation:kicked`. |
 | `src/renderer/src/lib/actions/voice.ts` | `mutedByModerator` (do meu `VoiceState.serverMuted`): troca os avisos genéricos por "Um moderador silenciou você nas salas de voz." |
 | `src/renderer/src/components/voice/ModerationMenu.tsx` | `ModerationItems` (itens do botão direito) e `ServerMutedIcon` (escudo vermelho na grade e na barra lateral). |
-| `src/renderer/src/components/chat/MessageActions.tsx` | Lixeira ao passar o mouse na mensagem. |
+| `src/renderer/src/components/chat/MessageActions.tsx` | (Junto com Responder e Editar, skill `concord-messages`.) Lixeira ao passar o mouse na mensagem. |
 
 ## Regras
 
