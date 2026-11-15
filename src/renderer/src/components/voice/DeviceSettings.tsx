@@ -59,52 +59,55 @@ export function DeviceSettings() {
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && closeDeviceSettings()}>
-      <DialogContent className="sm:max-w-lg">
+      {/* Mais alta que a janela (muitas seções): o título fica fixo e o resto rola, em vez de cortar. */}
+      <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Configurações de voz</DialogTitle>
           <DialogDescription>Valem neste computador. A troca vale na hora, mesmo com você numa sala.</DialogDescription>
         </DialogHeader>
 
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        <div data-testid="device-settings-body" className="-mx-6 min-h-0 flex-1 space-y-4 overflow-y-auto px-6 pb-1">
+          {error && <p className="text-sm text-destructive">{error}</p>}
 
-        <div className="space-y-4">
-          <DeviceSelect
-            id="audio-input"
-            label="Microfone"
-            value={inputId}
-            devices={devices?.inputs}
-            onChange={(id) => void selectAudioInput(id)}
-          />
-          {outputSupported && (
+          <div className="space-y-4">
             <DeviceSelect
-              id="audio-output"
-              label="Saída de áudio"
-              value={outputId}
-              devices={devices?.outputs}
-              onChange={(id) => void selectAudioOutput(id)}
+              id="audio-input"
+              label="Microfone"
+              value={inputId}
+              devices={devices?.inputs}
+              onChange={(id) => void selectAudioInput(id)}
             />
-          )}
-          <DeviceSelect id="camera" label="Câmera" value={cameraId} devices={devices?.cameras} onChange={(id) => void selectCamera(id)} />
-          {namesHidden && (
-            <p className="text-xs text-muted-foreground">
-              Os nomes dos dispositivos aparecem depois que o Concord puder usar o microfone (entre numa sala de voz uma vez).
-            </p>
-          )}
+            {outputSupported && (
+              <DeviceSelect
+                id="audio-output"
+                label="Saída de áudio"
+                value={outputId}
+                devices={devices?.outputs}
+                onChange={(id) => void selectAudioOutput(id)}
+              />
+            )}
+            <DeviceSelect id="camera" label="Câmera" value={cameraId} devices={devices?.cameras} onChange={(id) => void selectCamera(id)} />
+            {namesHidden && (
+              <p className="text-xs text-muted-foreground">
+                Os nomes dos dispositivos aparecem depois que o Concord puder usar o microfone (entre numa sala de voz uma vez).
+              </p>
+            )}
+          </div>
+
+          <VolumeSettings />
+
+          <NoiseSuppression />
+
+          <PushToTalkSettings />
+
+          <JoinLeaveSounds />
+
+          <GameOverlay />
+
+          <p className="text-xs text-muted-foreground">
+            Para ajustar o volume ou silenciar alguém, clique com o botão direito na pessoa.
+          </p>
         </div>
-
-        <VolumeSettings />
-
-        <NoiseSuppression />
-
-        <PushToTalkSettings />
-
-        <JoinLeaveSounds />
-
-        <GameOverlay />
-
-        <p className="text-xs text-muted-foreground">
-          Para ajustar o volume ou silenciar alguém, clique com o botão direito na pessoa.
-        </p>
       </DialogContent>
     </Dialog>
   )

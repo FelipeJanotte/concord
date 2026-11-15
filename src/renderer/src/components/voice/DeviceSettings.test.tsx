@@ -55,6 +55,26 @@ async function openDialog(): Promise<void> {
 }
 
 describe('DeviceSettings', () => {
+  it('não corta em tela baixa: altura limitada, título fixo e as seções numa área que rola', async () => {
+    await openDialog()
+    const dialog = screen.getByRole('dialog', { name: 'Configurações de voz' })
+    expect(dialog.className).toContain('max-h-[85vh]')
+    const body = screen.getByTestId('device-settings-body')
+    expect(body.className).toContain('overflow-y-auto')
+    expect(body.className).toContain('min-h-0')
+    // o título fica fora (sempre à vista); da primeira à última seção, tudo dentro da área que rola
+    expect(body.contains(screen.getByText('Configurações de voz'))).toBe(false)
+    for (const el of [
+      screen.getByLabelText('Microfone'),
+      screen.getByRole('slider', { name: 'Volume do microfone' }),
+      screen.getByLabelText('Supressão de ruído automática'),
+      screen.getByLabelText('Mostrar quem está falando por cima dos jogos'),
+      screen.getByText(/clique com o botão direito na pessoa/)
+    ]) {
+      expect(body.contains(el)).toBe(true)
+    }
+  })
+
   it('lista microfones e saídas, com "Padrão do sistema" selecionado', async () => {
     await openDialog()
     const mic = screen.getByLabelText('Microfone') as HTMLSelectElement
