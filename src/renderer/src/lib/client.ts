@@ -18,6 +18,7 @@ import { bindLimitEvents } from './actions/limits'
 import { bindMessageEvents, loadHistory } from './actions/messages'
 import { bindModerationEvents } from './actions/moderation'
 import { loadOverlayPreferences } from './actions/overlay'
+import { bindNotificationEvents, stopNotifications } from './actions/notifications'
 import { bindCallsEvents, loadCalls } from './actions/calls'
 import { bindPermissionsEvents } from './actions/permissions'
 import { bindPresenceEvents } from './actions/presence'
@@ -138,6 +139,7 @@ export function connect(url: string, token: string): Promise<void> {
   bindModerationEvents(s)
   bindCallsEvents(s)
   bindSoundsEvents(s)
+  bindNotificationEvents(s)
 
   return new Promise((resolve, reject) => {
     let settled = false
@@ -206,6 +208,7 @@ export function disconnect(): void {
   voice.teardown()
   voice.setSocket(null)
   clearAllDrafts()
+  stopNotifications() // B9: zera o selo do ícone
   if (s) {
     s.removeAllListeners()
     s.disconnect()
@@ -235,5 +238,6 @@ export * from './actions/tools'
 export * from './actions/preferences'
 export * from './actions/sounds'
 export * from './actions/overlay'
+export * from './actions/notifications'
 export { previewVoiceSound } from './actions/voice-sounds'
 export { resolveServerUrl } from './core'

@@ -2,10 +2,11 @@ import { app, BrowserWindow, ipcMain, session, shell } from 'electron'
 import { join } from 'path'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { googleSignIn } from './google-auth'
+import { setupNotifications } from './notifications'
 import { setupOverlay, teardownOverlay, type OverlayController } from './overlay'
 import { setupScreenShare } from './screen-share'
 
-/** A janela principal (o overlay manda para ela o aviso do atalho). */
+/** A janela principal (as notificações trazem ela de volta no clique; o overlay manda o aviso do atalho). */
 let mainWindow: BrowserWindow | null = null
 let overlay: OverlayController | null = null
 
@@ -65,6 +66,7 @@ app.whenReady().then(() => {
 
   setupScreenShare()
   overlay = setupOverlay(() => mainWindow)
+  setupNotifications(() => mainWindow)
 
   createWindow()
 

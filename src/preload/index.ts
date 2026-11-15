@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { OverlayBridge, OverlayConfig, OverlayRoom, OverlayViewBridge } from '../shared/overlay'
+import type { NativeNotification, NotificationsBridge, NotificationTarget } from '../shared/notifications'
 import type { ScreenShareBridge, ScreenSource } from '../shared/screen'
 
 const screen: ScreenShareBridge = {
@@ -28,6 +29,16 @@ const overlayView: OverlayViewBridge = {
   }
 }
 
+const notifications: NotificationsBridge = {
+  show: (notification: NativeNotification): void => ipcRenderer.send('notify', notification),
+  setBadge: (count: number, overlay: string | null): void => ipcRenderer.send('badge', count, overlay),
+  onClick: (listener) => {
+    const handler = (_event: unknown, target: NotificationTarget | null): void => listener(target)
+    ipcRenderer.on('notification-click', handler)
+    return () => ipcRenderer.removeListener('notification-click', handler)
+  }
+}
+
 const api = {
   platform: process.platform,
   /** Abre o navegador para o login com Google e devolve o código (fluxo loopback + PKCE). */
@@ -37,7 +48,9 @@ const api = {
   screen,
   /** Sobreposição em jogos (ver src/main/overlay.ts). */
   overlay,
-  overlayView
+  overlayView,
+  /** Notificações nativas e selo no ícone (ver src/main/notifications.ts). */
+  notifications
 }
 
 if (process.contextIsolated) {
