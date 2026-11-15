@@ -1,6 +1,6 @@
-import { Download, Loader2 } from 'lucide-react'
+import { Download, Loader2, RefreshCw } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { installUpdate } from '@/lib/client'
+import { canCheckForUpdates, checkForUpdates, installUpdate } from '@/lib/client'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
 
@@ -40,5 +40,32 @@ export function UpdateRailSlot() {
       </Tooltip>
       <span aria-hidden className="mx-auto h-px w-8 bg-border" />
     </>
+  )
+}
+
+export function UpdateCheckButton() {
+  const update = useApp((s) => s.update)
+  if (!canCheckForUpdates() || update.state === 'downloading' || update.state === 'ready') return null
+  const checking = update.state === 'checking'
+  const label = checking ? 'Procurando atualizações' : 'Procurar atualizações'
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={checking ? undefined : checkForUpdates}
+          aria-disabled={checking}
+          aria-label={label}
+          className={cn(
+            'mt-auto flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors',
+            checking ? 'cursor-default' : 'hover:bg-sidebar hover:text-foreground'
+          )}
+        >
+          <RefreshCw className={cn('size-4', checking && 'animate-spin')} />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="right">{label}</TooltipContent>
+    </Tooltip>
   )
 }

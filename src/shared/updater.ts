@@ -13,13 +13,14 @@ export type UpdateStatus =
   | { state: 'error'; message: string }
 
 /** De quanto em quanto tempo o app procura versão nova enquanto está aberto. */
-export const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000
+export const UPDATE_CHECK_INTERVAL_MS = 30 * 60 * 1000
 
 export interface UpdaterBridge {
   /** situação atual (para a tela que abriu depois do aviso) */
   getStatus: () => Promise<UpdateStatus>
   /** avisa a cada mudança; devolve a função que para de ouvir */
   onStatus: (listener: (status: UpdateStatus) => void) => () => void
+  check: () => void
   /** fecha o app, instala a versão baixada e abre de novo */
   install: () => void
 }

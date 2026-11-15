@@ -36,11 +36,11 @@ describe('createUpdaterController', () => {
     expect([updater.autoDownload, updater.autoInstallOnAppQuit]).toEqual([true, true])
   })
 
-  it('app instalado: procura ao abrir e a cada 4 h', () => {
+  it('app instalado: procura ao abrir e a cada 30 min', () => {
     const { updater, timers, controller } = setup()
     controller.start()
     expect(updater.checkForUpdates).toHaveBeenCalledTimes(1)
-    expect(timers.map((t) => t.ms)).toEqual([4 * 60 * 60 * 1000])
+    expect(timers.map((t) => t.ms)).toEqual([30 * 60 * 1000])
     timers[0].fn()
     expect(updater.checkForUpdates).toHaveBeenCalledTimes(2)
   })
@@ -50,6 +50,19 @@ describe('createUpdaterController', () => {
     controller.start()
     expect(updater.checkForUpdates).not.toHaveBeenCalled()
     expect(timers).toEqual([])
+  })
+
+  it('procurar agora (botão): app instalado procura na hora', () => {
+    const { updater, controller } = setup()
+    controller.checkNow()
+    expect(updater.checkForUpdates).toHaveBeenCalledTimes(1)
+  })
+
+  it('procurar agora em modo dev: não procura e avisa que só funciona no instalado', () => {
+    const { updater, sent, controller } = setup(false)
+    controller.checkNow()
+    expect(updater.checkForUpdates).not.toHaveBeenCalled()
+    expect(sent).toEqual([{ state: 'error', message: 'A atualização só funciona no app instalado.' }])
   })
 
   it('etapas: procurando → baixando (com %) → pronta; depois de pronta não volta', () => {
