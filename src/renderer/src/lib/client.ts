@@ -20,6 +20,7 @@ import { bindModerationEvents } from './actions/moderation'
 import { bindCallsEvents, loadCalls } from './actions/calls'
 import { bindPermissionsEvents } from './actions/permissions'
 import { bindPresenceEvents } from './actions/presence'
+import { bindSoundsEvents, loadSounds } from './actions/sounds'
 import { bindVoiceEvents, OUT_OF_VOICE } from './actions/voice'
 import { clearAllDrafts } from './actions/uploads'
 import { loadAudioPreferences } from './actions/devices'
@@ -135,6 +136,7 @@ export function connect(url: string, token: string): Promise<void> {
   bindPreferencesEvents(s)
   bindModerationEvents(s)
   bindCallsEvents(s)
+  bindSoundsEvents(s)
 
   return new Promise((resolve, reject) => {
     let settled = false
@@ -165,6 +167,7 @@ export function connect(url: string, token: string): Promise<void> {
         void loadFriendsAndDms().catch(() => {}) // v3: amizades e conversas (o servidor já sabe quem eu sou)
         void loadPreferences().catch(() => {}) // v5: tema da conta
         void loadCalls().catch(() => {}) // v3 (B8): chamada que está tocando ou em andamento
+        void loadSounds().catch(() => {}) // B17: efeitos sonoros da comunidade
         if (!settled) {
           settled = true
           resolve()
@@ -228,5 +231,6 @@ export * from './actions/devices'
 export * from './actions/friends'
 export * from './actions/tools'
 export * from './actions/preferences'
+export * from './actions/sounds'
 export { previewVoiceSound } from './actions/voice-sounds'
 export { resolveServerUrl } from './core'

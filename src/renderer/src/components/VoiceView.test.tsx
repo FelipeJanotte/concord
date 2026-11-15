@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // Controles da sala de voz conforme as permissões (v2): sem share não há botão de tela; sem speak o microfone fica cortado.
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { Channel, User } from '@shared/types'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -49,5 +49,26 @@ describe('VoiceView com permissões', () => {
     renderView()
     expect(screen.getByRole('button', { name: 'Ativar microfone' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Silenciar' })).toBeNull()
+  })
+})
+
+describe('efeitos sonoros na sala (B17)', () => {
+  it('o botão abre a janela de sons e o indicador mostra quem tocou', async () => {
+    useApp.setState({
+      sounds: [{ id: 's1', name: 'Buzina', emoji: '📯', durationMs: 2000, uploaderId: null, url: '/sounds/s1' }],
+      soundsLoaded: true,
+      soundsPlaying: { 'acc-ana': { soundId: 's1', by: 'Ana', until: Date.now() + 2000 } }
+    })
+    renderView()
+    expect(screen.getByText('📯 Ana tocou Buzina')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Efeitos sonoros' }))
+    expect(useApp.getState().soundboardOpen).toBe(true)
+    expect(await screen.findByRole('dialog', { name: 'Efeitos sonoros' })).toBeTruthy()
+  })
+
+  it('fora da sala: sem o botão', () => {
+    useApp.setState({ myVoiceChannelId: null })
+    renderView()
+    expect(screen.queryByRole('button', { name: 'Efeitos sonoros' })).toBeNull()
   })
 })

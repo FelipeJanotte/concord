@@ -144,7 +144,7 @@ depende: B1, B2, B3, B4 e A2 já estão na `main`.
 |---|---|---|---|
 | Supressão de ruído automática ✅ | B13 | B4 (na `main`) | médio (spike + modo automático) |
 | Sons de entrar/sair ✅ | B16 | B4 (na `main`) | pequeno |
-| Efeitos sonoros (soundboard) | A10 + B17 | A2 (na `main`); permissão opcional da v2 | médio |
+| Efeitos sonoros (soundboard) ✅ | A10 + B17 | A2 (na `main`); permissão opcional da v2 | médio |
 | Overlay em jogos | B15 | B2 (na `main`) | médio |
 | Bot de música | A11 + B14 | B1 (na `main`); **decisão sobre termos de uso** | grande |
 
@@ -217,7 +217,7 @@ deles e **todos na sala ouvem do começo ao fim** (sem cortar no meio, sem tocar
 | Task | Dev | O que faz | Arquivos (dono) |
 |---|---|---|---|
 | **A10 Sons (servidor)** ✅ (branch `v2/a10-sons`) | A | `POST /sounds` (multipart igual a `/uploads`: token, limite de **512 KB**, MP3/OGG/WAV/WebM conferidos pelos bytes) e **duração ≤ 5 s** lida do próprio arquivo com `music-metadata` (MIT), recusando o que passar. Tabela `sounds`, bytes no `FileStorage` (reusa a A2), nome até 32, limite de sons por conta e no total. `sound:play` valida que a pessoa está na sala, aplica limite de requisições (ex.: 1 a cada 3 s por pessoa) e repassa só para a sala. Apagar: o autor ou quem tiver permissão (v2). | `server/modules/sounds.ts`, `server/repo/sounds.ts`, `server/db/schema/sounds.ts`, `shared/types/sounds.ts` |
-| **B17 Sons (UI)** | B | Botão "Efeitos sonoros" na sala de voz abrindo a grade de sons (nome + emoji, clique toca, botão direito apaga se puder). Enviar: escolher arquivo, prévia, cortar para 5 s antes de enviar (opcional), nome e emoji. Ao receber `sound:played`, cada app toca o som localmente pela saída escolhida, respeitando deafen e o volume da pessoa que tocou (B4); o mesmo autor não toca dois ao mesmo tempo (o novo espera ou substitui, decidir no contrato). Indicador de quem tocou. | `components/voice/Soundboard*.tsx`, `lib/actions/sounds.ts`, `store/sounds.ts` |
+| **B17 Sons (UI)** ✅ (transferida para o Dev A; branch `v2/b17-sons-ui`) | A | Botão "Efeitos sonoros" na sala de voz abrindo a grade de sons (nome + emoji, clique toca, botão direito apaga se puder). Enviar: escolher arquivo, prévia, cortar para 5 s antes de enviar (opcional), nome e emoji. Ao receber `sound:played`, cada app toca o som localmente pela saída escolhida, respeitando deafen e o volume da pessoa que tocou (B4); o mesmo autor não toca dois ao mesmo tempo (o novo espera ou substitui, decidir no contrato). Indicador de quem tocou. | `components/voice/Soundboard*.tsx`, `lib/actions/sounds.ts`, `store/sounds.ts` |
 
 Tocar **localmente em cada app** (em vez de mixar no microfone de quem tocou) é mais simples, sai igual para todo
 mundo e respeita o volume/deafen de cada um. Na v2, uma permissão de canal `soundboard` pode limitar quem toca.
