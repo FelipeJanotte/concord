@@ -111,6 +111,64 @@ describe('expulsar da voz', () => {
   })
 })
 
+describe('mover para outra sala', () => {
+  it('a dona move: só a pessoa recebe o aviso com a sala e quem moveu', async () => {
+    const owner = await server.asOwner()
+    const ana = await user('Ana')
+    const bia = await user('Bia')
+    const a = await room()
+    const b = await room()
+    await join(ana, a.id)
+    await join(bia, a.id)
+    const moved = waitFor(ana.socket, 'moderation:moved')
+    const notBia = expectNoEvent(bia.socket, 'moderation:moved')
+    expect(await owner.socket.emitWithAck('moderation:voice-move', { userId: ana.self.id, channelId: b.id })).toEqual({ ok: true })
+    expect((await moved)[0]).toEqual({ channelId: b.id, by: owner.self.name })
+    await notBia
+    // o app entra pela entrada de sempre (o servidor confere de novo)
+    expect((await join(ana, b.id)).canSpeak).toBe(true)
+  })
+
+  it('recusas: mesma sala, fora da voz, sala que não é de voz ou não existe, sem permissão', async () => {
+    const owner = await server.asOwner()
+    const ana = await user('Ana')
+    const bia = await user('Bia')
+    const a = await room()
+    const texto = await server.createChannel(`texto-${Math.random().toString(36).slice(2, 6)}`)
+    const move = (by: TestUser, userId: string, channelId: string) => by.socket.emitWithAck('moderation:voice-move', { userId, channelId })
+
+    expect(await move(owner, ana.self.id, a.id)).toEqual({ ok: false, error: 'Essa pessoa não está numa sala de voz' })
+    await join(ana, a.id)
+    expect(await move(owner, ana.self.id, a.id)).toEqual({ ok: false, error: 'Essa pessoa já está nessa sala' })
+    expect(await move(owner, ana.self.id, texto.id)).toEqual({ ok: false, error: 'Sala de voz não encontrada' })
+    expect(await move(owner, ana.self.id, 'nao-existe')).toEqual({ ok: false, error: 'Sala de voz não encontrada' })
+    // sem gerenciar membros (ou movendo a dona) não pode
+    const b = await room()
+    expect(await move(bia, ana.self.id, b.id)).toEqual({ ok: false, error: 'Você não pode mover essa pessoa' })
+    await join(owner, a.id)
+    await giveRole(bia, ['manageMembers'])
+    expect(await move(bia, owner.self.id, b.id)).toEqual({ ok: false, error: 'Você não pode mover essa pessoa' })
+  })
+
+  it('sala de destino em que a pessoa não pode entrar: recusa', async () => {
+    const owner = await server.asOwner()
+    const ana = await user('Ana')
+    const a = await room()
+    const fechada = await room()
+    await owner.socket.emitWithAck('channel:set-overrides', {
+      channelId: fechada.id,
+      overrides: [{ roleId: '00000000-0000-0000-0000-000000000000', allow: [], deny: ['connect'] }]
+    })
+    await join(ana, a.id)
+    const silent = expectNoEvent(ana.socket, 'moderation:moved')
+    expect(await owner.socket.emitWithAck('moderation:voice-move', { userId: ana.self.id, channelId: fechada.id })).toEqual({
+      ok: false,
+      error: 'Essa pessoa não tem acesso a essa sala'
+    })
+    await silent
+  })
+})
+
 describe('silenciar pelo servidor', () => {
   it('silencia na hora (lista e LiveKit), não deixa se dessilenciar e vale ao voltar para a sala', async () => {
     const owner = await server.asOwner()

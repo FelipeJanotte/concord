@@ -1,10 +1,10 @@
-import { useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
+import { useState, type DragEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import { ChevronDown, HeadphoneOff, Hash, Loader2, Lock, MessageSquare, MicOff, Plus, Settings, Trash2, Volume2, VolumeX } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
-import type { Channel, ChannelType, VoiceState } from '@shared/types'
+import { canModerate, type Channel, type ChannelType, type VoiceState } from '@shared/types'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { deleteChannel, joinVoice, openVoiceChat, selectTextChannel } from '@/lib/client'
+import { deleteChannel, joinVoice, moveToVoice, notify, openVoiceChat, selectTextChannel } from '@/lib/client'
 import { isPrivateChannel, useCan, useCanAdminister } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
@@ -234,16 +234,41 @@ function TextChannelItem({ channel }: { channel: Channel }) {
   )
 }
 
+/** Arrastar uma pessoa da lista de uma sala de voz para outra (mover, como no Discord). */
+const VOICE_USER_DRAG = 'application/x-concord-voice-user'
+const isVoiceUserDrag = (e: DragEvent): boolean => Array.from(e.dataTransfer?.types ?? []).includes(VOICE_USER_DRAG)
+
 function VoiceChannelItem({ channel }: { channel: Channel }) {
   const active = useApp((s) => s.view?.kind === 'voice' && s.view.channelId === channel.id)
   const connected = useApp((s) => s.myVoiceChannelId === channel.id)
   const joining = useApp((s) => s.joiningVoice && s.view?.channelId === channel.id)
   const members = useApp(useShallow((s) => s.voice.filter((v) => v.channelId === channel.id)))
+  // soltando alguém aqui (moderador arrastando da lista de outra sala)
+  const [dropping, setDropping] = useState(false)
   // chat de texto da sala: mensagem nova sem o painel "Chat" aberto
   const unread = useApp((s) => !!s.unread[channel.id])
 
   return (
-    <div>
+    <div
+      data-voice-room={channel.id}
+      data-drop-target={dropping || undefined}
+      onDragOver={(e) => {
+        if (!isVoiceUserDrag(e)) return
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'move'
+        setDropping(true)
+      }}
+      onDragLeave={() => setDropping(false)}
+      onDrop={(e) => {
+        if (!isVoiceUserDrag(e)) return
+        e.preventDefault()
+        setDropping(false)
+        const userId = e.dataTransfer.getData(VOICE_USER_DRAG)
+        if (!userId || members.some((m) => m.userId === userId)) return // soltou na própria sala
+        moveToVoice(userId, channel.id).catch((err: unknown) => notify(err instanceof Error ? err.message : 'Não foi possível mover'))
+      }}
+      className={cn('rounded-md', dropping && 'ring-2 ring-primary')}
+    >
       <div
         {...onActivate(() => void joinVoice(channel.id))}
         className={cn(
@@ -305,10 +330,20 @@ function VoiceMember({ state }: { state: VoiceState }) {
   const user = useApp((s) => s.users.find((u) => u.id === state.userId))
   const speaking = useApp((s) => !!s.speaking[state.userId])
   const mutedByMe = useApp((s) => !!user && !!s.userMuted[user.accountId])
+  // quem pode moderar a pessoa pode arrastá-la para outra sala (o servidor confere de novo)
+  const canMove = useApp((s) => !!user && !!s.access && !!s.self && canModerate(s.access, s.self.accountId, user.accountId))
   if (!user) return null
   return (
     <MemberContextMenu userId={state.userId}>
-      <div className="flex h-7 items-center gap-2 rounded-md px-2 text-sm text-sidebar-foreground hover:bg-accent/40">
+      <div
+        draggable={canMove}
+        onDragStart={(e) => {
+          e.dataTransfer.setData(VOICE_USER_DRAG, state.userId)
+          e.dataTransfer.effectAllowed = 'move'
+        }}
+        title={canMove ? `Arraste ${user.name} para outra sala para mover` : undefined}
+        className={cn('flex h-7 items-center gap-2 rounded-md px-2 text-sm text-sidebar-foreground hover:bg-accent/40', canMove && 'cursor-grab')}
+      >
         <UserAvatar user={user} size="sm" speaking={speaking} />
         <span className={cn('flex-1 truncate', speaking && 'text-accent-foreground')}>{user.name}</span>
         {state.sharing && <LiveBadge />}

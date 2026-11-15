@@ -12,7 +12,9 @@ import {
   type User,
   type VoiceState
 } from '@shared/types'
+import { ChannelSidebar } from '@/components/ChannelSidebar'
 import { MessageActions } from '@/components/chat/MessageActions'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { setSocket } from '@/lib/core'
 import { voice } from '@/lib/voice'
 import { initialState, useApp } from '@/store'
@@ -167,5 +169,93 @@ describe('apagar mensagem', () => {
     login(dona)
     render(<MessageActions message={msg(ana, 'dm1')} />)
     expect(screen.queryByRole('button', { name: 'Apagar mensagem' })).toBeNull()
+  })
+})
+
+describe('mover para outra sala (botão direito e arrastar)', () => {
+  const jogos: Channel = { id: 'jogos', name: 'Jogos', type: 'voice', createdAt: 0 }
+  const fechada: Channel = { id: 'fechada', name: 'Fechada', type: 'voice', createdAt: 0 }
+  function withRooms(): void {
+    const st = useApp.getState()
+    useApp.setState({
+      channels: [sala, geral, jogos, fechada],
+      // ninguém além da dona entra na "Fechada"
+      access: { ...st.access!, overrides: [{ channelId: 'fechada', roleId: EVERYONE_ROLE_ID, allow: [], deny: ['connect'] }] }
+    })
+  }
+  beforeEach(() => {
+    socket.replyTo('moderation:voice-move', () => ({ ok: true }))
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe(): void {}
+        unobserve(): void {}
+        disconnect(): void {}
+      }
+    )
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('"Mover para" lista as salas de voz em que a pessoa pode entrar (menos a atual) e manda o pedido', async () => {
+    login(mod, ['manageMembers'], [voiceState(mod), voiceState(ana)])
+    withRooms()
+    render(<VoiceGrid members={members()} />)
+    const menu = menuOn('Ana')
+    await userEvent.click(within(menu).getByRole('menuitem', { name: /Mover para/ }))
+    const sub = await screen.findByRole('menu', { name: 'Mover para' })
+    expect(within(sub).getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['Jogos']) // sem "Sala" (atual) e sem "Fechada"
+    await userEvent.click(within(sub).getByRole('menuitem', { name: 'Jogos' }))
+    expect(socket.sent('moderation:voice-move')).toEqual([[{ userId: ana.id, channelId: 'jogos' }]])
+  })
+
+  it('sem gerenciar membros (ou sobre a dona) não aparece', () => {
+    login(mod, [], [voiceState(mod), voiceState(ana)])
+    withRooms()
+    render(<VoiceGrid members={members()} />)
+    expect(within(menuOn('Ana')).queryByRole('menuitem', { name: /Mover para/ })).toBeNull()
+  })
+
+  it('barra lateral: moderador arrasta a pessoa para outra sala; soltar na mesma sala não faz nada', () => {
+    login(mod, ['manageMembers'], [voiceState(mod), voiceState(ana)])
+    withRooms()
+    render(
+      <TooltipProvider>
+        <ChannelSidebar />
+      </TooltipProvider>
+    )
+    const anaRow = screen.getAllByText('Ana').map((el) => el.closest('[draggable]') as HTMLElement).find(Boolean)!
+    expect(anaRow.getAttribute('draggable')).toBe('true')
+    const data = new Map<string, string>()
+    const dataTransfer = {
+      get types() {
+        return [...data.keys()]
+      },
+      setData: (k: string, v: string) => void data.set(k, v),
+      getData: (k: string) => data.get(k) ?? '',
+      effectAllowed: '',
+      dropEffect: ''
+    }
+    fireEvent.dragStart(anaRow, { dataTransfer })
+    const target = document.querySelector('[data-voice-room="jogos"]') as HTMLElement
+    fireEvent.dragOver(target, { dataTransfer })
+    expect(target.dataset.dropTarget).toBe('true')
+    fireEvent.drop(target, { dataTransfer })
+    expect(socket.sent('moderation:voice-move')).toEqual([[{ userId: ana.id, channelId: 'jogos' }]])
+
+    const same = document.querySelector('[data-voice-room="sala"]') as HTMLElement
+    fireEvent.drop(same, { dataTransfer })
+    expect(socket.sent('moderation:voice-move')).toHaveLength(1)
+  })
+
+  it('sem poder moderar, a pessoa não é arrastável', () => {
+    login(mod, [], [voiceState(mod), voiceState(ana)])
+    withRooms()
+    render(
+      <TooltipProvider>
+        <ChannelSidebar />
+      </TooltipProvider>
+    )
+    const anaRow = screen.getAllByText('Ana').map((el) => el.closest('[draggable]') as HTMLElement).find(Boolean)!
+    expect(anaRow.getAttribute('draggable')).toBe('false')
   })
 })
