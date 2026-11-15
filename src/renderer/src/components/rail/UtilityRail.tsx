@@ -11,6 +11,7 @@ import { openTool, showCommunity, showHome } from '@/lib/client'
 import { communityUnread, homeBadge } from '@/lib/home'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
+import { UpdateRailSlot } from './UpdateButton'
 
 export function UtilityRail({ tools = TOOLS }: { tools?: readonly ToolDefinition[] }) {
   const section = useApp((s) => s.section)
@@ -21,6 +22,7 @@ export function UtilityRail({ tools = TOOLS }: { tools?: readonly ToolDefinition
 
   return (
     <nav aria-label="Barra de úteis" className="flex w-[72px] shrink-0 flex-col items-center gap-2 bg-rail py-3">
+      <UpdateRailSlot />
       <RailButton
         label="Início"
         hint="Amigos e mensagens diretas"
