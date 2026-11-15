@@ -175,7 +175,12 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
   for a única); `null` = sem telas ou "Ver grade".
   - `ScreenStage` (destaque): barra de cima **sempre à vista** com "Ao vivo", "Assistindo: Tela de Fulano", o
     seletor "Telas ao vivo" (um botão por tela, com mais de uma; `aria-pressed` na atual), "Ver grade" e "Tela
-    cheia". Embaixo, miniaturas das outras telas (`ScreenTile`, clicar = assistir) e os participantes.
+    cheia". Embaixo, a fileira "Membros da chamada" (`role="group"`), **centralizada**, com as miniaturas das
+    outras telas (`ScreenTile`, clicar = assistir) e os participantes. A centralização usa `ml-auto` no primeiro e
+    `mr-auto` no último filho (não `justify-center`, que cortaria o começo quando a fileira rola de lado).
+  - "Esconder membros"/"Mostrar membros" (ícones `UserX`/`Users`, `aria-pressed`, ao lado de "Ver grade"; some em
+    tela cheia): esconde/mostra essa fileira para a tela ganhar espaço. Props `membersHidden`/`onToggleMembers` do
+    `ScreenStage`; o estado (`membersHidden`) é local do `VoiceGrid`, não salvo. Na grade todos aparecem sempre.
   - No quadro de quem compartilha, o "Ao vivo" vira o botão "Assistir" quando a tela dela já chegou (e não é a
     que está em destaque).
   - "Ver grade": todas as telas lado a lado na grade (antes dos participantes); clicar numa volta ao destaque.
@@ -190,7 +195,7 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
 - **Testes:** `src/main/screen-share.test.ts` (controlador, sem Electron), `lib/voice.test.ts` (bloco "tela"),
   `lib/actions/screen.test.ts` (botão, seletor, erros, aviso único ao servidor), `components/voice/voice.test.tsx`
   (jsdom: seletor, miniatura, `featuredScreen`, destaque com "Assistindo" e seletor, "Assistir" no quadro, "Ver
-  grade", tela que acaba, tela cheia do quadro com botão/duplo clique e a recusa), `src/main/permissions.test.ts`
+  grade", esconder/mostrar membros, tela que acaba, tela cheia do quadro com botão/duplo clique e a recusa), `src/main/permissions.test.ts`
   e `server/tests/voice.test.ts` (`voice:sharing`). À mão: três janelas na mesma sala com o LiveKit rodando; duas
   compartilham, a terceira troca pelo seletor e pelo "Assistir", usa "Ver grade", entra e sai da tela cheia (botão,
   duplo clique, Esc) e o "ao vivo" some ao parar.
@@ -217,7 +222,11 @@ compartilhada continua em destaque e as câmeras vão para a faixa de miniaturas
   `store.cameraId`); com a câmera ligada troca na hora (`switchActiveDevice('videoinput')`).
 - **Ações** (`lib/actions/voice.ts`): `toggleCamera` (avisa fora da sala/sem permissão; erros do sistema em pt-BR:
   negada, não encontrada, em uso), `attachCamera`. `store.cameraOn` e `store.voiceCanVideo`; sair da sala zera.
-- **Tela:** botão "Ligar a câmera"/"Desligar a câmera" no `VoiceView` (some sem `video`); `CameraVideo` em
+- **Tela:** botão "Ligar a câmera"/"Desligar a câmera" no `VoiceView` e no "Voz conectada" (some sem `video`);
+  ícone mostra o estado atual, como microfone/áudio: desligada `VideoOff` (riscada), ligada `Video`
+  (teste em `components/camera-icon.test.tsx`). Os `ControlButton` (56px, redondos) têm `shrink-0` e a
+  fileira dos controles tem `flex-wrap`: em tela estreita eles quebram linha em vez de virar ovais achatados
+  (mesmo teste; o `CallPanel` usa a mesma regra); `CameraVideo` em
   `components/voice/CameraTile.tsx`, usado pelo `ParticipantTile`; a própria câmera aparece espelhada.
 - **Testes:** `lib/voice.test.ts` (blocos "câmera (B21)" e "câmera desligada e religada (B21)"), `lib/actions/camera.test.ts`, `components/VoiceView.test.tsx`,
   `lib/voice-permissions.test.ts`, `server/livekit.test.ts`, `server/tests/permissions.test.ts` (token e perda ao

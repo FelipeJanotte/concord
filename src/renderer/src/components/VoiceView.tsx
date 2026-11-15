@@ -44,7 +44,7 @@ export function VoiceView({ channelId }: { channelId: string }) {
 
       {connected && <SoundsPlayingBar />}
       {connected && <PushToTalkHint />}
-      <div className="flex shrink-0 items-center justify-center gap-3 pb-6">
+      <div className="flex shrink-0 flex-wrap items-center justify-center gap-3 px-4 pb-6">
         {connected ? (
           <>
             <ControlButton label={muted ? 'Ativar microfone' : 'Silenciar'} onClick={toggleMute} off={muted}>
@@ -55,7 +55,7 @@ export function VoiceView({ channelId }: { channelId: string }) {
             </ControlButton>
             {canVideo && (
               <ControlButton label={cameraOn ? 'Desligar a câmera' : 'Ligar a câmera'} onClick={() => void toggleCamera()} active={cameraOn}>
-                {cameraOn ? <VideoOff /> : <Video />}
+                {cameraOn ? <Video /> : <VideoOff />}
               </ControlButton>
             )}
             {canShare && (
@@ -109,7 +109,7 @@ export function ControlButton({
           aria-label={label}
           aria-pressed={active}
           className={cn(
-            'flex size-14 items-center justify-center rounded-full bg-secondary text-white transition-colors hover:bg-secondary/80 [&_svg]:size-6',
+            'flex size-14 shrink-0 items-center justify-center rounded-full bg-secondary text-white transition-colors hover:bg-secondary/80 [&_svg]:size-6',
             off && 'bg-white text-black hover:bg-white/90',
             active && 'bg-success hover:bg-success/90',
             danger && 'bg-destructive hover:bg-destructive/90'

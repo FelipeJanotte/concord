@@ -1,6 +1,6 @@
 // Grade da sala de voz: participantes (com a câmera no quadro, B21) e as telas compartilhadas. Com
 // alguém compartilhando, uma tela fica em destaque (`ScreenStage`: barra "Assistindo", seletor das
-// telas ao vivo, tela cheia); "Ver grade" mostra todas lado a lado, e clicar numa tela (ou no "Ao vivo"
+// telas ao vivo, tela cheia, esconder/mostrar membros) e a fileira de membros centralizada embaixo; "Ver grade" mostra todas lado a lado, e clicar numa tela (ou no "Ao vivo"
 // de uma pessoa) volta a assistir aquela em destaque.
 import { useState } from 'react'
 import { HeadphoneOff, MicOff, VolumeX } from 'lucide-react'
@@ -30,6 +30,7 @@ export function VoiceGrid({ members }: { members: VoiceState[] }) {
   const selfId = useApp((s) => s.self?.id)
   const [chosen, setChosen] = useState<string | null>(null)
   const [grid, setGrid] = useState(false)
+  const [membersHidden, setMembersHidden] = useState(false)
 
   const watch = (id: string): void => {
     setChosen(id)
@@ -57,15 +58,30 @@ export function VoiceGrid({ members }: { members: VoiceState[] }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
-      <ScreenStage userId={featured} screens={screens} onSelect={watch} onShowGrid={() => setGrid(true)} />
-      <div className="flex shrink-0 gap-3 overflow-x-auto pb-1 [&>*]:w-48 [&>*]:shrink-0">
-        {others.map((id) => (
-          <ScreenTile key={`tela-${id}`} userId={id} onSelect={() => watch(id)} />
-        ))}
-        {members.map((m) => (
-          <ParticipantTile key={m.userId} state={m} compact onWatch={m.userId === featured ? undefined : watchable(m.userId)} />
-        ))}
-      </div>
+      <ScreenStage
+        userId={featured}
+        screens={screens}
+        onSelect={watch}
+        onShowGrid={() => setGrid(true)}
+        membersHidden={membersHidden}
+        onToggleMembers={() => setMembersHidden((h) => !h)}
+      />
+      {!membersHidden && (
+        // centralizada: margens automáticas no primeiro e no último (em vez de justify-center), para não cortar o
+        // começo da fileira quando ela rola de lado
+        <div
+          role="group"
+          aria-label="Membros da chamada"
+          className="flex shrink-0 gap-3 overflow-x-auto pb-1 [&>*]:w-48 [&>*]:shrink-0 [&>*:first-child]:ml-auto [&>*:last-child]:mr-auto"
+        >
+          {others.map((id) => (
+            <ScreenTile key={`tela-${id}`} userId={id} onSelect={() => watch(id)} />
+          ))}
+          {members.map((m) => (
+            <ParticipantTile key={m.userId} state={m} compact onWatch={m.userId === featured ? undefined : watchable(m.userId)} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }

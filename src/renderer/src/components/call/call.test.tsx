@@ -149,6 +149,26 @@ describe('painel da chamada na conversa', () => {
     const { container } = ui(<CallPanel dm={dm} />)
     expect(container.textContent).toBe('')
   })
+
+  it('botões redondos não encolhem na conversa estreita (quebram linha em vez de achatar)', () => {
+    setup({ calls: { dm1: call({ status: 'active' }) }, myVoiceChannelId: 'dm1', voice: [inRoom(me), inRoom(ana)] })
+    ui(<CallPanel dm={dm} />)
+    const row = screen.getByRole('button', { name: 'Desligar' }).parentElement!
+    expect(row.className).toContain('flex-wrap')
+    expect(row.className).toContain('[&>button]:shrink-0')
+    // os botões são filhos diretos da linha (é neles que o shrink-0 vale)
+    for (const name of ['Configurações de voz', 'Efeitos sonoros', 'Desligar']) {
+      expect(screen.getByRole('button', { name }).parentElement).toBe(row)
+    }
+  })
+
+  it('tocando: atender e recusar também não encolhem', () => {
+    setup({ calls: { dm1: call() } })
+    ui(<CallPanel dm={dm} />)
+    const row = screen.getByRole('button', { name: 'Atender' }).parentElement!
+    expect(row.className).toContain('[&>button]:shrink-0')
+    expect(screen.getByRole('button', { name: 'Recusar' }).parentElement).toBe(row)
+  })
 })
 
 describe('chamada recebida (cartão no canto)', () => {

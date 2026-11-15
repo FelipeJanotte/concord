@@ -92,6 +92,7 @@ encerrada.". Repetir sem atender (30 s → "Chamada perdida") e recusando.
 | Chamada some depois de reiniciar o servidor | As chamadas ficam em memória; reiniciar encerra todas (o app limpa ao reconectar). |
 | Toque não para | Chegou `call:updated` `active` ou `call:ended`? `syncRinger` decide pelo estado `calls`. |
 | "A voz não está configurada neste servidor" | Sem `LIVEKIT_*` no `server/.env` (skill `concord-voice`). |
+| Botões da chamada "achatados" (ovais) na conversa estreita | Os `ControlButton` (de `VoiceView.tsx`) são filhos de flex e encolhiam. As linhas do `CallPanel` usam `CONTROLS_ROW` (`flex-wrap` + `[&>button]:shrink-0`): sem espaço, quebram linha. Teste em `call.test.tsx`. |
 | Atendeu e a chamada acabou sozinha | Ninguém entrou na sala em `CALL_RING_MS` (microfone negado? veja o log `[livekit]`). |
 
 Ainda não há notificação nativa do sistema para chamada recebida (B9), nem chamada em grupo.

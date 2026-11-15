@@ -244,6 +244,39 @@ describe('VoiceGrid', () => {
     }
   })
 
+  it('"Esconder membros" tira a fileira de membros de baixo; "Mostrar membros" traz de volta', async () => {
+    useApp.setState({ screens: ['ana', 'bia'] })
+    render(<VoiceGrid members={members} />)
+    const row = screen.getByRole('group', { name: 'Membros da chamada' })
+    expect(within(row).getByText('Bia')).toBeTruthy()
+    expect(within(row).getByRole('button', { name: 'Assistir: Tela de Bia' })).toBeTruthy()
+    // centralizada (margens automáticas nas pontas)
+    expect(row.className).toContain('[&>*:first-child]:ml-auto')
+    expect(row.className).toContain('[&>*:last-child]:mr-auto')
+
+    const hide = screen.getByRole('button', { name: 'Esconder membros' })
+    expect(hide.getAttribute('aria-pressed')).toBe('false')
+    await userEvent.click(hide)
+    expect(screen.queryByRole('group', { name: 'Membros da chamada' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Assistir: Tela de Bia' })).toBeNull()
+    expect(stageLabel()).toBe('Assistindo: Tela de Ana') // o destaque continua
+
+    const show = screen.getByRole('button', { name: 'Mostrar membros' })
+    expect(show.getAttribute('aria-pressed')).toBe('true')
+    await userEvent.click(show)
+    expect(within(screen.getByRole('group', { name: 'Membros da chamada' })).getByText('Bia')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Esconder membros' })).toBeTruthy()
+  })
+
+  it('"Ver grade" não depende da fileira escondida: a grade mostra todos', async () => {
+    useApp.setState({ screens: ['ana'] })
+    render(<VoiceGrid members={members} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Esconder membros' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Ver grade' }))
+    expect(screen.getByText('Bia')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /membros/ })).toBeNull()
+  })
+
   it('tela cheia recusada pelo sistema vira aviso', async () => {
     useApp.setState({ screens: ['ana'] })
     vi.spyOn(console, 'warn').mockImplementation(() => {})
