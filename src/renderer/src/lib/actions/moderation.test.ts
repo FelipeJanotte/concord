@@ -1,7 +1,7 @@
 // Ações de moderação (B6): mensagem apagada, expulsão da voz e os avisos de quem foi silenciado.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Channel, Message, User, VoiceState } from '@shared/types'
-import { deleteMessage, kickFromVoice, setServerMuted, bindModerationEvents } from '@/lib/actions/moderation'
+import { deleteMessage, kickFromVoice, moveToVoice, setServerMuted, bindModerationEvents } from '@/lib/actions/moderation'
 import { bindVoiceEvents, toggleMute } from '@/lib/actions/voice'
 import { setSocket } from '@/lib/core'
 import { voice } from '@/lib/voice'
@@ -103,5 +103,41 @@ describe('ações', () => {
     expect(socket.sent('moderation:voice-mute')[0][0]).toEqual({ accountId: 'acc-ana', muted: true })
     await deleteMessage('m1')
     expect(socket.sent('message:delete')[0][0]).toEqual({ messageId: 'm1' })
+  })
+})
+
+describe('mover para outra sala', () => {
+  const outra: Channel = { id: 'outra', name: 'Jogos', type: 'voice', createdAt: 0 }
+
+  it('moderation:moved troca de sala, diz quem moveu e para onde; olhando a sala antiga, a tela acompanha', async () => {
+    const join = vi.spyOn(voice, 'join').mockResolvedValue({ micError: null, cancelled: false, canSpeak: true, canShare: true, canVideo: true })
+    useApp.setState({ channels: [sala, outra], myVoiceChannelId: 'sala', section: 'community', view: { kind: 'voice', channelId: 'sala' } })
+    socket.receive('moderation:moved', { channelId: 'outra', by: 'Dona' })
+    expect(useApp.getState().notice?.text).toBe('Dona levou você para Jogos.')
+    await vi.waitFor(() => expect(useApp.getState().myVoiceChannelId).toBe('outra'))
+    expect(join).toHaveBeenCalledWith('outra')
+    expect(useApp.getState().view).toEqual({ kind: 'voice', channelId: 'outra' })
+  })
+
+  it('no chat de texto: a voz troca e a tela fica onde estava', async () => {
+    vi.spyOn(voice, 'join').mockResolvedValue({ micError: null, cancelled: false, canSpeak: true, canShare: true, canVideo: true })
+    useApp.setState({ channels: [sala, outra], myVoiceChannelId: 'sala', section: 'community', view: { kind: 'text', channelId: 'geral' } })
+    socket.receive('moderation:moved', { channelId: 'outra', by: 'Dona' })
+    await vi.waitFor(() => expect(useApp.getState().myVoiceChannelId).toBe('outra'))
+    expect(useApp.getState().view).toEqual({ kind: 'text', channelId: 'geral' })
+  })
+
+  it('fora da voz, ou já na sala de destino: ignora', () => {
+    const join = vi.spyOn(voice, 'join')
+    socket.receive('moderation:moved', { channelId: 'outra', by: 'Dona' })
+    useApp.setState({ myVoiceChannelId: 'outra' })
+    socket.receive('moderation:moved', { channelId: 'outra', by: 'Dona' })
+    expect(join).not.toHaveBeenCalled()
+  })
+
+  it('moveToVoice manda o pedido e vira exceção com o erro do servidor', async () => {
+    socket.replyTo('moderation:voice-move', () => ({ ok: false, error: 'Você não pode mover essa pessoa' }))
+    await expect(moveToVoice('sock-ana', 'outra')).rejects.toThrow('Você não pode mover essa pessoa')
+    expect(socket.sent('moderation:voice-move')).toEqual([[{ userId: 'sock-ana', channelId: 'outra' }]])
   })
 })
