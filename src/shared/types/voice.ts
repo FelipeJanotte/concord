@@ -28,10 +28,12 @@ export interface VoiceCredentials {
  * Permissões da pessoa na sala (v2), decididas pelo servidor; o token do LiveKit já sai com elas.
  * `canSpeak` false: entra só para ouvir (não publica o microfone).
  * `canShare` false: não compartilha a tela.
+ * `canVideo` false: não liga a câmera (B21).
  */
 export interface VoicePermissions {
   canSpeak: boolean
   canShare: boolean
+  canVideo: boolean
 }
 
 export type JoinVoiceResult = ({ ok: true } & VoiceCredentials & VoicePermissions) | { ok: false; error: string }

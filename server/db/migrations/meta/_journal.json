@@ -71,6 +71,13 @@
       "when": 1794752655735,
       "tag": "0009_edit_reply",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794764065179,
+      "tag": "0010_camera_permission",
+      "breakpoints": true
     }
   ]
 }

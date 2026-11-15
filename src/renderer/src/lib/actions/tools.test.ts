@@ -91,7 +91,7 @@ describe('mover os times para salas de voz', () => {
     afterEach(() => vi.restoreAllMocks())
 
     it('na voz: avisa quem levou e entra na sala do time', async () => {
-      const join = vi.spyOn(voice, 'join').mockResolvedValue({ micError: null, cancelled: false, canSpeak: true, canShare: true })
+      const join = vi.spyOn(voice, 'join').mockResolvedValue({ micError: null, cancelled: false, canSpeak: true, canShare: true, canVideo: true })
       useApp.setState({ myVoiceChannelId: 'lobby' })
       socket.receive('tools:moved', { channelId: 'time-1', by: 'Dona' })
       expect(useApp.getState().notice?.text).toBe('Dona levou você para a sala do seu time.')

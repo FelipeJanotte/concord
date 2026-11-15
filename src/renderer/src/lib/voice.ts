@@ -41,6 +41,13 @@ import type { AppSocket } from './core'
 const AUDIO_CAPTURE = { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
 
 /** Tela em 1080p a 15 fps: texto legível sem pesar demais na rede. */
+/**
+ * Câmera (B21) em 640x360 a 24 fps, ~350 kbps: rosto nítido sem pesar no upload de quem joga.
+ * Sem simulcast (uma camada só): a grade nunca mostra a câmera maior que isso.
+ */
+const CAMERA_CAPTURE = { resolution: { width: 640, height: 360, frameRate: 24 } }
+const CAMERA_PUBLISH = { simulcast: false, videoEncoding: { maxBitrate: 350_000, maxFramerate: 24 } }
+
 const SCREEN_CAPTURE = { resolution: { width: 1920, height: 1080, frameRate: 15 }, contentHint: 'detail' as const }
 
 /** O que o VoiceClient usa de fora; os testes trocam por versões falsas. */
@@ -52,7 +59,7 @@ export interface VoiceDeps {
   createNoiseProcessor: (onMode: (mode: NoiseMode) => void) => AutoNoiseProcessor
   /** AudioContext a 48 kHz (o RNNoise só trabalha nessa taxa) */
   createAudioContext: () => AudioContext
-  listDevices: (kind: 'audioinput' | 'audiooutput') => Promise<MediaDeviceInfo[]>
+  listDevices: (kind: MediaDeviceKind) => Promise<MediaDeviceInfo[]>
 }
 
 const defaultDeps: VoiceDeps = {
@@ -138,6 +145,10 @@ export class VoiceClient {
   private activeSpeakers: string[] = []
   /** identidade → faixa de vídeo da tela (remota ou a própria, como prévia) */
   private screens = new Map<string, Track>()
+  /** câmera ligada de cada conexão da sala (B21), a própria inclusa como prévia */
+  private cameras = new Map<string, Track>()
+  /** câmera escolhida; null = padrão do sistema */
+  private cameraDeviceId: string | null = null
   /** dispositivos escolhidos (null = padrão do sistema) */
   private inputDeviceId: string | null = null
   private outputDeviceId: string | null = null
@@ -149,7 +160,7 @@ export class VoiceClient {
   private voices = new Map<RemoteTrack, string>()
 
   /** O que esta conexão pode publicar na sala atual (v2): microfone com `speak`, tela com `share`. */
-  private permissions: VoicePermissions = { canSpeak: true, canShare: true }
+  private permissions: VoicePermissions = { canSpeak: true, canShare: true, canVideo: true }
   /** Chamado quando as permissões mudam com a pessoa na sala (cargo/regra mudou). */
   onPermissionsChange: ((permissions: VoicePermissions) => void) | null = null
 
@@ -157,6 +168,8 @@ export class VoiceClient {
   onUnexpectedDisconnect: ((message: string) => void) | null = null
   /** Chamado quando a própria tela para sem ser pelo app (janela fechada, "parar" do sistema...). */
   onScreenShareEnded: (() => void) | null = null
+  /** Chamado quando a própria câmera para sem ser pelo botão (perdeu `video`, câmera desconectada). */
+  onCameraEnded: (() => void) | null = null
   /** Estado da supressão de ruído: modo atual, 'off' (desligada pela pessoa) ou null (fora de sala). */
   onNoiseModeChange: ((mode: NoiseMode | 'off' | null) => void) | null = null
   private noiseEnabled = true
@@ -213,7 +226,7 @@ export class VoiceClient {
       throw new Error(res.error)
     }
     // Sem `speak` o LiveKit recusaria o microfone (403): entra só para ouvir, sem nem capturar.
-    const permissions: VoicePermissions = { canSpeak: res.canSpeak !== false, canShare: res.canShare !== false }
+    const permissions: VoicePermissions = { canSpeak: res.canSpeak !== false, canShare: res.canShare !== false, canVideo: res.canVideo !== false }
     if (!permissions.canSpeak && mic) {
       mic.stop()
       mic = null
@@ -295,6 +308,8 @@ export class VoiceClient {
     if (Object.keys(useApp.getState().speaking).length) useApp.setState({ speaking: {} })
     this.screens.clear()
     this.publishScreens()
+    this.cameras.clear()
+    this.publishCameras()
   }
 
   setMuted(muted: boolean): void {
@@ -338,7 +353,7 @@ export class VoiceClient {
    */
   private async applyPermissions(room: Room, next: VoicePermissions): Promise<void> {
     const prev = this.permissions
-    if (prev.canSpeak === next.canSpeak && prev.canShare === next.canShare) return
+    if (prev.canSpeak === next.canSpeak && prev.canShare === next.canShare && prev.canVideo === next.canVideo) return
     this.permissions = next
     if (prev.canSpeak && !next.canSpeak && this.mic) {
       const mic = this.mic
@@ -362,7 +377,7 @@ export class VoiceClient {
 
   // ---------- dispositivos ----------
 
-  listDevices(kind: 'audioinput' | 'audiooutput'): Promise<MediaDeviceInfo[]> {
+  listDevices(kind: MediaDeviceKind): Promise<MediaDeviceInfo[]> {
     return this.deps.listDevices(kind)
   }
 
@@ -370,6 +385,14 @@ export class VoiceClient {
   async setInputDevice(deviceId: string | null): Promise<void> {
     this.inputDeviceId = deviceId
     if (this.room && this.mic) await this.room.switchActiveDevice('audioinput', deviceId ?? 'default')
+  }
+
+  /** Troca a câmera (na hora, se estiver ligada; senão vale para a próxima vez que ligar). */
+  async setCameraDevice(deviceId: string | null): Promise<void> {
+    this.cameraDeviceId = deviceId
+    if (this.room && this.cameras.has(this.room.localParticipant.identity)) {
+      await this.room.switchActiveDevice('videoinput', deviceId ?? 'default')
+    }
   }
 
   /** Troca a saída de áudio (alto-falante/fone) de tudo que toca na sala. */
@@ -468,6 +491,28 @@ export class VoiceClient {
     return () => void track.detach(el)
   }
 
+  // ---------- câmera (B21) ----------
+
+  /** Liga ou desliga a própria câmera na sala atual (qualidade limitada: `CAMERA_CAPTURE`). */
+  async setCamera(on: boolean): Promise<void> {
+    const room = this.room
+    if (!room) {
+      if (on) throw new Error('Entre numa sala de voz para ligar a câmera')
+      return
+    }
+    if (on && !this.permissions.canVideo) throw new Error('Você não tem permissão para ligar a câmera nesta sala')
+    const capture = { ...CAMERA_CAPTURE, ...(this.cameraDeviceId ? { deviceId: this.cameraDeviceId } : {}) }
+    await room.localParticipant.setCameraEnabled(on, on ? capture : undefined, on ? CAMERA_PUBLISH : undefined)
+  }
+
+  /** Liga a câmera de `userId` num <video>. Devolve a função que desliga. */
+  attachCamera(userId: string, el: HTMLVideoElement): () => void {
+    const track = this.cameras.get(userId)
+    if (!track) return () => {}
+    track.attach(el)
+    return () => void track.detach(el)
+  }
+
   // ---------- internos ----------
 
   private bindRoom(room: Room): void {
@@ -475,6 +520,7 @@ export class VoiceClient {
       .on(RoomEvent.TrackSubscribed, (track: RemoteTrack, _pub: RemoteTrackPublication, participant: Participant) => {
         if (track.kind === Track.Kind.Video) {
           if (track.source === Track.Source.ScreenShare) this.addScreen(participant.identity, track)
+          else if (track.source === Track.Source.Camera) this.addCamera(participant.identity, track)
           return
         }
         // Áudio: microfone e áudio da tela de cada um.
@@ -488,15 +534,24 @@ export class VoiceClient {
         }
       })
       .on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack, _pub: RemoteTrackPublication, participant: Participant) => {
-        if (track.kind === Track.Kind.Video) return this.removeScreen(participant.identity, track)
+        if (track.kind === Track.Kind.Video) {
+          if (track.source === Track.Source.Camera) return this.removeCamera(participant.identity, track)
+          return this.removeScreen(participant.identity, track)
+        }
         this.voices.delete(track)
         if (!this.remoteAudio.delete(track)) return
         track.detach().forEach((el) => el.remove())
       })
       .on(RoomEvent.LocalTrackPublished, (pub: LocalTrackPublication, participant: Participant) => {
         if (pub.source === Track.Source.ScreenShare && pub.track) this.addScreen(participant.identity, pub.track)
+        if (pub.source === Track.Source.Camera && pub.track) this.addCamera(participant.identity, pub.track)
       })
       .on(RoomEvent.LocalTrackUnpublished, (pub: LocalTrackPublication, participant: Participant) => {
+        if (pub.source === Track.Source.Camera) {
+          if (pub.track) this.removeCamera(participant.identity, pub.track)
+          else if (this.cameras.delete(participant.identity)) this.publishCameras()
+          return this.onCameraEnded?.()
+        }
         if (pub.source !== Track.Source.ScreenShare) return
         if (pub.track) this.removeScreen(participant.identity, pub.track)
         else if (this.screens.delete(participant.identity)) this.publishScreens()
@@ -537,6 +592,24 @@ export class VoiceClient {
     if (this.screens.get(identity) !== track) return
     this.screens.delete(identity)
     this.publishScreens()
+  }
+
+  private addCamera(identity: string, track: Track): void {
+    this.cameras.set(identity, track)
+    this.publishCameras()
+  }
+
+  private removeCamera(identity: string, track: Track): void {
+    if (this.cameras.get(identity) !== track) return
+    this.cameras.delete(identity)
+    this.publishCameras()
+  }
+
+  /** `store.cameras` = quem está com a câmera ligada agora (só muda a store se mudou). */
+  private publishCameras(): void {
+    const next = [...this.cameras.keys()]
+    const prev = useApp.getState().cameras
+    if (prev.length !== next.length || next.some((id, i) => prev[i] !== id)) useApp.setState({ cameras: next })
   }
 
   /** `store.screens` = quem tem tela disponível agora (só muda a store se mudou). */

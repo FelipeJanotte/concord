@@ -13,7 +13,7 @@ const st = (userId: string): VoiceState => ({ userId, channelId: 'sala', muted: 
 
 let socket: FakeSocket
 
-function join(perms: { canSpeak: boolean; canShare: boolean }, micError: unknown = null): Promise<void> {
+function join(perms: { canSpeak: boolean; canShare: boolean; canVideo: boolean }, micError: unknown = null): Promise<void> {
   vi.spyOn(voice, 'join').mockResolvedValue({ micError, cancelled: false, ...perms })
   return joinVoice('sala')
 }
@@ -36,13 +36,13 @@ afterEach(() => {
 
 describe('entrar', () => {
   it('sem speak: entra só para ouvir, com a mensagem de permissão (não a de microfone)', async () => {
-    await join({ canSpeak: false, canShare: true })
+    await join({ canSpeak: false, canShare: true, canVideo: true })
     expect(useApp.getState()).toMatchObject({ myVoiceChannelId: 'sala', voiceCanSpeak: false, voiceCanShare: true, noMic: false })
     expect(useApp.getState().notice?.text).toBe('Você não tem permissão para falar nesta sala: entrou só para ouvir.')
   })
 
   it('com speak e sem microfone: continua a mensagem de microfone', async () => {
-    await join({ canSpeak: true, canShare: true }, new DOMException('negado', 'NotAllowedError'))
+    await join({ canSpeak: true, canShare: true, canVideo: true }, new DOMException('negado', 'NotAllowedError'))
     expect(useApp.getState()).toMatchObject({ noMic: true, voiceCanSpeak: true })
     expect(useApp.getState().notice?.text).toContain('Permissão de microfone negada')
   })
@@ -50,7 +50,7 @@ describe('entrar', () => {
 
 describe('mute e tela sem permissão', () => {
   it('sem speak, o botão de microfone só avisa (e o deafen ainda pode ser tirado)', async () => {
-    await join({ canSpeak: false, canShare: true })
+    await join({ canSpeak: false, canShare: true, canVideo: true })
     toggleMute()
     expect(useApp.getState().notice?.text).toBe('Você não tem permissão para falar nesta sala.')
     expect(socket.sent('voice:update')).toEqual([])
@@ -61,7 +61,7 @@ describe('mute e tela sem permissão', () => {
   })
 
   it('sem share, o botão de tela só avisa', async () => {
-    await join({ canSpeak: true, canShare: false })
+    await join({ canSpeak: true, canShare: false, canVideo: true })
     toggleScreenShare()
     expect(useApp.getState().notice?.text).toBe('Você não tem permissão para compartilhar a tela nesta sala.')
     expect(useApp.getState().screenPickerOpen).toBe(false)
@@ -70,25 +70,25 @@ describe('mute e tela sem permissão', () => {
 
 describe('permissões mudando com a pessoa na sala', () => {
   it('perdeu speak: avisa e manda voice:update silenciado', async () => {
-    await join({ canSpeak: true, canShare: true })
-    voice.onPermissionsChange?.({ canSpeak: false, canShare: true })
+    await join({ canSpeak: true, canShare: true, canVideo: true })
+    voice.onPermissionsChange?.({ canSpeak: false, canShare: true, canVideo: true })
     expect(useApp.getState().voiceCanSpeak).toBe(false)
     expect(useApp.getState().notice?.text).toBe('Você não pode mais falar nesta sala.')
     expect(socket.sent('voice:update').at(-1)).toEqual([{ muted: true, deafened: false }])
   })
 
   it('recuperou speak: avisa e manda o estado real (desmutado)', async () => {
-    await join({ canSpeak: false, canShare: true })
-    voice.onPermissionsChange?.({ canSpeak: true, canShare: true })
+    await join({ canSpeak: false, canShare: true, canVideo: true })
+    voice.onPermissionsChange?.({ canSpeak: true, canShare: true, canVideo: true })
     expect(useApp.getState().voiceCanSpeak).toBe(true)
     expect(useApp.getState().notice?.text).toBe('Agora você pode falar nesta sala.')
     expect(socket.sent('voice:update').at(-1)).toEqual([{ muted: false, deafened: false }])
   })
 
   it('perdeu share compartilhando: desliga o "ao vivo"', async () => {
-    await join({ canSpeak: true, canShare: true })
+    await join({ canSpeak: true, canShare: true, canVideo: true })
     useApp.setState({ sharing: true })
-    voice.onPermissionsChange?.({ canSpeak: true, canShare: false })
+    voice.onPermissionsChange?.({ canSpeak: true, canShare: false, canVideo: true })
     expect(useApp.getState()).toMatchObject({ voiceCanShare: false, sharing: false })
     expect(socket.sent('voice:sharing')).toEqual([[false]])
   })
@@ -97,7 +97,7 @@ describe('permissões mudando com a pessoa na sala', () => {
 describe('saída forçada pelo servidor', () => {
   it('o voice:state sem a própria conexão tira da sala e toca o som de saída (B16)', async () => {
     vi.spyOn(voice, 'teardown').mockImplementation(() => {})
-    await join({ canSpeak: true, canShare: true })
+    await join({ canSpeak: true, canShare: true, canVideo: true })
     vi.mocked(chimes.play).mockClear()
     socket.receive('voice:state', [st('ana')])
     expect(useApp.getState()).toMatchObject({ myVoiceChannelId: null, voiceCanSpeak: true })

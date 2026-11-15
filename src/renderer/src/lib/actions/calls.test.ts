@@ -40,7 +40,7 @@ beforeEach(() => {
   start = vi.spyOn(ringer, 'start').mockImplementation(() => {})
   stop = vi.spyOn(ringer, 'stop').mockImplementation(() => {})
   vi.spyOn(chimes, 'play').mockReturnValue(true)
-  vi.spyOn(voice, 'join').mockResolvedValue({ micError: null, cancelled: false, canSpeak: true, canShare: true })
+  vi.spyOn(voice, 'join').mockResolvedValue({ micError: null, cancelled: false, canSpeak: true, canShare: true, canVideo: true })
   vi.spyOn(voice, 'inRoom', 'get').mockReturnValue(true)
 })
 

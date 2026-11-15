@@ -51,7 +51,7 @@ beforeEach(() => {
   setSocket(socket.asSocket())
   vi.spyOn(ringer, 'start').mockImplementation(() => {})
   vi.spyOn(ringer, 'stop').mockImplementation(() => {})
-  vi.spyOn(voice, 'join').mockResolvedValue({ micError: null, cancelled: false, canSpeak: true, canShare: true })
+  vi.spyOn(voice, 'join').mockResolvedValue({ micError: null, cancelled: false, canSpeak: true, canShare: true, canVideo: true })
   vi.spyOn(voice, 'inRoom', 'get').mockReturnValue(true)
   vi.spyOn(voice, 'setUserVolume').mockImplementation(() => {})
   vi.spyOn(voice, 'setUserMuted').mockImplementation(() => {})

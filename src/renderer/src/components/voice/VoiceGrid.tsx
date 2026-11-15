@@ -1,10 +1,11 @@
-// Grade da sala de voz: participantes e, quando alguém compartilha, a tela em destaque.
+// Grade da sala de voz: participantes (com a câmera no quadro, B21) e, quando alguém compartilha, a tela em destaque.
 import { useState } from 'react'
 import { HeadphoneOff, MicOff, VolumeX } from 'lucide-react'
 import type { VoiceState } from '@shared/types'
 import { UserAvatar } from '@/components/UserAvatar'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
+import { CameraVideo } from './CameraTile'
 import { MemberContextMenu } from './MemberContextMenu'
 import { ServerMutedIcon } from './ModerationMenu'
 import { LiveBadge, ScreenTile } from './ScreenTile'
@@ -49,6 +50,7 @@ export function ParticipantTile({ state, compact = false }: { state: VoiceState;
   const speaking = useApp((s) => !!s.speaking[state.userId])
   const isSelf = useApp((s) => s.self?.id === state.userId)
   const mutedByMe = useApp((s) => !!user && !!s.userMuted[user.accountId])
+  const camera = useApp((s) => s.cameras.includes(state.userId))
   if (!user) return null
 
   return (
@@ -59,7 +61,7 @@ export function ParticipantTile({ state, compact = false }: { state: VoiceState;
           speaking && 'ring-success'
         )}
       >
-        <UserAvatar user={user} size={compact ? 'lg' : 'xl'} />
+        {camera ? <CameraVideo userId={state.userId} name={user.name} self={isSelf} /> : <UserAvatar user={user} size={compact ? 'lg' : 'xl'} />}
         {state.sharing && <LiveBadge className="absolute top-2 right-2" />}
         <div className="absolute bottom-2 left-2 flex max-w-[calc(100%-1rem)] items-center gap-1.5 rounded-md bg-black/50 px-2 py-0.5 text-sm text-white">
           {state.serverMuted && <ServerMutedIcon />}
