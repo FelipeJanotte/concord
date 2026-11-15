@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { AudioLines, HeadphoneOff, Headphones, Mic, MicOff, Palette, PhoneOff, Settings, Signal } from 'lucide-react'
-import { joinVoice, leaveVoice, openDeviceSettings, toggleDeafen, toggleMute } from '@/lib/client'
+import { joinVoice, leaveVoice, openDeviceSettings, openDmChat, toggleDeafen, toggleMute } from '@/lib/client'
+import { findDm } from '@/lib/dms'
 import { useApp } from '@/store'
 import { IconButton } from './IconButton'
 import { ProfileDialog } from './ProfileDialog'
@@ -11,7 +12,9 @@ import { DeviceSettings } from './voice/DeviceSettings'
 export function VoiceStatusPanel() {
   const channelId = useApp((s) => s.myVoiceChannelId)
   const channel = useApp((s) => s.channels.find((c) => c.id === s.myVoiceChannelId))
-  if (!channelId || !channel) return null
+  // chamada de uma conversa (B8): o nome é o da outra pessoa e o clique abre a conversa
+  const dm = useApp((s) => (s.myVoiceChannelId ? findDm(s.dms, s.myVoiceChannelId) : undefined))
+  if (!channelId || (!channel && !dm)) return null
 
   return (
     <div className="flex items-center gap-2 border-b border-border/50 bg-panel px-3 py-2">
@@ -21,10 +24,10 @@ export function VoiceStatusPanel() {
           Voz conectada
         </div>
         <button
-          onClick={() => void joinVoice(channelId)}
+          onClick={() => (dm ? openDmChat(channelId) : void joinVoice(channelId))}
           className="block max-w-full truncate text-xs text-muted-foreground hover:text-accent-foreground hover:underline"
         >
-          {channel.name}
+          {dm ? `Chamada com ${dm.other.name}` : channel?.name}
         </button>
       </div>
       <IconButton label="Configurações de voz" onClick={openDeviceSettings}>

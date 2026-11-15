@@ -1,5 +1,6 @@
 // Entrar/sair da sala de voz, mute, deafen e compartilhar a tela. A conexão com o LiveKit fica em `lib/voice.ts`.
 import { get, getSocket, notify, set, type AppSocket } from '../core'
+import { findDm } from '../dms'
 import { voice } from '../voice'
 import { enteredVoiceRoom, handleVoiceStateChange, leftVoiceRoom } from './voice-sounds'
 
@@ -74,7 +75,8 @@ function describeMediaError(err: unknown): string {
 
 export async function joinVoice(channelId: string): Promise<void> {
   const st = get()
-  set({ section: 'community', toolId: null, view: { kind: 'voice', channelId } })
+  // chamada de uma conversa (B8): a tela continua na conversa; sala da comunidade abre a tela da sala
+  if (!findDm(st.dms, channelId)) set({ section: 'community', toolId: null, view: { kind: 'voice', channelId } })
   if (st.myVoiceChannelId === channelId || st.joiningVoice) return
   set({ joiningVoice: true })
   try {

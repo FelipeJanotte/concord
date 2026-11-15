@@ -17,6 +17,7 @@ import { bindPreferencesEvents, loadPreferences } from './actions/preferences'
 import { bindLimitEvents } from './actions/limits'
 import { bindMessageEvents, loadHistory } from './actions/messages'
 import { bindModerationEvents } from './actions/moderation'
+import { bindCallsEvents, loadCalls } from './actions/calls'
 import { bindPermissionsEvents } from './actions/permissions'
 import { bindPresenceEvents } from './actions/presence'
 import { bindVoiceEvents, OUT_OF_VOICE } from './actions/voice'
@@ -133,6 +134,7 @@ export function connect(url: string, token: string): Promise<void> {
   bindToolsEvents(s)
   bindPreferencesEvents(s)
   bindModerationEvents(s)
+  bindCallsEvents(s)
 
   return new Promise((resolve, reject) => {
     let settled = false
@@ -162,6 +164,7 @@ export function connect(url: string, token: string): Promise<void> {
         if (keep?.kind === 'text') void loadHistory(keep.channelId)
         void loadFriendsAndDms().catch(() => {}) // v3: amizades e conversas (o servidor já sabe quem eu sou)
         void loadPreferences().catch(() => {}) // v5: tema da conta
+        void loadCalls().catch(() => {}) // v3 (B8): chamada que está tocando ou em andamento
         if (!settled) {
           settled = true
           resolve()
@@ -217,6 +220,7 @@ export * from './actions/channels'
 export * from './actions/messages'
 export * from './actions/moderation'
 export * from './actions/navigation'
+export { acceptCall, cancelCall, declineCall, hangUp, startCall } from './actions/calls'
 export * from './actions/permissions'
 export * from './actions/uploads'
 export * from './actions/voice'

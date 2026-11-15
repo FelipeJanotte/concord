@@ -8,7 +8,7 @@ description: Como funcionam as conversas privadas do Concord (v3, A7) — um DM 
 ## Ideia
 
 **Um DM é um canal** do tipo `dm` com duas linhas em `channel_members`. Assim mensagens, anexos, histórico
-paginado, "digitando" (e depois as chamadas da B8, sala LiveKit = id do canal) usam o código de sempre
+paginado, "digitando" (e as chamadas da B8, sala LiveKit = id do canal; skill `concord-calls`) usam o código de sempre
 (`message:*`, `typing`, `POST /uploads`, `GET /files`). O que muda é **quem vê**: num DM, cargos e regras não valem;
 só os dois membros veem — nem a dona.
 
@@ -59,8 +59,8 @@ uma conversa por par; se dois `dm:open` correm juntos, um recebe violação de u
 - Chamadas privadas (B8): a parte de **voz no servidor já existe**. O `voice:join` aceita o canal `dm` (sala
   LiveKit = id da conversa), só os dois membros entram e veem a sala no `voice:state`, e o bloqueio impede entrar
   ("Não foi possível entrar na chamada") e encerra a chamada em andamento (`leaveDmVoice`, chamado pelo
-  `friend:block`). Falta a B8: tocar/aceitar/recusar (`call:*`), a tela de chamada recebida e a barra de chamada.
-  Detalhes na skill `concord-voice`.
+  `friend:block`). ✅ B8: tocar/atender/recusar/desligar (`call:*`), o cartão de chamada recebida e o painel da
+  chamada na conversa: skill `concord-calls`.
 - O cache de membros fica todo em memória (um processo); com muitos DMs, trocar por consulta com cache LRU.
 
 ## Testes

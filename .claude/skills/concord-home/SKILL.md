@@ -86,4 +86,5 @@ Ir para a comunidade e voltar mantém o canal e a conversa.
 
 - Não há "fechar conversa" na lista nem contagem de mensagens (só a bolinha).
 - Conversa com bloqueio continua na lista (o servidor não manda remoção); abrir mostra o histórico, mandar dá erro.
-- Chamada de voz na conversa (B8) e notificações nativas (B9) ainda não existem.
+- Chamada na conversa: ✅ B8 (skill `concord-calls`; botão no cabeçalho, painel no topo do chat e cartão no canto).
+- Notificações nativas (B9) ainda não existem.

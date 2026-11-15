@@ -3,6 +3,7 @@ import { Loader2, MessageSquare } from 'lucide-react'
 import { restoreSession } from '@/lib/client'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ChannelSidebar } from '@/components/ChannelSidebar'
+import { IncomingCall } from '@/components/call/IncomingCall'
 import { ChatView } from '@/components/ChatView'
 import { FriendsView } from '@/components/friends/FriendsView'
 import { HomeSidebar } from '@/components/home/HomeSidebar'
@@ -24,6 +25,7 @@ export default function App() {
   return (
     <TooltipProvider delayDuration={150}>
       {self ? <MainLayout /> : <LoginScreen />}
+      {self && <IncomingCall />}
       <Toast />
     </TooltipProvider>
   )

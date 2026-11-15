@@ -6,6 +6,8 @@ import { chatLabel, findDm } from '@/lib/dms'
 import { useCan } from '@/lib/permissions'
 import { formatDay, formatTime, formatTimestamp } from '@/lib/utils'
 import { useApp } from '@/store'
+import { CallButton } from './call/CallButton'
+import { CallPanel } from './call/CallPanel'
 import { Composer } from './chat/Composer'
 import { MessageActions } from './chat/MessageActions'
 import { MessageAttachments } from './chat/MessageAttachments'
@@ -78,7 +80,9 @@ export function ChatView({ channelId }: { channelId: string }) {
           <Hash className="size-6 text-muted-foreground" />
         )}
         <h1 className="font-semibold text-accent-foreground">{dm ? dm.other.name : channel.name}</h1>
+        {dm && <CallButton dm={dm} />}
       </header>
+      {dm && <CallPanel dm={dm} />}
 
       <div
         data-testid="chat-drop-zone"
