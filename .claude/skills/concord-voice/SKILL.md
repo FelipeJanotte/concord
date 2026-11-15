@@ -184,7 +184,8 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
 
 - **Configurações de voz** (`components/voice/DeviceSettings.tsx`): microfone e saída. Aberto pelo botão de ondas
   sonoras na `VoiceView` e no painel "Voz conectada" (`VoiceStatusPanel`). Fica montado no `UserPanel`, então dá
-  para escolher o microfone antes de entrar numa sala.
+  para escolher o microfone antes de entrar numa sala. Também tem a seção "Sobreposição em jogos" (overlay, B15:
+  skill `concord-overlay`).
 - **Botão direito sobre uma pessoa** (`components/voice/MemberContextMenu.tsx`, shadcn `ui/context-menu`), no tile
   da sala de voz (`VoiceGrid`) e na lista embaixo do canal na barra lateral (`ChannelSidebar`):
   1. nome#tag;

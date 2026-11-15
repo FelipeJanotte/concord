@@ -40,8 +40,10 @@ seu próprio mapa dentro de `modules/voice.ts` e expõe `voiceStates()`, `emitVo
 No renderer, `lib/core.ts` guarda o socket atual, `set`/`get` e `notify`.
 
 O processo main não fala com o servidor do Concord. Ele só abre o navegador para o login com Google e devolve o
-código ao renderer (IPC `google-sign-in`), cuida do compartilhamento de tela (IPC `screen-*`) e mostra as
-notificações nativas e o selo do ícone (IPC `notify`/`badge`/`notification-click`, skill `concord-notifications`). Toda a rede com o servidor acontece no renderer: **HTTP** para
+código ao renderer (IPC `google-sign-in`), cuida do compartilhamento de tela (IPC `screen-*`), mostra as
+notificações nativas e o selo do ícone (IPC `notify`/`badge`/`notification-click`, skill `concord-notifications`)
+e a janela do overlay em jogos (IPC `overlay-*`, atalho global, segunda página do renderer; skill
+`concord-overlay`). Toda a rede com o servidor acontece no renderer: **HTTP** para
 cadastro/login (antes de existir socket) e **Socket.IO** para o resto. Detalhes das contas: skill `concord-accounts`.
 
 ## Modelo de dados (`src/shared/types/`)

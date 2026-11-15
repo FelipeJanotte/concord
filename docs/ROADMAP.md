@@ -226,7 +226,7 @@ mundo e respeita o volume/deafen de cada um. Na v2, uma permissão de canal `sou
 
 | Task | Dev | O que faz | Arquivos (dono) |
 |---|---|---|---|
-| **B15 Overlay** | B | Janela extra do Electron **transparente, sem borda, sempre no topo** (`alwaysOnTop: 'screen-saver'`, `setIgnoreMouseEvents(true)` para o clique passar para o jogo, `focusable: false`) mostrando os membros da minha sala de voz com avatar, nome, mute/deafen e **quem está falando** (mesmo `speaking` da store, enviado do renderer principal por IPC). Liga/desliga em Configurações de voz e por atalho global (`globalShortcut`, ex.: Shift+`); posição (cantos) e tamanho configuráveis; some quando não estou em sala. | `src/main/overlay.ts`, `src/preload/*`, `src/renderer/overlay/**` (página própria no electron-vite), `lib/actions/overlay.ts` |
+| **B15 Overlay** ✅ (transferida para o Dev A; branch `v3/b15-overlay`) | A | Janela extra do Electron **transparente, sem borda, sempre no topo** (`alwaysOnTop: 'screen-saver'`, `setIgnoreMouseEvents(true)` para o clique passar para o jogo, `focusable: false`) mostrando os membros da minha sala de voz com avatar, nome, mute/deafen e **quem está falando** (mesmo `speaking` da store, enviado do renderer principal por IPC). Liga/desliga em Configurações de voz e por atalho global (`globalShortcut`, ex.: Shift+`); posição (cantos) e tamanho configuráveis; some quando não estou em sala. | `src/main/overlay.ts`, `src/preload/*`, `src/renderer/overlay/**` (página própria no electron-vite), `lib/actions/overlay.ts` |
 
 **Limite importante:** funciona por cima de jogos em **modo janela** e **tela cheia sem bordas (borderless)**, que é o
 padrão da maioria dos jogos hoje. Em **tela cheia exclusiva** (DirectX/Vulkan com o monitor só para o jogo) uma

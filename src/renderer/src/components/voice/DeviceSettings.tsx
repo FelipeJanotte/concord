@@ -1,4 +1,4 @@
-// "Configurações de voz": microfone, saída de áudio (B4), supressão de ruído automática (B13) e sons de entrar/sair da sala (B16). O volume de cada pessoa fica no botão direito sobre ela.
+// "Configurações de voz": microfone, saída de áudio (B4), supressão de ruído automática (B13) e sons de entrar/sair da sala (B16) e sobreposição em jogos (B15). O volume de cada pessoa fica no botão direito sobre ela.
 import { useCallback, useEffect, useState } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -11,9 +11,13 @@ import {
   selectAudioInput,
   selectAudioOutput,
   setNoiseSuppression,
+  setOverlayCorner,
+  setOverlayEnabled,
+  setOverlaySize,
   setVoiceSounds,
   type AudioDevice
 } from '@/lib/client'
+import { OVERLAY_SHORTCUT_LABEL, type OverlayCorner, type OverlaySize } from '@shared/overlay'
 import { useApp } from '@/store'
 
 const DEFAULT = '__default__'
@@ -83,6 +87,8 @@ export function DeviceSettings() {
         <NoiseSuppression />
 
         <JoinLeaveSounds />
+
+        <GameOverlay />
 
         <p className="text-xs text-muted-foreground">
           Para ajustar o volume ou silenciar alguém, clique com o botão direito na pessoa.
@@ -154,6 +160,50 @@ function JoinLeaveSounds() {
           Testar
         </Button>
       </div>
+    </div>
+  )
+}
+
+const CORNERS: Record<OverlayCorner, string> = {
+  'top-left': 'Canto superior esquerdo',
+  'top-right': 'Canto superior direito',
+  'bottom-left': 'Canto inferior esquerdo',
+  'bottom-right': 'Canto inferior direito'
+}
+const SIZES: Record<OverlaySize, string> = { small: 'Pequeno', medium: 'Médio', large: 'Grande' }
+
+/** Sobreposição em jogos (B15): quem está na sala e quem fala, por cima do jogo. */
+function GameOverlay() {
+  const enabled = useApp((s) => s.overlayEnabled)
+  const corner = useApp((s) => s.overlayCorner)
+  const size = useApp((s) => s.overlaySize)
+  const selectClass = 'h-9 rounded-md border border-border bg-input px-2 text-sm text-foreground disabled:opacity-60'
+  return (
+    <div className="space-y-2 border-t border-border pt-4">
+      <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+        <input type="checkbox" checked={enabled} onChange={(e) => setOverlayEnabled(e.target.checked)} className="size-4 accent-primary" />
+        Mostrar quem está falando por cima dos jogos
+      </label>
+      <div className="flex flex-wrap gap-2 pl-6">
+        <select aria-label="Posição do overlay" value={corner} disabled={!enabled} onChange={(e) => setOverlayCorner(e.target.value as OverlayCorner)} className={selectClass}>
+          {(Object.keys(CORNERS) as OverlayCorner[]).map((c) => (
+            <option key={c} value={c}>
+              {CORNERS[c]}
+            </option>
+          ))}
+        </select>
+        <select aria-label="Tamanho do overlay" value={size} disabled={!enabled} onChange={(e) => setOverlaySize(e.target.value as OverlaySize)} className={selectClass}>
+          {(Object.keys(SIZES) as OverlaySize[]).map((z) => (
+            <option key={z} value={z}>
+              {SIZES[z]}
+            </option>
+          ))}
+        </select>
+      </div>
+      <p className="pl-6 text-xs text-muted-foreground">
+        Aparece quando você está numa sala de voz. Liga e desliga também pelo atalho <kbd className="rounded bg-accent px-1">{OVERLAY_SHORTCUT_LABEL}</kbd>, mesmo dentro do jogo. Funciona com o jogo em janela ou em
+        tela cheia sem bordas; em tela cheia exclusiva o Windows não deixa nada aparecer por cima.
+      </p>
     </div>
   )
 }
