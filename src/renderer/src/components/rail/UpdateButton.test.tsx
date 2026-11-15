@@ -1,6 +1,4 @@
 // @vitest-environment jsdom
-// Botão de atualizar o app na barra de úteis (A13): só com versão nova, acima do "Início"; baixando não clica,
-// pronta reinicia e instala.
 import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -9,6 +7,12 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { updatesEnv } from '@/lib/actions/updates'
 import { initialState, useApp } from '@/store'
 import { UtilityRail } from './UtilityRail'
+
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+} as unknown as typeof ResizeObserver
 
 const install = vi.fn()
 

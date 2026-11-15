@@ -1,10 +1,8 @@
 /**
  * Atualização automática (A13): o electron-updater procura versão nova nos GitHub Releases
  * (`publish` no electron-builder.yml) ao abrir e a cada `UPDATE_CHECK_INTERVAL_MS`, baixa em
- * segundo plano e avisa a janela; "Reiniciar para atualizar" (faixa no topo ou botão na barra de úteis)
- * chama `quitAndInstall(true, true)`: instala **em silêncio** e abre o app de novo (sem isso o instalador
- * assistido, `oneClick: false`, abria o assistente inteiro). Se a pessoa não reiniciar, a versão baixada
- * entra sozinha da próxima vez que o app fechar.
+ * segundo plano e avisa a janela; "Reiniciar para atualizar" chama `quitAndInstall`. Se a pessoa
+ * não reiniciar, a versão baixada entra sozinha da próxima vez que o app fechar.
  *
  * Em modo dev (app não empacotado) não faz nada: o electron-updater só funciona no instalado.
  * `createUpdaterController` tem a lógica, testável com um atualizador falso.
@@ -23,7 +21,6 @@ export interface UpdaterLike {
   on(event: 'update-downloaded', fn: (info: { version: string }) => void): unknown
   on(event: 'error', fn: (err: Error) => void): unknown
   checkForUpdates(): Promise<unknown>
-  /** `isSilent`: sem o assistente do instalador; `isForceRunAfter`: abre o app depois de instalar */
   quitAndInstall(isSilent?: boolean, isForceRunAfter?: boolean): void
 }
 

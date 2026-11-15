@@ -1,6 +1,5 @@
 /**
- * Barra de úteis (B7): a barra da esquerda. No topo, o botão de atualizar o app (só quando há versão nova,
- * A13), Home (Amigos + conversas) e a Comunidade
+ * Barra de úteis (B7): a barra da esquerda. No topo, Home (Amigos + conversas) e a Comunidade
  * (canais); abaixo do separador, as ferramentas do registro (`components/tools/registry.ts`).
  */
 import type { ReactNode } from 'react'
