@@ -52,7 +52,7 @@ export function VoiceStatusPanel() {
       <div className="flex gap-2">
         {canVideo && (
           <PanelButton label={cameraOn ? 'Desligar a câmera' : 'Ligar a câmera'} active={cameraOn} onClick={() => void toggleCamera()}>
-            {cameraOn ? <VideoOff /> : <Video />}
+            {cameraOn ? <Video /> : <VideoOff />}
           </PanelButton>
         )}
         {canShare && (

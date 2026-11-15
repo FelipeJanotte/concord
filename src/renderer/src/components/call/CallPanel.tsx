@@ -21,12 +21,19 @@ import {
   toggleMute,
   toggleScreenShare
 } from '@/lib/client'
+import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
 import { UserAvatar } from '../UserAvatar'
 import { ControlButton } from '../VoiceView'
 import { PushToTalkHint } from '../voice/PushToTalk'
 import { SoundsPlayingBar } from '../voice/Soundboard'
 import { VoiceGrid } from '../voice/VoiceGrid'
+
+/**
+ * Linha dos botões redondos. A conversa privada pode ficar estreita (janela pequena, barras laterais):
+ * os botões não encolhem (senão viram ovais "achatados") e, sem espaço, quebram para a linha de baixo.
+ */
+const CONTROLS_ROW = 'flex flex-wrap items-center justify-center gap-3 px-4 [&>button]:shrink-0'
 
 function report(action: Promise<void>, fallback: string): void {
   action.catch((err: unknown) => notify(err instanceof Error ? err.message : fallback))
@@ -51,7 +58,7 @@ export function CallPanel({ dm }: { dm: DmEntry }) {
           <p className="text-lg font-semibold text-accent-foreground">
             {iCalled ? `Chamando ${name}...` : `${name} está ligando...`}
           </p>
-          <div className="flex gap-3">
+          <div className={CONTROLS_ROW}>
             {iCalled ? (
               <ControlButton label="Cancelar chamada" danger onClick={() => report(cancelCall(channelId), 'Não foi possível cancelar')}>
                 <PhoneOff />
@@ -83,7 +90,7 @@ export function CallPanel({ dm }: { dm: DmEntry }) {
       </div>
       {inRoom && <SoundsPlayingBar />}
       {inRoom && <PushToTalkHint />}
-      <div className="flex items-center justify-center gap-3 pb-4">
+      <div className={cn(CONTROLS_ROW, 'pb-4')}>
         {inRoom ? (
           <InCallControls onHangUp={() => report(hangUp(channelId), 'Não foi possível desligar')} />
         ) : (

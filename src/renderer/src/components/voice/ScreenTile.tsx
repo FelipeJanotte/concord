@@ -1,8 +1,8 @@
 // Tela compartilhada (vídeo vindo do LiveKit): `ScreenTile` é a miniatura/quadro clicável (faixa de
 // baixo ou grade) e `ScreenStage` é a tela em destaque, com a barra "Assistindo", o seletor das telas
-// ao vivo, "Tela cheia" e "Ver grade". A tela cheia vale para o quadro inteiro (a barra continua à vista).
+// ao vivo, "Esconder/Mostrar membros", "Tela cheia" e "Ver grade". A tela cheia vale para o quadro inteiro (a barra continua à vista).
 import { useEffect, useRef } from 'react'
-import { LayoutGrid, Maximize2, Minimize2 } from 'lucide-react'
+import { LayoutGrid, Maximize2, Minimize2, Users, UserX } from 'lucide-react'
 import { attachScreen } from '@/lib/client'
 import { useFullscreen } from '@/lib/fullscreen'
 import { cn } from '@/lib/utils'
@@ -83,10 +83,14 @@ interface StageProps {
   onSelect: (userId: string) => void
   /** sair do destaque e ver a grade */
   onShowGrid: () => void
+  /** a fileira de membros (embaixo do destaque) está escondida */
+  membersHidden?: boolean
+  /** esconder/mostrar a fileira de membros (sem isso, o botão não aparece) */
+  onToggleMembers?: () => void
 }
 
 /** A tela em destaque, com a barra de cima (sempre à vista, também em tela cheia). */
-export function ScreenStage({ userId, screens, onSelect, onShowGrid }: StageProps) {
+export function ScreenStage({ userId, screens, onSelect, onShowGrid, membersHidden = false, onToggleMembers }: StageProps) {
   const ref = useRef<HTMLDivElement>(null)
   const { active, toggle } = useFullscreen(ref)
   const label = useScreenLabel(userId)
@@ -106,6 +110,18 @@ export function ScreenStage({ userId, screens, onSelect, onShowGrid }: StageProp
           </div>
         )}
         <div className="ml-auto flex shrink-0 gap-1">
+          {!active && onToggleMembers && (
+            <button
+              type="button"
+              onClick={onToggleMembers}
+              aria-pressed={membersHidden}
+              title={membersHidden ? 'Mostrar membros' : 'Esconder membros'}
+              aria-label={membersHidden ? 'Mostrar membros' : 'Esconder membros'}
+              className="rounded-md p-1.5 hover:bg-white/15 [&_svg]:size-4"
+            >
+              {membersHidden ? <Users /> : <UserX />}
+            </button>
+          )}
           {!active && (
             <button type="button" onClick={onShowGrid} title="Ver grade" aria-label="Ver grade" className="rounded-md p-1.5 hover:bg-white/15 [&_svg]:size-4">
               <LayoutGrid />

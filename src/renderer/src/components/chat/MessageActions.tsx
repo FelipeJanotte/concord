@@ -32,7 +32,7 @@ export function MessageActions({ message }: { message: Message }) {
   }
 
   return (
-    <div className="absolute -top-3 right-4 z-10 hidden rounded-md border border-border bg-panel shadow-sm group-hover:flex group-focus-within:flex">
+    <div className="absolute -top-3 right-4 z-10 hidden w-max rounded-md border border-border bg-panel shadow-sm group-hover:flex group-focus-within:flex">
       {canReply && (
         <ActionButton label="Adicionar reação" onClick={() => openReactionPicker(message.id)}>
           <SmilePlus className="size-4" />
@@ -64,7 +64,7 @@ function ActionButton({ label, onClick, danger, children }: { label: string; onC
       onClick={onClick}
       aria-label={label}
       title={label}
-      className={cn('p-1.5 text-muted-foreground', danger ? 'hover:text-destructive' : 'hover:text-accent-foreground')}
+      className={cn('shrink-0 p-1.5 text-muted-foreground [&_svg]:shrink-0', danger ? 'hover:text-destructive' : 'hover:text-accent-foreground')}
     >
       {children}
     </button>

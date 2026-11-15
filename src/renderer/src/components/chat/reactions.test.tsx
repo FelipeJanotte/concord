@@ -119,3 +119,13 @@ describe('na tela', () => {
     expect(screen.queryByRole('button', { name: 'Adicionar reação' })).toBeNull()
   })
 })
+
+describe('barra de ações da mensagem', () => {
+  it('ícones não encolhem em chat estreito (barra na largura do conteúdo, botões e svgs com shrink-0)', () => {
+    setup(msg())
+    const button = screen.getByRole('button', { name: 'Adicionar reação' })
+    expect(button.className).toContain('shrink-0')
+    expect(button.className).toContain('[&_svg]:shrink-0')
+    expect(button.parentElement!.className).toContain('w-max')
+  })
+})
