@@ -167,16 +167,33 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
   `screen_share_audio`.
 - **Receber:** `TrackSubscribed` de vídeo com `source === ScreenShare` entra em `store.screens` (ids de conexão);
   a própria tela entra como prévia via `LocalTrackPublished`. O áudio da tela toca como os outros áudios (respeita
-  deafen). O `ScreenTile` liga a faixa num `<video muted>` com `attachScreen(userId, el)` (de `@/lib/client`).
+  deafen). O `ScreenVideo` (em `ScreenTile.tsx`) liga a faixa num `<video muted>` com `attachScreen(userId, el)` (de `@/lib/client`).
 - **Parar:** botão de novo (`stopScreenShare`) ou pelo sistema (janela fechada): `LocalTrackUnpublished` chama
   `voice.onScreenShareEnded`, que desliga `sharing` e avisa o servidor uma vez só.
-- **Grade** (`components/voice/VoiceGrid.tsx`): sem telas, grade de participantes; com telas, a de **outra pessoa**
-  em destaque (a própria só se for a única), miniaturas clicáveis embaixo e botão de tela cheia.
+- **Assistir** (`components/voice/VoiceGrid.tsx` + `ScreenTile.tsx`): `featuredScreen(telas, eu, escolhida, grade)`
+  decide a tela em destaque: a escolhida (se ainda ao vivo), senão a primeira de **outra pessoa** (a própria só se
+  for a única); `null` = sem telas ou "Ver grade".
+  - `ScreenStage` (destaque): barra de cima **sempre à vista** com "Ao vivo", "Assistindo: Tela de Fulano", o
+    seletor "Telas ao vivo" (um botão por tela, com mais de uma; `aria-pressed` na atual), "Ver grade" e "Tela
+    cheia". Embaixo, miniaturas das outras telas (`ScreenTile`, clicar = assistir) e os participantes.
+  - No quadro de quem compartilha, o "Ao vivo" vira o botão "Assistir" quando a tela dela já chegou (e não é a
+    que está em destaque).
+  - "Ver grade": todas as telas lado a lado na grade (antes dos participantes); clicar numa volta ao destaque.
+  - Escolha e grade são estado local do `VoiceGrid` (não salvos): ao trocar de sala, volta ao automático.
+- **Tela cheia** (`lib/fullscreen.ts`: `useFullscreen`, `toggleFullscreen`): vai para tela cheia o **quadro inteiro**
+  do `ScreenStage` (não só o `<video>`), então a barra com o seletor e "Sair da tela cheia" continua à vista. Botão,
+  duplo clique no vídeo ou Esc. Recusa do sistema vira o aviso "Não foi possível abrir em tela cheia.". **No
+  Electron precisa da permissão `fullscreen`**: `src/main/permissions.ts` (`allowPermission`) libera `media`,
+  `notifications` e `fullscreen` no `setPermissionRequestHandler`. Antes só as duas primeiras eram liberadas e o
+  botão "Tela cheia" não fazia nada (o `requestFullscreen` era recusado em silêncio).
 - `sharing` no servidor é só indicador (o cliente avisa); quem pode publicar a tela é decidido pelo token do LiveKit.
 - **Testes:** `src/main/screen-share.test.ts` (controlador, sem Electron), `lib/voice.test.ts` (bloco "tela"),
   `lib/actions/screen.test.ts` (botão, seletor, erros, aviso único ao servidor), `components/voice/voice.test.tsx`
-  (jsdom: seletor, tile e grade) e `server/tests/voice.test.ts` (`voice:sharing`). À mão: duas janelas na mesma
-  sala com o LiveKit rodando; uma compartilha, a outra vê a tela e o "ao vivo" some ao parar.
+  (jsdom: seletor, miniatura, `featuredScreen`, destaque com "Assistindo" e seletor, "Assistir" no quadro, "Ver
+  grade", tela que acaba, tela cheia do quadro com botão/duplo clique e a recusa), `src/main/permissions.test.ts`
+  e `server/tests/voice.test.ts` (`voice:sharing`). À mão: três janelas na mesma sala com o LiveKit rodando; duas
+  compartilham, a terceira troca pelo seletor e pelo "Assistir", usa "Ver grade", entra e sai da tela cheia (botão,
+  duplo clique, Esc) e o "ao vivo" some ao parar.
 
 ## Câmera na sala de voz (B21)
 
