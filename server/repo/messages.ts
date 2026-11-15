@@ -116,3 +116,26 @@ export async function insertMessage(message: Message, attachmentIds: string[] = 
     throw err
   }
 }
+
+/** Canal e autor (conta) de uma mensagem, para conferir quem pode apagar. Id inválido = não existe. */
+export async function findMessageMeta(id: string): Promise<{ channelId: string; authorId: string | null } | undefined> {
+  if (!isUuid(id)) return undefined
+  const [row] = await db()
+    .select({ channelId: messages.channelId, authorId: messages.authorId })
+    .from(messages)
+    .where(eq(messages.id, id))
+  return row
+}
+
+/**
+ * Apaga a mensagem (os registros dos anexos saem junto, por cascade).
+ * Devolve os ids dos anexos para o chamador apagar os arquivos, ou null se ela não existia.
+ */
+export async function deleteMessage(id: string): Promise<string[] | null> {
+  if (!isUuid(id)) return null
+  return db().transaction(async (tx) => {
+    const files = await tx.select({ id: attachments.id }).from(attachments).where(eq(attachments.messageId, id))
+    const gone = await tx.delete(messages).where(eq(messages.id, id)).returning({ id: messages.id })
+    return gone.length === 0 ? null : files.map((f) => f.id)
+  })
+}

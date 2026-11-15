@@ -1,6 +1,7 @@
 /**
  * Menu de botão direito sobre uma pessoa (tile da sala de voz e lista da barra lateral):
- * volume da voz, silenciar só para mim, cargos (B5, só para quem gerencia membros) e ver o perfil.
+ * volume da voz, silenciar só para mim, cargos (B5, só para quem gerencia membros), moderação da
+ * voz (B6: silenciar para todos e expulsar, `ModerationMenu`) e ver o perfil.
  *
  * Item futuro: "Mensagem" (B7/A7, abre a DM com a pessoa).
  */
@@ -21,6 +22,7 @@ import {
 } from '@/components/ui/context-menu'
 import { RoleDot } from '@/components/settings/RoleDot'
 import { UserProfileDialog } from '@/components/UserProfileDialog'
+import { ModerationItems } from './ModerationMenu'
 import { notify, setMemberRoles, setUserMuted, setUserVolume } from '@/lib/client'
 import { canAssignRole, canEditMember, memberRoleIds, rolesByPosition } from '@/lib/permissions'
 import { useApp } from '@/store'
@@ -46,6 +48,7 @@ export function MemberContextMenu({ userId, children }: { userId: string; childr
             <>
               <VolumeControl accountId={user.accountId} name={user.name} />
               <MuteItem accountId={user.accountId} />
+              <ModerationItems accountId={user.accountId} name={user.name} />
               <ContextMenuSeparator />
             </>
           )}

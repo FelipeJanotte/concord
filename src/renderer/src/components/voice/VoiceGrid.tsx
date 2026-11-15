@@ -6,6 +6,7 @@ import { UserAvatar } from '@/components/UserAvatar'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
 import { MemberContextMenu } from './MemberContextMenu'
+import { ServerMutedIcon } from './ModerationMenu'
 import { LiveBadge, ScreenTile } from './ScreenTile'
 
 export function VoiceGrid({ members }: { members: VoiceState[] }) {
@@ -61,9 +62,10 @@ export function ParticipantTile({ state, compact = false }: { state: VoiceState;
         <UserAvatar user={user} size={compact ? 'lg' : 'xl'} />
         {state.sharing && <LiveBadge className="absolute top-2 right-2" />}
         <div className="absolute bottom-2 left-2 flex max-w-[calc(100%-1rem)] items-center gap-1.5 rounded-md bg-black/50 px-2 py-0.5 text-sm text-white">
+          {state.serverMuted && <ServerMutedIcon />}
           {state.deafened ? (
             <HeadphoneOff className="size-3.5 shrink-0 text-destructive" />
-          ) : state.muted ? (
+          ) : state.muted && !state.serverMuted ? (
             <MicOff className="size-3.5 shrink-0 text-destructive" />
           ) : null}
           {mutedByMe && <VolumeX className="size-3.5 shrink-0 text-destructive" aria-label="Silenciado por você" />}

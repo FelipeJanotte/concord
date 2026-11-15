@@ -138,6 +138,9 @@ servidor acima). O app acompanha:
   despublica a tela, e o "ao vivo" é desligado.
 - **Saída forçada** (`voice:state` sem a própria conexão, ex.: perdeu `connect`): sai localmente, zera o estado e toca
   o som de saída (B16).
+- **Silenciado por um moderador (B6):** o servidor trata como perder `speak` (mesmo caminho acima); o
+  `VoiceState.serverMuted` troca os avisos por "Um moderador silenciou você nas salas de voz." e mostra o escudo
+  vermelho. Expulsão da voz chega como `moderation:kicked` antes do `voice:state`. Detalhes na skill `concord-moderation`.
 - **Testes:** `lib/voice-permissions.test.ts`, `lib/voice.test.ts` (bloco "permissões de voz (v2)"),
   `lib/actions/voice-permissions.test.ts` e `components/VoiceView.test.tsx`.
 

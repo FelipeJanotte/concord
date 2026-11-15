@@ -84,6 +84,8 @@ export const LIMITS = {
   preferences: { capacity: 20, perSecond: 1 },
   /** efeitos sonoros tocados por conta: 1 a cada 3 s (A10) */
   sound: { capacity: 1, perSecond: 1 / 3 },
+  /** ações de moderação e apagar mensagem por conta: 20 seguidas, depois 1 por segundo (B6) */
+  moderation: { capacity: 20, perSecond: 1 },
   /** "digitando" por conexão (o app já manda no máximo 1 a cada 2,5 s) */
   typing: { capacity: 5, perSecond: 1 / 2 },
   /** cadastros por IP: 5 seguidos, depois 1 a cada 10 min */

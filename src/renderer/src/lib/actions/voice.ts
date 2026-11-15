@@ -14,6 +14,13 @@ export const OUT_OF_VOICE = {
   voiceCanShare: true
 } as const
 
+/**
+ * Fui silenciado por um moderador (B6)? Vem do meu `VoiceState.serverMuted` e só muda quando
+ * eu apareço no `voice:state` (fora da sala continua valendo, como no servidor).
+ */
+let mutedByModerator = false
+const CANT_SPEAK_MODERATOR = 'Um moderador silenciou você nas salas de voz.'
+
 // A sala do LiveKit caiu sem a pessoa pedir (removida, sala encerrada, servidor de voz fora do ar).
 voice.onUnexpectedDisconnect = (message) => {
   set({ ...OUT_OF_VOICE })
@@ -28,7 +35,7 @@ voice.onScreenShareEnded = () => setSharing(false)
 voice.onPermissionsChange = ({ canSpeak, canShare }) => {
   const was = get()
   set({ voiceCanSpeak: canSpeak, voiceCanShare: canShare })
-  if (was.voiceCanSpeak && !canSpeak) notify('Você não pode mais falar nesta sala.', 'info')
+  if (was.voiceCanSpeak && !canSpeak) notify(mutedByModerator ? CANT_SPEAK_MODERATOR : 'Você não pode mais falar nesta sala.', 'info')
   if (!was.voiceCanSpeak && canSpeak) notify('Agora você pode falar nesta sala.', 'info')
   if (!canShare && was.sharing) setSharing(false)
   // O servidor deixa quem não pode falar sempre silenciado; ao recuperar, avisa o estado real.
@@ -38,10 +45,13 @@ voice.onPermissionsChange = ({ canSpeak, canShare }) => {
 }
 
 export function bindVoiceEvents(s: AppSocket): void {
+  mutedByModerator = false // conexão nova: o próximo voice:state diz de novo
   s.on('voice:state', (states) => {
     const prev = get().voice
     set({ voice: states })
     handleVoiceStateChange(prev, states) // sons de entrar/sair (B16)
+    const mine = states.find((v) => v.userId === get().self?.id)
+    if (mine) mutedByModerator = !!mine.serverMuted
     // O servidor tirou esta conexão da sala (ex.: perdeu a permissão de entrar, v2): sai localmente.
     const { myVoiceChannelId, joiningVoice, self } = get()
     if (myVoiceChannelId && !joiningVoice && self && !states.some((v) => v.userId === self.id)) {
@@ -81,7 +91,12 @@ export async function joinVoice(channelId: string): Promise<void> {
       voiceCanShare: canShare
     })
     enteredVoiceRoom(channelId)
-    if (!canSpeak) notify('Você não tem permissão para falar nesta sala: entrou só para ouvir.', 'info')
+    if (!canSpeak) {
+      notify(
+        mutedByModerator ? `${CANT_SPEAK_MODERATOR} Você entrou só para ouvir.` : 'Você não tem permissão para falar nesta sala: entrou só para ouvir.',
+        'info'
+      )
+    }
     else if (micError !== null) notify(`${describeMediaError(micError)} Você entrou só para ouvir.`, 'info')
   } catch (err) {
     // Troca recusada pelo servidor: a sala antiga continua de pé e o estado também.
@@ -115,7 +130,7 @@ export function toggleMute(): void {
   const { muted, deafened, noMic, voiceCanSpeak, myVoiceChannelId } = get()
   if (myVoiceChannelId && !voiceCanSpeak) {
     if (deafened) applyAudio(muted, false)
-    else notify('Você não tem permissão para falar nesta sala.', 'info')
+    else notify(mutedByModerator ? CANT_SPEAK_MODERATOR : 'Você não tem permissão para falar nesta sala.', 'info')
     return
   }
   if (noMic) {

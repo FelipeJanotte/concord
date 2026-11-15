@@ -120,7 +120,8 @@ describe('voice:join', () => {
       channelId: ch.id,
       muted: true,
       deafened: false,
-      sharing: false
+      sharing: false,
+      serverMuted: false
     })
   })
 

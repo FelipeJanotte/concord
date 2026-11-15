@@ -11,6 +11,7 @@ import type { DmsClientEvents, DmsServerEvents } from './dms'
 import type { FriendsClientEvents, FriendsServerEvents } from './friends'
 import type { LimitsServerEvents } from './limits'
 import type { MessageClientEvents, MessageServerEvents } from './message'
+import type { ModerationClientEvents, ModerationServerEvents } from './moderation'
 import type { PermissionsClientEvents, PermissionsServerEvents } from './permissions'
 import type { PreferencesClientEvents, PreferencesServerEvents } from './preferences'
 import type { PresenceClientEvents, PresenceServerEvents } from './presence'
@@ -25,6 +26,7 @@ export * from './dms'
 export * from './friends'
 export * from './limits'
 export * from './message'
+export * from './moderation'
 export * from './permissions'
 export * from './preferences'
 export * from './presence'
@@ -40,6 +42,7 @@ export interface ServerToClientEvents
     FriendsServerEvents,
     LimitsServerEvents,
     MessageServerEvents,
+    ModerationServerEvents,
     PermissionsServerEvents,
     PreferencesServerEvents,
     PresenceServerEvents,
@@ -53,6 +56,7 @@ export interface ClientToServerEvents
     DmsClientEvents,
     FriendsClientEvents,
     MessageClientEvents,
+    ModerationClientEvents,
     PermissionsClientEvents,
     PreferencesClientEvents,
     PresenceClientEvents,

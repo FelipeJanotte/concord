@@ -13,6 +13,7 @@ import { ChannelPermissionsDialog } from './settings/ChannelPermissionsDialog'
 import { CommunitySettingsDialog } from './settings/CommunitySettingsDialog'
 import { UserAvatar } from './UserAvatar'
 import { MemberContextMenu } from './voice/MemberContextMenu'
+import { ServerMutedIcon } from './voice/ModerationMenu'
 import { LiveBadge } from './voice/ScreenTile'
 import { UserPanel, VoiceStatusPanel } from './UserPanel'
 
@@ -277,9 +278,10 @@ function VoiceMember({ state }: { state: VoiceState }) {
         <span className={cn('flex-1 truncate', speaking && 'text-accent-foreground')}>{user.name}</span>
         {state.sharing && <LiveBadge />}
         {mutedByMe && <VolumeX className="size-3.5 text-destructive" aria-label="Silenciado por você" />}
+        {state.serverMuted && <ServerMutedIcon />}
         {state.deafened ? (
           <HeadphoneOff className="size-3.5 text-destructive" />
-        ) : state.muted ? (
+        ) : state.muted && !state.serverMuted ? (
           <MicOff className="size-3.5 text-destructive" />
         ) : null}
       </div>
