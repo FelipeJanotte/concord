@@ -1,0 +1,47 @@
+name: Versão do PR
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, labeled, unlabeled]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pr-version-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  version:
+    name: subir a versão do package.json
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Calcular e gravar a versão
+        env:
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          version="$(node .github/scripts/next-version.mjs pr "$LABELS")"
+          current="$(node -p "require('./package.json').version")"
+          if [ "$version" = "$current" ]; then
+            echo "Versão já certa: $version"
+            exit 0
+          fi
+          npm version "$version" --no-git-tag-version --allow-same-version
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore: versão $version"
+          git push origin "HEAD:$HEAD_REF"
+          echo "Versão do PR: $current -> $version"

@@ -19,7 +19,7 @@ export function compareVersions(a, b) {
 }
 
 export function nextVersion({ tags, packageVersion, labels = [] }) {
-  const names = labels.map((label) => label.trim().toLowerCase())
+  const names = normalize(labels)
   if (names.includes(SKIP_LABEL)) return null
   const pkg = parseVersion(packageVersion)
   if (!pkg) throw new Error(`versão inválida no package.json: ${packageVersion}`)
@@ -30,17 +30,36 @@ export function nextVersion({ tags, packageVersion, labels = [] }) {
   return bump(latest, names).join('.')
 }
 
+export function prVersion({ tags, mainVersion, labels = [] }) {
+  const names = normalize(labels)
+  const main = parseVersion(mainVersion)
+  if (!main) throw new Error(`versão inválida no package.json da main: ${mainVersion}`)
+  const base = [main, ...tags.map(parseVersion).filter(Boolean)].sort(compareVersions).pop()
+  if (names.includes(SKIP_LABEL)) return base.join('.')
+  return bump(base, names).join('.')
+}
+
+function normalize(labels) {
+  return labels.map((label) => label.trim().toLowerCase())
+}
+
 function bump([major, minor, patch], names) {
   if (names.includes(MAJOR_LABEL)) return [major + 1, 0, 0]
   if (names.includes(MINOR_LABEL)) return [major, minor + 1, 0]
   return [major, minor, patch + 1]
 }
 
+function readVersion(json) {
+  return JSON.parse(json).version
+}
+
 function runFromCommandLine() {
-  const labels = (process.argv[2] ?? '').split(',').filter(Boolean)
+  const prMode = process.argv[2] === 'pr'
+  const labels = (process.argv[prMode ? 3 : 2] ?? '').split(',').filter(Boolean)
   const tags = execSync('git tag -l "v*"', { encoding: 'utf8' }).split(/\r?\n/).filter(Boolean)
-  const packageVersion = JSON.parse(readFileSync('package.json', 'utf8')).version
-  const version = nextVersion({ tags, packageVersion, labels })
+  const version = prMode
+    ? prVersion({ tags, mainVersion: readVersion(execSync('git show origin/main:package.json', { encoding: 'utf8' })), labels })
+    : nextVersion({ tags, packageVersion: readVersion(readFileSync('package.json', 'utf8')), labels })
   if (version) process.stdout.write(version)
 }
 
