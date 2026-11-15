@@ -134,6 +134,7 @@ vê), `typing`, `rate:limited`, `access:updated` e `channels:visible` (v2), `sou
 - `myVoiceChannelId`, `joiningVoice`, `muted`, `deafened`, `speaking[userId]`, `sharing`, `screens`, `screenPickerOpen`.
 - `access` (`store/permissions.ts`): `AccessState` do `hello`/`access:updated`, `null` antes de chegar; a tela lê com `useCan`/`useNameColor` de `lib/permissions.ts` (skill `concord-permissions`).
 - `audioInputId`, `audioOutputId`, `userVolumes[accountId]`, `userMuted[accountId]`, `voiceSoundsEnabled`, `voiceSoundsVolume`, `noiseSuppression`, `noiseMode`, `deviceSettingsOpen` (`store/devices.ts`; preferência da máquina, salva em `concord:audio` no `localStorage`).
+- `friends`, `dms`, `friendsLoaded` (`store/friends.ts`, v3): carregados por `loadFriendsAndDms` logo depois do `hello`; `friend:*`, `dm:created` e `message:new` (a conversa sobe para o topo) mantêm em dia. Abas da tela "Amigos" com `friendGroups` (`lib/friends.ts`).
 - `typing[channelId][userId] = { name, until }`: expira sozinho depois de 3,5 s.
 - `notice`: toast (`notify()` em `client.ts`).
 
@@ -141,7 +142,7 @@ vê), `typing`, `rate:limited`, `access:updated` e `channels:visible` (v2), `sou
 
 0. `register` / `login` / `loginWithGoogle` chamam o HTTP e, com sucesso, salvam `concord:server` e `concord:token` no `localStorage`. Ao abrir o app, `restoreSession()` usa o token salvo.
 1. `connect(url, token)`: chama `disconnect()` para limpar (preservando `restoring`), cria o socket (só websocket, `auth: { token }`) e o registra no `voice`.
-2. A cada `connect` (inclusive em reconexões), envia `hello`. O ack substitui todo o estado e mantém a `view` se o canal ainda existir.
+2. A cada `connect` (inclusive em reconexões), envia `hello`. O ack substitui todo o estado e mantém a `view` se o canal ainda existir. Em seguida pede `friend:list` e `dm:list` (`loadFriendsAndDms`).
 3. Ao cair a conexão: `voice.teardown()` e `status = 'reconnecting'`, que mostra uma faixa vermelha no topo. O Socket.IO tenta reconectar sozinho. Se a reconexão voltar `unauthorized`, apaga o token e volta ao login.
 4. `logout()` (botão "Sair da conta" no `ProfileDialog`): revoga o token no servidor, apaga do `localStorage` e chama `disconnect()`, que remove os listeners e volta ao `initialState`.
 

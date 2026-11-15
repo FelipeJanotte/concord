@@ -19,6 +19,19 @@ export class FakeSocket {
     return this
   }
 
+  /** Usados pelo `disconnect()` do `lib/client.ts`. */
+  removeAllListeners(): this {
+    this.listeners.clear()
+    return this
+  }
+
+  connected = true
+
+  disconnect(): this {
+    this.connected = false
+    return this
+  }
+
   emit(event: string, ...args: unknown[]): this {
     this.emitted.push({ event, args })
     return this
