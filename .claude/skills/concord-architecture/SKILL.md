@@ -134,8 +134,10 @@ vê), `typing`, `rate:limited`, `access:updated` e `channels:visible` (v2), `sou
 - `status`: `disconnected | connecting | connected | reconnecting`. O `App` mostra o `LoginScreen` enquanto `self` for `null`.
 - `account`: `AccountInfo` da própria conta. `restoring`: tentando entrar com o token salvo (o login mostra "Entrando...").
 - `messages[channelId]`: `undefined` significa histórico ainda não carregado. `message:new` só adiciona a mensagem se o histórico daquele canal já estiver carregado.
-- `unread[channelId]`: bolinha de não lido (mensagem chegou num canal que não está aberto).
-- `view: { kind: 'text' | 'voice', channelId }`: o que aparece no painel central.
+- `unread[channelId]`: bolinha de não lido (mensagem chegou num canal ou conversa que não está na tela; `isChatOnScreen`).
+- `view: { kind: 'text' | 'voice', channelId }`: a tela da comunidade (canal ou sala aberta).
+- `section`, `homeView`, `toolId` (`store/navigation.ts`, B7): qual parte está na frente (comunidade, Home com "Amigos"
+  ou uma conversa, ou uma ferramenta). Trocar de seção não perde `view`. Skill `concord-home`.
 - `myVoiceChannelId`, `joiningVoice`, `muted`, `deafened`, `speaking[userId]`, `sharing`, `screens`, `screenPickerOpen`.
 - `access` (`store/permissions.ts`): `AccessState` do `hello`/`access:updated`, `null` antes de chegar; a tela lê com `useCan`/`useNameColor` de `lib/permissions.ts` (skill `concord-permissions`).
 - `theme`, `savedThemes`, `preferencesLoaded` (`store/preferences.ts`, v5): tema da conta, carregado depois do `hello` e aplicado como variáveis CSS (`lib/theme`, skill `concord-themes`); antes do login vale o último tema da máquina.

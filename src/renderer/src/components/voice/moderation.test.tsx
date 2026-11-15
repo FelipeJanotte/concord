@@ -62,7 +62,9 @@ function login(self: User, modPermissions: Permission[] = ['manageMembers'], voi
     ...initialState,
     self,
     users: [dona, mod, ana],
-    channels: [sala, geral, dm],
+    channels: [sala, geral],
+    // conversas privadas não vêm em `channels`, só em `dms`
+    dms: [{ channel: dm, other: { id: 'ana', name: 'Ana', tag: 'ana', color: '#aaaaaa', avatarUrl: null } }],
     voice,
     myVoiceChannelId: voice.some((v) => v.userId === self.id) ? 'sala' : null,
     access: access(modPermissions)

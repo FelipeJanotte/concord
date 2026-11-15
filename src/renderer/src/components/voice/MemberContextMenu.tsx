@@ -1,12 +1,11 @@
 /**
  * Menu de botão direito sobre uma pessoa (tile da sala de voz e lista da barra lateral):
  * volume da voz, silenciar só para mim, cargos (B5, só para quem gerencia membros), moderação da
- * voz (B6: silenciar para todos e expulsar, `ModerationMenu`) e ver o perfil.
- *
- * Item futuro: "Mensagem" (B7/A7, abre a DM com a pessoa).
+ * voz (B6: silenciar para todos e expulsar, `ModerationMenu`), "Mensagem" (B7: abre a conversa privada;
+ * sem amizade nem conversa, vira "Adicionar amigo") e ver o perfil.
  */
 import { useState, type ReactNode } from 'react'
-import { Shield, User as UserIcon, Volume2, VolumeX } from 'lucide-react'
+import { MessageCircle, Shield, User as UserIcon, UserPlus, Volume2, VolumeX } from 'lucide-react'
 import { EVERYONE_ROLE_ID } from '@shared/types'
 import {
   ContextMenu,
@@ -23,7 +22,7 @@ import {
 import { RoleDot } from '@/components/settings/RoleDot'
 import { UserProfileDialog } from '@/components/UserProfileDialog'
 import { ModerationItems } from './ModerationMenu'
-import { notify, setMemberRoles, setUserMuted, setUserVolume } from '@/lib/client'
+import { messageAccount, notify, sendFriendRequest, setMemberRoles, setUserMuted, setUserVolume } from '@/lib/client'
 import { canAssignRole, canEditMember, memberRoleIds, rolesByPosition } from '@/lib/permissions'
 import { useApp } from '@/store'
 
@@ -50,6 +49,7 @@ export function MemberContextMenu({ userId, children }: { userId: string; childr
               <MuteItem accountId={user.accountId} />
               <ModerationItems accountId={user.accountId} name={user.name} />
               <ContextMenuSeparator />
+              <MessageItem accountId={user.accountId} name={user.name} tag={user.tag} />
             </>
           )}
           <RolesSubmenu accountId={user.accountId} />
@@ -139,5 +139,47 @@ function RolesSubmenu({ accountId }: { accountId: string }) {
         ))}
       </ContextMenuSubContent>
     </ContextMenuSub>
+  )
+}
+
+/**
+ * "Mensagem": abre a conversa privada (amigos, ou quem já tem conversa comigo; regra do `dm:open`).
+ * Sem nenhuma relação, oferece "Adicionar amigo"; com pedido pendente ou bloqueio, não mostra nada.
+ */
+function MessageItem({ accountId, name, tag }: { accountId: string; name: string; tag: string }) {
+  const relation = useApp((s) => s.friends.find((f) => f.account.id === accountId)?.status)
+  const hasDm = useApp((s) => s.dms.some((d) => d.other.id === accountId))
+
+  if (relation === 'friend' || (hasDm && relation !== 'blocked')) {
+    return (
+      <ContextMenuItem
+        onSelect={() =>
+          messageAccount(accountId).catch((err: unknown) =>
+            notify(err instanceof Error ? err.message : 'Não foi possível abrir a conversa')
+          )
+        }
+      >
+        <MessageCircle />
+        Mensagem
+      </ContextMenuItem>
+    )
+  }
+  if (relation) return null
+  return (
+    <ContextMenuItem
+      onSelect={() =>
+        sendFriendRequest(`${name}#${tag}`)
+          .then((entry) =>
+            notify(
+              entry?.status === 'friend' ? `Agora você e ${name} são amigos!` : `Pedido de amizade enviado para ${name}.`,
+              'info'
+            )
+          )
+          .catch((err: unknown) => notify(err instanceof Error ? err.message : 'Não foi possível enviar o pedido'))
+      }
+    >
+      <UserPlus />
+      Adicionar amigo
+    </ContextMenuItem>
   )
 }

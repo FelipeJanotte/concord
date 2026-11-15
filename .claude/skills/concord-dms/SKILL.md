@@ -3,7 +3,7 @@ name: concord-dms
 description: Como funcionam as conversas privadas do Concord (v3, A7) — um DM é um canal do tipo dm com dois membros (channel_members), quem pode abrir (amigos, ou conversa que já existe), acesso só dos membros (nem a dona), bloqueio fechando a conversa, e os eventos dm:list/dm:open/dm:created. Use ao mexer em server/modules/dms.ts, server/repo/dms.ts, no cache de membros de server/access.ts (rememberDm, dmMembersOf, allowedInDm), em server/db/schema/channels.ts (channelMembers), src/shared/types/dms.ts, na lista de DMs da Home (B7) ou ao investigar mensagem de DM que vaza ou não chega, "Vocês precisam ser amigos para conversar" ou "Não foi possível abrir a conversa".
 ---
 
-# Conversas privadas (v3: A7 servidor; a lista de DMs e o chat entram no casco da Home da B7)
+# Conversas privadas (v3: A7 servidor; a lista de DMs e o chat são da B7, skill `concord-home`)
 
 ## Ideia
 
@@ -53,10 +53,9 @@ uma conversa por par; se dois `dm:open` correm juntos, um recebe violação de u
 
 ## Pendente
 
-- Lista de DMs na Home, não lidos e o chat do DM (reusa `ChatView` com `dm.channel.id`): casco da B7 (Dev B). A
-  camada do app já existe: `dms` em `store/friends.ts` (atividade mais recente primeiro: `dm:created` e `message:new`
-  sobem a conversa) e `openDm(accountId)` em `lib/actions/friends.ts` (item "Mensagem" do botão direito).
-  `messages`/`unread` já funcionam por `channelId`, então valem para DMs.
+- ~~Lista de DMs, não lidos e chat~~ ✅ B7 (skill `concord-home`): `components/dm/DmList.tsx`, `ChatView` com
+  `dm.channel.id` (o canal vem de `dms`, não de `channels`; `useCan` só libera ver/mandar/anexar) e
+  `messageAccount(accountId)` (`dm:open` + abre o chat; item "Mensagem" do botão direito).
 - Chamadas privadas (B8): a parte de **voz no servidor já existe**. O `voice:join` aceita o canal `dm` (sala
   LiveKit = id da conversa), só os dois membros entram e veem a sala no `voice:state`, e o bloqueio impede entrar
   ("Não foi possível entrar na chamada") e encerra a chamada em andamento (`leaveDmVoice`, chamado pelo

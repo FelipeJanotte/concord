@@ -3,7 +3,7 @@ name: concord-friends
 description: Como funcionam as amizades do Concord (v3, A6) — pedido por nome#id, aceitar/recusar/cancelar/desfazer, bloquear e desbloquear (cada lado da relação tem o seu estado), online/offline visível só para amigos e os eventos friend:*. Use ao mexer em server/modules/friends.ts, server/repo/friends.ts, server/db/schema/friends.ts, src/shared/types/friends.ts, na presença (server/modules/presence.ts) ou na tela "Amigos" (B7), ou ao investigar pedido que não chega, "Ninguém com esse nome#id" ou amigo que não aparece online.
 ---
 
-# Amizades (v3: A6 servidor; a tela "Amigos" entra no casco da Home da B7)
+# Amizades (v3: A6 servidor; a tela "Amigos" é da B7, skill `concord-home`)
 
 ## Modelo
 
@@ -48,10 +48,9 @@ Mensagens de erro pensadas para não vazar informação: quem foi bloqueado rece
 
 ## Pendente
 
-- Tela "Amigos" (Online, Todos, Pendentes, Bloqueados, Adicionar) no casco da Home (B7, Dev B). A camada do app já
-  existe: `store/friends.ts` (`friends`, `friendsLoaded`), ações em `lib/actions/friends.ts` (`sendFriendRequest`,
-  `acceptFriend`, `declineFriend`, `removeFriend`, `blockAccount`, `unblockAccount`; erro vira exceção com a mensagem
-  do servidor) e as abas em `lib/friends.ts` (`friendGroups`, `incomingCount` para o selo da Home).
+- ~~Tela "Amigos"~~ ✅ B7: `components/friends/FriendsView.tsx` (abas Online, Todos, Pendentes, Bloqueados e
+  "Adicionar amigo") sobre `store/friends.ts`, as ações de `lib/actions/friends.ts` e `friendGroups`/`incomingCount`
+  (`lib/friends.ts`). Selo no Início e "Adicionar amigo" no botão direito: skill `concord-home`.
 - A7 (DMs, skill `concord-dms`): conversa nova só entre amigos; bloqueio (`blockedBetween`) fecha a conversa.
 
 ## Testes

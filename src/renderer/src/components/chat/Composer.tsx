@@ -4,6 +4,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { MESSAGE_MAX_LENGTH, type Channel } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { addFiles, notifyTyping, sendMessage } from '@/lib/client'
+import { chatLabel } from '@/lib/dms'
 import { useCan } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
@@ -21,6 +22,7 @@ export function Composer({ channel }: { channel: Channel }) {
   const ready = uploads.some((u) => u.status === 'done')
   const allowedSend = useCan('send', channel.id)
   const allowedAttach = useCan('attach', channel.id)
+  const label = useApp((s) => chatLabel(channel, s.dms))
   const canSend = allowedSend && !uploading && (!!value.trim() || ready)
 
   useEffect(() => {
@@ -98,7 +100,7 @@ export function Composer({ channel }: { channel: Channel }) {
             rows={1}
             maxLength={MESSAGE_MAX_LENGTH}
             value={value}
-            placeholder={`Conversar em #${channel.name}`}
+            placeholder={channel.type === 'dm' ? `Conversar com ${label}` : `Conversar em ${label}`}
             onChange={(e) => {
               setValue(e.target.value)
               if (e.target.value) notifyTyping(channel.id)

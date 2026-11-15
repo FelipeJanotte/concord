@@ -2,13 +2,14 @@
 import type { Message } from '@shared/types'
 import { omit } from '../utils'
 import { get, getSocket, notify, requireSocket, set, type AppSocket } from '../core'
+import { isChatOnScreen } from './navigation'
 import { clearDraft, isUploading, readyAttachmentIds } from './uploads'
 
 export function bindMessageEvents(s: AppSocket): void {
   s.on('message:new', (message) =>
     set((st) => {
       const list = st.messages[message.channelId]
-      const isActive = st.view?.kind === 'text' && st.view.channelId === message.channelId
+      const isActive = isChatOnScreen(st, message.channelId)
       const typingInChannel = st.typing[message.channelId]
       return {
         messages: list ? { ...st.messages, [message.channelId]: [...list, message] } : st.messages,

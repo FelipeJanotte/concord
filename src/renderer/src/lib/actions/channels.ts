@@ -48,7 +48,7 @@ export function bindChannelEvents(s: AppSocket): void {
 }
 
 export function selectTextChannel(channelId: string): void {
-  set((st) => ({ view: { kind: 'text', channelId }, unread: omit(st.unread, channelId) }))
+  set((st) => ({ section: 'community', toolId: null, view: { kind: 'text', channelId }, unread: omit(st.unread, channelId) }))
   void loadHistory(channelId)
 }
 

@@ -5,6 +5,7 @@
 import { Trash2 } from 'lucide-react'
 import { canDeleteMessage, type Message } from '@shared/types'
 import { deleteMessage, notify } from '@/lib/client'
+import { findDm } from '@/lib/dms'
 import { useApp } from '@/store'
 
 export function MessageActions({ message }: { message: Message }) {
@@ -13,7 +14,7 @@ export function MessageActions({ message }: { message: Message }) {
     if (!me) return false
     const isAuthor = message.author.accountId === me
     // conversa privada: sem moderação, só o autor
-    const isDm = s.channels.find((c) => c.id === message.channelId)?.type === 'dm'
+    const isDm = !!findDm(s.dms, message.channelId)
     if (isDm || !s.access) return isAuthor
     return canDeleteMessage(s.access, me, message.author.accountId)
   })

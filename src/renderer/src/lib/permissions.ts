@@ -13,6 +13,7 @@ import {
   type Role
 } from '@shared/types'
 import { useApp } from '@/store'
+import { DM_PERMISSIONS, findDm } from './dms'
 
 /** A conta tem a permissão? Sem estado de acesso ainda (antes do `hello`), não esconde nada. */
 export function allows(access: AccessState | null, accountId: string | undefined, permission: Permission, channelId?: string): boolean {
@@ -20,9 +21,12 @@ export function allows(access: AccessState | null, accountId: string | undefined
   return can(access, accountId, permission, channelId)
 }
 
-/** Hook: eu tenho a permissão (no canal, se for de canal)? */
+/** Hook: eu tenho a permissão (no canal, se for de canal)? Em conversa privada só valem ver, mandar e anexar. */
 export function useCan(permission: Permission, channelId?: string): boolean {
-  return useApp((s) => allows(s.access, s.self?.accountId, permission, channelId))
+  return useApp((s) => {
+    if (channelId && findDm(s.dms, channelId)) return DM_PERMISSIONS.has(permission)
+    return allows(s.access, s.self?.accountId, permission, channelId)
+  })
 }
 
 /** Hook: posso abrir as configurações da comunidade (cargos ou membros)? */

@@ -74,7 +74,7 @@ function describeMediaError(err: unknown): string {
 
 export async function joinVoice(channelId: string): Promise<void> {
   const st = get()
-  set({ view: { kind: 'voice', channelId } })
+  set({ section: 'community', toolId: null, view: { kind: 'voice', channelId } })
   if (st.myVoiceChannelId === channelId || st.joiningVoice) return
   set({ joiningVoice: true })
   try {
