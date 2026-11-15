@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // Componentes da tela compartilhada: seletor, miniatura/destaque da tela (escolher qual ver, grade, tela cheia) e grade da sala.
-import { act, cleanup, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ScreenShareBridge, ScreenSource } from '@shared/screen'
@@ -11,7 +11,7 @@ import { initialState, useApp } from '@/store'
 import { FakeSocket } from '@/test/fake-socket'
 import { ScreenPicker } from './ScreenPicker'
 import { ScreenTile } from './ScreenTile'
-import { featuredScreen, VoiceGrid } from './VoiceGrid'
+import { VoiceGrid } from './VoiceGrid'
 
 const user = (id: string, name: string): User => ({ id, accountId: `acc-${id}`, name, tag: id, color: '#5865f2', avatarUrl: null })
 const state = (userId: string, extra: Partial<VoiceState> = {}): VoiceState => ({
@@ -140,17 +140,6 @@ describe('ScreenTile', () => {
   })
 })
 
-describe('featuredScreen', () => {
-  it('escolhida se ainda ao vivo; senão a primeira de outra pessoa; a própria só sozinha; grade = nenhuma', () => {
-    expect(featuredScreen([], 'eu', null, false)).toBeNull()
-    expect(featuredScreen(['eu', 'ana', 'bia'], 'eu', null, false)).toBe('ana')
-    expect(featuredScreen(['eu', 'ana', 'bia'], 'eu', 'bia', false)).toBe('bia')
-    expect(featuredScreen(['eu', 'ana'], 'eu', 'bia', false)).toBe('ana') // a escolhida acabou
-    expect(featuredScreen(['eu'], 'eu', null, false)).toBe('eu')
-    expect(featuredScreen(['ana'], 'eu', 'ana', true)).toBeNull()
-  })
-})
-
 describe('VoiceGrid', () => {
   const members = [state('eu'), state('ana', { sharing: true }), state('bia', { sharing: true })]
   const stageLabel = (): string | null => screen.getByText(/^Assistindo:/).textContent
@@ -175,16 +164,79 @@ describe('VoiceGrid', () => {
     ])
     expect(screen.getByRole('button', { name: 'Tela cheia' })).toBeTruthy()
 
-    // pelo seletor
     await userEvent.click(within(screen.getByRole('group', { name: 'Telas ao vivo' })).getByRole('button', { name: 'Tela de Bia' }))
+    expect(stageLabel()).toBe('Assistindo: Tela de Ana e Tela de Bia')
+    await userEvent.click(within(screen.getByRole('group', { name: 'Telas ao vivo' })).getByRole('button', { name: 'Tela de Ana' }))
     expect(stageLabel()).toBe('Assistindo: Tela de Bia')
-    // pela miniatura
     await userEvent.click(screen.getByRole('button', { name: 'Assistir: Sua tela' }))
     expect(stageLabel()).toBe('Assistindo: Sua tela')
-    // pelo "Ao vivo" de quem compartilha
     await userEvent.click(screen.getByRole('button', { name: 'Assistir a tela de Ana' }))
     expect(stageLabel()).toBe('Assistindo: Tela de Ana')
     expect(screen.queryByRole('button', { name: 'Assistir a tela de Ana' })).toBeNull() // já está assistindo
+  })
+
+  const panes = (): string[] => [...document.querySelectorAll<HTMLElement>('[data-screen-pane]')].map((el) => el.dataset.screenPane ?? '')
+  const chip = (name: string): HTMLElement => within(screen.getByRole('group', { name: 'Telas ao vivo' })).getByRole('button', { name })
+
+  it('duas telas em destaque ao mesmo tempo, cada uma com o seu vídeo; a última não sai do destaque', async () => {
+    useApp.setState({ screens: ['eu', 'ana', 'bia'] })
+    render(<VoiceGrid members={members} />)
+    expect(panes()).toEqual(['ana'])
+    await userEvent.click(chip('Tela de Bia'))
+    expect(panes()).toEqual(['ana', 'bia'])
+    expect(chip('Tela de Bia').getAttribute('aria-pressed')).toBe('true')
+    const row = screen.getByRole('group', { name: 'Membros da chamada' })
+    expect(within(row).queryByRole('button', { name: 'Assistir: Tela de Bia' })).toBeNull()
+    expect(within(row).getByRole('button', { name: 'Assistir: Sua tela' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Assistir a tela de Bia' })).toBeNull()
+
+    await userEvent.click(chip('Tela de Ana'))
+    expect(panes()).toEqual(['bia'])
+    expect((chip('Tela de Bia') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('clicar numa miniatura assiste só aquela tela', async () => {
+    useApp.setState({ screens: ['eu', 'ana', 'bia'] })
+    render(<VoiceGrid members={members} />)
+    await userEvent.click(chip('Tela de Bia'))
+    await userEvent.click(screen.getByRole('button', { name: 'Assistir: Sua tela' }))
+    expect(panes()).toEqual(['eu'])
+  })
+
+  it('arrastar uma tela sobre outra troca a ordem', async () => {
+    useApp.setState({ screens: ['eu', 'ana', 'bia'] })
+    render(<VoiceGrid members={members} />)
+    await userEvent.click(chip('Tela de Bia'))
+    await userEvent.click(chip('Sua tela'))
+    expect(panes()).toEqual(['ana', 'bia', 'eu'])
+    const pane = (id: string): HTMLElement => document.querySelector<HTMLElement>(`[data-screen-pane="${id}"]`)!
+    expect(pane('ana').draggable).toBe(true)
+    fireEvent.dragStart(pane('eu'))
+    fireEvent.dragOver(pane('ana'))
+    fireEvent.drop(pane('ana'))
+    expect(panes()).toEqual(['eu', 'ana', 'bia'])
+    expect(stageLabel()).toBe('Assistindo: Sua tela, Tela de Ana e Tela de Bia')
+  })
+
+  it('lado a lado ou empilhadas; com uma tela só, sem o botão', async () => {
+    useApp.setState({ screens: ['ana', 'bia'] })
+    render(<VoiceGrid members={members} />)
+    expect(screen.queryByRole('button', { name: 'Empilhar as telas' })).toBeNull()
+    await userEvent.click(chip('Tela de Bia'))
+    const arrangement = (): string | undefined => document.querySelector<HTMLElement>('[data-arrangement]')?.dataset.arrangement
+    expect(arrangement()).toBe('side-by-side')
+    await userEvent.click(screen.getByRole('button', { name: 'Empilhar as telas' }))
+    expect(arrangement()).toBe('stacked')
+    await userEvent.click(screen.getByRole('button', { name: 'Pôr as telas lado a lado' }))
+    expect(arrangement()).toBe('side-by-side')
+  })
+
+  it('uma das telas em destaque acabou: as outras continuam', async () => {
+    useApp.setState({ screens: ['ana', 'bia'] })
+    render(<VoiceGrid members={members} />)
+    await userEvent.click(chip('Tela de Bia'))
+    act(() => useApp.setState({ screens: ['bia'] }))
+    expect(panes()).toEqual(['bia'])
   })
 
   it('uma tela só: sem seletor', () => {
