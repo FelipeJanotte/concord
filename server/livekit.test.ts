@@ -39,7 +39,7 @@ describe('readLiveKitConfig', () => {
 describe('createVoiceCredentials', () => {
   const config = readLiveKitConfig(base)!
   const user: User = { id: 'socket-1', accountId: 'conta-1', name: 'Ana', tag: 'ana1', color: '#000', avatarUrl: null }
-  const all = { canSpeak: true, canShare: true }
+  const all = { canSpeak: true, canShare: true, canVideo: true }
 
   it('emite token assinado para a sala do canal com identidade = User.id', async () => {
     const { url, token } = await createVoiceCredentials(config, user, 'canal-1', all)
@@ -47,6 +47,13 @@ describe('createVoiceCredentials', () => {
     const claims = await new TokenVerifier('k', base.LIVEKIT_API_SECRET).verify(token)
     expect(claims).toMatchObject({ sub: 'socket-1', name: 'Ana#ana1', attributes: { accountId: 'conta-1' } })
     expect(claims.video).toMatchObject({ room: 'canal-1', roomJoin: true, canPublishData: false })
+    expect(claims.video?.canPublishSources).toContain('camera')
+  })
+
+  it('câmera só com a permissão `video` (B21)', async () => {
+    const { token } = await createVoiceCredentials(config, user, 'canal-1', { ...all, canVideo: false })
+    const claims = await new TokenVerifier('k', base.LIVEKIT_API_SECRET).verify(token)
+    expect(claims.video?.canPublishSources).toEqual(expect.arrayContaining(['microphone', 'screen_share']))
     expect(claims.video?.canPublishSources).not.toContain('camera')
   })
 

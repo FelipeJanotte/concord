@@ -1,4 +1,4 @@
-// Entrar/sair da sala de voz, mute, deafen e compartilhar a tela. A conexão com o LiveKit fica em `lib/voice.ts`.
+// Entrar/sair da sala de voz, mute, deafen, compartilhar a tela e câmera (B21). A conexão com o LiveKit fica em `lib/voice.ts`.
 import { get, getSocket, notify, set, type AppSocket } from '../core'
 import { findDm } from '../dms'
 import { voice } from '../voice'
@@ -11,8 +11,10 @@ export const OUT_OF_VOICE = {
   noMic: false,
   sharing: false,
   screenPickerOpen: false,
+  cameraOn: false,
   voiceCanSpeak: true,
-  voiceCanShare: true
+  voiceCanShare: true,
+  voiceCanVideo: true
 } as const
 
 /**
@@ -33,9 +35,13 @@ voice.onUnexpectedDisconnect = (message) => {
 voice.onScreenShareEnded = () => setSharing(false)
 
 // Cargo/regra mudou com a pessoa na sala (v2): o LiveKit já trocou o que ela pode publicar.
-voice.onPermissionsChange = ({ canSpeak, canShare }) => {
+// A câmera parou sem ser pelo botão (perdeu `video`, câmera desconectada...).
+voice.onCameraEnded = () => set({ cameraOn: false })
+
+voice.onPermissionsChange = ({ canSpeak, canShare, canVideo }) => {
   const was = get()
-  set({ voiceCanSpeak: canSpeak, voiceCanShare: canShare })
+  set({ voiceCanSpeak: canSpeak, voiceCanShare: canShare, voiceCanVideo: canVideo })
+  if (!canVideo && was.cameraOn) set({ cameraOn: false })
   if (was.voiceCanSpeak && !canSpeak) notify(mutedByModerator ? CANT_SPEAK_MODERATOR : 'Você não pode mais falar nesta sala.', 'info')
   if (!was.voiceCanSpeak && canSpeak) notify('Agora você pode falar nesta sala.', 'info')
   if (!canShare && was.sharing) setSharing(false)
@@ -80,7 +86,7 @@ export async function joinVoice(channelId: string): Promise<void> {
   if (st.myVoiceChannelId === channelId || st.joiningVoice) return
   set({ joiningVoice: true })
   try {
-    const { micError, cancelled, canSpeak, canShare } = await voice.join(channelId)
+    const { micError, cancelled, canSpeak, canShare, canVideo } = await voice.join(channelId)
     // Interrompida no meio (saiu, trocou de sala, conexão caiu): não grava a sala.
     if (cancelled) return
     // Trocar de sala encerra a tela (o servidor também zera o "ao vivo").
@@ -89,8 +95,10 @@ export async function joinVoice(channelId: string): Promise<void> {
       noMic: canSpeak && micError !== null,
       sharing: false,
       screenPickerOpen: false,
+      cameraOn: false,
       voiceCanSpeak: canSpeak,
-      voiceCanShare: canShare
+      voiceCanShare: canShare,
+      voiceCanVideo: canVideo
     })
     enteredVoiceRoom(channelId)
     if (!canSpeak) {
@@ -209,5 +217,36 @@ export async function stopScreenShare(): Promise<void> {
     await voice.stopScreenShare()
   } finally {
     setSharing(false)
+  }
+}
+
+// ---------- câmera (B21) ----------
+
+/** Liga a câmera de `userId` num <video> (usado pelo CameraTile). Devolve a função que desliga. */
+export function attachCamera(userId: string, el: HTMLVideoElement): () => void {
+  return voice.attachCamera(userId, el)
+}
+
+function describeCameraError(err: unknown): string {
+  if (err instanceof DOMException) {
+    if (err.name === 'NotAllowedError') return 'Permissão de câmera negada.'
+    if (err.name === 'NotFoundError') return 'Nenhuma câmera encontrada.'
+    if (err.name === 'NotReadableError') return 'A câmera está sendo usada por outro programa.'
+  }
+  return err instanceof Error && err.message ? `Não foi possível ligar a câmera: ${err.message}` : 'Não foi possível ligar a câmera.'
+}
+
+/** Botão "Ligar câmera": liga ou desliga a própria câmera na sala atual. */
+export async function toggleCamera(): Promise<void> {
+  const { cameraOn, myVoiceChannelId, voiceCanVideo } = get()
+  if (!myVoiceChannelId) return notify('Entre numa sala de voz para ligar a câmera.', 'info')
+  if (!cameraOn && !voiceCanVideo) return notify('Você não tem permissão para ligar a câmera nesta sala.', 'info')
+  try {
+    await voice.setCamera(!cameraOn)
+    set({ cameraOn: !cameraOn })
+  } catch (err) {
+    console.error('[câmera] falhou:', err)
+    if (!cameraOn) notify(describeCameraError(err))
+    else set({ cameraOn: false })
   }
 }

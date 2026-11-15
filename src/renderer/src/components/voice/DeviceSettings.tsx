@@ -1,4 +1,4 @@
-// "Configurações de voz": microfone, saída de áudio (B4), supressão de ruído automática (B13) e sons de entrar/sair da sala (B16) e sobreposição em jogos (B15). O volume de cada pessoa fica no botão direito sobre ela.
+// "Configurações de voz": microfone, saída de áudio (B4), supressão de ruído automática (B13) câmera (B21), sons de entrar/sair da sala (B16) e sobreposição em jogos (B15). O volume de cada pessoa fica no botão direito sobre ela.
 import { useCallback, useEffect, useState } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -10,6 +10,7 @@ import {
   previewVoiceSound,
   selectAudioInput,
   selectAudioOutput,
+  selectCamera,
   setNoiseSuppression,
   setOverlayCorner,
   setOverlayEnabled,
@@ -26,7 +27,8 @@ export function DeviceSettings() {
   const open = useApp((s) => s.deviceSettingsOpen)
   const inputId = useApp((s) => s.audioInputId)
   const outputId = useApp((s) => s.audioOutputId)
-  const [devices, setDevices] = useState<{ inputs: AudioDevice[]; outputs: AudioDevice[] } | null>(null)
+  const cameraId = useApp((s) => s.cameraId)
+  const [devices, setDevices] = useState<{ inputs: AudioDevice[]; outputs: AudioDevice[]; cameras: AudioDevice[] } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const outputSupported = canChooseAudioOutput()
 
@@ -77,6 +79,7 @@ export function DeviceSettings() {
               onChange={(id) => void selectAudioOutput(id)}
             />
           )}
+          <DeviceSelect id="camera" label="Câmera" value={cameraId} devices={devices?.cameras} onChange={(id) => void selectCamera(id)} />
           {namesHidden && (
             <p className="text-xs text-muted-foreground">
               Os nomes dos dispositivos aparecem depois que o Concord puder usar o microfone (entre numa sala de voz uma vez).

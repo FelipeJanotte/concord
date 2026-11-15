@@ -64,9 +64,9 @@ começa com as permissões de canal, sem as de administração (criar/apagar can
 `hello`, `voice:state`, `message:new`, `typing` e `channel:created` só chegam a quem pode ver o canal. O estado de
 acesso vem no `hello` (`state.access`) e no `access:updated`, sempre por `accessFor` (cargos e membros inteiros; regras
 só dos canais que a pessoa vê). Mudou o acesso → `access:updated`, `channels:visible` (para quem ganhou/perdeu canais) e
-`applyVoiceAccess` (em `modules/voice.ts`): quem perdeu `connect` sai da voz. `voice:join` devolve `canSpeak`/`canShare`;
+`applyVoiceAccess` (em `modules/voice.ts`): quem perdeu `connect` sai da voz. `voice:join` devolve `canSpeak`/`canShare`/`canVideo` (câmera, B21);
 sem `speak` a pessoa aparece sempre silenciada. Ninguém concede permissão global que não tem (`canGrantPermissions`),
-e globais no @todos só a dona. O token do LiveKit sai com microfone só se `speak` e tela só se `share`, e
+e globais no @todos só a dona. O token do LiveKit sai com microfone só se `speak`, tela só se `share` e câmera só se `video`, e
 `applyVoiceAccess` atualiza isso ao vivo (`RoomService.UpdateParticipant`). Links de anexo são assinados por pessoa e o
 download confere `view` (`server/files-signing.ts`). Pendente: transferência de posse da comunidade.
 
@@ -118,7 +118,7 @@ Cliente → servidor (`ClientToServerEvents`):
 | `tools:move-teams` | `{ messageId, channelIds: (id \| null)[] }` | `MoveTeamsResult` (`moved`, `skipped`) | leva cada time de um sorteio postado para uma sala de voz: avisa cada conexão com `tools:moved` e o app troca de sala pelo `voice:join`; outros só com `canModerate` — skill `concord-tools` |
 | `tools:poll` / `poll:vote` / `poll:close` / `poll:mine` | `{ channelId, question, options, multiple? }` / `{ messageId, choices }` / `messageId` / `messageIds[]` | `ToolResult` / `PollVoteResult` / `PollCloseResult` / `Record<id, number[]>` | enquete (votos anônimos; votar exige `send`; encerrar: autor ou `manageMessages`) — skill `concord-tools` |
 | `message:send` | `{ channelId, content }` | — | valida (canal de texto ou conversa privada `dm`, até 2000 caracteres); `message:new` só para quem vê o canal |
-| `voice:join` | `{ channelId, muted, deafened }` | `JoinVoiceResult` (`url`, `token` do LiveKit) | exige LiveKit configurado; sala de voz **ou conversa privada `dm`** (só os dois membros, sem bloqueio); sai da sala anterior (também no LiveKit), entra na nova; `voice:state` (sala de DM só para os membros) |
+| `voice:join` | `{ channelId, muted, deafened }` | `JoinVoiceResult` (`url`, `token` do LiveKit, `canSpeak`/`canShare`/`canVideo`) | exige LiveKit configurado; sala de voz **ou conversa privada `dm`** (só os dois membros, sem bloqueio); sai da sala anterior (também no LiveKit), entra na nova; `voice:state` (sala de DM só para os membros) |
 | `voice:leave` | — | — | tira da sala no LiveKit (`RemoveParticipant`) + `voice:state` |
 | `voice:update` | `{ muted, deafened }` | — | `voice:state` |
 | `voice:sharing` | `boolean` | — | liga/desliga o "ao vivo" (só para quem está numa sala); `voice:state` |

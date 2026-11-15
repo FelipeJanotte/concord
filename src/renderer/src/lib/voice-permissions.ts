@@ -6,7 +6,7 @@
 import type { VoicePermissions } from '@shared/types'
 
 /** Valores do enum `livekit.TrackSource` do protocolo (o `livekit-client` não exporta o conversor). */
-export const PROTO_SOURCE = { MICROPHONE: 2, SCREEN_SHARE: 3 } as const
+export const PROTO_SOURCE = { CAMERA: 1, MICROPHONE: 2, SCREEN_SHARE: 3 } as const
 
 interface LiveKitPermission {
   canPublish?: boolean
@@ -14,8 +14,8 @@ interface LiveKitPermission {
 }
 
 export function permissionsFrom(perm: LiveKitPermission | undefined): VoicePermissions {
-  if (!perm?.canPublish) return { canSpeak: false, canShare: false }
+  if (!perm?.canPublish) return { canSpeak: false, canShare: false, canVideo: false }
   const sources = perm.canPublishSources ?? []
   const allows = (source: number): boolean => sources.length === 0 || sources.includes(source)
-  return { canSpeak: allows(PROTO_SOURCE.MICROPHONE), canShare: allows(PROTO_SOURCE.SCREEN_SHARE) }
+  return { canSpeak: allows(PROTO_SOURCE.MICROPHONE), canShare: allows(PROTO_SOURCE.SCREEN_SHARE), canVideo: allows(PROTO_SOURCE.CAMERA) }
 }

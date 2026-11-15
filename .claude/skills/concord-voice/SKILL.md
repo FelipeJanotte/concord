@@ -1,6 +1,6 @@
 ---
 name: concord-voice
-description: Como funcionam os canais de voz do Concord — LiveKit (SFU) com token emitido pelo servidor, livekit-client no app, estado das salas via Socket.IO, mute/deafen, quem está falando, compartilhar a tela, escolha de microfone/saída e volume por pessoa, limites e depuração. Use ao mexer em server/livekit.ts, server/modules/voice.ts, src/renderer/src/lib/voice.ts, nos eventos voice:* ou ao investigar áudio que não chega, token recusado, eco ou falha de conexão.
+description: Como funcionam os canais de voz do Concord — LiveKit (SFU) com token emitido pelo servidor, livekit-client no app, estado das salas via Socket.IO, mute/deafen, quem está falando, câmera (B21, CameraTile, permissão video), compartilhar a tela, escolha de microfone/saída e volume por pessoa, limites e depuração. Use ao mexer em server/livekit.ts, server/modules/voice.ts, src/renderer/src/lib/voice.ts, nos eventos voice:* ou ao investigar áudio que não chega, token recusado, eco ou falha de conexão.
 ---
 
 # Voz
@@ -177,6 +177,31 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
   `lib/actions/screen.test.ts` (botão, seletor, erros, aviso único ao servidor), `components/voice/voice.test.tsx`
   (jsdom: seletor, tile e grade) e `server/tests/voice.test.ts` (`voice:sharing`). À mão: duas janelas na mesma
   sala com o LiveKit rodando; uma compartilha, a outra vê a tela e o "ao vivo" some ao parar.
+
+## Câmera na sala de voz (B21)
+
+Cada um liga a própria câmera na sala; o vídeo ocupa o quadro da pessoa na grade (no lugar da foto). A tela
+compartilhada continua em destaque e as câmeras vão para a faixa de miniaturas.
+
+- **Permissão:** permissão de canal nova `video` ("Ligar a câmera", depende de `connect` como `speak`/`share`).
+  `voice:join` devolve `canVideo`; o token só libera a fonte `camera` com ela (`publishSources`) e perder com a
+  pessoa na sala troca as permissões no LiveKit (`UpdateParticipant`), que despublica a câmera. Comunidades que já
+  existiam ganham `video` em todo cargo que tinha `share` (migration `0009_camera_permission`, só dados).
+- **Cliente** (`lib/voice.ts`): `setCamera(on)` usa `setCameraEnabled` com **640x360 a 24 fps, ~350 kbps e sem
+  simulcast** (`CAMERA_CAPTURE`/`CAMERA_PUBLISH`: não pesa no upload de quem joga). Câmeras da sala (a própria
+  inclusa) ficam em `store.cameras` (ids de conexão), separadas de `store.screens`; `attachCamera(userId, el)`
+  liga num `<video>`. A câmera parar sozinha (perdeu `video`, desconectou) chama `onCameraEnded`.
+- **Câmera escolhida:** "Câmera" em Configurações de voz (`selectCamera`, salva em `concord:audio.camera`,
+  `store.cameraId`); com a câmera ligada troca na hora (`switchActiveDevice('videoinput')`).
+- **Ações** (`lib/actions/voice.ts`): `toggleCamera` (avisa fora da sala/sem permissão; erros do sistema em pt-BR:
+  negada, não encontrada, em uso), `attachCamera`. `store.cameraOn` e `store.voiceCanVideo`; sair da sala zera.
+- **Tela:** botão "Ligar a câmera"/"Desligar a câmera" no `VoiceView` (some sem `video`); `CameraVideo` em
+  `components/voice/CameraTile.tsx`, usado pelo `ParticipantTile`; a própria câmera aparece espelhada.
+- **Testes:** `lib/voice.test.ts` (bloco "câmera (B21)"), `lib/actions/camera.test.ts`, `components/VoiceView.test.tsx`,
+  `lib/voice-permissions.test.ts`, `server/livekit.test.ts`, `server/tests/permissions.test.ts` (token e perda ao
+  vivo) e `server/db/camera-permission.test.ts` (migration). À mão: duas janelas na mesma sala, as duas ligam a
+  câmera e se veem.
+- **Pendente:** câmera no painel da chamada privada (B8), câmera em destaque/tela cheia e fundo desfocado.
 
 ## Dispositivos, volume e menu de botão direito (B4)
 

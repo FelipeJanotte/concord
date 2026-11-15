@@ -19,8 +19,9 @@ class FakeRoom {
     identity: 'eu',
     publishTrack: vi.fn(async (_track: unknown, _opts?: unknown) => ({})),
     unpublishTrack: vi.fn(async (_track: unknown) => ({})),
-    permissions: { canPublish: true, canPublishSources: [2, 3] } as { canPublish: boolean; canPublishSources: number[] },
-    setScreenShareEnabled: vi.fn(async (_on: boolean, _opts?: unknown) => undefined)
+    permissions: { canPublish: true, canPublishSources: [1, 2, 3] } as { canPublish: boolean; canPublishSources: number[] },
+    setScreenShareEnabled: vi.fn(async (_on: boolean, _opts?: unknown) => undefined),
+    setCameraEnabled: vi.fn(async (_on: boolean, _capture?: unknown, _publish?: unknown) => undefined)
   }
 
   on(event: string, fn: Listener): this {
@@ -90,7 +91,8 @@ const CREDS: JoinVoiceResult = {
   url: 'ws://livekit.test:7880',
   token: 'jwt-de-teste',
   canSpeak: true,
-  canShare: true
+  canShare: true,
+  canVideo: true
 }
 
 let socket: FakeSocket
@@ -133,7 +135,7 @@ beforeEach(() => {
 
 describe('join', () => {
   it('pede o token ao servidor, conecta no LiveKit e publica o microfone', async () => {
-    expect(await client.join('sala-1')).toEqual({ micError: null, cancelled: false, canSpeak: true, canShare: true })
+    expect(await client.join('sala-1')).toEqual({ micError: null, cancelled: false, canSpeak: true, canShare: true, canVideo: true })
     expect(socket.sent('voice:join')).toEqual([[{ channelId: 'sala-1', muted: false, deafened: false }]])
     const room = lastRoom()
     expect(room.connect).toHaveBeenCalledWith('ws://livekit.test:7880', 'jwt-de-teste', { autoSubscribe: true })
@@ -203,7 +205,7 @@ describe('join', () => {
     await vi.waitFor(() => expect(rooms).toHaveLength(1))
     c.leave()
     finishConnect(new Error('Client initiated disconnect'))
-    await expect(joining).resolves.toEqual({ micError: null, cancelled: true, canSpeak: true, canShare: true })
+    await expect(joining).resolves.toEqual({ micError: null, cancelled: true, canSpeak: true, canShare: true, canVideo: true })
     expect(lastRoom().disconnect).toHaveBeenCalled()
     expect(lastRoom().localParticipant.publishTrack).not.toHaveBeenCalled()
     expect(mic!.stop).toHaveBeenCalled()
@@ -253,7 +255,7 @@ describe('áudio, mute e deafen', () => {
     const audio = new FakeRemoteTrack()
     const video = new FakeRemoteTrack(Track.Kind.Video)
     lastRoom().fire(RoomEvent.TrackSubscribed, audio)
-    lastRoom().fire(RoomEvent.TrackSubscribed, video)
+    lastRoom().fire(RoomEvent.TrackSubscribed, video, {}, { identity: 'ana' })
     expect(audio.attachedElements).toHaveLength(1)
     expect(video.attachedElements).toHaveLength(0)
   })
@@ -497,7 +499,7 @@ describe('dispositivos e volume (B4)', () => {
   it('microfone escolhido que sumiu: entra com o padrão do sistema', async () => {
     const c = deviceClient({ failDevice: 'mic-usb' })
     await c.setInputDevice('mic-usb')
-    expect(await c.join('sala-1')).toEqual({ micError: null, cancelled: false, canSpeak: true, canShare: true })
+    expect(await c.join('sala-1')).toEqual({ micError: null, cancelled: false, canSpeak: true, canShare: true, canVideo: true })
     expect(micDevices).toEqual(['mic-usb', null])
     expect(lastRoom().localParticipant.publishTrack).toHaveBeenCalled()
   })
@@ -678,7 +680,7 @@ describe('supressão de ruído automática (B13)', () => {
   it('se o filtro não liga, entra mesmo assim com a supressão nativa', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const c = noiseClient({ processorFails: true })
-    expect(await c.join('sala-1')).toEqual({ micError: null, cancelled: false, canSpeak: true, canShare: true })
+    expect(await c.join('sala-1')).toEqual({ micError: null, cancelled: false, canSpeak: true, canShare: true, canVideo: true })
     expect(lastRoom().localParticipant.publishTrack).toHaveBeenCalled()
     expect(modes).toContain('light-fallback')
     warn.mockRestore()
@@ -800,7 +802,7 @@ describe('revisão do #9: entrada cancelada e troca de sala que falha', () => {
     await vi.waitFor(() => expect(rooms).toHaveLength(1))
     c.teardown() // o handler de disconnect do socket chama isto
     finishConnect()
-    await expect(joining).resolves.toEqual({ micError: null, cancelled: true, canSpeak: true, canShare: true })
+    await expect(joining).resolves.toEqual({ micError: null, cancelled: true, canSpeak: true, canShare: true, canVideo: true })
     expect(lastRoom().localParticipant.publishTrack).not.toHaveBeenCalled()
     expect(c.inRoom).toBe(false)
   })
@@ -816,16 +818,16 @@ describe('revisão do #9: entrada cancelada e troca de sala que falha', () => {
 
 describe('permissões de voz (v2): speak e share', () => {
   it('sem speak entra só ouvindo: não publica o microfone (o LiveKit recusaria com 403)', async () => {
-    socket.replyTo('voice:join', () => ({ ...CREDS, canSpeak: false, canShare: true }))
+    socket.replyTo('voice:join', () => ({ ...CREDS, canSpeak: false, canShare: true, canVideo: true }))
     const res = await client.join('sala-1')
-    expect(res).toEqual({ micError: null, cancelled: false, canSpeak: false, canShare: true })
+    expect(res).toEqual({ micError: null, cancelled: false, canSpeak: false, canShare: true, canVideo: true })
     expect(mic!.stop).toHaveBeenCalled()
     expect(lastRoom().localParticipant.publishTrack).not.toHaveBeenCalled()
-    expect(client.currentPermissions).toEqual({ canSpeak: false, canShare: true })
+    expect(client.currentPermissions).toEqual({ canSpeak: false, canShare: true, canVideo: true })
   })
 
   it('servidor antigo (sem os campos) = pode tudo', async () => {
-    expect(await client.join('sala-1')).toMatchObject({ canSpeak: true, canShare: true })
+    expect(await client.join('sala-1')).toMatchObject({ canSpeak: true, canShare: true, canVideo: true })
     expect(lastRoom().localParticipant.publishTrack).toHaveBeenCalled()
   })
 
@@ -835,23 +837,23 @@ describe('permissões de voz (v2): speak e share', () => {
     await client.join('sala-1')
     const room = lastRoom()
     const firstMic = mic!
-    room.localParticipant.permissions = { canPublish: true, canPublishSources: [3] }
+    room.localParticipant.permissions = { canPublish: true, canPublishSources: [1, 3] }
     room.fire(RoomEvent.ParticipantPermissionsChanged, {}, room.localParticipant)
-    await vi.waitFor(() => expect(changed).toHaveBeenCalledWith({ canSpeak: false, canShare: true }))
+    await vi.waitFor(() => expect(changed).toHaveBeenCalledWith({ canSpeak: false, canShare: true, canVideo: true }))
     expect(room.localParticipant.unpublishTrack).toHaveBeenCalledWith(firstMic)
     expect(firstMic.stop).toHaveBeenCalled()
   })
 
   it('recuperar speak: abre o microfone de novo (mudo se estava mudo) e publica', async () => {
-    socket.replyTo('voice:join', () => ({ ...CREDS, canSpeak: false, canShare: false }))
+    socket.replyTo('voice:join', () => ({ ...CREDS, canSpeak: false, canShare: false, canVideo: true }))
     const changed = vi.fn()
     client.onPermissionsChange = changed
     client.setMuted(true)
     await client.join('sala-1')
     const room = lastRoom()
-    room.localParticipant.permissions = { canPublish: true, canPublishSources: [2] }
+    room.localParticipant.permissions = { canPublish: true, canPublishSources: [1, 2] }
     room.fire(RoomEvent.ParticipantPermissionsChanged, {}, room.localParticipant)
-    await vi.waitFor(() => expect(changed).toHaveBeenCalledWith({ canSpeak: true, canShare: false }))
+    await vi.waitFor(() => expect(changed).toHaveBeenCalledWith({ canSpeak: true, canShare: false, canVideo: true }))
     expect(room.localParticipant.publishTrack).toHaveBeenCalledWith(mic, { source: Track.Source.Microphone })
     expect(mic!.mute).toHaveBeenCalled()
   })
@@ -861,20 +863,20 @@ describe('permissões de voz (v2): speak e share', () => {
     client.onPermissionsChange = changed
     await client.join('sala-1')
     const room = lastRoom()
-    room.fire(RoomEvent.ParticipantPermissionsChanged, {}, room.localParticipant) // continua [2, 3]: nada muda
+    room.fire(RoomEvent.ParticipantPermissionsChanged, {}, room.localParticipant) // continua [1, 2, 3]: nada muda
     // o evento de outra pessoa não pode mexer nas minhas permissões, mesmo que as locais pareçam diferentes
-    room.localParticipant.permissions = { canPublish: true, canPublishSources: [3] }
+    room.localParticipant.permissions = { canPublish: true, canPublishSources: [1, 3] }
     room.fire(RoomEvent.ParticipantPermissionsChanged, {}, { identity: 'ana' })
     await new Promise((r) => setTimeout(r, 10))
     expect(changed).not.toHaveBeenCalled()
   })
 
   it('sair volta às permissões padrão', async () => {
-    socket.replyTo('voice:join', () => ({ ...CREDS, canSpeak: false, canShare: false }))
+    socket.replyTo('voice:join', () => ({ ...CREDS, canSpeak: false, canShare: false, canVideo: true }))
     await client.join('sala-1')
     client.leave()
     socket.replyTo('voice:join', () => CREDS)
-    expect(await client.join('sala-2')).toMatchObject({ canSpeak: true, canShare: true })
+    expect(await client.join('sala-2')).toMatchObject({ canSpeak: true, canShare: true, canVideo: true })
   })
 })
 
@@ -944,5 +946,85 @@ describe('bug: trocar de sala aparecia "removido" e não entrava', () => {
     await client.join('sala-1')
     lastRoom().fire(RoomEvent.Disconnected, DisconnectReason.PARTICIPANT_REMOVED)
     expect(dropped).toHaveBeenCalledWith('Você foi removido da sala de voz.')
+  })
+})
+
+describe('câmera (B21)', () => {
+  const cameraTrack = (): FakeRemoteTrack => new FakeRemoteTrack(Track.Kind.Video, Track.Source.Camera)
+
+  it('liga a câmera com qualidade limitada (360p, sem simulcast) e desliga', async () => {
+    await client.join('sala-1')
+    await client.setCamera(true)
+    expect(lastRoom().localParticipant.setCameraEnabled).toHaveBeenCalledWith(
+      true,
+      { resolution: { width: 640, height: 360, frameRate: 24 } },
+      expect.objectContaining({ simulcast: false, videoEncoding: expect.objectContaining({ maxBitrate: 350_000 }) })
+    )
+    await client.setCamera(false)
+    expect(lastRoom().localParticipant.setCameraEnabled).toHaveBeenLastCalledWith(false, undefined, undefined)
+  })
+
+  it('usa a câmera escolhida; trocar com ela ligada troca na hora', async () => {
+    await client.setCameraDevice('cam-usb')
+    await client.join('sala-1')
+    await client.setCamera(true)
+    expect(lastRoom().localParticipant.setCameraEnabled).toHaveBeenCalledWith(true, expect.objectContaining({ deviceId: 'cam-usb' }), expect.anything())
+    expect(lastRoom().switchActiveDevice).not.toHaveBeenCalled() // desligada: só guarda
+    lastRoom().fire(RoomEvent.LocalTrackPublished, { source: Track.Source.Camera, track: cameraTrack() }, { identity: 'eu' })
+    await client.setCameraDevice(null)
+    expect(lastRoom().switchActiveDevice).toHaveBeenCalledWith('videoinput', 'default')
+  })
+
+  it('fora da sala ou sem a permissão video não liga', async () => {
+    await expect(client.setCamera(true)).rejects.toThrow('Entre numa sala de voz')
+    await expect(client.setCamera(false)).resolves.toBeUndefined()
+    socket.replyTo('voice:join', () => ({ ...CREDS, canVideo: false }))
+    expect(await client.join('sala-1')).toMatchObject({ canVideo: false })
+    await expect(client.setCamera(true)).rejects.toThrow('permissão')
+    expect(lastRoom().localParticipant.setCameraEnabled).not.toHaveBeenCalled()
+  })
+
+  it('câmeras da sala (a minha inclusa) aparecem em store.cameras e somem ao parar ou sair', async () => {
+    await client.join('sala-1')
+    const ana = cameraTrack()
+    lastRoom().fire(RoomEvent.TrackSubscribed, ana, {}, { identity: 'ana' })
+    const mine = cameraTrack()
+    lastRoom().fire(RoomEvent.LocalTrackPublished, { source: Track.Source.Camera, track: mine }, { identity: 'eu' })
+    expect(useApp.getState().cameras).toEqual(['ana', 'eu'])
+    expect(useApp.getState().screens).toEqual([]) // câmera não é tela
+
+    const el = {} as HTMLVideoElement
+    const detach = client.attachCamera('ana', el)
+    expect(ana.attachedElements).toEqual([el])
+    detach()
+    expect(ana.detachOne).toHaveBeenCalledWith(el)
+    expect(client.attachCamera('ninguém', el)).toBeInstanceOf(Function)
+
+    lastRoom().fire(RoomEvent.TrackUnsubscribed, ana, {}, { identity: 'ana' })
+    expect(useApp.getState().cameras).toEqual(['eu'])
+    client.leave()
+    expect(useApp.getState().cameras).toEqual([])
+  })
+
+  it('a própria câmera parar sem o botão (perdeu video) avisa o app', async () => {
+    const ended = vi.fn()
+    client.onCameraEnded = ended
+    await client.join('sala-1')
+    const mine = cameraTrack()
+    lastRoom().fire(RoomEvent.LocalTrackPublished, { source: Track.Source.Camera, track: mine }, { identity: 'eu' })
+    lastRoom().fire(RoomEvent.LocalTrackUnpublished, { source: Track.Source.Camera, track: mine }, { identity: 'eu' })
+    expect(ended).toHaveBeenCalledOnce()
+    expect(useApp.getState().cameras).toEqual([])
+  })
+
+  it('perder video na sala avisa as permissões novas', async () => {
+    const changed = vi.fn()
+    client.onPermissionsChange = changed
+    await client.join('sala-1')
+    const room = lastRoom()
+    room.localParticipant.permissions = { canPublish: true, canPublishSources: [2, 3] }
+    room.fire(RoomEvent.ParticipantPermissionsChanged, {}, room.localParticipant)
+    await new Promise((r) => setTimeout(r, 10))
+    expect(changed).toHaveBeenCalledWith({ canSpeak: true, canShare: true, canVideo: false })
   })
 })

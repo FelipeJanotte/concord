@@ -26,10 +26,11 @@ export interface LiveKitConfig {
 const TOKEN_TTL = '60s'
 
 /** O que a pessoa pode publicar na sala (v2): microfone com `speak`, tela com `share`. */
-export function publishSources({ canSpeak, canShare }: VoicePermissions): TrackSource[] {
+export function publishSources({ canSpeak, canShare, canVideo }: VoicePermissions): TrackSource[] {
   return [
     ...(canSpeak ? [TrackSource.MICROPHONE] : []),
-    ...(canShare ? [TrackSource.SCREEN_SHARE, TrackSource.SCREEN_SHARE_AUDIO] : [])
+    ...(canShare ? [TrackSource.SCREEN_SHARE, TrackSource.SCREEN_SHARE_AUDIO] : []),
+    ...(canVideo ? [TrackSource.CAMERA] : [])
   ]
 }
 
@@ -72,7 +73,7 @@ export async function createVoiceCredentials(
     roomList: false,
     roomAdmin: false,
     canSubscribe: true,
-    // Microfone se pode falar, tela se pode compartilhar (v2). Câmera fica de fora até existir na interface.
+    // Microfone se pode falar, tela se pode compartilhar (v2), câmera com `video` (B21).
     canPublish: sources.length > 0,
     canPublishSources: sources,
     canPublishData: false,
@@ -112,7 +113,7 @@ export async function kickFromRoom(config: LiveKitConfig, channelId: string, ide
 
 /**
  * Muda ao vivo o que uma conexão pode publicar (cargo/regra mudou com ela na sala).
- * Perder `speak` corta o microfone na hora; perder `share` corta a tela.
+ * Perder `speak` corta o microfone na hora; perder `share` corta a tela; perder `video`, a câmera.
  */
 export async function updateVoicePermissions(
   config: LiveKitConfig,

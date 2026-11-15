@@ -67,7 +67,7 @@ describe('voice:join', () => {
     const ch = await voiceChannel(a)
     const res = credentials(await join(a, ch.id))
     // v2: também diz se pode falar e compartilhar (o @todos padrão pode as duas coisas)
-    expect(res).toEqual({ ok: true, url: LIVEKIT_URL, token: expect.any(String), canSpeak: true, canShare: true })
+    expect(res).toEqual({ ok: true, url: LIVEKIT_URL, token: expect.any(String), canSpeak: true, canShare: true, canVideo: true })
 
     // Assinado com o segredo configurado (verify lança se não for).
     const claims = await verifier.verify(res.token)
@@ -80,7 +80,7 @@ describe('voice:join', () => {
       canPublish: true,
       canSubscribe: true,
       canPublishData: false,
-      canPublishSources: ['microphone', 'screen_share', 'screen_share_audio']
+      canPublishSources: ['microphone', 'screen_share', 'screen_share_audio', 'camera']
     })
     expect(claims.video?.roomAdmin).toBeFalsy()
     expect(claims.video?.roomCreate).toBeFalsy()
