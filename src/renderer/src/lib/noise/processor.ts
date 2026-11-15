@@ -2,7 +2,7 @@
  * Supressão de ruído automática (B13) como processador de faixa do `livekit-client`
  * (`LocalAudioTrack.setProcessor`). Roda no app de quem fala: quem ouve recebe o áudio já limpo.
  *
- *   microfone ─┬─► seco (gain) ───────────────┬─► MediaStreamDestination ─► faixa publicada
+ *   microfone ─┬─► seco (gain) ───────────────┬─► volume (gain) ─► MediaStreamDestination ─► faixa publicada
  *              ├─► RNNoise ─► molhado (gain) ─┘
  *              └─► analisador (mede o ruído de fundo)
  *
@@ -10,10 +10,12 @@
  * crossfade entre seco e molhado (sem estalo, sem republicar a faixa). Com o avançado ligado,
  * a supressão nativa do WebRTC é desligada para não processar duas vezes (som "abafado").
  * Se o motor não carrega, dá erro no AudioWorklet ou o PC é fraco, fica no filtro nativo.
+ * O "volume" é o volume do microfone das Configurações de voz (`setGain`, 0 a 200%).
  */
 import { Track, type AudioProcessorOptions, type TrackProcessor } from 'livekit-client'
 import { NoiseDecider, rmsToDb, type DeciderOptions } from './decide'
 import type { NoiseEngineLoader, NoiseEngineNode } from './engine'
+import { clampMicGain, type GainControl } from '../mic-gain'
 
 /** O que aparece em Configurações de voz. */
 export type NoiseMode = 'light' | 'advanced' | 'light-fallback'
@@ -32,7 +34,7 @@ const TICK_MS = 250
 const FADE_S = 0.15
 export const MIN_CORES = 3
 
-export class AutoNoiseProcessor implements TrackProcessor<Track.Kind.Audio, AudioProcessorOptions> {
+export class AutoNoiseProcessor implements TrackProcessor<Track.Kind.Audio, AudioProcessorOptions>, GainControl {
   readonly name = 'concord-auto-noise'
   processedTrack?: MediaStreamTrack
 
@@ -40,6 +42,7 @@ export class AutoNoiseProcessor implements TrackProcessor<Track.Kind.Audio, Audi
   private source: MediaStreamAudioSourceNode | null = null
   private dry: GainNode | null = null
   private wet: GainNode | null = null
+  private volume: GainNode | null = null
   private analyser: AnalyserNode | null = null
   private engine: NoiseEngineNode | null = null
   private timer: unknown = null
@@ -50,8 +53,15 @@ export class AutoNoiseProcessor implements TrackProcessor<Track.Kind.Audio, Audi
 
   constructor(
     private readonly deps: NoiseProcessorDeps,
-    private readonly onMode: (mode: NoiseMode) => void = () => {}
+    private readonly onMode: (mode: NoiseMode) => void = () => {},
+    private gain = 1
   ) {}
+
+  /** Volume do microfone (0 a 2), na hora. */
+  setGain(gain: number): void {
+    this.gain = clampMicGain(gain)
+    if (this.ctx && this.volume) this.volume.gain.setTargetAtTime(this.gain, this.ctx.currentTime, 0.02)
+  }
 
   async init({ track, audioContext }: AudioProcessorOptions): Promise<void> {
     const ctx = audioContext
@@ -63,20 +73,23 @@ export class AutoNoiseProcessor implements TrackProcessor<Track.Kind.Audio, Audi
     const out = ctx.createMediaStreamDestination()
     const dry = ctx.createGain()
     const wet = ctx.createGain()
+    const volume = ctx.createGain()
+    volume.gain.value = this.gain
+    volume.connect(out)
     const analyser = ctx.createAnalyser()
     analyser.fftSize = 2048
     this.buffer = new Float32Array(analyser.fftSize)
     dry.gain.value = 1
     wet.gain.value = 0
-    source.connect(dry).connect(out)
+    source.connect(dry).connect(volume)
     source.connect(analyser)
-    Object.assign(this, { source, dry, wet, analyser })
+    Object.assign(this, { source, dry, wet, volume, analyser })
 
     if (this.deps.cores() >= MIN_CORES) {
       try {
         const engine = await this.deps.loadEngine(ctx)
         this.engine = engine
-        source.connect(engine.node).connect(wet).connect(out)
+        source.connect(engine.node).connect(wet).connect(volume)
         // Erro dentro do AudioWorklet (ex.: o WASM quebrou): para de usar o avançado.
         ;(engine.node as AudioWorkletNode).onprocessorerror = () => this.fallback('erro no processador de áudio')
       } catch (err) {
@@ -99,8 +112,8 @@ export class AutoNoiseProcessor implements TrackProcessor<Track.Kind.Audio, Audi
     this.timer = null
     this.engine?.destroy()
     this.engine = null
-    for (const node of [this.source, this.dry, this.wet, this.analyser]) node?.disconnect()
-    this.source = this.dry = this.wet = this.analyser = null
+    for (const node of [this.source, this.dry, this.wet, this.volume, this.analyser]) node?.disconnect()
+    this.source = this.dry = this.wet = this.volume = this.analyser = null
     this.processedTrack = undefined
     void this.setNativeSuppression(true) // devolve a faixa como veio
   }

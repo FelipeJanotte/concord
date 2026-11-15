@@ -1,6 +1,6 @@
 ---
 name: concord-voice
-description: Como funcionam os canais de voz do Concord — LiveKit (SFU) com token emitido pelo servidor, livekit-client no app, estado das salas via Socket.IO, mute/deafen, quem está falando, câmera (B21, CameraTile, permissão video), compartilhar a tela, escolha de microfone/saída e volume por pessoa, pressione para falar (push-to-talk, B20: src/main/push-to-talk.ts, uiohook-napi, lib/actions/push-to-talk.ts, IPC ptt-*), limites e depuração. Use ao mexer em server/livekit.ts, server/modules/voice.ts, src/renderer/src/lib/voice.ts, nos eventos voice:* ou ao investigar áudio que não chega, token recusado, eco ou falha de conexão.
+description: Como funcionam os canais de voz do Concord — LiveKit (SFU) com token emitido pelo servidor, livekit-client no app, estado das salas via Socket.IO, mute/deafen, quem está falando, câmera (B21, CameraTile, permissão video), compartilhar a tela, escolha de microfone/saída, volume do microfone (0–200%) e de saída (0–100%) (lib/mic-gain.ts, setMicGain/setOutputVolume), volume por pessoa, pressione para falar (push-to-talk, B20: src/main/push-to-talk.ts, uiohook-napi, lib/actions/push-to-talk.ts, IPC ptt-*), limites e depuração. Use ao mexer em server/livekit.ts, server/modules/voice.ts, src/renderer/src/lib/voice.ts, nos eventos voice:* ou ao investigar áudio que não chega, token recusado, eco ou falha de conexão.
 ---
 
 # Voz
@@ -245,7 +245,7 @@ compartilhada continua em destaque e as câmeras vão para a faixa de miniaturas
 - **Silenciar alguém:** também por conta. O volume aplicado vira 0, mas o valor ajustado continua em `userVolumes`;
   ao tirar o silêncio, volta ao que era. Mexer no volume enquanto silenciado só guarda o valor. Não afeta os outros:
   é só no meu app (para silenciar para todos, B6 "silenciar pelo servidor").
-- **Preferências desta máquina:** `localStorage` `concord:audio` = `{ input, output, volumes, muted }`, lido ao carregar o
+- **Preferências desta máquina:** `localStorage` `concord:audio` = `{ input, output, camera, volumes, muted, sounds, noise, micGain, outputVolume }`, lido ao carregar o
   app (`loadAudioPreferences`) e de novo depois do `disconnect()` (sair da conta não apaga). Dados inválidos ou
   armazenamento bloqueado: volta aos padrões sem quebrar.
 - **Lista:** `Room.getLocalDevices(kind, false)` (não pede permissão só para listar). Os apelidos do Windows
@@ -258,6 +258,36 @@ compartilhada continua em destaque e as câmeras vão para a faixa de miniaturas
   lateral, só "Ver perfil" em si mesmo, volume, silenciar mantendo o volume e o menu aberto, cartão de perfil).
   À mão: trocar de fone no meio da conversa e conferir que o outro continua ouvindo; botão direito numa pessoa,
   baixar o volume, silenciar, tirar o silêncio (volta ao volume ajustado) e reiniciar o app (tudo continua).
+
+## Volume do microfone e volume de saída
+
+Dois controles em Configurações de voz (`VolumeSettings` em `DeviceSettings.tsx`), cada um com "Voltar para 100%".
+**Só cliente:** nenhum evento novo; salvos em `concord:audio` como `micGain` e `outputVolume`.
+
+| Peça | Papel |
+|---|---|
+| `lib/mic-gain.ts` | `clampMicGain` (0 a `MIC_GAIN_MAX` = 2), `clampOutputVolume` (0 a 1; inválido volta a 1), interface `GainControl` e `MicGainProcessor` (processador do `livekit-client`: microfone → `GainNode` → faixa publicada). |
+| `lib/noise/processor.ts` | O `AutoNoiseProcessor` ganhou um `GainNode` "volume" entre seco/molhado e a saída, e `setGain`. |
+| `lib/voice.ts` | `setMicGain(0–2)` e `setOutputVolume(0–1)`; `attachProcessor` escolhe o processador antes de publicar; `gainControl` é quem aplica o volume agora. |
+| `lib/actions/devices.ts` + `store/devices.ts` | `micGain`/`outputVolume` (padrão 1), `setMicGain`, `setOutputVolume`, carregados em `loadAudioPreferences`. |
+
+- **Microfone (0–200%):** com a supressão de ruído ligada, o volume vai no próprio processador de ruído (não há dois
+  processadores: o `livekit-client` aceita só um por faixa). Com ela desligada e em 100%, o microfone vai **cru, sem
+  processador** (como antes); ao sair de 100% dentro da sala entra o `MicGainProcessor` e fica até sair da sala.
+  Desligar a supressão dentro da sala troca o de ruído pelo de volume (se o volume não está em 100%). Fora da sala só
+  guarda o valor. A mudança é suave (`setTargetAtTime`), sem estalo. Quem escuta recebe o áudio já com o volume.
+  O `autoGainControl` do WebRTC continua ligado: ele age antes, este volume multiplica depois.
+- **Saída (0–100%):** multiplica o volume de cada pessoa (`applyVolume` = pessoa × saída) e vale também para o áudio
+  das telas, os efeitos sonoros (`sounds.ts`) e os sons de entrar/sair (`voice-sounds.ts`, inclusive o "Testar").
+  Não passa de 100% pelo mesmo motivo do volume por pessoa (`webAudioMix` quebraria o deafen). O toque de chamada
+  (`Ringer`) não é afetado, para não perder uma ligação com o volume baixo.
+- **Testes:** `lib/mic-gain.test.ts` (limites, ligação dos nós, `setGain`, `destroy`), `lib/noise/noise.test.ts` (nó de
+  volume no processador de ruído), `lib/voice.test.ts` (bloco "volume do microfone e de saída": com/sem supressão,
+  antes de publicar, troca ao desligar a supressão, limites, pessoa × saída, áudio da tela),
+  `lib/actions/devices.test.ts` (salvar, reabrir, dados ruins, erro), `components/voice/DeviceSettings.test.tsx`
+  (controles, "Voltar para 100%", "Testar" com o volume de saída), `sounds.test.ts` e `voice-sounds.test.ts`.
+  À mão: numa sala com outra janela, subir o microfone para 200% e baixar para 0% (o outro ouve mudar na hora, com e
+  sem a supressão de ruído); baixar a saída e conferir voz, tela e efeitos sonoros.
 
 ## Sons de entrar e sair da sala (B16)
 
@@ -398,6 +428,9 @@ frente, segurar a tecla e conferir na outra janela que ela ouve e vê o "falando
    "Silenciar" (ficam salvos por conta, neste computador; o ícone de alto-falante cortado indica silenciado por você).
 9. Não toca o som de entrar/sair: confira em Configurações de voz se o interruptor está ligado, o volume acima de 0 e
    se você não está em deafen; o botão "Testar" toca mesmo com o interruptor desligado.
-10. Supressão de ruído "indisponível neste computador": veja no console o log `[ruído]` (WASM bloqueado pela CSP,
+10. Outros me ouvem baixo/alto demais: confira o "Volume do microfone" em Configurações de voz (100% = como o
+    sistema entrega). Ouço todo mundo baixo: "Volume de saída" (multiplica o volume de cada pessoa). Log
+    `[voz] não foi possível ajustar o volume do microfone` = o processador não entrou (o áudio segue a 100%).
+11. Supressão de ruído "indisponível neste computador": veja no console o log `[ruído]` (WASM bloqueado pela CSP,
     AudioWorklet sem suporte, menos de 3 núcleos). A voz continua com a supressão nativa. Som "abafado" ou robótico:
     desligue o interruptor para comparar com o microfone cru.

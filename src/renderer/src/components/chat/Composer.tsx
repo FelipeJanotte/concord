@@ -73,8 +73,18 @@ export function Composer({ channel }: { channel: Channel }) {
     chosen.current[item.label] = item.id === MENTION_EVERYONE ? EVERYONE_TOKEN : mentionToken(item.id)
     setValue(text)
     setMention(null)
-    requestAnimationFrame(() => el.setSelectionRange(caret, caret))
+    // o cursor vai para depois da menção assim que o texto novo estiver no campo (useLayoutEffect
+    // abaixo). Com requestAnimationFrame, o que se digitasse antes do próximo quadro saía fora de ordem.
+    pendingCaret.current = caret
   }
+
+  const pendingCaret = useRef<number | null>(null)
+  useLayoutEffect(() => {
+    const caret = pendingCaret.current
+    if (caret === null) return
+    pendingCaret.current = null
+    ref.current?.setSelectionRange(caret, caret)
+  }, [value])
 
   // clicou em "Responder": o campo ganha o foco para já escrever
   useEffect(() => {
