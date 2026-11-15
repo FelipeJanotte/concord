@@ -1,37 +1,18 @@
-// Grade da sala de voz: participantes (com a câmera no quadro, B21) e as telas compartilhadas. Com
-// alguém compartilhando, uma tela fica em destaque (`ScreenStage`: barra "Assistindo", seletor das
-// telas ao vivo, tela cheia, esconder/mostrar membros) e a fileira de membros centralizada embaixo; "Ver grade" mostra todas lado a lado, e clicar numa tela (ou no "Ao vivo"
-// de uma pessoa) volta a assistir aquela em destaque.
 import { useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { HeadphoneOff, MicOff, VolumeX } from 'lucide-react'
 import type { VoiceState } from '@shared/types'
 import { UserAvatar } from '@/components/UserAvatar'
+import { featuredScreens, moveScreen, toggleFeatured } from '@/lib/featured-screens'
 import { bestTileLayout, useElementSize } from '@/lib/tile-layout'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
 import { CameraVideo } from './CameraTile'
 import { MemberContextMenu } from './MemberContextMenu'
 import { ServerMutedIcon } from './ModerationMenu'
-import { LiveBadge, ScreenStage, ScreenTile } from './ScreenTile'
+import { LiveBadge, ScreenStage, ScreenTile, type ScreenArrangement } from './ScreenTile'
 
-/**
- * Qual tela fica em destaque: a escolhida (se ainda está ao vivo); senão a primeira de outra pessoa
- * (a própria só se for a única). `null` = sem telas ou a pessoa pediu a grade.
- */
-export function featuredScreen(screens: string[], selfId: string | undefined, chosen: string | null, grid: boolean): string | null {
-  if (grid || screens.length === 0) return null
-  if (chosen && screens.includes(chosen)) return chosen
-  return screens.find((id) => id !== selfId) ?? screens[0]
-}
-
-/** Sem altura definida (painel da chamada privada), os quadros não passam disso. */
 const MAX_TILE_WITHOUT_HEIGHT = 320
 
-/**
- * Quadros centralizados (na horizontal e na vertical) com o tamanho calculado pelo espaço disponível
- * (`bestTileLayout`): poucas pessoas = quadros grandes; muitas = menores, e a última linha fica no meio.
- * `fill` = a grade ocupa a altura do pai (sala de voz); sem isso, só a largura conta.
- */
 function TileGrid({ count, fill, children }: { count: number; fill: boolean; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null)
   const { width, height } = useElementSize(ref)
@@ -43,7 +24,6 @@ function TileGrid({ count, fill, children }: { count: number; fill: boolean; chi
       data-columns={layout?.columns}
       style={layout ? ({ '--tile-w': `${layout.width}px` } as CSSProperties) : undefined}
       className={cn(
-        // "safe center": com mais quadros do que cabem, começa do topo (rola) em vez de cortar em cima
         'flex flex-wrap justify-center gap-4 [align-content:safe_center] [&>*]:w-[var(--tile-w,240px)] [&>*]:max-w-full',
         fill && 'h-full min-h-0'
       )}
@@ -56,20 +36,21 @@ function TileGrid({ count, fill, children }: { count: number; fill: boolean; chi
 export function VoiceGrid({ members, fill = true }: { members: VoiceState[]; fill?: boolean }) {
   const screens = useApp((s) => s.screens)
   const selfId = useApp((s) => s.self?.id)
-  const [chosen, setChosen] = useState<string | null>(null)
+  const [chosen, setChosen] = useState<string[]>([])
   const [grid, setGrid] = useState(false)
   const [membersHidden, setMembersHidden] = useState(false)
+  const [arrangement, setArrangement] = useState<ScreenArrangement>('side-by-side')
+
+  const featured = featuredScreens(screens, selfId, chosen, grid)
 
   const watch = (id: string): void => {
-    setChosen(id)
+    setChosen([id])
     setGrid(false)
   }
-  /** quem compartilha e está com a tela chegando: o "Ao vivo" do quadro dela vira "Assistir" */
-  const watchable = (userId: string): (() => void) | undefined => (screens.includes(userId) ? () => watch(userId) : undefined)
+  const watchable = (userId: string): (() => void) | undefined =>
+    screens.includes(userId) && !featured.includes(userId) ? () => watch(userId) : undefined
 
-  const featured = featuredScreen(screens, selfId, chosen, grid)
-
-  if (!featured) {
+  if (featured.length === 0) {
     return (
       <TileGrid count={screens.length + members.length} fill={fill}>
         {screens.map((id) => (
@@ -82,21 +63,22 @@ export function VoiceGrid({ members, fill = true }: { members: VoiceState[]; fil
     )
   }
 
-  const others = screens.filter((id) => id !== featured)
+  const others = screens.filter((id) => !featured.includes(id))
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
       <ScreenStage
-        userId={featured}
+        featured={featured}
         screens={screens}
-        onSelect={watch}
+        onToggle={(id) => setChosen(toggleFeatured(featured, id))}
+        onMove={(dragged, target) => setChosen(moveScreen(featured, dragged, target))}
+        arrangement={arrangement}
+        onToggleArrangement={() => setArrangement((a) => (a === 'side-by-side' ? 'stacked' : 'side-by-side'))}
         onShowGrid={() => setGrid(true)}
         membersHidden={membersHidden}
         onToggleMembers={() => setMembersHidden((h) => !h)}
       />
       {!membersHidden && (
-        // centralizada: margens automáticas no primeiro e no último (em vez de justify-center), para não cortar o
-        // começo da fileira quando ela rola de lado
         <div
           role="group"
           aria-label="Membros da chamada"
@@ -106,7 +88,7 @@ export function VoiceGrid({ members, fill = true }: { members: VoiceState[]; fil
             <ScreenTile key={`tela-${id}`} userId={id} onSelect={() => watch(id)} />
           ))}
           {members.map((m) => (
-            <ParticipantTile key={m.userId} state={m} compact onWatch={m.userId === featured ? undefined : watchable(m.userId)} />
+            <ParticipantTile key={m.userId} state={m} compact onWatch={watchable(m.userId)} />
           ))}
         </div>
       )}
