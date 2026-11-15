@@ -31,7 +31,7 @@ async function account(createdAt = Date.now()) {
     id: randomUUID(),
     email: `perm${n}-${randomUUID().slice(0, 6)}@teste.com`,
     name: `Pessoa ${n}`,
-    tag: `p${randomUUID().slice(0, 4)}`,
+    tag: `p${randomUUID().slice(0, 8)}`,
     tagLocked: true,
     color: '#5865f2',
     passwordHash: null,

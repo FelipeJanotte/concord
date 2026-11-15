@@ -59,8 +59,61 @@ export interface TeamsResult {
   lanes: boolean
 }
 
+// ---------- Dado, moeda e sortear 1 nome ----------
+
+export const DICE_MIN_SIDES = 2
+export const DICE_MAX_SIDES = 100
+export const DICE_MAX_COUNT = 10
+export const COIN_MAX_COUNT = 10
+export const PICK_MIN_OPTIONS = 2
+export const PICK_MAX_OPTIONS = 50
+export const PICK_OPTION_MAX = 100
+
+export interface DiceRequest {
+  channelId: string
+  /** lados de cada dado (2–100; 6 = dado comum, 20 = d20) */
+  sides: number
+  /** quantos dados (1–10) */
+  count: number
+}
+
+export interface DiceResult {
+  sides: number
+  /** um valor por dado, de 1 a `sides`, na ordem em que saíram */
+  rolls: number[]
+  total: number
+}
+
+export type CoinSide = 'cara' | 'coroa'
+
+export interface CoinRequest {
+  channelId: string
+  /** quantas moedas (1–10) */
+  count: number
+}
+
+export interface CoinResult {
+  flips: CoinSide[]
+}
+
+export interface PickRequest {
+  channelId: string
+  /** nomes ou opções (2–50, cada uma com 1–100 caracteres, sem repetir) */
+  options: string[]
+}
+
+export interface PickResult {
+  /** as opções como foram sorteadas (limpas) */
+  options: string[]
+  picked: string
+}
+
 /** O que vai na mensagem `kind: 'tool'`. Ferramenta nova = um tipo novo nesta união. */
-export type ToolPayload = { tool: 'teams'; result: TeamsResult }
+export type ToolPayload =
+  | { tool: 'teams'; result: TeamsResult }
+  | { tool: 'dice'; result: DiceResult }
+  | { tool: 'coin'; result: CoinResult }
+  | { tool: 'pick'; result: PickResult }
 export type ToolName = ToolPayload['tool']
 
 export type ToolResult = { ok: true; message: Message } | { ok: false; error: string }
@@ -70,6 +123,12 @@ export type ToolResult = { ok: true; message: Message } | { ok: false; error: st
 export interface ToolsClientEvents {
   /** sorteia os times e posta o resultado no canal (`message:new` para quem vê o canal) */
   'tools:teams': (req: TeamsRequest, ack: (res: ToolResult) => void) => void
+  /** rola `count` dados de `sides` lados */
+  'tools:dice': (req: DiceRequest, ack: (res: ToolResult) => void) => void
+  /** joga `count` moedas */
+  'tools:coin': (req: CoinRequest, ack: (res: ToolResult) => void) => void
+  /** sorteia 1 entre as opções */
+  'tools:pick': (req: PickRequest, ack: (res: ToolResult) => void) => void
 }
 
 // ---------- Funções puras ----------
@@ -86,4 +145,42 @@ export function teamsResultText(result: TeamsResult): string {
   )
   const text = ['Times sorteados', ...lines].join('\n')
   return text.length <= MESSAGE_MAX_LENGTH ? text : text.slice(0, MESSAGE_MAX_LENGTH - 1) + '…'
+}
+
+const fitMessage = (text: string): string => (text.length <= MESSAGE_MAX_LENGTH ? text : text.slice(0, MESSAGE_MAX_LENGTH - 1) + '…')
+
+/** "🎲 2d6: 3 + 5 = 8" (um dado só: "🎲 d20: 17") */
+export function diceResultText(result: DiceResult): string {
+  const label = `${result.rolls.length > 1 ? result.rolls.length : ''}d${result.sides}`
+  const detail = result.rolls.length > 1 ? `${result.rolls.join(' + ')} = ${result.total}` : String(result.total)
+  return `🎲 ${label}: ${detail}`
+}
+
+/** "🪙 Cara" ou "🪙 Cara, coroa, cara (2 caras, 1 coroa)" */
+export function coinResultText(result: CoinResult): string {
+  const names = result.flips.map((f, i) => (i === 0 ? f[0].toUpperCase() + f.slice(1) : f)).join(', ')
+  if (result.flips.length === 1) return `🪙 ${names}`
+  const heads = result.flips.filter((f) => f === 'cara').length
+  const tails = result.flips.length - heads
+  const count = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`
+  return `🪙 ${names} (${count(heads, 'cara')}, ${count(tails, 'coroa')})`
+}
+
+/** "🎯 Sorteado: Ana (entre 4 opções)" */
+export function pickResultText(result: PickResult): string {
+  return fitMessage(`🎯 Sorteado: ${result.picked} (entre ${result.options.length} opções)`)
+}
+
+/** O texto por extenso de qualquer ferramenta (vai no `content` da mensagem). */
+export function toolResultText(payload: ToolPayload): string {
+  switch (payload.tool) {
+    case 'teams':
+      return teamsResultText(payload.result)
+    case 'dice':
+      return diceResultText(payload.result)
+    case 'coin':
+      return coinResultText(payload.result)
+    case 'pick':
+      return pickResultText(payload.result)
+  }
 }

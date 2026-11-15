@@ -67,6 +67,14 @@ describe('limites por conta', () => {
     for (let i = 0; i < 5; i++) expect((await b.socket.emitWithAck('tools:teams', req)).ok).toBe(true)
     const res = await b.socket.emitWithAck('tools:teams', req)
     expect(!res.ok && res.error).toMatch(/^Muitos sorteios seguidos\. Tente de novo em \d+ s\.$/)
+    // o limite é um só para todas as ferramentas
+    const dice = await b.socket.emitWithAck('tools:dice', { channelId: geral.id, sides: 6, count: 1 })
+    expect(!dice.ok && dice.error).toMatch(/^Muitos sorteios seguidos/)
+    // pedido inválido responde o erro de validação (não chega a contar como sorteio)
+    expect(await b.socket.emitWithAck('tools:dice', { channelId: geral.id, sides: 1, count: 1 })).toEqual({
+      ok: false,
+      error: 'O dado precisa ter de 2 a 100 lados'
+    })
   })
 
   it('perfil: 10 alterações seguidas; a 11ª é recusada', async () => {
