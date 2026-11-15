@@ -241,7 +241,7 @@ compartilhada continua em destaque e as câmeras vão para a faixa de miniaturas
 - **Tela:** botão "Ligar a câmera"/"Desligar a câmera" no `VoiceView` e no "Voz conectada" (some sem `video`);
   ícone mostra o estado atual, como microfone/áudio: desligada `VideoOff` (riscada), ligada `Video`
   (teste em `components/camera-icon.test.tsx`). Os `ControlButton` (56px, redondos) têm `shrink-0` e a
-  fileira dos controles tem `flex-wrap`: com o chat da sala aberto (painel de 360 px) ou em janela estreita eles
+  fileira dos controles tem `flex-wrap`: com o chat da sala aberto (painel de 360 px por padrão, redimensionável: `docs/areas/home.md`) ou em janela estreita eles
   quebram linha em vez de virar ovais achatados (mesmo teste; o `CallPanel` usa a mesma regra); `CameraVideo` em
   `components/voice/CameraTile.tsx`, usado pelo `ParticipantTile`; a própria câmera aparece espelhada.
 - **Testes:** `lib/voice.test.ts` (blocos "câmera (B21)" e "câmera desligada e religada (B21)"), `lib/actions/camera.test.ts`, `components/VoiceView.test.tsx`,

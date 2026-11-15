@@ -9,11 +9,13 @@ import { FriendsView } from '@/components/friends/FriendsView'
 import { HomeSidebar } from '@/components/home/HomeSidebar'
 import { LoginScreen } from '@/components/LoginScreen'
 import { MemberList } from '@/components/MemberList'
+import { ResizableSide } from '@/components/ResizableSide'
 import { UtilityRail } from '@/components/rail/UtilityRail'
 import { Toast } from '@/components/Toast'
 import { ToolView } from '@/components/tools/ToolView'
 import { UpdateBanner } from '@/components/UpdateBanner'
 import { VoiceView } from '@/components/VoiceView'
+import { SIDE_PANELS } from '@/lib/side-width'
 import { useApp } from '@/store'
 
 export default function App() {
@@ -49,8 +51,9 @@ function MainLayout() {
       )}
       <div className="flex min-h-0 flex-1 overflow-hidden select-none">
         <UtilityRail />
-        {/* ferramenta aberta: a barra de canais continua como contexto (canal/sala atual) */}
-        {section === 'home' ? <HomeSidebar /> : <ChannelSidebar />}
+        <ResizableSide panel={SIDE_PANELS.navigation} edge="right" label="Redimensionar a barra lateral">
+          {section === 'home' ? <HomeSidebar /> : <ChannelSidebar />}
+        </ResizableSide>
         <main className="flex min-w-0 flex-1 flex-col bg-background">
           {section === 'tool' ? (
             <ToolView />
@@ -68,7 +71,11 @@ function MainLayout() {
             <EmptyState />
           )}
         </main>
-        {section === 'community' && <MemberList />}
+        {section === 'community' && (
+          <ResizableSide panel={SIDE_PANELS.members} edge="left" label="Redimensionar a lista de membros" className="hidden lg:flex">
+            <MemberList />
+          </ResizableSide>
+        )}
       </div>
     </div>
   )
