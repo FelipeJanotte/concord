@@ -1,6 +1,6 @@
 ---
 name: concord-sounds
-description: Como funcionam os efeitos sonoros da comunidade (soundboard, A10 servidor / B17 tela) — envio por POST /sounds (até 512 KB e 5 s, tipo pelos bytes, duração com music-metadata), coleção com links assinados, sound:play só para a sala de voz, regra de não tocar por cima, apagar pelo autor ou manageMessages. Use ao mexer em server/modules/sounds.ts, server/repo/sounds.ts, server/db/schema/sounds.ts, server/storage/audio.ts, src/shared/types/sounds.ts, na tela do soundboard (B17: components/voice/Soundboard.tsx, SoundUploadForm.tsx, lib/actions/sounds.ts, store/sounds.ts, botão no VoiceView), ou ao investigar som recusado, som que não toca para alguém ou "Espere o som anterior terminar".
+description: Como funcionam os efeitos sonoros da comunidade (soundboard, A10 servidor / B17 tela) — envio por POST /sounds (até 512 KB e 5 s, tipo pelos bytes, duração com music-metadata), coleção com links assinados, sound:play só para a sala de voz, regra de não tocar por cima, apagar pelo autor ou manageMessages. Use ao mexer em server/modules/sounds.ts, server/repo/sounds.ts, server/db/schema/sounds.ts, server/storage/audio.ts, src/shared/types/sounds.ts, na tela do soundboard (B17: components/voice/Soundboard.tsx, SoundUploadForm.tsx, EmojiPicker.tsx, lib/actions/sounds.ts, store/sounds.ts, botão no VoiceView), ou ao investigar som recusado, som que não toca para alguém ou "Espere o som anterior terminar".
 ---
 
 # Efeitos sonoros (soundboard)
@@ -60,7 +60,8 @@ janela com a grade da coleção; clicar num som toca para todos na sala.
 | `src/renderer/src/store/sounds.ts` | `sounds` (ordem de nome), `soundsLoaded`, `soundsPlaying` (conta → `{ soundId, by, until }`, o indicador) e `soundboardOpen`. |
 | `src/renderer/src/lib/actions/sounds.ts` | `bindSoundsEvents` (`sound:created/deleted/played`), `loadSounds` (depois do `hello` e ao abrir a janela), `openSoundboard`/`closeSoundboard`, `playSound`, `deleteSound`, `uploadSound`, `checkSoundFile`, `soundNameFromFile`. O HTTP (`soundTransport.send`: `fetch` no `POST /sounds`; `soundTransport.duration`: duração lida por um `Audio`) e o áudio (`soundOutput.play`) são substituídos nos testes. |
 | `src/renderer/src/components/voice/Soundboard.tsx` | `Soundboard` (janela: grade, bloqueios, erro, lixeira com confirmação) e `SoundsPlayingBar` ("📯 Ana tocou Buzina" acima dos controles). |
-| `src/renderer/src/components/voice/SoundUploadForm.tsx` | Enviar: arquivo (confere 512 KB e 5 s na hora), prévia (`<audio controls>`), nome sugerido pelo arquivo e emoji. |
+| `src/renderer/src/components/voice/SoundUploadForm.tsx` | Enviar: arquivo (confere 512 KB e 5 s na hora), prévia (`<audio controls>`), nome sugerido pelo arquivo e o emoji escolhido no `EmojiPicker` (aparece ao lado do nome). |
+| `src/renderer/src/components/voice/EmojiPicker.tsx` | Grade de emojis por categoria (`EMOJI_GROUPS`: Sons, Rostos, Gestos, Bichos, Coisas). Clicar escolhe, clicar no escolhido tira (sem emoji). Lista fixa, sem biblioteca; todos passam no `cleanSoundEmoji` (teste garante). Para acrescentar emojis, edite `EMOJI_GROUPS`. |
 | `src/renderer/src/components/VoiceView.tsx` | O botão, a janela e o indicador (3 linhas). |
 
 **Tocar localmente** (`sound:played`): só se ainda estou naquela sala e o som está na coleção. Marca o indicador
@@ -82,7 +83,7 @@ nesta sala, então não toca sons." (botões desligados). Lixeira só para quem 
 | `server/storage/audio.test.ts` | Tipos pelos bytes (e o que não é áudio), duração de WAV e arquivo corrompido → null. |
 | `server/repo/sounds.test.ts` | Gravar/listar/apagar/contar, nome repetido e os `check` do banco. |
 | `src/renderer/src/lib/actions/sounds.test.ts` | App: coleção (ordem, criado/apagado, recarregar ao abrir), `sound:played` (link, saída, volume por pessoa, deafen, silenciado, outra sala, indicador até acabar), tocar/apagar e enviar (nome sugerido, tamanho, duração, token, recusas, erro do servidor). |
-| `src/renderer/src/components/voice/soundboard.test.tsx` | Tela: grade (tocar, erro, bloqueios, vazia), apagar (só o meu; `manageMessages`), enviar (prévia, nome, recusa local, erro) e indicador. `VoiceView.test.tsx`: botão e indicador na sala. |
+| `src/renderer/src/components/voice/soundboard.test.tsx` | Tela: grade (tocar, erro, bloqueios, vazia), apagar (só o meu; `manageMessages`), enviar (prévia, nome, emoji pela grade, sem emoji, recusa local, erro), seletor de emoji (escolher/tirar, categorias, lista válida e sem repetir) e indicador. `VoiceView.test.tsx`: botão e indicador na sala. |
 | `server/tests/sounds.test.ts` | Servidor real com LiveKit falso: envio e recusas (5 s, 512 KB, não-áudio, nome, emoji, limite por conta, CORS), lista e download assinados, tocar só para a sala, fora da sala, sobreposição, sem `speak`, apagar (autor, outra pessoa, `manageMessages`). |
 
 Áudios de teste são gerados na hora (`server/tests/audio-fixtures.ts`, `wav(segundos)`), sem binários no repositório.
