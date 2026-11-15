@@ -61,8 +61,12 @@ O app **não consegue** criar mensagem de ferramenta pelo `message:send`: o serv
 | `src/shared/types/tools.test.ts` | `teamsResultText` e o corte em `MESSAGE_MAX_LENGTH`. |
 | `server/tests/tools.test.ts` | Servidor real: mesma mensagem para todos + histórico, erros sem postar, canal de voz/privado/sem `send`, conversa privada, `message:send` não forja ferramenta. |
 | `server/tests/limits.test.ts` | `LIMITS.tool` com os limites reais. |
+| `src/renderer/src/lib/actions/tools.test.ts` | Ação `drawTeams` do app (limpeza dos nomes, lanes, erro). |
 
 ## Pendente
 
-- Barra de úteis e registro de ferramentas (B7), painel do sorteador e cartão do resultado (B10).
+- Barra de úteis e registro de ferramentas (B7), painel do sorteador e cartão do resultado (B10). A ação do app já
+  existe: `drawTeams({ channelId, players, teamCount, lanes })` em `lib/actions/tools.ts` (limpa nomes vazios, manda
+  lanes só quando ligadas, lança `Error` com a mensagem do servidor). O cartão lê `message.tool` quando
+  `message.kind === 'tool'`.
 - Próximas ferramentas (enquete, dado/moeda, sorteio de 1 nome, mover times para salas de voz).
