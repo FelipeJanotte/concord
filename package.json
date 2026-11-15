@@ -1,6 +1,6 @@
 {
   "name": "concord",
-  "version": "0.1.5",
+  "version": "0.1.8",
   "description": "Chat de texto e voz estilo Discord, feito com Electron + React + shadcn/ui",
   "private": true,
   "main": "./out/main/index.js",
