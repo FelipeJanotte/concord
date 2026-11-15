@@ -72,7 +72,8 @@ export function VoiceView({ channelId }: { channelId: string }) {
   )
 }
 
-function ControlButton({
+/** Botão redondo dos controles da sala (também usado no painel da chamada da conversa, B8). */
+export function ControlButton({
   label,
   onClick,
   off,

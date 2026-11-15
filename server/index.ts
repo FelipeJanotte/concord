@@ -21,6 +21,7 @@ import { sendJson } from './http'
 import { liveKitConfig } from './livekit'
 import { accountsModule } from './modules/accounts'
 import { backupModule } from './modules/backup'
+import { callsModule } from './modules/calls'
 import { channelsModule } from './modules/channels'
 import { messagesModule } from './modules/messages'
 import { moderationModule } from './modules/moderation'
@@ -48,6 +49,7 @@ const modules: ServerModule[] = [
   messagesModule,
   voiceModule,
   moderationModule,
+  callsModule,
   soundsModule,
   preferencesModule,
   friendsModule,

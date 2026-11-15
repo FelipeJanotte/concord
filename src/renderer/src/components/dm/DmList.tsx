@@ -1,4 +1,5 @@
 // Lista de conversas privadas na barra lateral da Home (B7/A7): a mais recente primeiro, com não lido e online.
+import { Phone } from 'lucide-react'
 import type { DmEntry } from '@shared/types'
 import { openDmChat } from '@/lib/client'
 import { cn } from '@/lib/utils'
@@ -25,6 +26,7 @@ function DmItem({ dm }: { dm: DmEntry }) {
   const active = useApp((s) => s.section === 'home' && s.homeView.kind === 'dm' && s.homeView.channelId === dm.channel.id)
   const unread = useApp((s) => !!s.unread[dm.channel.id])
   // online só aparece para amigos (o servidor não conta para os outros)
+  const inCall = useApp((s) => !!s.calls[dm.channel.id])
   const online = useApp((s) => s.friends.some((f) => f.account.id === dm.other.id && f.status === 'friend' && f.online))
 
   return (
@@ -50,6 +52,7 @@ function DmItem({ dm }: { dm: DmEntry }) {
           />
         </span>
         <span className="flex-1 truncate">{dm.other.name}</span>
+        {inCall && <Phone aria-label="Em chamada" className="size-4 shrink-0 text-success" />}
       </button>
     </li>
   )

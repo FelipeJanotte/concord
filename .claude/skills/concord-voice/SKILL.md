@@ -46,6 +46,9 @@ O áudio (e a tela, na B3) passa pelo LiveKit, um SFU self-hosted que roda pelo 
    falar e compartilhar vêm de `voicePermissionsIn`; o `voice:state` da sala vai só para os membros (`seesRoom`).
    O `applyVoiceAccess` ignora DMs. Quando alguém bloqueia, o `friend:block` chama `leaveDmVoice`, que tira os dois
    da sala e do LiveKit. Canal de texto continua sem voz.
+   O "telefone" (tocar, atender, desligar) é o `server/modules/calls.ts` (B8, skill `concord-calls`): ele usa
+   `onVoiceRoomsChange` (aviso depois de toda mudança nas salas, junto com o `voice:state`) para encerrar a chamada
+   quando os dois saem da sala. No app, `joinVoice` com um canal `dm` não troca a tela (fica na conversa).
 
 Não existe mais `voice:signal`, `voice:peer-left` nem `peers` no ack.
 

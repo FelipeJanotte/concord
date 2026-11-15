@@ -6,6 +6,7 @@
  * um domínio novo, crie `<dominio>.ts` e acrescente-o em `AppState` e `initialState`.
  */
 import { create } from 'zustand'
+import { callsInitial, type CallsState } from './calls'
 import { channelsInitial, type ChannelsState } from './channels'
 import { devicesInitial, type DevicesState } from './devices'
 import { friendsInitial, type FriendsState } from './friends'
@@ -24,7 +25,7 @@ export type { TypingEntry } from './messages'
 export type { ConnectionStatus, Notice } from './session'
 export type { PendingUpload } from './uploads'
 
-export interface AppState extends SessionState, ChannelsState, MessagesState, UploadsState, VoiceSliceState, DevicesState, PermissionsState, FriendsState, ToolsState, PreferencesState, NavigationState {}
+export interface AppState extends SessionState, ChannelsState, MessagesState, UploadsState, VoiceSliceState, DevicesState, PermissionsState, FriendsState, ToolsState, PreferencesState, NavigationState, CallsState {}
 
 export const initialState: AppState = {
   ...sessionInitial,
@@ -37,7 +38,8 @@ export const initialState: AppState = {
   ...friendsInitial,
   ...toolsInitial,
   ...preferencesInitial,
-  ...navigationInitial
+  ...navigationInitial,
+  ...callsInitial
 }
 
 export const useApp = create<AppState>()(() => initialState)

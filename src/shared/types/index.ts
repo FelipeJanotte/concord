@@ -6,6 +6,7 @@
  * aqui e acrescente os mapas de eventos nos dois `extends` abaixo.
  */
 import type { AccountClientEvents, AccountServerEvents } from './account'
+import type { CallsClientEvents, CallsServerEvents } from './calls'
 import type { ChannelClientEvents, ChannelServerEvents } from './channel'
 import type { DmsClientEvents, DmsServerEvents } from './dms'
 import type { FriendsClientEvents, FriendsServerEvents } from './friends'
@@ -21,6 +22,7 @@ import type { VoiceClientEvents, VoiceServerEvents } from './voice'
 
 export * from './account'
 export * from './attachment'
+export * from './calls'
 export * from './channel'
 export * from './dms'
 export * from './friends'
@@ -37,6 +39,7 @@ export * from './voice'
 
 export interface ServerToClientEvents
   extends AccountServerEvents,
+    CallsServerEvents,
     ChannelServerEvents,
     DmsServerEvents,
     FriendsServerEvents,
@@ -52,6 +55,7 @@ export interface ServerToClientEvents
 
 export interface ClientToServerEvents
   extends AccountClientEvents,
+    CallsClientEvents,
     ChannelClientEvents,
     DmsClientEvents,
     FriendsClientEvents,

@@ -60,12 +60,21 @@ export function voiceStatesFor(accountId: string): VoiceState[] {
   return voiceStates().filter((v) => seesRoom(access, accountId, v.channelId))
 }
 
+/** Quem quer saber quando as salas mudam (B8: a chamada acaba quando os dois saem da sala da conversa). */
+const roomListeners = new Set<(io: AppServer) => void>()
+
+/** Registra um aviso chamado depois de toda mudança nas salas (junto com o `voice:state`). */
+export function onVoiceRoomsChange(fn: (io: AppServer) => void): void {
+  roomListeners.add(fn)
+}
+
 /** `voice:state` (sempre a lista completa que cada conexão pode ver). */
 export function emitVoice(io: AppServer): void {
   for (const socket of io.sockets.sockets.values()) {
     const user = socket.data.user
     if (user) socket.emit('voice:state', voiceStatesFor(user.accountId))
   }
+  for (const fn of roomListeners) fn(io)
 }
 
 /**
