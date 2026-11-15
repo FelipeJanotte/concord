@@ -53,7 +53,10 @@ uma conversa por par; se dois `dm:open` correm juntos, um recebe violação de u
 
 ## Pendente
 
-- Lista de DMs na Home, não lidos e o chat do DM (reusa `ChatView`): casco da B7 (Dev B) + slice/ações no app.
+- Lista de DMs na Home, não lidos e o chat do DM (reusa `ChatView` com `dm.channel.id`): casco da B7 (Dev B). A
+  camada do app já existe: `dms` em `store/friends.ts` (atividade mais recente primeiro: `dm:created` e `message:new`
+  sobem a conversa) e `openDm(accountId)` em `lib/actions/friends.ts` (item "Mensagem" do botão direito).
+  `messages`/`unread` já funcionam por `channelId`, então valem para DMs.
 - Chamadas privadas (B8) usam o canal `dm` como sala; ao implementar, o `voice:join` precisa aceitar `dm` e o
   `voice:state` (`voiceStatesFor`, que usa `can()` direto) precisa respeitar os membros.
 - O cache de membros fica todo em memória (um processo); com muitos DMs, trocar por consulta com cache LRU.
