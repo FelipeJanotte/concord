@@ -1,6 +1,6 @@
 ---
 name: concord-sounds
-description: Como funcionam os efeitos sonoros da comunidade (soundboard, A10 servidor / B17 tela) — envio por POST /sounds (até 512 KB e 5 s, tipo pelos bytes, duração com music-metadata), coleção com links assinados, sound:play só para a sala de voz, regra de não tocar por cima, apagar pelo autor ou manageMessages. Use ao mexer em server/modules/sounds.ts, server/repo/sounds.ts, server/db/schema/sounds.ts, server/storage/audio.ts, src/shared/types/sounds.ts, na tela do soundboard (B17), ou ao investigar som recusado, som que não toca para alguém ou "Espere o som anterior terminar".
+description: Como funcionam os efeitos sonoros da comunidade (soundboard, A10 servidor / B17 tela) — envio por POST /sounds (até 512 KB e 5 s, tipo pelos bytes, duração com music-metadata), coleção com links assinados, sound:play só para a sala de voz, regra de não tocar por cima, apagar pelo autor ou manageMessages. Use ao mexer em server/modules/sounds.ts, server/repo/sounds.ts, server/db/schema/sounds.ts, server/storage/audio.ts, src/shared/types/sounds.ts, na tela do soundboard (B17: components/voice/Soundboard.tsx, SoundUploadForm.tsx, lib/actions/sounds.ts, store/sounds.ts, botão no VoiceView), ou ao investigar som recusado, som que não toca para alguém ou "Espere o som anterior terminar".
 ---
 
 # Efeitos sonoros (soundboard)
@@ -50,12 +50,39 @@ cada app baixa GET /sounds/<id>?a&e&s (link assinado) e toca localmente
   Além disso, `LIMITS.sound` = 1 a cada 3 s por conta.
 - **Apagar:** o autor ou quem tem `manageMessages`; apaga registro e arquivo e emite `sound:deleted` para todos.
 
+## Na tela (B17)
+
+Botão **"Efeitos sonoros"** (ícone de nota) nos controles da sala de voz, só para quem está conectado. Abre a
+janela com a grade da coleção; clicar num som toca para todos na sala.
+
+| Arquivo | Papel |
+|---|---|
+| `src/renderer/src/store/sounds.ts` | `sounds` (ordem de nome), `soundsLoaded`, `soundsPlaying` (conta → `{ soundId, by, until }`, o indicador) e `soundboardOpen`. |
+| `src/renderer/src/lib/actions/sounds.ts` | `bindSoundsEvents` (`sound:created/deleted/played`), `loadSounds` (depois do `hello` e ao abrir a janela), `openSoundboard`/`closeSoundboard`, `playSound`, `deleteSound`, `uploadSound`, `checkSoundFile`, `soundNameFromFile`. O HTTP (`soundTransport.send`: `fetch` no `POST /sounds`; `soundTransport.duration`: duração lida por um `Audio`) e o áudio (`soundOutput.play`) são substituídos nos testes. |
+| `src/renderer/src/components/voice/Soundboard.tsx` | `Soundboard` (janela: grade, bloqueios, erro, lixeira com confirmação) e `SoundsPlayingBar` ("📯 Ana tocou Buzina" acima dos controles). |
+| `src/renderer/src/components/voice/SoundUploadForm.tsx` | Enviar: arquivo (confere 512 KB e 5 s na hora), prévia (`<audio controls>`), nome sugerido pelo arquivo e emoji. |
+| `src/renderer/src/components/VoiceView.tsx` | O botão, a janela e o indicador (3 linhas). |
+
+**Tocar localmente** (`sound:played`): só se ainda estou naquela sala e o som está na coleção. Marca o indicador
+até o som acabar (`durationMs`). Toca com `soundOutput.play(link completo, { volume, outputId })`: a saída escolhida
+na B4 (`setSinkId`), o volume que dei para quem tocou (`userVolumes[conta]`, 100% se não mexi); com deafen ou com a
+pessoa silenciada só para mim (`userMuted`), não toca (o indicador aparece igual).
+
+**Bloqueios na janela:** fora da sala → "Entre numa sala de voz para tocar sons."; sem `speak` → "Você não pode falar
+nesta sala, então não toca sons." (botões desligados). Lixeira só para quem enviou ou tem `manageMessages`.
+
+**Enviar:** `checkSoundFile` antes de enviar (tamanho e duração; o tipo quem confere é o servidor, pelos bytes) e
+`uploadSound` limpa o nome (1–32) e o emoji (`cleanSoundEmoji`). O som enviado já entra na coleção (o
+`sound:created` que chega depois não duplica). Sem corte para 5 s: arquivo maior é recusado com a mensagem.
+
 ## Testes
 
 | Arquivo | Cobre |
 |---|---|
 | `server/storage/audio.test.ts` | Tipos pelos bytes (e o que não é áudio), duração de WAV e arquivo corrompido → null. |
 | `server/repo/sounds.test.ts` | Gravar/listar/apagar/contar, nome repetido e os `check` do banco. |
+| `src/renderer/src/lib/actions/sounds.test.ts` | App: coleção (ordem, criado/apagado, recarregar ao abrir), `sound:played` (link, saída, volume por pessoa, deafen, silenciado, outra sala, indicador até acabar), tocar/apagar e enviar (nome sugerido, tamanho, duração, token, recusas, erro do servidor). |
+| `src/renderer/src/components/voice/soundboard.test.tsx` | Tela: grade (tocar, erro, bloqueios, vazia), apagar (só o meu; `manageMessages`), enviar (prévia, nome, recusa local, erro) e indicador. `VoiceView.test.tsx`: botão e indicador na sala. |
 | `server/tests/sounds.test.ts` | Servidor real com LiveKit falso: envio e recusas (5 s, 512 KB, não-áudio, nome, emoji, limite por conta, CORS), lista e download assinados, tocar só para a sala, fora da sala, sobreposição, sem `speak`, apagar (autor, outra pessoa, `manageMessages`). |
 
 Áudios de teste são gerados na hora (`server/tests/audio-fixtures.ts`, `wav(segundos)`), sem binários no repositório.
@@ -67,4 +94,6 @@ cada app baixa GET /sounds/<id>?a&e&s (link assinado) e toca localmente
 | "Não foi possível ler a duração do áudio" | Arquivo sem cabeçalho de duração (alguns WebM gravados pelo navegador) ou corrompido. Converta para OGG/MP3. |
 | Som não toca para alguém | Só quem está **na mesma sala** recebe `sound:played`; confira o `voice:state`. O app baixa pelo link assinado (404 = link vencido: peça `sound:list` de novo). |
 | "Espere o som anterior terminar" | Regra de sobreposição por conta (dura o tempo do som). |
-| Pendente (B17) | A tela: grade de sons, envio com prévia/corte e tocar localmente ao receber `sound:played`. |
+| Som tocou para os outros mas não para mim | Deafen ligado, a pessoa está silenciada só para mim (botão direito) ou o volume dela está em 0. |
+| Botões da janela desligados | Fora da sala ou sem `speak` nela (a janela diz qual). |
+| Pendente | Cortar o áudio para 5 s antes de enviar (hoje o arquivo longo é recusado) e tocar nas chamadas privadas (o botão só existe na sala da comunidade). |

@@ -1,12 +1,13 @@
 import type { ReactNode } from 'react'
-import { AudioLines, HeadphoneOff, Headphones, Loader2, Mic, MicOff, MonitorOff, MonitorUp, PhoneOff, Volume2 } from 'lucide-react'
+import { AudioLines, HeadphoneOff, Headphones, Loader2, Mic, MicOff, MonitorOff, MonitorUp, Music, PhoneOff, Volume2 } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { joinVoice, leaveVoice, openDeviceSettings, toggleDeafen, toggleMute, toggleScreenShare } from '@/lib/client'
+import { joinVoice, leaveVoice, openDeviceSettings, openSoundboard, toggleDeafen, toggleMute, toggleScreenShare } from '@/lib/client'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
 import { ScreenPicker } from './voice/ScreenPicker'
+import { Soundboard, SoundsPlayingBar } from './voice/Soundboard'
 import { VoiceGrid } from './voice/VoiceGrid'
 
 export function VoiceView({ channelId }: { channelId: string }) {
@@ -39,6 +40,7 @@ export function VoiceView({ channelId }: { channelId: string }) {
         )}
       </div>
 
+      {connected && <SoundsPlayingBar />}
       <div className="flex shrink-0 items-center justify-center gap-3 pb-6">
         {connected ? (
           <>
@@ -53,6 +55,9 @@ export function VoiceView({ channelId }: { channelId: string }) {
                 {sharing ? <MonitorOff /> : <MonitorUp />}
               </ControlButton>
             )}
+            <ControlButton label="Efeitos sonoros" onClick={openSoundboard}>
+              <Music />
+            </ControlButton>
             <ControlButton label="Configurações de voz" onClick={openDeviceSettings}>
               <AudioLines />
             </ControlButton>
@@ -68,6 +73,7 @@ export function VoiceView({ channelId }: { channelId: string }) {
         )}
       </div>
       <ScreenPicker />
+      <Soundboard />
     </div>
   )
 }
