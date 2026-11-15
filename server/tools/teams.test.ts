@@ -152,3 +152,25 @@ describe('drawTeams', () => {
     expect(result.teams.flatMap((t) => t.members)).toHaveLength(10)
   })
 })
+
+describe('conta de cada pessoa (para mover os times)', () => {
+  it('leva o accountId do pedido para o resultado, com e sem lanes', () => {
+    const players = [{ name: 'Ana', accountId: 'acc-ana' }, { name: 'Bia' }, { name: 'Caio', accountId: 'acc-caio' }, { name: 'Duda' }]
+    for (const lanes of [false, true]) {
+      const members = drawTeams(valid({ players, teamCount: 2, lanes }), seeded(3)).teams.flatMap((t) => t.members)
+      expect(members.find((m) => m.name === 'Ana')?.accountId).toBe('acc-ana')
+      expect(members.find((m) => m.name === 'Caio')?.accountId).toBe('acc-caio')
+      expect(members.find((m) => m.name === 'Bia')).not.toHaveProperty('accountId')
+    }
+  })
+
+  it('recusa conta inválida ou repetida', () => {
+    const base = { name: 'Bia' }
+    expect(validateTeams({ players: [{ name: 'Ana', accountId: 5 }, base], teamCount: 2 })).toBe('Conta inválida para Ana')
+    expect(validateTeams({ players: [{ name: 'Ana', accountId: '' }, base], teamCount: 2 })).toBe('Conta inválida para Ana')
+    expect(validateTeams({ players: [{ name: 'Ana', accountId: 'x'.repeat(65) }, base], teamCount: 2 })).toBe('Conta inválida para Ana')
+    expect(
+      validateTeams({ players: [{ name: 'Ana', accountId: 'a' }, { name: 'Outra', accountId: 'a' }], teamCount: 2 })
+    ).toBe('Pessoa repetida: Outra')
+  })
+})

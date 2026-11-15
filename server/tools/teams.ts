@@ -17,14 +17,18 @@ import {
   TEAMS_MIN_PLAYERS,
   type Lane,
   type Team,
+  type TeamMember,
   type TeamPlayer,
   type TeamsResult
 } from '../../src/shared/types'
 
 export type Rand = (max: number) => number
 
+/** tamanho máximo do `accountId` aceito (é um uuid; mais que isso é lixo) */
+const ACCOUNT_ID_MAX = 64
+
 export interface CleanTeamsInput {
-  players: Array<{ name: string; lanes: Lane[] }>
+  players: Array<{ name: string; lanes: Lane[]; accountId?: string }>
   teamCount: number
   lanes: boolean
 }
@@ -39,6 +43,7 @@ export function validateTeams(raw: unknown): CleanTeamsInput | string {
 
   const players: CleanTeamsInput['players'] = []
   const seen = new Set<string>()
+  const accounts = new Set<string>()
   for (const p of req.players as unknown[]) {
     const player = p as Partial<TeamPlayer> | null
     const name = typeof player?.name === 'string' ? player.name.replace(/\s+/g, ' ').trim() : ''
@@ -50,7 +55,13 @@ export function validateTeams(raw: unknown): CleanTeamsInput | string {
     if (!Array.isArray(prefs) || prefs.some((l) => !(LANES as readonly unknown[]).includes(l)) || new Set(prefs).size !== prefs.length) {
       return `Lanes inválidas para ${name}`
     }
-    players.push({ name, lanes: lanes ? (prefs as Lane[]) : [] })
+    const accountId = player?.accountId
+    if (accountId !== undefined) {
+      if (typeof accountId !== 'string' || !accountId || accountId.length > ACCOUNT_ID_MAX) return `Conta inválida para ${name}`
+      if (accounts.has(accountId)) return `Pessoa repetida: ${name}`
+      accounts.add(accountId)
+    }
+    players.push({ name, lanes: lanes ? (prefs as Lane[]) : [], ...(accountId ? { accountId } : {}) })
   }
 
   const teamCount = req.teamCount
@@ -108,6 +119,10 @@ function assignLanes(members: CleanTeamsInput['players'], rand: Rand): { lanes: 
 /** Quantas vezes o sorteio é repetido quando há preferências de lane (fica o que atende melhor). */
 export const LANE_ATTEMPTS = 40
 
+/** O que vai para o resultado: o nome e, se veio, a conta. */
+const member = (p: CleanTeamsInput['players'][number]): TeamMember =>
+  p.accountId ? { name: p.name, accountId: p.accountId } : { name: p.name }
+
 function drawOnce(input: CleanTeamsInput, rand: Rand): { teams: Team[]; score: number } {
   const order = shuffle(input.players, rand)
   const groups: CleanTeamsInput['players'][] = Array.from({ length: input.teamCount }, () => [])
@@ -117,10 +132,10 @@ function drawOnce(input: CleanTeamsInput, rand: Rand): { teams: Team[]; score: n
 
   let score = 0
   const teams = teamsOrder.map((members): Team => {
-    if (!input.lanes) return { members: members.map((p) => ({ name: p.name })) }
+    if (!input.lanes) return { members: members.map(member) }
     const assigned = assignLanes(members, rand)
     score += assigned.score
-    const withLanes = members.map((p, i) => ({ name: p.name, lane: assigned.lanes[i] }))
+    const withLanes = members.map((p, i) => ({ ...member(p), lane: assigned.lanes[i] }))
     withLanes.sort((a, b) => LANES.indexOf(a.lane) - LANES.indexOf(b.lane))
     return { members: withLanes }
   })

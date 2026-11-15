@@ -33,6 +33,12 @@ export interface TeamPlayer {
   name: string
   /** lanes que a pessoa prefere, da preferida para a menos (opcional; só vale com `lanes`) */
   lanes?: Lane[]
+  /**
+   * conta da pessoa, quando o nome veio da sala de voz ou da lista de online (opcional).
+   * Vai para o resultado e deixa "mover os times para salas de voz" achar a pessoa certa
+   * mesmo com dois nomes iguais; sem ela, a pessoa é procurada pelo nome (ou `nome#tag`).
+   */
+  accountId?: string
 }
 
 export interface TeamsRequest {
@@ -47,6 +53,8 @@ export interface TeamsRequest {
 export interface TeamMember {
   name: string
   lane?: Lane
+  /** a conta, se veio no pedido (`TeamPlayer.accountId`) */
+  accountId?: string
 }
 
 export interface Team {
@@ -58,6 +66,40 @@ export interface TeamsResult {
   teams: Team[]
   lanes: boolean
 }
+
+// ---------- Mover os times para salas de voz ----------
+
+/**
+ * Leva cada time de um sorteio já postado para uma sala de voz. Só move quem já está numa sala
+ * de voz da comunidade (não chamada privada) que quem pede vê. Quem pede pode mover a si mesmo;
+ * os outros, só pela regra da moderação (`canModerate`: `manageMembers` e cargo acima). A pessoa
+ * também precisa poder entrar na sala do time (`view` + `connect`). Quem não dá para mover é
+ * pulado e aparece em `skipped`, sem cancelar os demais.
+ */
+export interface MoveTeamsRequest {
+  /** a mensagem do sorteio (`kind: 'tool'`, `tool.tool === 'teams'`) */
+  messageId: string
+  /** uma sala de voz por time, na ordem dos times; `null` = esse time fica onde está */
+  channelIds: (string | null)[]
+}
+
+export type MoveTeamsSkipReason = 'not-in-voice' | 'ambiguous' | 'not-allowed' | 'no-access'
+
+export const MOVE_TEAMS_SKIP_LABELS: Record<MoveTeamsSkipReason, string> = {
+  'not-in-voice': 'não está numa sala de voz',
+  ambiguous: 'mais de uma pessoa com esse nome na voz',
+  'not-allowed': 'você não pode mover essa pessoa',
+  'no-access': 'não pode entrar na sala do time'
+}
+
+export interface MoveTeamsSkip {
+  /** o nome como está no sorteio */
+  name: string
+  reason: MoveTeamsSkipReason
+}
+
+/** `moved` = pessoas que trocaram de sala (quem já estava na sala do time não conta nem é pulado). */
+export type MoveTeamsResult = { ok: true; moved: number; skipped: MoveTeamsSkip[] } | { ok: false; error: string }
 
 // ---------- Dado, moeda e sortear 1 nome ----------
 
@@ -161,6 +203,8 @@ export interface ToolsClientEvents {
   'tools:coin': (req: CoinRequest, ack: (res: ToolResult) => void) => void
   /** sorteia 1 entre as opções */
   'tools:pick': (req: PickRequest, ack: (res: ToolResult) => void) => void
+  /** leva os times de um sorteio já postado para salas de voz (uma por time) */
+  'tools:move-teams': (req: MoveTeamsRequest, ack: (res: MoveTeamsResult) => void) => void
   /** cria uma enquete no canal */
   'tools:poll': (req: PollRequest, ack: (res: ToolResult) => void) => void
   /** substitui o meu voto (índices das opções; [] tira o voto). Voto único: no máximo 1 índice. */
@@ -172,6 +216,8 @@ export interface ToolsClientEvents {
 }
 
 export interface ToolsServerEvents {
+  /** só para a conexão movida: entre nesta sala (o app troca de sala pelo `voice:join` de sempre) */
+  'tools:moved': (payload: { channelId: string; by: string }) => void
   /** votos ou encerramento mudaram (para quem vê o canal) */
   'poll:updated': (payload: { messageId: string; channelId: string; result: PollResult }) => void
 }

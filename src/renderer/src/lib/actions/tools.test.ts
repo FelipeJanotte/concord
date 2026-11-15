@@ -1,8 +1,10 @@
 // Ação do sorteador de times (v4): o que vai para o servidor e o erro legível.
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Message } from '@shared/types'
-import { drawTeams, flipCoin, pickOne, rollDice } from '@/lib/actions/tools'
+import { bindToolsEvents, drawTeams, flipCoin, moveTeams, pickOne, rollDice } from '@/lib/actions/tools'
 import { setSocket } from '@/lib/core'
+import { voice } from '@/lib/voice'
+import { initialState, useApp } from '@/store'
 import { FakeSocket } from '@/test/fake-socket'
 
 let socket: FakeSocket
@@ -59,5 +61,51 @@ describe('dado, moeda e sortear 1', () => {
   it('erro do servidor vira exceção com a mensagem dele', async () => {
     socket.replyTo('tools:dice', () => ({ ok: false, error: 'O dado precisa ter de 2 a 100 lados' }))
     await expect(rollDice('c1', 1)).rejects.toThrow('O dado precisa ter de 2 a 100 lados')
+  })
+})
+
+describe('mover os times para salas de voz', () => {
+  it('drawTeams leva o accountId de quem veio da sala de voz', async () => {
+    socket.replyTo('tools:teams', () => ({ ok: true, message: posted }))
+    await drawTeams({ channelId: 'c1', players: [{ name: 'Ana', accountId: 'acc-ana' }, { name: 'Bia' }], teamCount: 2 })
+    expect(socket.sent('tools:teams')[0][0]).toMatchObject({ players: [{ name: 'Ana', accountId: 'acc-ana' }, { name: 'Bia' }] })
+  })
+
+  it('moveTeams manda a mensagem e as salas e devolve quem foi movido e quem foi pulado', async () => {
+    const skipped = [{ name: 'Duda', reason: 'not-in-voice' as const }]
+    socket.replyTo('tools:move-teams', () => ({ ok: true, moved: 3, skipped }))
+    await expect(moveTeams('m1', ['t1', null])).resolves.toEqual({ moved: 3, skipped })
+    expect(socket.sent('tools:move-teams')[0][0]).toEqual({ messageId: 'm1', channelIds: ['t1', null] })
+  })
+
+  it('erro do servidor vira exceção com a mensagem dele', async () => {
+    socket.replyTo('tools:move-teams', () => ({ ok: false, error: 'Sorteio de times não encontrado' }))
+    await expect(moveTeams('m1', ['t1'])).rejects.toThrow('Sorteio de times não encontrado')
+  })
+
+  describe('tools:moved', () => {
+    beforeEach(() => {
+      bindToolsEvents(socket.asSocket())
+      useApp.setState({ ...initialState, self: { id: 'sock-eu', accountId: 'acc-eu', name: 'Eu', tag: 'eu', color: '#fff', avatarUrl: null } })
+    })
+    afterEach(() => vi.restoreAllMocks())
+
+    it('na voz: avisa quem levou e entra na sala do time', async () => {
+      const join = vi.spyOn(voice, 'join').mockResolvedValue({ micError: null, cancelled: false, canSpeak: true, canShare: true })
+      useApp.setState({ myVoiceChannelId: 'lobby' })
+      socket.receive('tools:moved', { channelId: 'time-1', by: 'Dona' })
+      expect(useApp.getState().notice?.text).toBe('Dona levou você para a sala do seu time.')
+      expect(join).toHaveBeenCalledWith('time-1')
+      await vi.waitFor(() => expect(useApp.getState().myVoiceChannelId).toBe('time-1'))
+    })
+
+    it('fora da voz (já saiu) ou já na sala: ignora', () => {
+      const join = vi.spyOn(voice, 'join')
+      socket.receive('tools:moved', { channelId: 'time-1', by: 'Dona' })
+      useApp.setState({ myVoiceChannelId: 'time-1' })
+      socket.receive('tools:moved', { channelId: 'time-1', by: 'Dona' })
+      expect(join).not.toHaveBeenCalled()
+      expect(useApp.getState().notice).toBeNull()
+    })
   })
 })
