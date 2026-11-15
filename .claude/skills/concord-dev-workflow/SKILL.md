@@ -92,9 +92,8 @@ docker compose down -v   # para e APAGA o banco (recria concord_test na próxima
 | `server/.env.example` | `DATABASE_URL`, `DATABASE_URL_TEST`, `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` (mesmos valores do compose) |
 
 - Copie `server/.env.example` para `server/.env` (ou acrescente as linhas novas ao seu `.env`).
-- **Voz pela rede local:** o LiveKit anuncia o IP de `LIVEKIT_NODE_IP` (padrão `127.0.0.1`, só funciona na mesma
-  máquina). Crie um `.env` na raiz com `LIVEKIT_NODE_IP=192.168.x.x`, rode `docker compose up -d` de novo, troque
-  `LIVEKIT_URL` no `server/.env` para `ws://192.168.x.x:7880` e libere 7880–7881/TCP e 7882/UDP no firewall.
+- **Voz para quem vem de outra máquina** (rede local ou VPN como Radmin, Hamachi, ZeroTier, Tailscale): veja a seção
+  com o mesmo nome em "Testar com vários usuários".
 - O servidor usa o Postgres do compose quando `DATABASE_URL` está no `server/.env`; sem ela, usa o PGlite (o
   compose pode ficar desligado para texto e contas).
 - **A voz precisa do LiveKit rodando** (`docker compose up -d` + `LIVEKIT_*` em `server/.env`). Sem ele, o servidor
@@ -160,8 +159,34 @@ Para hospedar pela internet (voz fora da rede local, HTTPS): `deploy/README.md` 
 ## Testar com vários usuários
 
 - **Mesma máquina:** `npm run dev:all` e, em outro terminal, `npx electron .` (rode `npm run build` uma vez antes) para cada janela extra. Use **contas diferentes** em cada janela (a mesma conta em duas janelas aparece uma vez só na lista de membros).
-- **Rede local:** o servidor mostra `Rede: http://192.168.x.x:3001` ao iniciar. Os outros PCs usam esse endereço no login. Libere a porta no Windows Defender Firewall.
+- **Rede local ou VPN:** o servidor mostra `Rede: http://<ip>:3001` ao iniciar (um por placa de rede, inclusive a da
+  VPN). A outra pessoa usa esse endereço no login. Libere a porta no Windows Defender Firewall. Só isso faz o texto
+  funcionar; **a voz precisa da configuração abaixo**.
 - **Internet:** hospede o servidor (precisa de WebSocket) e configure TURN para a voz (ver `concord-voice`).
+
+### Voz para quem vem de outra máquina
+
+Por padrão a voz só funciona na máquina que roda o servidor, por dois motivos:
+
+1. `LIVEKIT_URL=ws://localhost:7880` (`server/.env`) é o endereço que o servidor **entrega ao app** no `voice:join`.
+   No PC da outra pessoa, `localhost` é o PC dela: o app nem chega ao LiveKit.
+2. O LiveKit anuncia o IP de `LIVEKIT_NODE_IP` para o áudio/vídeo (padrão `127.0.0.1`, ver `docker-compose.yml`).
+
+Use nos dois **o IP pelo qual a outra pessoa chega até você** (o mesmo do login: `192.168.x.x` na rede local,
+`26.x.x.x` no Radmin, `100.x.x.x` no Tailscale...):
+
+1. `server/.env`: `LIVEKIT_URL=ws://<ip>:7880` (o seu app também funciona com ele: é um IP da sua máquina).
+2. `.env` na raiz (modelo em `.env.example`; lido pelo docker compose): `LIVEKIT_NODE_IP=<ip>`.
+3. `docker compose up -d livekit` (recria o container; `docker inspect concord-livekit-1` mostra `--node-ip <ip>`).
+4. Reinicie o servidor (ele só lê o `server/.env` ao subir). Com o `npm run dev:all`, salvar qualquer arquivo
+   importado pelo servidor (ex.: `touch server/index.ts`) faz o `tsx watch` reiniciar sem parar o app.
+5. Todo mundo sai e entra de novo na sala (o token antigo tinha o endereço antigo).
+6. Firewall: 7880–7881/TCP e 7882/UDP liberados para a rede usada. No Windows a VPN costuma ser rede **Pública**; o
+   Docker Desktop normalmente já tem regra de entrada (`com.docker.backend.exe`) para esse perfil.
+
+Com o IP da VPN configurado, **a voz para até na sua máquina se a VPN desligar** (o IP some). Para voltar:
+`LIVEKIT_URL=ws://localhost:7880`, apague o `.env` da raiz, `docker compose up -d livekit` e reinicie o servidor.
+Pela internet sem VPN, use a hospedagem da A14 (skill `concord-deploy`: LiveKit com TURN e HTTPS).
 
 ## Problemas conhecidos
 
@@ -178,6 +203,7 @@ Para hospedar pela internet (voz fora da rede local, HTTPS): `deploy/README.md` 
 | Foto de perfil não aparece | Confira se `GET <servidor>/avatars/<accountId>` responde 200 e se a CSP libera `img-src` para o endereço do servidor. |
 | `docker: command not found` | Instale o Docker Desktop (WSL 2) e abra-o uma vez antes de usar `docker compose`. |
 | `port is already allocated` (5432/7880) | Outro Postgres/LiveKit já usa a porta. Pare o serviço local ou mude o lado esquerdo do mapeamento no `docker-compose.yml`. |
+| Quem vem de outra máquina entra e conversa por texto, mas a voz não sai (e o log do LiveKit não mostra essa pessoa) | `LIVEKIT_URL` ainda é `ws://localhost:7880`: o app dela tenta o LiveKit no próprio PC. Veja "Voz para quem vem de outra máquina". |
 | Voz LiveKit conecta mas não passa áudio | ICE não fecha: confira `LIVEKIT_NODE_IP` (IP alcançável pelo cliente) e a porta 7882/UDP no firewall; `docker compose logs livekit` mostra os candidatos. |
 | Banco `concord_test` não existe | O volume foi criado antes do script de init. `docker compose down -v && docker compose up -d` (apaga o banco de dev). |
 | Mudou `src/shared/types.ts` e o servidor não percebeu | O `tsx watch` acompanha os imports, mas reinicie o `npm run server` se precisar. |
