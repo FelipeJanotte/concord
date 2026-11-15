@@ -206,6 +206,13 @@ describe('mensagens', () => {
     expect(page.messages.map((m) => m.content)).toEqual(['alguém joga?'])
   })
 
+  it('responde ao envio: ok quando grava (também no chat da sala de voz), erro quando recusa', async () => {
+    const a = await user()
+    const voice = await newChannel(a, 'voice')
+    expect(await a.socket.emitWithAck('message:send', { channelId: voice.id, content: 'oi' })).toEqual({ ok: true })
+    expect(await a.socket.emitWithAck('message:send', { channelId: 'nao-existe', content: 'oi' })).toEqual({ ok: false, error: 'Canal não encontrado' })
+  })
+
   it('"digitando" vai para os outros, não para quem digita', async () => {
     const a = await user('Digitador')
     const b = await user()

@@ -102,7 +102,7 @@ Cliente → servidor (`ClientToServerEvents`):
 | `channel:create` | `{ name, type }` | `CreateChannelResult` | normaliza o nome (texto: minúsculo e com hífens, até 32 caracteres), bloqueia duplicado e mais de 100 canais; `channel:created` para todos |
 | `channel:delete` | `channelId` | — | apaga o canal e as mensagens, tira todo mundo da sala de voz; `channel:deleted` + `voice:state` |
 | `message:history` | `{ channelId, before? }` | `{ messages, hasMore }` | página de 50 (sem `before` = mais recentes) |
-| `message:send` (com anexos) | `{ channelId, content, attachmentIds? }` | — | até 10 anexos já enviados por `POST /uploads`, do próprio autor e não usados; tudo ou nada (senão a mensagem é ignorada); texto pode ser vazio se houver anexo |
+| `message:send` (com anexos) | `{ channelId, content, attachmentIds? }` | `OkResult` | até 10 anexos já enviados por `POST /uploads`, do próprio autor e não usados; tudo ou nada (senão volta "Anexos inválidos"); texto pode ser vazio se houver anexo |
 | `sound:list` | — | `Sound[]` | coleção de efeitos sonoros (links assinados para quem pede) — `docs/areas/sounds.md` |
 | `sound:play` | `{ channelId, soundId }` | `SoundResult` | exige estar na sala e `speak`; `sound:played` só para quem está nela; não toca por cima do próprio som anterior |
 | `sound:delete` | `soundId` | `SoundResult` | o autor ou `manageMessages`; `sound:deleted` para todos |
@@ -114,7 +114,7 @@ Cliente → servidor (`ClientToServerEvents`):
 | `tools:dice` / `tools:coin` / `tools:pick` | `{ channelId, sides, count }` / `{ channelId, count }` / `{ channelId, options }` | `ToolResult` | dado, moeda e sortear 1 nome; mesmo fluxo e limite do `tools:teams` — `docs/areas/tools.md` |
 | `tools:move-teams` | `{ messageId, channelIds: (id \| null)[] }` | `MoveTeamsResult` (`moved`, `skipped`) | leva cada time de um sorteio postado para uma sala de voz: avisa cada conexão com `tools:moved` e o app troca de sala pelo `voice:join`; outros só com `canModerate` — `docs/areas/tools.md` |
 | `tools:poll` / `poll:vote` / `poll:close` / `poll:mine` | `{ channelId, question, options, multiple? }` / `{ messageId, choices }` / `messageId` / `messageIds[]` | `ToolResult` / `PollVoteResult` / `PollCloseResult` / `Record<id, number[]>` | enquete (votos anônimos; votar exige `send`; encerrar: autor ou `manageMessages`) — `docs/areas/tools.md` |
-| `message:send` | `{ channelId, content, replyToId? }` | — | valida (canal de texto, chat da sala de voz ou conversa privada `dm`, até 2000 caracteres); `message:new` só para quem vê o canal |
+| `message:send` | `{ channelId, content, replyToId? }` | `OkResult` | valida (canal de texto, chat da sala de voz ou conversa privada `dm`, até 2000 caracteres); recusa volta com o motivo e o app avisa (sem resposta em 10 s: "o servidor não respondeu"); `message:new` só para quem vê o canal |
 | `voice:join` | `{ channelId, muted, deafened }` | `JoinVoiceResult` (`url`, `token` do LiveKit, `canSpeak`/`canShare`/`canVideo`) | exige LiveKit configurado; sala de voz **ou conversa privada `dm`** (só os dois membros, sem bloqueio); sai da sala anterior (também no LiveKit), entra na nova; `voice:state` (sala de DM só para os membros) |
 | `voice:leave` | — | — | tira da sala no LiveKit (`RemoveParticipant`) + `voice:state` |
 | `voice:update` | `{ muted, deafened }` | — | `voice:state` |
