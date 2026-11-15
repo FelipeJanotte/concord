@@ -46,8 +46,14 @@ export interface TeamsRequest {
   channelId: string
   players: TeamPlayer[]
   teamCount: number
-  /** atribuir lanes sem repetir dentro do time (times de até 5) */
+  /** atribuir lanes sem repetir dentro do time (times de até 5, ou do tamanho de `laneSet`) */
   lanes?: boolean
+  /**
+   * lanes que valem neste sorteio (só com `lanes`; ausente = todas). Ex.: 3 por time com
+   * `['top', 'mid', 'adc']`. Cada time fica com no máximo `laneSet.length` pessoas, e preferência
+   * por uma lane que não está aqui é ignorada.
+   */
+  laneSet?: Lane[]
 }
 
 export interface TeamMember {
@@ -65,6 +71,8 @@ export interface Team {
 export interface TeamsResult {
   teams: Team[]
   lanes: boolean
+  /** as lanes que valeram, só quando foi um subconjunto (ausente = todas) */
+  laneSet?: Lane[]
 }
 
 // ---------- Mover os times para salas de voz ----------

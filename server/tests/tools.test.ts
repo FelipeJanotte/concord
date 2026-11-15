@@ -52,6 +52,27 @@ describe('tools:teams', () => {
     expect(saved).toMatchObject({ kind: 'tool', tool: got.tool, content: got.content })
   })
 
+  it('lanes disponíveis: 3v3 só com Topo, Meio e Atirador (no resultado e no histórico)', async () => {
+    const a = await user()
+    const ch = await server.createChannel('sorteios-3v3')
+    const res = await a.socket.emitWithAck('tools:teams', request(ch.id, { players: players(6), lanes: true, laneSet: ['adc', 'top', 'mid'] }))
+    if (!res.ok) throw new Error(res.error)
+    if (res.message.tool?.tool !== 'teams') throw new Error('esperava o resultado do sorteador de times')
+    const result = res.message.tool.result
+    expect(result.laneSet).toEqual(['top', 'mid', 'adc'])
+    expect(result.teams.map((t) => t.members.map((m) => m.lane))).toEqual([
+      ['top', 'mid', 'adc'],
+      ['top', 'mid', 'adc']
+    ])
+    expect(res.message.content).toContain('(Atirador)')
+    const history = await a.socket.emitWithAck('message:history', { channelId: ch.id })
+    expect(history.messages.find((m) => m.id === res.message.id)?.tool).toEqual(res.message.tool)
+    expect(await a.socket.emitWithAck('tools:teams', request(ch.id, { players: players(6), lanes: true, laneSet: [] }))).toEqual({
+      ok: false,
+      error: 'Escolha pelo menos uma lane'
+    })
+  })
+
   it('erros de validação voltam no ack e nada é postado', async () => {
     const a = await user()
     const ch = await server.createChannel('sorteios-erros')
@@ -62,7 +83,7 @@ describe('tools:teams', () => {
     })
     expect(await a.socket.emitWithAck('tools:teams', request(ch.id, { players: players(11), lanes: true }))).toEqual({
       ok: false,
-      error: 'Com lanes, cada time pode ter no máximo 5 pessoas: aumente o número de times'
+      error: 'Com 5 lanes, cada time pode ter no máximo 5 pessoas: aumente o número de times ou as lanes'
     })
     expect(await a.socket.emitWithAck('tools:teams', request(ch.id, { teamCount: 20 }))).toEqual({
       ok: false,

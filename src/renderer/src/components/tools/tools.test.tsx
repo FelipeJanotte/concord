@@ -193,7 +193,7 @@ describe('painéis', () => {
     const list = screen.getByRole('list', { name: 'Pessoas do sorteio' })
     expect(within(list).getAllByRole('listitem').map((li) => li.textContent)).toEqual(['Caio', 'Duda', 'Eu', 'Ana', 'Bia'])
     await userEvent.click(screen.getByRole('button', { name: 'Tirar Duda' }))
-    await userEvent.click(screen.getByLabelText(/Lanes/))
+    await userEvent.click(screen.getByLabelText('Sortear lanes'))
     await userEvent.selectOptions(screen.getByLabelText('Lane preferida de Caio'), 'mid')
     await userEvent.click(screen.getByRole('button', { name: 'Sortear times' }))
     expect(socket.sent('tools:teams')[0][0]).toEqual({
@@ -210,11 +210,55 @@ describe('painéis', () => {
     expect((await screen.findByRole('region', { name: 'Times sorteados' })).textContent).toContain('Meio')
   })
 
+  it('sorteador: escolhe as lanes disponíveis; preferência fora delas some e o limite acompanha', async () => {
+    setup()
+    socket.replyTo('tools:teams', () => ({ ok: true, message: toolMessage({ tool: 'teams', result: { lanes: true, teams: [] } }) }))
+    ui(<TeamRandomizerPanel />)
+    await userEvent.type(screen.getByLabelText(/Pessoas/), 'A,B,C,D,E,F,G{Enter}')
+    await userEvent.click(screen.getByLabelText('Sortear lanes'))
+    const group = screen.getByRole('group', { name: 'Lanes disponíveis' })
+    expect(within(group).getAllByRole('button').every((b) => b.getAttribute('aria-pressed') === 'true')).toBe(true)
+    await userEvent.selectOptions(screen.getByLabelText('Lane preferida de A'), 'jungle')
+    // 3v3: só Topo, Meio e Atirador
+    for (const name of ['Selva', 'Suporte']) await userEvent.click(within(group).getByRole('button', { name }))
+    expect(screen.getByText('Lanes disponíveis (3/5)')).toBeTruthy()
+    expect((screen.getByLabelText('Lane preferida de A') as HTMLSelectElement).value).toBe('')
+    expect(within(screen.getByLabelText('Lane preferida de A')).getAllByRole('option').map((o) => o.textContent)).toEqual(['Qualquer lane', 'Topo', 'Meio', 'Atirador'])
+    // 7 pessoas em 2 times de no máximo 3
+    expect(screen.getByText(/Com 3 lanes, cada time tem no máximo 3/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Sortear times' })).toHaveProperty('disabled', true)
+    await userEvent.click(screen.getByRole('button', { name: 'Tirar G' }))
+    await userEvent.selectOptions(screen.getByLabelText('Lane preferida de B'), 'mid')
+    await userEvent.click(screen.getByRole('button', { name: 'Sortear times' }))
+    const req = socket.sent('tools:teams')[0][0] as { laneSet: string[]; players: Array<{ name: string; lanes?: string[] }> }
+    expect(req.laneSet).toEqual(['top', 'mid', 'adc'])
+    expect(req.players.slice(0, 2)).toEqual([{ name: 'A' }, { name: 'B', lanes: ['mid'] }])
+  })
+
+  it('sorteador: sem nenhuma lane escolhida não deixa sortear', async () => {
+    setup()
+    ui(<TeamRandomizerPanel />)
+    await userEvent.type(screen.getByLabelText(/Pessoas/), 'A,B{Enter}')
+    await userEvent.click(screen.getByLabelText('Sortear lanes'))
+    const group = screen.getByRole('group', { name: 'Lanes disponíveis' })
+    for (const b of within(group).getAllByRole('button')) await userEvent.click(b)
+    expect(screen.getByText('Escolha pelo menos uma lane.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Sortear times' })).toHaveProperty('disabled', true)
+  })
+
+  it('sorteador: times menores que as lanes avisam que nem todas serão usadas', async () => {
+    setup()
+    ui(<TeamRandomizerPanel />)
+    await userEvent.type(screen.getByLabelText(/Pessoas/), 'A,B,C,D{Enter}')
+    await userEvent.click(screen.getByLabelText('Sortear lanes'))
+    expect(screen.getByText('Times de até 2 pessoas: nem todas as 5 lanes serão usadas em cada time.')).toBeTruthy()
+  })
+
   it('sorteador: com lanes e gente demais para os times, avisa e não deixa sortear', async () => {
     setup()
     ui(<TeamRandomizerPanel />)
     await userEvent.type(screen.getByLabelText(/Pessoas/), 'A,B,C,D,E,F,G,H,I,J,K{Enter}')
-    await userEvent.click(screen.getByLabelText(/Lanes/))
+    await userEvent.click(screen.getByLabelText('Sortear lanes'))
     expect(screen.getByText(/no máximo 5 pessoas/)).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Sortear times' })).toHaveProperty('disabled', true)
   })

@@ -109,3 +109,15 @@ describe('mover os times para salas de voz', () => {
     })
   })
 })
+
+describe('drawTeams com lanes disponíveis', () => {
+  it('manda laneSet só com lanes ligadas e quando não são todas', async () => {
+    socket.replyTo('tools:teams', () => ({ ok: true, message: posted }))
+    const base = { channelId: 'c1', players: [{ name: 'Ana' }, { name: 'Bia' }], teamCount: 2 }
+    await drawTeams({ ...base, lanes: true, laneSet: ['top', 'mid'] })
+    await drawTeams({ ...base, lanes: true, laneSet: ['top', 'jungle', 'mid', 'adc', 'support'] })
+    await drawTeams({ ...base, lanes: false, laneSet: ['top'] })
+    const sent = socket.sent('tools:teams').map((a) => a[0] as { laneSet?: unknown })
+    expect(sent.map((r) => r.laneSet)).toEqual([['top', 'mid'], undefined, undefined])
+  })
+})
