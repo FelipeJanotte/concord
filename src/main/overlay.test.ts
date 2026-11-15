@@ -1,7 +1,7 @@
 // Overlay em jogos no processo principal (B15), sem Electron de verdade: posição, validação e quando a
 // janela aparece/some (ligado + numa sala com gente), atalho e fechar.
 import { describe, expect, it, vi } from 'vitest'
-import type { OverlayRoom } from '../shared/overlay'
+import { OVERLAY_GAP, OVERLAY_METRICS, OVERLAY_PADDING, overlayHeight, type OverlayRoom } from '../shared/overlay'
 
 vi.mock('electron', () => ({ BrowserWindow: class {}, globalShortcut: {}, ipcMain: {}, screen: {} }))
 vi.mock('@electron-toolkit/utils', () => ({ is: { dev: false } }))
@@ -10,12 +10,12 @@ const { cleanConfig, cleanPosition, cleanRoom, createOverlayController, overlayB
 
 const workArea = { x: 0, y: 0, width: 1920, height: 1040 }
 const member = (id: string, extra = {}) => ({ id, name: id, avatarUrl: null, color: '#fff', speaking: false, muted: false, deafened: false, ...extra })
-const room = (n: number, more = 0): OverlayRoom => ({ channelName: 'Jogos', members: Array.from({ length: n }, (_, i) => member(`p${i}`)), more })
+const room = (n: number, more = 0): OverlayRoom => ({ members: Array.from({ length: n }, (_, i) => member(`p${i}`)), more })
 
 describe('overlayBounds', () => {
   it('cada canto com margem de 16 px; altura cresce com as pessoas', () => {
     const cfg = { enabled: true, size: 'medium' as const, position: null }
-    expect(overlayBounds(workArea, { ...cfg, corner: 'top-left' }, 2)).toEqual({ x: 16, y: 16, width: 250, height: 8 * 2 + 26 + 38 * 2 })
+    expect(overlayBounds(workArea, { ...cfg, corner: 'top-left' }, 2)).toEqual({ x: 16, y: 16, width: 250, height: 8 * 2 + 34 * 2 + 4 })
     const br = overlayBounds(workArea, { ...cfg, corner: 'bottom-right' }, 2)
     expect([br.x + br.width, br.y + br.height]).toEqual([1920 - 16, 1040 - 16])
     expect(overlayBounds({ x: 100, y: 50, width: 800, height: 600 }, { ...cfg, corner: 'top-right' }, 1).x).toBe(100 + 800 - 250 - 16)
@@ -26,7 +26,23 @@ describe('overlayBounds', () => {
     const large = overlayBounds(workArea, { enabled: true, corner: 'top-left', size: 'large', position: null }, 1)
     expect([small.width, large.width]).toEqual([200, 320])
     const many = overlayBounds(workArea, { enabled: true, corner: 'top-left', size: 'small', position: null }, 500)
-    expect(many.height).toBe(8 * 2 + 22 + 30 * 13)
+    expect(many.height).toBe(8 * 2 + 26 * 13 + 4 * 12) // 12 pessoas + "+N"
+  })
+
+  it('altura exata das linhas da página (sem cortar a última): margem + linhas + espaços, sem linha do nome da sala', () => {
+    for (const size of ['small', 'medium', 'large'] as const) {
+      const { line } = OVERLAY_METRICS[size]
+      for (const n of [1, 2, 5]) {
+        const b = overlayBounds(workArea, { enabled: true, corner: 'top-left', size, position: null }, n)
+        expect(b.height).toBe(OVERLAY_PADDING * 2 + n * line + (n - 1) * OVERLAY_GAP)
+        expect(b.height).toBe(overlayHeight(size, n))
+      }
+    }
+    // a foto cabe na linha com folga para o anel de quem fala (2 px de cada lado)
+    for (const { line, avatar } of Object.values(OVERLAY_METRICS)) expect(line - avatar).toBeGreaterThanOrEqual(4)
+    // modo de mover: mais uma linha (a barra "Concluir")
+    const cfg = { enabled: true, corner: 'top-left' as const, size: 'medium' as const, position: null }
+    expect(overlayBounds(workArea, cfg, 2, true).height).toBe(overlayHeight('medium', 3))
   })
 })
 
@@ -39,16 +55,16 @@ describe('validação', () => {
 
   it('sala: corta textos e pessoas, só aceita foto http/data', () => {
     expect(cleanRoom(null)).toBeNull()
-    expect(cleanRoom({ channelName: 3, members: [] })).toBeNull()
+    expect(cleanRoom({ members: 'nada' })).toBeNull()
     const r = cleanRoom({
-      channelName: 'x'.repeat(100),
+      channelName: 'Jogos', // app antigo: o nome da sala é ignorado (não aparece mais)
       members: [
         { id: 'a', name: 'n'.repeat(50), avatarUrl: 'javascript:alert(1)', color: '#fff', speaking: 'sim', muted: true },
         ...Array.from({ length: 20 }, (_, i) => member(`m${i}`, { avatarUrl: 'http://srv/a.png' }))
       ],
       more: -3
     })!
-    expect(r.channelName).toHaveLength(64)
+    expect(r).not.toHaveProperty('channelName')
     expect(r.members).toHaveLength(12)
     expect(r.members[0]).toEqual({ id: 'a', name: 'n'.repeat(32), avatarUrl: null, color: '#fff', speaking: false, muted: true, deafened: false })
     expect(r.members[1].avatarUrl).toBe('http://srv/a.png')
@@ -104,7 +120,8 @@ describe('controlador', () => {
     const { controller, win } = setup()
     controller.setConfig({ enabled: true, corner: 'top-left', size: 'small' })
     controller.setRoom(room(2, 5))
-    expect(win.setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ height: 8 * 2 + 22 + 30 * 3 }))
+    // 2 pessoas + "+N" = 3 linhas
+    expect(win.setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ height: overlayHeight('small', 3) }))
   })
 
   it('atalho liga/desliga, avisa a janela principal; fechar destrói e recria se precisar', () => {
@@ -136,7 +153,7 @@ describe('posição arrastada', () => {
 
   it('o modo de mover ganha uma linha de altura para a barra "Concluir"', () => {
     const cfg = { enabled: true, corner: 'top-left' as const, size: 'medium' as const, position: null }
-    expect(overlayBounds(workArea, cfg, 2, true).height - overlayBounds(workArea, cfg, 2).height).toBe(38)
+    expect(overlayBounds(workArea, cfg, 2, true).height - overlayBounds(workArea, cfg, 2).height).toBe(34 + 4)
   })
 
   it('validação: só números finitos, arredondados', () => {
