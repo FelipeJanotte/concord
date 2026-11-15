@@ -8,6 +8,8 @@ import { ArrowDown, ArrowUp, Loader2, Plus, Shield, Trash2 } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import {
   can,
+  canAssignRole,
+  canChangeMemberRoles,
   canGrantPermissions,
   CHANNEL_PERMISSIONS,
   EVERYONE_ROLE_ID,
@@ -23,7 +25,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { createRole, deleteRole, reorderRoles, setMemberRoles, updateRole } from '@/lib/client'
-import { canAssignRole, canEditMember, canManageRole, memberRoleIds, rolesByPosition } from '@/lib/permissions'
+import { canManageRole, memberRoleIds, rolesByPosition } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
 import { RoleDot } from './RoleDot'
@@ -425,7 +427,7 @@ function MembersTab({ access, me }: { access: AccessState; me: string }) {
 
 function MemberRow({ user, access, me, roles }: { user: User; access: AccessState; me: string; roles: Role[] }) {
   const current = memberRoleIds(access, user.accountId)
-  const editable = canEditMember(access, me, user.accountId)
+  const editable = canChangeMemberRoles(access, me, user.accountId)
   const isOwner = user.accountId === access.ownerAccountId
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)

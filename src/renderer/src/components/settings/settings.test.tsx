@@ -297,3 +297,49 @@ describe('botão direito: Cargos', () => {
     expect(within(screen.getByRole('menu')).queryByRole('menuitem', { name: /Cargos/ })).toBeNull()
   })
 })
+
+describe('alterar cargos dos membros (assignRoles)', () => {
+  const assignerAccess = (): AccessState => ({
+    ...baseAccess(),
+    roles: [everyone, { ...mod, permissions: ['assignRoles'] }, vip]
+  })
+
+  it('só com assignRoles aparece a engrenagem da comunidade', () => {
+    login('bia', assignerAccess())
+    sidebar()
+    expect(screen.getByRole('button', { name: 'Configurações da comunidade' })).toBeTruthy()
+  })
+
+  it('a tela de cargos oferece a permissão para marcar', async () => {
+    login('dona')
+    render(<CommunitySettingsDialog open onOpenChange={() => {}} />)
+    await userEvent.click(within(screen.getByRole('list', { name: 'Cargos' })).getByRole('button', { name: 'VIP' }))
+    expect(screen.getByRole('checkbox', { name: 'Alterar cargos dos membros (só cargos abaixo do seu)' })).toBeTruthy()
+  })
+
+  it('Membros: dá cargo abaixo a quem está abaixo; não mexe em si mesmo', async () => {
+    login('bia', assignerAccess())
+    render(<CommunitySettingsDialog open onOpenChange={() => {}} />)
+    await userEvent.click(screen.getByRole('tab', { name: 'Membros' }))
+    const bia = screen.getByRole('group', { name: 'Cargos de Bia' })
+    expect(within(bia).getAllByRole('checkbox').every((c) => (c as HTMLInputElement).disabled)).toBe(true)
+    const davi = screen.getByRole('group', { name: 'Cargos de Davi' })
+    expect((within(davi).getByRole('checkbox', { name: /Mod/ }) as HTMLInputElement).disabled).toBe(true)
+    await userEvent.click(within(davi).getByRole('checkbox', { name: /VIP/ }))
+    expect(socket.sent('member:set-roles')[0][0]).toEqual({ accountId: 'davi', roleIds: ['vip'] })
+  })
+
+  it('botão direito: Cargos só com os cargos abaixo, e não em si mesmo', async () => {
+    login('bia', assignerAccess())
+    const { unmount } = render(<MemberList />)
+    fireEvent.contextMenu(screen.getByText('Caio'))
+    await userEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: /Cargos/ }))
+    const submenu = await screen.findByRole('menu', { name: 'Cargos' })
+    expect(within(submenu).getAllByRole('menuitemcheckbox').map((i) => i.textContent)).toEqual(['VIP'])
+    unmount()
+
+    render(<MemberList />)
+    fireEvent.contextMenu(screen.getByText('Bia'))
+    expect(within(screen.getByRole('menu')).queryByRole('menuitem', { name: /Cargos/ })).toBeNull()
+  })
+})

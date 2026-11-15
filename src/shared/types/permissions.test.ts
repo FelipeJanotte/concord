@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   accessFor,
   can,
+  canAssignRole,
+  canChangeMemberRoles,
   canGrantPermissions,
   channelPermissions,
   displayColor,
@@ -139,6 +141,67 @@ describe('hierarquia', () => {
     expect(highestPosition(access(), 'dona')).toBe(Number.POSITIVE_INFINITY)
     expect(highestPosition(access(), 'caio')).toBe(2)
     expect(highestPosition(access(), 'zé')).toBe(0)
+  })
+})
+
+describe('alterar cargos dos membros', () => {
+  const people = (): AccessState =>
+    access({
+      roles: [
+        everyone(),
+        role('alto', 4),
+        role('gerente', 3, ['assignRoles']),
+        role('mod', 2, ['manageMembers']),
+        role('vip', 1),
+        role('enfeite', 5)
+      ],
+      members: [
+        { accountId: 'gil', roleIds: ['gerente'] },
+        { accountId: 'igor', roleIds: ['gerente'] },
+        { accountId: 'julia', roleIds: ['alto'] },
+        { accountId: 'mara', roleIds: ['mod'] },
+        { accountId: 'hugo', roleIds: ['vip'] },
+        { accountId: 'kel', roleIds: ['enfeite'] }
+      ]
+    })
+  const roleOf = (id: string) => people().roles.find((r) => r.id === id)!
+
+  it('assignRoles ou manageMembers: alvo abaixo do seu cargo mais alto (ou sem cargo)', () => {
+    expect(canChangeMemberRoles(people(), 'gil', 'hugo')).toBe(true)
+    expect(canChangeMemberRoles(people(), 'gil', 'zé')).toBe(true)
+    expect(canChangeMemberRoles(people(), 'gil', 'mara')).toBe(true)
+    expect(canChangeMemberRoles(people(), 'mara', 'hugo')).toBe(true)
+  })
+
+  it('não mexe em cargo igual ou acima, na dona nem em si mesmo', () => {
+    expect(canChangeMemberRoles(people(), 'gil', 'igor')).toBe(false)
+    expect(canChangeMemberRoles(people(), 'gil', 'julia')).toBe(false)
+    expect(canChangeMemberRoles(people(), 'gil', 'dona')).toBe(false)
+    expect(canChangeMemberRoles(people(), 'gil', 'gil')).toBe(false)
+  })
+
+  it('sem a permissão não mexe em ninguém, mesmo com cargo mais alto', () => {
+    expect(canChangeMemberRoles(people(), 'kel', 'hugo')).toBe(false)
+  })
+
+  it('a dona mexe em todo mundo, inclusive em si', () => {
+    expect(canChangeMemberRoles(people(), 'dona', 'julia')).toBe(true)
+    expect(canChangeMemberRoles(people(), 'dona', 'dona')).toBe(true)
+  })
+
+  it('só dá ou tira cargo abaixo do seu cargo mais alto; @todos nunca', () => {
+    expect(canAssignRole(people(), 'gil', roleOf('vip'))).toBe(true)
+    expect(canAssignRole(people(), 'gil', roleOf('mod'))).toBe(true)
+    expect(canAssignRole(people(), 'gil', roleOf('gerente'))).toBe(false)
+    expect(canAssignRole(people(), 'gil', roleOf('alto'))).toBe(false)
+    expect(canAssignRole(people(), 'kel', roleOf('vip'))).toBe(false)
+    expect(canAssignRole(people(), 'dona', roleOf('enfeite'))).toBe(true)
+    expect(canAssignRole(people(), 'dona', roleOf(EVERYONE_ROLE_ID))).toBe(false)
+  })
+
+  it('assignRoles tem texto que diz o limite', () => {
+    expect(GLOBAL_PERMISSIONS).toContain('assignRoles')
+    expect(PERMISSION_LABELS.assignRoles).toBe('Alterar cargos dos membros (só cargos abaixo do seu)')
   })
 })
 
