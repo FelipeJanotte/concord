@@ -31,7 +31,7 @@ e é o tipo de `Channel.type`. Ninguém cria DM por `channel:create`.
 | `dm:open` | `accountId` | `DmOpenResult` | conversa **nova** só entre amigos; uma que **já existe** continua abrindo (amizade desfeita não apaga o histórico); bloqueio de qualquer lado recusa com "Não foi possível abrir a conversa" (não diz quem bloqueou); limite `LIMITS.dm` (20 seguidas, depois 1/s) |
 | `dm:created` (servidor → app) | `DmEntry` | — | só quando a conversa é criada: para todas as janelas da outra pessoa (com `other` = eu) e para as minhas outras janelas |
 
-Mensagens no DM: o `message:send` aceita canal `text` ou `dm`; `message:new` e `typing` vão só para os dois membros
+Mensagens no DM: o `message:send` aceita canal `text`, `voice` (chat da sala) ou `dm`; `message:new` e `typing` vão só para os dois membros
 (`emitToViewers`). O link assinado do anexo só abre para membros (`GET /files` confere `allowed(..., 'view')`).
 
 ## Regras de acesso num DM (`allowedInDm`)

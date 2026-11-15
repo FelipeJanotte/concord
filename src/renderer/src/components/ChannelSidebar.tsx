@@ -1,10 +1,10 @@
 import { useState, type DragEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
-import { ChevronDown, HeadphoneOff, Hash, Loader2, Lock, MicOff, Plus, Settings, Trash2, Volume2, VolumeX } from 'lucide-react'
+import { ChevronDown, HeadphoneOff, Hash, Loader2, Lock, MessageSquare, MicOff, Plus, Settings, Trash2, Volume2, VolumeX } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { canModerate, type Channel, type ChannelType, type VoiceState } from '@shared/types'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { deleteChannel, joinVoice, moveToVoice, notify, selectTextChannel } from '@/lib/client'
+import { deleteChannel, joinVoice, moveToVoice, notify, openVoiceChat, selectTextChannel } from '@/lib/client'
 import { isPrivateChannel, useCan, useCanAdminister } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
@@ -245,6 +245,8 @@ function VoiceChannelItem({ channel }: { channel: Channel }) {
   const members = useApp(useShallow((s) => s.voice.filter((v) => v.channelId === channel.id)))
   // soltando alguém aqui (moderador arrastando da lista de outra sala)
   const [dropping, setDropping] = useState(false)
+  // chat de texto da sala: mensagem nova sem o painel "Chat" aberto
+  const unread = useApp((s) => !!s.unread[channel.id])
 
   return (
     <div
@@ -269,8 +271,14 @@ function VoiceChannelItem({ channel }: { channel: Channel }) {
     >
       <div
         {...onActivate(() => void joinVoice(channel.id))}
-        className={cn(itemBase, active && 'bg-accent text-accent-foreground hover:bg-accent', connected && 'text-accent-foreground')}
+        className={cn(
+          itemBase,
+          active && 'bg-accent text-accent-foreground hover:bg-accent',
+          connected && 'text-accent-foreground',
+          unread && 'font-semibold text-accent-foreground'
+        )}
       >
+        {unread && <span className="absolute -left-2 h-2 w-1 rounded-r-full bg-accent-foreground" />}
         {joining ? (
           <Loader2 className="size-5 shrink-0 animate-spin opacity-60" />
         ) : (
@@ -278,6 +286,7 @@ function VoiceChannelItem({ channel }: { channel: Channel }) {
         )}
         <span className="flex-1 truncate text-[15px]">{channel.name}</span>
         <PrivateBadge channelId={channel.id} />
+        <VoiceChatShortcut channelId={channel.id} unread={unread} />
         <ChannelActions channel={channel} />
       </div>
       {members.length > 0 && (
@@ -288,6 +297,32 @@ function VoiceChannelItem({ channel }: { channel: Channel }) {
         </div>
       )}
     </div>
+  )
+}
+
+/** Abre o chat de texto da sala sem entrar na voz (sempre à vista com mensagem nova; senão, ao passar o mouse). */
+function VoiceChatShortcut({ channelId, unread }: { channelId: string; unread: boolean }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation() // não entra na sala
+            openVoiceChat(channelId)
+          }}
+          onKeyDown={(e) => e.stopPropagation()}
+          aria-label={unread ? 'Abrir o chat da sala (mensagens novas)' : 'Abrir o chat da sala'}
+          className={cn(
+            'transition-opacity hover:text-accent-foreground focus-visible:opacity-100',
+            unread ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+          )}
+        >
+          <MessageSquare className="size-3.5" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>Abrir o chat</TooltipContent>
+    </Tooltip>
   )
 }
 

@@ -230,6 +230,11 @@ compartilhada continua em destaque e as câmeras vão para a faixa de miniaturas
   câmera e se veem.
 - **Pendente:** câmera no painel da chamada privada (B8), câmera em destaque/tela cheia e fundo desfocado.
 
+## Chat de texto da sala
+
+Botão "Chat" no topo da `VoiceView` abre, ao lado da sala, o chat de texto do canal de voz (mesmo `ChatView` dos
+canais de texto). Detalhes, permissões e testes em `docs/areas/messages.md` ("Chat de texto da sala de voz").
+
 ## Controles fora da sala: "Voz conectada"
 
 Na sala de voz os controles ficam embaixo da grade (`VoiceView`); em **qualquer outra tela** (chat de texto, Home,
@@ -255,6 +260,10 @@ duas barras laterais), como no Discord:
   para escolher o microfone antes de entrar numa sala. Fora da rede local, a voz precisa do LiveKit com TURN e domínio com HTTPS (A14: `docs/areas/deploy.md`).
   Também tem a seção "Sobreposição em jogos" (overlay, B15:
   `docs/areas/overlay.md`).
+  **Altura:** a janela tem muitas seções (dispositivos, volumes, ruído, pressione para falar, sons, sobreposição) e
+  passa da altura de uma tela comum. Por isso o `DialogContent` é `flex max-h-[85vh] flex-col` (como os diálogos de
+  administração) e tudo abaixo do título fica numa área que rola (`data-testid="device-settings-body"`,
+  `min-h-0 flex-1 overflow-y-auto`). Seção nova entra **dentro** dessa área; fora dela volta a cortar.
 - **Botão direito sobre uma pessoa** (`components/voice/MemberContextMenu.tsx`, shadcn `ui/context-menu`), no tile
   da sala de voz (`VoiceGrid`) e na lista embaixo do canal na barra lateral (`ChannelSidebar`):
   1. nome#tag;
@@ -292,7 +301,7 @@ duas barras laterais), como no Discord:
   atualiza a lista (`devicechange`). Escolha salva de um aparelho desconectado aparece como "Dispositivo desconectado".
 - **Testes:** `lib/voice.test.ts` (blocos "dispositivos e volume" e "silenciar alguém"), `lib/actions/devices.test.ts`
   (preferências, silenciar, erros, filtro da lista), `components/voice/DeviceSettings.test.tsx` (jsdom: seletores,
-  desconectado, sem `setSinkId`) e `components/voice/MemberContextMenu.test.tsx` (jsdom: menu no tile e na barra
+  desconectado, sem `setSinkId`, altura limitada com as seções na área que rola) e `components/voice/MemberContextMenu.test.tsx` (jsdom: menu no tile e na barra
   lateral, só "Ver perfil" em si mesmo, volume, silenciar mantendo o volume e o menu aberto, cartão de perfil).
   À mão: trocar de fone no meio da conversa e conferir que o outro continua ouvindo; botão direito numa pessoa,
   baixar o volume, silenciar, tirar o silêncio (volta ao volume ajustado) e reiniciar o app (tudo continua).

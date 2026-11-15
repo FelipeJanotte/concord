@@ -21,7 +21,7 @@ export interface UpdaterLike {
   on(event: 'update-downloaded', fn: (info: { version: string }) => void): unknown
   on(event: 'error', fn: (err: Error) => void): unknown
   checkForUpdates(): Promise<unknown>
-  quitAndInstall(): void
+  quitAndInstall(isSilent?: boolean, isForceRunAfter?: boolean): void
 }
 
 export interface UpdaterDeps {
@@ -75,7 +75,7 @@ export function createUpdaterController({ updater, isPackaged, send, setInterval
     status: (): UpdateStatus => status,
     /** reinicia e instala; só faz algo com a versão já baixada */
     install(): void {
-      if (status.state === 'ready') updater.quitAndInstall()
+      if (status.state === 'ready') updater.quitAndInstall(true, true)
     }
   }
 }
