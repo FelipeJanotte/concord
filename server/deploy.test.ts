@@ -107,3 +107,11 @@ describe('vercel.json (versão web do app)', () => {
     expect(vercel.installCommand).toMatch(/^ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci$/)
   })
 })
+
+describe('electron-builder.yml (instalador)', () => {
+  const builder = read('electron-builder.yml')
+
+  it('não recompila dependências nativas (o uiohook-napi já vem compilado; recompilar exige Python)', () => {
+    expect(builder).toMatch(/^npmRebuild: false$/m)
+  })
+})

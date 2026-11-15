@@ -23,7 +23,7 @@ description: Como rodar, testar, gerar o build e empacotar o Concord, e como res
 | `npm run test:watch` | vitest em modo watch; `npx vitest run server/tests/auth.test.ts` roda um arquivo só |
 | `npm run build` | typecheck + bundle em `out/` |
 | `npm start` | abre o build de `out/` |
-| `npm run dist` | build + instalador NSIS em `dist/` (config em `electron-builder.yml`), sem publicar |
+| `npm run dist` | build + instalador NSIS em `dist/` (config em `electron-builder.yml`), sem publicar. Com `VITE_DEFAULT_SERVER=<endereço>` no ambiente, o instalador já vem com o servidor na tela de login (ex.: o IP do Radmin para os amigos) |
 | `npm run release` | build + instalador + publica no GitHub Releases (o workflow da tag `vX.Y.Z` usa; skill `concord-updates`) |
 
 Variáveis do servidor: `PORT`, `DATA_DIR` (padrão `server/data`, que está no `.gitignore`), `DATABASE_URL`,
@@ -192,6 +192,7 @@ Pela internet sem VPN, use a hospedagem da A14 (skill `concord-deploy`: LiveKit 
 
 | Sintoma | Causa e solução |
 |---|---|
+| `npm run dist` falha com "Could not find any Python installation" / "node-gyp failed to rebuild uiohook-napi" | O `electron-builder` tentou recompilar a dependência nativa. O `electron-builder.yml` precisa ter `npmRebuild: false` (o `uiohook-napi` já vem compilado; skill `concord-voice`, "Pressione para falar"). |
 | `Error: Electron uninstall` | O binário do Electron não foi baixado (o script de instalação dele não rodou ou ainda não terminou). `node node_modules/electron/install.js`, ou apague `node_modules` e rode `npm install` de novo. No npm 11.20+ os install scripts ficam bloqueados por padrão (aviso `install-scripts ... not yet covered by allowScripts`): rode `npm install-scripts approve electron esbuild` e depois `npm rebuild`. |
 | Tela de login diz que não conectou | O servidor não está rodando, o endereço está errado ou o firewall bloqueia. Teste abrindo o endereço no navegador: ele responde `{"name":"concord-server",...}`. |
 | `EADDRINUSE :3001` | Outro servidor já está rodando. Feche o processo ou use outra porta (PowerShell: `$env:PORT=3002; npm run server`). |
