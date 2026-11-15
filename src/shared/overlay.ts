@@ -36,6 +36,27 @@ export const OVERLAY_EDIT_SHORTCUT_LABEL = 'Ctrl + Shift + `'
 /** No máximo tantas pessoas aparecem (o resto vira "+N"). */
 export const OVERLAY_MAX_MEMBERS = 12
 
+/**
+ * Medidas do overlay, **um lugar só** para a página (altura de cada linha, foto) e para o processo
+ * principal (tamanho da janela). Antes eram números separados que não batiam (a linha real era maior
+ * que a reservada) e a última pessoa ficava cortada embaixo.
+ * `line` = altura de cada linha (pessoa, "+N", barra do modo de mover); `avatar` = foto.
+ */
+export const OVERLAY_METRICS: Record<OverlaySize, { width: number; line: number; avatar: number }> = {
+  small: { width: 200, line: 26, avatar: 20 },
+  medium: { width: 250, line: 34, avatar: 28 },
+  large: { width: 320, line: 44, avatar: 36 }
+}
+/** espaço entre as linhas e a margem em volta (px) */
+export const OVERLAY_GAP = 4
+export const OVERLAY_PADDING = 8
+
+/** Altura exata da janela para `lines` linhas (pessoas + "+N" + a barra do modo de mover). */
+export function overlayHeight(size: OverlaySize, lines: number): number {
+  const n = Math.max(1, lines)
+  return OVERLAY_PADDING * 2 + n * OVERLAY_METRICS[size].line + (n - 1) * OVERLAY_GAP
+}
+
 export interface OverlayMember {
   /** conexão (socket.id) */
   id: string
@@ -50,7 +71,6 @@ export interface OverlayMember {
 
 /** O que o overlay mostra: a minha sala de voz (null = fora de sala, o overlay some). */
 export interface OverlayRoom {
-  channelName: string
   members: OverlayMember[]
   /** quantos ficaram de fora por causa de `OVERLAY_MAX_MEMBERS` */
   more: number

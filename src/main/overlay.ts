@@ -21,8 +21,10 @@ import {
   OVERLAY_CORNERS,
   OVERLAY_EDIT_SHORTCUT,
   OVERLAY_MAX_MEMBERS,
+  OVERLAY_METRICS,
   OVERLAY_SHORTCUT,
   OVERLAY_SIZES,
+  overlayHeight,
   type OverlayConfig,
   type OverlayPosition,
   type OverlayRoom,
@@ -36,23 +38,17 @@ export interface Rect {
   height: number
 }
 
-/** Medidas por tamanho: largura, altura de cada pessoa e da linha do nome da sala. */
-const SIZES: Record<OverlaySize, { width: number; row: number; header: number }> = {
-  small: { width: 200, row: 30, header: 22 },
-  medium: { width: 250, row: 38, header: 26 },
-  large: { width: 320, row: 48, header: 30 }
-}
+/** distância do canto da tela */
 const MARGIN = 16
-const PADDING = 8
 
 /**
- * Onde a janela fica: na posição arrastada (sem sair da área útil da tela) ou no canto escolhido,
- * com altura para as pessoas. No modo de mover ganha uma linha para a barra "Concluir".
+ * Onde a janela fica: na posição arrastada (sem sair da área útil da tela) ou no canto escolhido.
+ * Altura exata para as linhas (`overlayHeight`, as mesmas medidas da página): pessoas, "+N" e, no
+ * modo de mover, a barra "Concluir".
  */
 export function overlayBounds(workArea: Rect, config: OverlayConfig, rows: number, editing = false): Rect {
-  const s = SIZES[config.size]
-  const width = s.width
-  const height = PADDING * 2 + s.header + s.row * (Math.max(1, Math.min(rows, OVERLAY_MAX_MEMBERS + 1)) + (editing ? 1 : 0))
+  const width = OVERLAY_METRICS[config.size].width
+  const height = overlayHeight(config.size, Math.max(1, Math.min(rows, OVERLAY_MAX_MEMBERS + 1)) + (editing ? 1 : 0))
   if (config.position) {
     const clamp = (v: number, min: number, max: number): number => Math.round(Math.min(Math.max(v, min), Math.max(min, max)))
     return {
@@ -93,7 +89,7 @@ export function cleanConfig(raw: unknown): OverlayConfig {
 /** Confere o estado da sala (texto curto, no máximo `OVERLAY_MAX_MEMBERS` pessoas); inválido = null. */
 export function cleanRoom(raw: unknown): OverlayRoom | null {
   const r = raw as Partial<OverlayRoom> | null
-  if (!r || typeof r.channelName !== 'string' || !Array.isArray(r.members)) return null
+  if (!r || !Array.isArray(r.members)) return null
   const str = (v: unknown, max: number): string => (typeof v === 'string' ? v.slice(0, max) : '')
   const members = r.members.slice(0, OVERLAY_MAX_MEMBERS).map((m) => ({
     id: str(m?.id, 64),
@@ -105,7 +101,7 @@ export function cleanRoom(raw: unknown): OverlayRoom | null {
     deafened: m?.deafened === true
   }))
   const more = typeof r.more === 'number' && r.more > 0 ? Math.floor(r.more) : 0
-  return { channelName: str(r.channelName, 64), members, more }
+  return { members, more }
 }
 
 /** O que o controlador precisa do mundo de fora (janela, tela, aviso para a janela principal). */
