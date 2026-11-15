@@ -9,7 +9,7 @@ import { useApp, type ChannelNotifyMode } from '@/store'
 import { badgeCount, callNotification, drawBadge, friendRequestNotification, messageNotification } from '../notifications'
 import { get, set, type AppSocket } from '../core'
 import { selectTextChannel } from './channels'
-import { openDmChat, showFriends } from './navigation'
+import { openDmChat, openVoiceChat, showFriends } from './navigation'
 
 export const notificationEnv = {
   bridge: (): NotificationsBridge | null => (typeof window !== 'undefined' ? (window.api?.notifications ?? null) : null),
@@ -26,7 +26,10 @@ export function openNotificationTarget(target: NotificationTarget | null): void 
   if (target.kind === 'friends') showFriends()
   // menção num canal da comunidade (B19): abre o canal, se eu ainda vejo
   else if (target.kind === 'channel') {
-    if (get().channels.some((c) => c.id === target.channelId && c.type === 'text')) selectTextChannel(target.channelId)
+    const channel = get().channels.find((c) => c.id === target.channelId)
+    if (channel?.type === 'text') selectTextChannel(channel.id)
+    // chat da sala de voz: abre a sala com o painel "Chat"
+    else if (channel?.type === 'voice') openVoiceChat(channel.id)
   } else if (get().dms.some((d) => d.channel.id === target.channelId)) openDmChat(target.channelId)
 }
 

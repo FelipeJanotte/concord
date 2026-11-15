@@ -230,6 +230,11 @@ compartilhada continua em destaque e as câmeras vão para a faixa de miniaturas
   câmera e se veem.
 - **Pendente:** câmera no painel da chamada privada (B8), câmera em destaque/tela cheia e fundo desfocado.
 
+## Chat de texto da sala
+
+Botão "Chat" no topo da `VoiceView` abre, ao lado da sala, o chat de texto do canal de voz (mesmo `ChatView` dos
+canais de texto). Detalhes, permissões e testes em `docs/areas/messages.md` ("Chat de texto da sala de voz").
+
 ## Controles fora da sala: "Voz conectada"
 
 Na sala de voz os controles ficam embaixo da grade (`VoiceView`); em **qualquer outra tela** (chat de texto, Home,
