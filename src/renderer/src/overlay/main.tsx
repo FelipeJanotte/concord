@@ -8,7 +8,7 @@ import { applyTheme, loadLocalTheme } from '../lib/theme/apply'
 import { OverlayApp } from './OverlayApp'
 
 // as mesmas cores do app (último tema desta máquina)
-applyTheme(loadLocalTheme(), { animate: false })
+applyTheme(loadLocalTheme(), { animate: false, windowEffects: false })
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

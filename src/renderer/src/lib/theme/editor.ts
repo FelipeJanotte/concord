@@ -35,7 +35,8 @@ export function sameTheme(a: ThemeConfig, b: ThemeConfig): boolean {
     a.intensity === b.intensity &&
     a.background.angle === b.background.angle &&
     a.background.stops.length === b.background.stops.length &&
-    a.background.stops.every((s, i) => s === b.background.stops[i])
+    a.background.stops.every((s, i) => s === b.background.stops[i]) &&
+    !!a.translucent === !!b.translucent
   )
 }
 
