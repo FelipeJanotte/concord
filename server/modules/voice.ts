@@ -8,19 +8,21 @@
  *
  * Moderação (B6, `server/modules/moderation.ts`): `kickFromVoice` tira uma conexão da sala e
  * `setServerMuted` silencia uma conta para todos (entra no cálculo do `speak`, então vale no
- * token, ao vivo no LiveKit e se a pessoa sair e voltar).
+ * token, ao vivo no LiveKit e se a pessoa sair e voltar). O silêncio fica no banco (`server_mutes`,
+ * `server/repo/moderation.ts`), carregado no `init`: sobrevive a reiniciar o servidor.
  */
 import { can, channelPermissions, type AccessState, type VoicePermissions, type VoiceState } from '../../src/shared/types'
 import { accessSnapshot, allowed, currentAccess, dmMembersOf } from '../access'
 import { guard, type AppServer, type AppSocket, type ServerModule } from '../context'
 import { closeRoom, createVoiceCredentials, kickFromRoom, liveKitConfig, updateVoicePermissions } from '../livekit'
 import { findChannel } from '../repo/channels'
+import { listServerMutes, setServerMute } from '../repo/moderation'
 
 /** socket.id → estado de voz */
 const voice = new Map<string, VoiceState>()
 /** socket.id → o que o token/LiveKit permite publicar agora (para só atualizar o que mudou) */
 const published = new Map<string, VoicePermissions>()
-/** contas silenciadas por um moderador (B6). Em memória: some se o servidor reiniciar. */
+/** contas silenciadas por um moderador (B6): cache do banco (`server_mutes`), carregado no `init`. */
 const serverMuted = new Set<string>()
 
 export const voiceStates = (): VoiceState[] => [...voice.values()]
@@ -132,8 +134,10 @@ export function kickFromVoice(io: AppServer, socketId: string): VoiceState | und
 /**
  * Silencia (ou tira o silêncio) da conta para todos. Vale para todas as conexões dela
  * nas salas e para as próximas entradas; no LiveKit o microfone deixa de ser aceito.
+ * Grava no banco antes de aplicar: se a gravação falhar, nada muda (e o erro sobe para o `guard`).
  */
-export function setServerMuted(io: AppServer, accountId: string, muted: boolean): void {
+export async function setServerMuted(io: AppServer, accountId: string, muted: boolean, mutedBy: string | null = null): Promise<void> {
+  await setServerMute(accountId, muted, mutedBy)
   if (muted) serverMuted.add(accountId)
   else serverMuted.delete(accountId)
   applyVoiceAccess(io, accessSnapshot())
@@ -168,6 +172,12 @@ export function clearVoiceChannel(_io: AppServer, channelId: string): void {
 }
 
 export const voiceModule: ServerModule = {
+  /** Silêncios guardados no banco (B6): valem desde a primeira entrada depois de o servidor subir. */
+  async init() {
+    serverMuted.clear()
+    for (const accountId of await listServerMutes()) serverMuted.add(accountId)
+  },
+
   socket(io, socket) {
     socket.on('voice:join', (payload, ack) => {
       if (typeof ack !== 'function') return

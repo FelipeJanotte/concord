@@ -82,7 +82,7 @@ há mais de 1 h é apagado; apagar o canal apaga os arquivos. Permissão por can
 PostgreSQL via Drizzle. `client.ts` abre `DATABASE_URL` com `pg`; sem ela, abre o **PGlite** (Postgres em
 WebAssembly) em `DATA_DIR/pgdata`. Mesmo schema e mesmas migrations nos dois, aplicadas no boot (`server/index.ts`
 abre o banco antes do `listen` e roda o `init` dos módulos). Tabelas: `accounts`, `sessions`, `channels`,
-`messages`, `attachments` (bytes no `FileStorage`, `DATA_DIR/uploads/<id>`). O banco garante
+`messages`, `attachments` (bytes no `FileStorage`, `DATA_DIR/uploads/<id>`), `server_mutes` (silêncio pelo servidor, B6; o módulo de voz carrega no `init`). O banco garante
 unicidade (e-mail, `lower(tag)`, Google id, `type + lower(name)` do canal), tamanhos (`check`) e apaga em cascata
 (canal → mensagens; conta → sessões; conta apagada deixa a mensagem com a cópia `author_*`). `seed.ts` cria os
 canais padrão ou importa o `db.json` antigo quando o banco está vazio.
@@ -125,7 +125,7 @@ Cliente → servidor (`ClientToServerEvents`):
 | `voice:sharing` | `boolean` | — | liga/desliga o "ao vivo" (só para quem está numa sala); `voice:state` |
 | `typing` | `channelId` | — | broadcast `typing` (o cliente limita a 1 envio a cada 2,5 s) |
 | `moderation:voice-kick` | `{ userId }` | `OkResult` | `manageMembers` + cargo acima (`canModerate`); `moderation:kicked` para a conexão expulsa, tira da sala (também no LiveKit) + `voice:state` — skill `concord-moderation` |
-| `moderation:voice-mute` | `{ accountId, muted }` | `OkResult` | silencia a conta para todos (sem microfone no LiveKit, `VoiceState.serverMuted`) + `voice:state` |
+| `moderation:voice-mute` | `{ accountId, muted }` | `OkResult` | silencia a conta para todos (sem microfone no LiveKit, `VoiceState.serverMuted`; guardado em `server_mutes`, sobrevive a reiniciar) + `voice:state` |
 | `call:invite` | `channelId` (conversa) | `CallResult` | membro, sem bloqueio, um por conversa e por pessoa; `call:updated` (`ringing`) para as duas contas; `missed` depois de `CALL_RING_MS` — skill `concord-calls` |
 | `call:accept` / `call:decline` / `call:cancel` / `call:end` | `channelId` | `CallResult` / `OkResult` | atender (`active`), recusar, cancelar, desligar; o fim manda `call:ended` e tira os dois da sala da conversa |
 | `call:list` | — | `CallInfo[]` | chamadas em andamento das minhas conversas (o app pede depois do `hello`) |
