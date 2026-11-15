@@ -186,16 +186,24 @@ describe('mensagens', () => {
     expect((await got)[0].content).toHaveLength(2000)
   })
 
-  it('ignora mensagem vazia, canal de voz e canal inexistente', async () => {
+  it('ignora mensagem vazia e canal inexistente', async () => {
     const a = await user()
     const text = await newChannel(a, 'text')
-    const voice = await newChannel(a, 'voice')
     const silent = expectNoEvent(a.socket, 'message:new')
     a.socket.emit('message:send', { channelId: text.id, content: '    ' })
-    a.socket.emit('message:send', { channelId: voice.id, content: 'oi' })
     a.socket.emit('message:send', { channelId: 'nao-existe', content: 'oi' })
     await silent
-    expect((await a.socket.emitWithAck('message:history', { channelId: voice.id })).messages).toEqual([])
+  })
+
+  it('chat de texto da sala de voz: manda, todos que veem recebem (mesmo fora da voz) e fica no histórico', async () => {
+    const a = await user('Ana')
+    const b = await user('Bia') // não entrou na voz
+    const voice = await newChannel(a, 'voice')
+    const got = waitFor(b.socket, 'message:new', (m) => m.channelId === voice.id)
+    a.socket.emit('message:send', { channelId: voice.id, content: 'alguém joga?' })
+    expect((await got)[0]).toMatchObject({ channelId: voice.id, content: 'alguém joga?', author: { name: 'Ana' } })
+    const page = await b.socket.emitWithAck('message:history', { channelId: voice.id })
+    expect(page.messages.map((m) => m.content)).toEqual(['alguém joga?'])
   })
 
   it('"digitando" vai para os outros, não para quem digita', async () => {

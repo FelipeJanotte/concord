@@ -1,6 +1,6 @@
 # Mensagens
 
-Mensagens dos canais de texto e das conversas privadas (`dm`). Anexos têm doc próprio (`docs/areas/attachments.md`),
+Mensagens dos canais de texto, do **chat de texto das salas de voz** e das conversas privadas (`dm`). Anexos têm doc próprio (`docs/areas/attachments.md`),
 apagar fica na moderação (`docs/areas/moderation.md`) e mensagens de ferramenta na `docs/areas/tools.md`.
 
 ## Arquivos
@@ -23,7 +23,7 @@ apagar fica na moderação (`docs/areas/moderation.md`) e mensagens de ferrament
 
 | Evento | Payload | Resposta | Regras |
 |---|---|---|---|
-| `message:send` | `{ channelId, content, attachmentIds?, replyToId? }` | — (chega como `message:new`) | texto ou anexo; até 2000; `send` (e `attach` com anexo); `replyToId` só de mensagem do **mesmo canal** (senão vai sem citação); `LIMITS.message` |
+| `message:send` | `{ channelId, content, attachmentIds?, replyToId? }` | — (chega como `message:new`) | canal de texto, sala de voz (chat da sala) ou `dm`; texto ou anexo; até 2000; `send` (e `attach` com anexo); `replyToId` só de mensagem do **mesmo canal** (senão vai sem citação); `LIMITS.message` |
 | `message:edit` | `{ messageId, content }` | `OkResult` | ver abaixo |
 | `message:edited` (servidor → app) | `{ channelId, messageId, content, editedAt }` | — | por `emitToViewers` |
 
@@ -114,6 +114,27 @@ mostram texto puro. Prévia do site (embed) está pendente.
 
 Testes: `src/shared/links.test.ts` (reconhecimento, pontuação, parênteses, protocolos recusados) e
 `components/chat/links.test.tsx` (`<a>` com `href`/`target`/`rel`, `www.`, link junto com menção, `javascript:` fica texto).
+
+## Chat de texto da sala de voz
+
+Como no Discord, cada sala de voz tem um chat de texto: as mensagens são do próprio canal `voice` (mesma tabela,
+mesmos eventos). Quem **vê** a sala lê, e quem tem `send` escreve, mesmo sem entrar na voz. Editar, responder,
+reações, menções, anexos e links funcionam igual ao canal de texto. Mensagens de ferramenta (`tools:*`) continuam
+só em canal de texto/conversa.
+
+| Arquivo | Papel |
+|---|---|
+| `server/modules/messages.ts` | `message:send` aceita canal `voice` (antes ignorava). A permissão é a mesma (`send`, `attach`); `message:new` vai só para quem vê a sala (`emitToViewers`). |
+| `store/navigation.ts` + `lib/actions/navigation.ts` | `voiceChatOpen` (painel aberto; vale para a sala em `view` e continua aberto ao trocar de sala), `setVoiceChatOpen(open)` (abrir limpa o não lido da sala), `openVoiceChat(channelId)` (mostra a sala **sem entrar na voz**, com o painel aberto, e busca o histórico). `isChatOnScreen` conta a sala de voz só com o painel aberto. |
+| `components/VoiceView.tsx` | Botão "Chat" (`MessageSquare`) no topo da sala, com bolinha vermelha quando há não lido e o painel fechado; `VoiceChatPanel` (360 px, `aside` "Chat da sala") com o `ChatView embedded`. |
+| `components/ChatView.tsx` | `embedded`: sem o cabeçalho do canal (o painel tem o seu) e sem o painel de chamada. Boas-vindas próprias da sala ("Chat de Jogos"). |
+| `components/ChannelSidebar.tsx` | Na linha da sala de voz: atalho de chat (aparece ao passar o mouse, ou sempre com não lido) que chama `openVoiceChat` sem entrar na voz; não lido deixa o nome em negrito com a marca à esquerda. |
+| `lib/dms.ts` (`chatLabel`) e `lib/notifications.ts` | Nome da sala **sem "#"** (placeholder "Conversar em Jogos", "Ana em Jogos" na notificação). Clicar na notificação abre a sala com o chat (`openVoiceChat`). |
+
+Testes: `server/tests/realtime.test.ts` (manda, quem não está na voz recebe, histórico), `lib/actions/navigation.test.ts`
+(não lido com o painel fechado/aberto, `openVoiceChat`, voltar para a comunidade), `lib/actions/notifications.test.ts`
+(clique abre a sala com o chat) e `components/voice-chat.test.tsx` (botão e painel, envio sem estar na voz, bolinha,
+atalho da barra lateral).
 
 ## Testes
 

@@ -1,5 +1,5 @@
 // Navegação da barra de úteis (B7): seções, Home, conversas privadas e não lidos.
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Channel, DmEntry, Message, User } from '@shared/types'
 import { selectTextChannel } from '@/lib/actions/channels'
 import { bindMessageEvents } from '@/lib/actions/messages'
@@ -8,6 +8,8 @@ import {
   messageAccount,
   openDmChat,
   openTool,
+  openVoiceChat,
+  setVoiceChatOpen,
   showCommunity,
   showFriends,
   showHome
@@ -111,5 +113,37 @@ describe('não lidos', () => {
     expect(isChatOnScreen(st, 'geral')).toBe(true)
     expect(isChatOnScreen({ ...st, section: 'home' }, 'geral')).toBe(false)
     expect(isChatOnScreen({ ...st, section: 'tool' }, 'geral')).toBe(false)
+  })
+})
+
+describe('chat de texto da sala de voz', () => {
+  const sala: Channel = { id: 'sala', name: 'Jogos', type: 'voice', createdAt: 0 }
+  beforeEach(() => useApp.setState({ channels: [geral, sala] }))
+
+  it('com o painel "Chat" fechado a mensagem marca não lido; aberto, não', () => {
+    useApp.setState({ section: 'community', view: { kind: 'voice', channelId: 'sala' }, voiceChatOpen: false })
+    expect(isChatOnScreen(useApp.getState(), 'sala')).toBe(false)
+    socket.receive('message:new', msg('sala'))
+    expect(useApp.getState().unread.sala).toBe(true)
+
+    setVoiceChatOpen(true) // abrir limpa o não lido
+    expect(useApp.getState().unread.sala).toBeUndefined()
+    expect(isChatOnScreen(useApp.getState(), 'sala')).toBe(true)
+    socket.receive('message:new', msg('sala'))
+    expect(useApp.getState().unread.sala).toBeUndefined()
+  })
+
+  it('openVoiceChat mostra a sala com o painel aberto, sem entrar na voz, e busca o histórico', async () => {
+    useApp.setState({ section: 'home', unread: { sala: true } })
+    openVoiceChat('sala')
+    expect(useApp.getState()).toMatchObject({ section: 'community', view: { kind: 'voice', channelId: 'sala' }, voiceChatOpen: true, myVoiceChannelId: null })
+    expect(useApp.getState().unread.sala).toBeUndefined()
+    await vi.waitFor(() => expect(socket.sent('message:history')).toEqual([[{ channelId: 'sala' }]]))
+  })
+
+  it('voltar para a comunidade com o chat da sala aberto limpa o não lido dela', () => {
+    useApp.setState({ section: 'home', view: { kind: 'voice', channelId: 'sala' }, voiceChatOpen: true, unread: { sala: true } })
+    showCommunity()
+    expect(useApp.getState().unread.sala).toBeUndefined()
   })
 })

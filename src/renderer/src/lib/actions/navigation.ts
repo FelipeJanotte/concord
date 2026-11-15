@@ -13,8 +13,24 @@ function openChat(channelId: string): void {
 /** Volta para a comunidade, na mesma tela de antes (canal de texto ou sala de voz). */
 export function showCommunity(): void {
   set({ section: 'community', toolId: null })
+  const { view, voiceChatOpen } = get()
+  if (view?.kind === 'text' || (view?.kind === 'voice' && voiceChatOpen)) openChat(view.channelId)
+}
+
+/**
+ * Chat de texto da sala de voz (como no Discord): mostra a sala (sem entrar na voz) com o painel
+ * "Chat" aberto. Usado pelo botão de chat na barra lateral e pelo clique na notificação.
+ */
+export function openVoiceChat(channelId: string): void {
+  set({ section: 'community', toolId: null, view: { kind: 'voice', channelId }, voiceChatOpen: true })
+  openChat(channelId)
+}
+
+/** Abre/fecha o painel "Chat" da sala que está na tela. Abrir limpa o não lido dela. */
+export function setVoiceChatOpen(open: boolean): void {
+  set({ voiceChatOpen: open })
   const view = get().view
-  if (view?.kind === 'text') openChat(view.channelId)
+  if (open && view?.kind === 'voice') openChat(view.channelId)
 }
 
 /** Vai para a Home, na última coisa aberta nela ("Amigos" ou uma conversa). */
@@ -51,7 +67,11 @@ export function openTool(toolId: string): void {
 
 /** O chat deste canal está na tela agora? (para não marcar como não lido) */
 export function isChatOnScreen(st: ReturnType<typeof get>, channelId: string): boolean {
-  if (st.section === 'community') return st.view?.kind === 'text' && st.view.channelId === channelId
+  if (st.section === 'community') {
+    if (st.view?.channelId !== channelId) return false
+    // sala de voz: só com o painel "Chat" aberto
+    return st.view.kind === 'text' || (st.view.kind === 'voice' && st.voiceChatOpen)
+  }
   if (st.section === 'home') return st.homeView.kind === 'dm' && st.homeView.channelId === channelId
   return false
 }

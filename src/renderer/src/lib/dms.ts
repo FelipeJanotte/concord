@@ -9,7 +9,9 @@ export function findDm(dms: readonly DmEntry[], channelId: string): DmEntry | un
 /** Como o chat é chamado no cabeçalho e no campo de texto: `#geral` ou `@Ana`. */
 export function chatLabel(channel: Channel, dms: readonly DmEntry[]): string {
   const dm = channel.type === 'dm' ? findDm(dms, channel.id) : undefined
-  return dm ? `@${dm.other.name}` : `#${channel.name}`
+  if (dm) return `@${dm.other.name}`
+  // chat da sala de voz: o nome como na barra lateral (sem "#")
+  return channel.type === 'voice' ? channel.name : `#${channel.name}`
 }
 
 /** Permissões que valem numa conversa privada: lá não há cargos, só os dois membros (servidor: `allowedInDm`). */
