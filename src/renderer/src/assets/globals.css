@@ -94,3 +94,22 @@
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* Temas (v5, lib/theme): o gradiente do tema aparece no fundo principal, por cima da cor de base.
+   `fixed` faz o gradiente ocupar a janela inteira (não recomeça em cada painel). */
+.bg-background {
+  background-image: var(--app-gradient, none);
+  background-attachment: fixed;
+}
+
+/* Troca de tema com transição curta (a classe fica no <html> só durante a troca). */
+.theme-transition,
+.theme-transition *,
+.theme-transition *::before,
+.theme-transition *::after {
+  transition:
+    background-color 0.3s ease,
+    border-color 0.3s ease,
+    color 0.3s ease,
+    fill 0.3s ease !important;
+}

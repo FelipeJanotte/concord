@@ -13,6 +13,7 @@ import { bindAccountEvents } from './actions/account'
 import { bindChannelEvents, firstTextView } from './actions/channels'
 import { bindFriendsEvents, loadFriendsAndDms } from './actions/friends'
 import { bindToolsEvents } from './actions/tools'
+import { bindPreferencesEvents, loadPreferences } from './actions/preferences'
 import { bindLimitEvents } from './actions/limits'
 import { bindMessageEvents, loadHistory } from './actions/messages'
 import { bindPermissionsEvents } from './actions/permissions'
@@ -129,6 +130,7 @@ export function connect(url: string, token: string): Promise<void> {
   bindPermissionsEvents(s)
   bindFriendsEvents(s)
   bindToolsEvents(s)
+  bindPreferencesEvents(s)
 
   return new Promise((resolve, reject) => {
     let settled = false
@@ -157,6 +159,7 @@ export function connect(url: string, token: string): Promise<void> {
         })
         if (keep?.kind === 'text') void loadHistory(keep.channelId)
         void loadFriendsAndDms().catch(() => {}) // v3: amizades e conversas (o servidor já sabe quem eu sou)
+        void loadPreferences().catch(() => {}) // v5: tema da conta
         if (!settled) {
           settled = true
           resolve()
@@ -216,5 +219,6 @@ export * from './actions/voice'
 export * from './actions/devices'
 export * from './actions/friends'
 export * from './actions/tools'
+export * from './actions/preferences'
 export { previewVoiceSound } from './actions/voice-sounds'
 export { resolveServerUrl } from './core'

@@ -1,9 +1,9 @@
 ---
 name: concord-themes
-description: Como funcionam os temas personalizáveis do Concord (v5) — contrato ThemeConfig (base, cor de destaque, gradiente, intensidade), validateTheme e o código de compartilhamento (funções puras), preferências da conta no servidor (tema ativo + até 10 temas salvos, preferences:get/update/updated) e o que falta na tela (B11 motor, B12 editor). Use ao mexer em src/shared/types/theme.ts, src/shared/types/preferences.ts, server/modules/preferences.ts, server/repo/preferences.ts, server/db/schema/preferences.ts, nos tokens de cor de assets/globals.css, ou ao investigar tema que não salva, não sincroniza entre janelas ou "Tema inválido".
+description: Como funcionam os temas personalizáveis do Concord (v5) — contrato ThemeConfig (base, cor de destaque, gradiente, intensidade), validateTheme e o código de compartilhamento (funções puras), preferências da conta no servidor (tema ativo + até 10 temas salvos, preferences:get/update/updated) , o motor no app (B11: deriveTokens com contraste WCAG AA garantido, temas prontos, applyTheme, sincronia com a conta) e o que falta (B12 editor). Use ao mexer em src/shared/types/theme.ts, src/renderer/src/lib/theme/**, lib/actions/preferences.ts, store/preferences.ts, src/shared/types/preferences.ts, server/modules/preferences.ts, server/repo/preferences.ts, server/db/schema/preferences.ts, nos tokens de cor de assets/globals.css, ou ao investigar tema que não salva, não sincroniza entre janelas ou "Tema inválido".
 ---
 
-# Temas personalizáveis (v5: A9 servidor, B11 motor, B12 editor)
+# Temas personalizáveis (v5, Dev A: A9 servidor, B11 motor, B12 editor)
 
 Temas com fundo em gradiente e cor de destaque, prontos e editáveis, **grátis para todos**, salvos na conta e
 compartilháveis por código. As cores do app já são tokens CSS (`assets/globals.css`); um tema é só a **receita**, e
@@ -42,13 +42,44 @@ ThemeConfig = {
 | `preferences:update` | `{ theme?, savedThemes? }` | `PreferencesResult` | exige `hello`; tema inválido → "Tema inválido"; lista inválida (mais de 10, id repetido/não-uuid, nome vazio, tema inválido) → erro; vazio → "Nada para mudar"; limite `LIMITS.preferences` (20 seguidas, depois 1/s, por conta) |
 | `preferences:updated` (servidor → app) | `Preferences` | — | para as **outras** conexões da mesma conta (a janela que mudou recebe pelo ack) |
 
-## Pendente (Dev B)
+## Motor no app (B11)
 
-- **B11 Motor:** `deriveTokens(theme)` (pura, com testes de contraste WCAG AA) aplicando as variáveis no `:root`; ~10
-  temas prontos; funciona antes do login com o último tema salvo localmente.
-- **B12 Editor:** "Configurações → Aparência" com galeria, editor com prévia ao vivo, salvar/duplicar/apagar e
-  compartilhar por código. Ao entrar, o app pede `preferences:get`; ao mudar, `preferences:update` (o seletor de
-  cor pode mandar várias seguidas — o limite aguenta rajada de 20).
+A v5 inteira é do **Dev A** (B11 e B12 transferidas do Dev B).
+
+| Arquivo | Papel |
+|---|---|
+| `src/renderer/src/lib/theme/color.ts` | Puras: `mix`, `average`, `luminance`, `contrast` (WCAG), `ensureContrast` (puxa o texto para o branco/preto até 4,5:1 com todas as superfícies), `readableOn`. |
+| `src/renderer/src/lib/theme/derive.ts` | `deriveTokens(theme)` → `{ tokens, gradient, gradientStops, colorScheme }`; `THEME_TOKENS` (os nomes das variáveis CSS). |
+| `src/renderer/src/lib/theme/presets.ts` | `THEME_PRESETS`: 11 temas prontos (Padrão, Aurora, Pôr do sol, Oceano, Floresta, Neon, Grafite, Lavanda, Cereja, Claro, Amanhecer). |
+| `src/renderer/src/lib/theme/apply.ts` | `applyTheme` (variáveis no `<html>`, `--app-gradient`, `color-scheme`, transição de 300 ms), `saveLocalTheme`/`loadLocalTheme` (`concord:theme` no `localStorage`). |
+| `src/renderer/src/lib/actions/preferences.ts` | `loadPreferences` (depois do `hello`), listener `preferences:updated`, `previewTheme`, `setTheme` (envio agrupado em 400 ms), `flushPendingTheme`, `saveThemes`. |
+| `src/renderer/src/store/preferences.ts` | `theme`, `savedThemes`, `preferencesLoaded`. |
+| `src/renderer/src/main.tsx` | Aplica o último tema da máquina antes de desenhar (antes do login). |
+| `src/renderer/src/assets/globals.css` | Valores de `:root` = paleta escura do tema padrão; `.bg-background` desenha o `--app-gradient`; `.theme-transition`. |
+
+**Como o tema vira cores (`deriveTokens`):**
+- Duas paletas de base. A escura é **exatamente** a de antes: o `DEFAULT_THEME` reproduz o `:root` de
+  `globals.css`, e um teste lê o CSS e confere.
+- O gradiente tinge as superfícies na proporção da `intensity`, cada uma com um peso (`TINT`); o tom é a média das cores.
+- O fundo principal mostra o gradiente de verdade (`--app-gradient`, até 55% de cada cor sobre a base).
+- **Contraste garantido.**
+  - Toda superfície tingida mantém 7:1 com o extremo do texto (`keepHeadroom`): se o gradiente for claro demais
+    num tema escuro, a superfície é escurecida.
+  - Os textos passam por `ensureContrast`, com AA (4,5:1) sobre cada superfície em que aparecem, inclusive cada cor do gradiente.
+  - O texto sobre a cor de destaque é branco ou preto, o que ler melhor.
+  - Um teste gera 500 temas aleatórios com semente e confere todos.
+
+**Fluxo:**
+1. Ao abrir, o app aplica o tema guardado na máquina.
+2. Depois do `hello`, o `loadPreferences` aplica o tema da conta e o guarda na máquina.
+3. `setTheme` muda a tela na hora e envia `preferences:update` 400 ms depois, agrupando as mudanças do seletor de cor.
+   Um `preferences:updated` vindo de outra janela não desfaz a troca pendente desta.
+4. `previewTheme` só mostra, para a prévia do editor.
+
+## Pendente
+
+- **B12 Editor (Dev A):** "Configurações → Aparência" com galeria (`THEME_PRESETS`), editor com prévia ao vivo
+  (`previewTheme`), salvar/duplicar/apagar (`saveThemes`) e compartilhar por código (`encodeThemeCode`/`decodeThemeCode`).
 
 ## Testes
 
@@ -57,6 +88,11 @@ ThemeConfig = {
 | `src/shared/types/theme.test.ts` | `validateTheme` (normalização e cada recusa), `cleanThemeName`, código de compartilhamento (ida e volta, recusas). |
 | `server/repo/preferences.test.ts` | Padrão sem registro, gravar só o que mudou, uma conta por vez. |
 | `server/tests/preferences.test.ts` | Servidor real: padrão, salvar e normalizar, sincronia com a outra janela (e só com ela), persistência após reiniciar, validação dos temas salvos, tema inválido, antes do `hello`. |
+| `src/renderer/src/lib/theme/color.test.ts` | Mistura, média, luminância e contraste (valores de referência do WCAG), `ensureContrast`, `readableOn`. |
+| `src/renderer/src/lib/theme/derive.test.ts` | Padrão = `:root` do `globals.css` (lê o CSS), tingimento e gradiente, base clara, destaque; **todos os temas prontos e 500 aleatórios com texto AA**. |
+| `src/renderer/src/lib/theme/apply.test.ts` | (jsdom) variáveis no `<html>`, transição só durante a troca, tema guardado na máquina (e inválido → padrão). |
+| `src/renderer/src/lib/actions/preferences.test.ts` | (jsdom) carregar e aplicar, sincronia entre janelas, prévia, envio agrupado do `setTheme`, troca pendente vence o aviso, erro, temas salvos. |
+| `src/renderer/src/lib/client-friends.test.ts` | `connect()` pede o tema da conta depois do `hello`. |
 
 ## Depuração
 
