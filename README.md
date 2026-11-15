@@ -1,5 +1,7 @@
 # Concord
 
+[![CI](https://github.com/FelipeJanotte/concord/actions/workflows/ci.yml/badge.svg)](https://github.com/FelipeJanotte/concord/actions/workflows/ci.yml)
+
 App de chat estilo Discord, feito com **Electron + React + TypeScript + Tailwind v4 + shadcn/ui**.
 
 - Canais de **texto** com histórico, agrupamento de mensagens, indicador de "digitando..." e marcador de não lidas
