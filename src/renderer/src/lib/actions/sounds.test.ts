@@ -75,7 +75,9 @@ describe('coleção', () => {
 })
 
 describe('sound:played', () => {
-  const played = { channelId: 'sala', soundId: 's1', by: 'Ana', accountId: 'acc-ana' }
+  // como o servidor manda: `by` é a conexão (socket.id) de quem tocou, não o nome
+  const played = { channelId: 'sala', soundId: 's1', by: 'sock-ana', accountId: 'acc-ana' }
+  const ana = { id: 'sock-ana', accountId: 'acc-ana', name: 'Ana', tag: 'ana', color: '#fff', avatarUrl: null }
 
   it('toca o link completo pela saída escolhida, com o volume que dei para a pessoa', () => {
     useApp.setState({ myVoiceChannelId: 'sala', audioOutputId: 'fone', userVolumes: { 'acc-ana': 0.4 } })
@@ -83,15 +85,24 @@ describe('sound:played', () => {
     expect(play).toHaveBeenCalledWith('http://srv:3001/sounds/s1?a=1&e=2&s=3', { volume: 0.4, outputId: 'fone' })
   })
 
-  it('indicador de quem tocou até o som acabar', () => {
+  it('indicador de quem tocou (pelo nome, não pelo id da conexão) até o som acabar', () => {
     vi.useFakeTimers()
-    useApp.setState({ myVoiceChannelId: 'sala' })
+    useApp.setState({ myVoiceChannelId: 'sala', users: [ana] })
     socket.receive('sound:played', played)
     expect(useApp.getState().soundsPlaying['acc-ana']).toMatchObject({ soundId: 's1', by: 'Ana' })
     vi.advanceTimersByTime(1999)
     expect(useApp.getState().soundsPlaying['acc-ana']).toBeDefined()
     vi.advanceTimersByTime(1)
     expect(useApp.getState().soundsPlaying).toEqual({})
+  })
+
+  it('quem tocou já saiu: o nome vem da conta; sem nada, "Alguém"', () => {
+    useApp.setState({ myVoiceChannelId: 'sala', users: [{ ...ana, id: 'outra-conexao' }] })
+    socket.receive('sound:played', played)
+    expect(useApp.getState().soundsPlaying['acc-ana'].by).toBe('Ana')
+    useApp.setState({ users: [], soundsPlaying: {} })
+    socket.receive('sound:played', { ...played, accountId: 'acc-x' })
+    expect(useApp.getState().soundsPlaying['acc-x'].by).toBe('Alguém')
   })
 
   it('com deafen ou com a pessoa silenciada só para mim: não toca (o indicador aparece)', () => {

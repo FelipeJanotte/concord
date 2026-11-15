@@ -68,7 +68,7 @@ function playUrl(url: string, { volume, outputId }: { volume: number; outputId: 
   const audio = new Audio(url)
   audio.volume = Math.max(0, Math.min(1, volume))
   const sink = audio as HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> }
-  const start = (): void => void audio.play().catch(() => {})
+  const start = (): void => void audio.play().catch((err: unknown) => console.warn('[sons] não foi possível tocar:', err))
   if (outputId && sink.setSinkId) void sink.setSinkId(outputId).then(start, start)
   else start()
 }
@@ -102,11 +102,13 @@ export function bindSoundsEvents(s: AppSocket): void {
     if (st.myVoiceChannelId !== channelId) return
     const sound = st.sounds.find((x) => x.id === soundId)
     if (!sound) return
+    // `by` é a conexão de quem tocou: o indicador mostra o nome (conexão que já saiu: o nome da conta, se eu a vejo)
+    const who = st.users.find((u) => u.id === by)?.name ?? st.users.find((u) => u.accountId === accountId)?.name ?? 'Alguém'
 
     // indicador de quem tocou, até o som acabar
     const prev = playingTimers.get(accountId)
     if (prev) clearTimeout(prev)
-    set((x) => ({ soundsPlaying: { ...x.soundsPlaying, [accountId]: { soundId, by, until: Date.now() + sound.durationMs } } }))
+    set((x) => ({ soundsPlaying: { ...x.soundsPlaying, [accountId]: { soundId, by: who, until: Date.now() + sound.durationMs } } }))
     playingTimers.set(
       accountId,
       setTimeout(() => {
