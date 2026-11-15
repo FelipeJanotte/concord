@@ -173,6 +173,7 @@ describe('sobreposição em jogos (B15)', () => {
     const corner = screen.getByLabelText('Posição do overlay') as HTMLSelectElement
     expect(corner.disabled).toBe(true)
     expect(screen.getByText('Shift + `')).toBeTruthy()
+    expect(screen.getByText(/Mostra só quem está falando na sua sala de voz e some enquanto o Concord está em foco/)).toBeTruthy()
     await userEvent.click(screen.getByLabelText('Mostrar quem está falando por cima dos jogos'))
     expect(useApp.getState().overlayEnabled).toBe(true)
     await userEvent.selectOptions(corner, 'bottom-right')

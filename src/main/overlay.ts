@@ -1,7 +1,7 @@
 /**
  * Sobreposição em jogos (overlay, B15): janela transparente, sem borda, sempre no topo
  * (`'screen-saver'`), que não recebe foco nem cliques (o clique passa para o jogo) e mostra quem
- * está na minha sala de voz e quem está falando. Aparece só com o overlay ligado e eu numa sala.
+ * está falando na minha sala de voz. Aparece só com o overlay ligado, alguém falando e o Concord sem foco.
  *
  * Funciona por cima de jogos em janela e em tela cheia sem bordas; em tela cheia exclusiva uma
  * janela comum não aparece por cima (o Discord injeta código no jogo; fora de propósito).
@@ -13,7 +13,7 @@
  * `createOverlayController` tem a lógica (testável com dependências falsas); `setupOverlay` liga
  * ao Electron (IPC `overlay-config`/`overlay-room`/`overlay-edit`, atalhos globais, janela de verdade).
  */
-import { BrowserWindow, globalShortcut, ipcMain, screen } from 'electron'
+import { app, BrowserWindow, globalShortcut, ipcMain, screen } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import {
@@ -104,6 +104,11 @@ export function cleanRoom(raw: unknown): OverlayRoom | null {
   return { members, more }
 }
 
+export function overlayVisible(state: { enabled: boolean; hasPeople: boolean; editing: boolean; appFocused: boolean }): boolean {
+  if (!state.enabled) return false
+  return state.editing || (state.hasPeople && !state.appFocused)
+}
+
 /** O que o controlador precisa do mundo de fora (janela, tela, aviso para a janela principal). */
 export interface OverlayDeps {
   /** cria a janela do overlay (escondida) */
@@ -136,12 +141,11 @@ export function createOverlayController(deps: OverlayDeps) {
   let win: OverlayWindow | null = null
   /** modo de mover (só com o overlay ligado) */
   let editing = false
+  let appFocused = false
 
   function update(): void {
     const hasPeople = !!room && room.members.length > 0
-    // no modo de mover aparece mesmo fora de sala (com uma prévia), para ter o que arrastar
-    const visible = config.enabled && (hasPeople || editing)
-    if (!visible) {
+    if (!overlayVisible({ enabled: config.enabled, hasPeople, editing, appFocused })) {
       if (win && !win.isDestroyed() && win.isVisible()) win.hide()
       return
     }
@@ -169,6 +173,11 @@ export function createOverlayController(deps: OverlayDeps) {
     },
     setRoom(raw: unknown): void {
       room = cleanRoom(raw)
+      update()
+    },
+    setAppFocused(focused: boolean): void {
+      if (focused === appFocused) return
+      appFocused = focused
       update()
     },
     /** atalho global: liga/desliga e avisa a janela principal */
@@ -271,6 +280,12 @@ export function setupOverlay(getMainWindow: () => BrowserWindow | null): Overlay
     notifyToggled: (enabled) => getMainWindow()?.webContents.send('overlay-toggled', enabled),
     notifyEditing: (editing) => getMainWindow()?.webContents.send('overlay-editing', editing),
     notifyMoved: (position) => getMainWindow()?.webContents.send('overlay-moved', position)
+  })
+  app.on('browser-window-focus', (_event, win) => {
+    if (win === getMainWindow()) controller.setAppFocused(true)
+  })
+  app.on('browser-window-blur', (_event, win) => {
+    if (win === getMainWindow()) controller.setAppFocused(false)
   })
   ipcMain.on('overlay-config', (_event, raw: unknown) => controller.setConfig(raw))
   ipcMain.on('overlay-room', (_event, raw: unknown) => controller.setRoom(raw))

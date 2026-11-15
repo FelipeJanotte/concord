@@ -1,4 +1,4 @@
-// Overlay em jogos (B15): quem está na minha sala de voz, com quem está falando em destaque e
+// Overlay em jogos (B15): quem está falando na minha sala de voz, com destaque e
 // microfone/áudio desligados (sem o nome da sala: só as pessoas). A janela não recebe cliques (o clique
 // passa para o jogo), menos no modo de mover: aí a página inteira vira área de arrastar
 // (`-webkit-app-region: drag`), com moldura, "Concluir" e Esc para travar de novo. Fora de sala, o modo de
