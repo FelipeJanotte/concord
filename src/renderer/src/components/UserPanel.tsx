@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { AudioLines, HeadphoneOff, Headphones, Mic, MicOff, PhoneOff, Settings, Signal } from 'lucide-react'
+import { AudioLines, HeadphoneOff, Headphones, Mic, MicOff, Palette, PhoneOff, Settings, Signal } from 'lucide-react'
 import { joinVoice, leaveVoice, openDeviceSettings, toggleDeafen, toggleMute } from '@/lib/client'
 import { useApp } from '@/store'
 import { IconButton } from './IconButton'
 import { ProfileDialog } from './ProfileDialog'
+import { AppearanceDialog } from './settings/appearance/AppearanceDialog'
 import { UserAvatar } from './UserAvatar'
 import { DeviceSettings } from './voice/DeviceSettings'
 
@@ -42,6 +43,7 @@ export function UserPanel() {
   const deafened = useApp((s) => s.deafened)
   const speaking = useApp((s) => (s.self ? !!s.speaking[s.self.id] : false))
   const [profileOpen, setProfileOpen] = useState(false)
+  const [appearanceOpen, setAppearanceOpen] = useState(false)
   // Conta nova do Google: abre o perfil para escolher o id definitivo.
   const mustChooseTag = useApp((s) => s.account?.tagLocked === false)
   useEffect(() => {
@@ -74,7 +76,11 @@ export function UserPanel() {
       <IconButton label="Minha conta" onClick={() => setProfileOpen(true)}>
         <Settings />
       </IconButton>
+      <IconButton label="Aparência" onClick={() => setAppearanceOpen(true)}>
+        <Palette />
+      </IconButton>
       <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
+      <AppearanceDialog open={appearanceOpen} onOpenChange={setAppearanceOpen} />
       {/* Sempre montado: o microfone e a saída podem ser escolhidos antes de entrar numa sala. */}
       <DeviceSettings />
     </div>
