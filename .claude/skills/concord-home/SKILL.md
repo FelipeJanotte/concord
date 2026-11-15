@@ -22,7 +22,7 @@ v4, lidas de um registro. É só tela: não há evento novo. Amizades e conversa
 | `components/home/HomeSidebar.tsx` | Barra lateral da Home: botão "Amigos" (selo de pedidos recebidos) + `DmList` + painéis de voz e da conta. |
 | `components/dm/DmList.tsx` | Conversas, a mais recente primeiro, com não lido e online (online só de amigos). |
 | `components/friends/FriendsView.tsx` | Abas Online, Todos, Pendentes, Bloqueados e "Adicionar amigo" (nome#id). |
-| `components/tools/registry.ts` | `TOOLS: ToolDefinition[]` (`id`, `name`, `icon`, `Panel`), vazio até a B10. |
+| `components/tools/registry.ts` | `TOOLS: ToolDefinition[]` (`id`, `name`, `icon`, `Panel`): as cinco ferramentas da v4 (B10, skill `concord-tools`). |
 | `components/tools/ToolView.tsx` | Cabeçalho + painel da ferramenta aberta. |
 | `components/voice/MemberContextMenu.tsx` | Item `MessageItem`: "Mensagem" ou "Adicionar amigo". |
 | `App.tsx` | Layout: barra de úteis → barra lateral da seção → área central → lista de membros (só na comunidade). |

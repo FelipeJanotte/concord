@@ -1,7 +1,9 @@
 // Ferramentas do grupo (v4): pede o sorteio ao servidor. O resultado chega para todos pelo `message:new`
 // (mensagem `kind: 'tool'`); a resposta daqui serve para o painel fechar ou mostrar o erro.
 import {
+  LANES,
   pollResultText,
+  type Lane,
   type Message,
   type MoveTeamsSkip,
   type PollResult,
@@ -20,10 +22,13 @@ export interface DrawTeamsOptions {
   players: TeamPlayer[]
   teamCount: number
   lanes?: boolean
+  /** lanes disponíveis (só com `lanes`; ausente ou todas = não manda) */
+  laneSet?: Lane[]
 }
 
 /** Sorteia no servidor e posta no canal. Lança `Error` com a mensagem do servidor. */
-export async function drawTeams({ channelId, players, teamCount, lanes = false }: DrawTeamsOptions): Promise<Message> {
+export async function drawTeams({ channelId, players, teamCount, lanes = false, laneSet }: DrawTeamsOptions): Promise<Message> {
+  const subset = lanes && laneSet && laneSet.length < LANES.length ? { laneSet } : {}
   const clean = players
     .map((p) => ({ ...p, name: p.name.replace(/\s+/g, ' ').trim() }))
     .filter((p) => p.name)
@@ -32,7 +37,7 @@ export async function drawTeams({ channelId, players, teamCount, lanes = false }
       ...(lanes && p.lanes?.length ? { lanes: p.lanes } : {}),
       ...(p.accountId ? { accountId: p.accountId } : {})
     }))
-  const res = await requireSocket().emitWithAck('tools:teams', { channelId, players: clean, teamCount, lanes })
+  const res = await requireSocket().emitWithAck('tools:teams', { channelId, players: clean, teamCount, lanes, ...subset })
   if (!res.ok) throw new Error(res.error)
   return res.message
 }

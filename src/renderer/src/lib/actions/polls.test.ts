@@ -1,5 +1,5 @@
 // Enquete no app (v4): criar, votar, encerrar, "meus votos" e o aviso poll:updated atualizando a mensagem na tela.
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Message, PollResult } from '@shared/types'
 import { bindToolsEvents, closePoll, createPoll, loadMyPollVotes, votePoll } from '@/lib/actions/tools'
 import { setSocket } from '@/lib/core'
@@ -80,5 +80,17 @@ describe('enquete no app', () => {
     expect(useApp.getState().myPollVotes).toEqual({ p1: [0], p2: [] })
     await loadMyPollVotes([textMessage]) // sem enquete: nem pergunta
     expect(socket.sent('poll:mine')).toHaveLength(1)
+  })
+})
+
+describe('histórico com enquetes', () => {
+  it('abrir o chat busca os meus votos das enquetes que vieram na página', async () => {
+    const { loadHistory } = await import('@/lib/actions/messages')
+    useApp.setState({ ...initialState })
+    socket.replyTo('message:history', () => ({ messages: [textMessage, pollMessage], hasMore: false }))
+    socket.replyTo('poll:mine', () => ({ p1: [1] }))
+    await loadHistory('c1')
+    await vi.waitFor(() => expect(useApp.getState().myPollVotes).toEqual({ p1: [1] }))
+    expect(socket.sent('poll:mine')[0][0]).toEqual(['p1'])
   })
 })
