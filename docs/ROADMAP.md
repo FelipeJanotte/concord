@@ -285,7 +285,7 @@ antes de começar. A16 é independente. B19 depende do contrato de A15/B18 (para
 
 | Task | Dev | O que faz | Arquivos (dono) | Tamanho |
 |---|---|---|---|---|
-| **B20 Push-to-talk** | B | Modo "pressione para falar" nas Configurações de voz: o microfone só abre enquanto a tecla escolhida está pressionada, **mesmo com o jogo na frente** (atalho global no main, como o do overlay da B15; o Electron não avisa quando a tecla é solta, então usa `uiohook-napi` ou fecha sozinho depois de um tempo sem repetir). Som curto ao abrir/fechar (opcional) e indicador na sala. | `src/main/push-to-talk.ts`, `src/preload/*`, `lib/actions/devices.ts`, `DeviceSettings.tsx` | médio |
+| **B20 Push-to-talk** ✅ (branch `v6/b20-push-to-talk`; tecla solta detectada com `uiohook-napi`) | B | Modo "pressione para falar" nas Configurações de voz: o microfone só abre enquanto a tecla escolhida está pressionada, **mesmo com o jogo na frente** (atalho global no main, como o do overlay da B15; o Electron não avisa quando a tecla é solta, então usa `uiohook-napi` ou fecha sozinho depois de um tempo sem repetir). Som curto ao abrir/fechar (opcional) e indicador na sala. | `src/main/push-to-talk.ts`, `src/preload/*`, `lib/actions/devices.ts`, `DeviceSettings.tsx` | médio |
 | **B21 Câmera na sala de voz** | B | Botão de câmera na sala (permissão de canal nova `video`, v2), escolha da câmera nas Configurações de voz, faixa de vídeo pelo LiveKit e a grade da sala mostrando os vídeos (a tela compartilhada continua em destaque). Limite de qualidade para não pesar no upload. | `lib/voice.ts`, `components/voice/{VoiceGrid,CameraTile}.tsx`, `shared/types/permissions.ts`, `server/livekit.ts` (grant) | grande |
 
 ### Pendências das versões anteriores
