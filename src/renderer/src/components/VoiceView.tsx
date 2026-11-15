@@ -4,9 +4,11 @@ import { useShallow } from 'zustand/react/shallow'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { joinVoice, leaveVoice, openDeviceSettings, openSoundboard, setVoiceChatOpen, toggleCamera, toggleDeafen, toggleMute, toggleScreenShare } from '@/lib/client'
+import { SIDE_PANELS } from '@/lib/side-width'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
 import { ChatView } from './ChatView'
+import { ResizableSide } from './ResizableSide'
 import { PushToTalkHint } from './voice/PushToTalk'
 import { SoundsPlayingBar } from './voice/Soundboard'
 import { VoiceGrid } from './voice/VoiceGrid'
@@ -86,7 +88,11 @@ export function VoiceView({ channelId }: { channelId: string }) {
           )}
         </div>
       </div>
-      {chatOpen && <VoiceChatPanel channelId={channelId} />}
+      {chatOpen && (
+        <ResizableSide panel={SIDE_PANELS.voiceChat} edge="left" label="Redimensionar o chat da sala">
+          <VoiceChatPanel channelId={channelId} />
+        </ResizableSide>
+      )}
     </div>
   )
 }
@@ -121,7 +127,7 @@ function VoiceChatButton({ channelId }: { channelId: string }) {
 /** Painel "Chat" ao lado da sala: o chat de texto do canal de voz (mesmo `ChatView` dos canais de texto). */
 function VoiceChatPanel({ channelId }: { channelId: string }) {
   return (
-    <aside aria-label="Chat da sala" className="flex w-[360px] min-w-0 shrink-0 flex-col border-l border-border bg-background">
+    <aside aria-label="Chat da sala" className="flex min-w-0 flex-1 flex-col border-l border-border bg-background">
       <div className="flex h-12 shrink-0 items-center gap-2 border-b border-black/25 px-4 shadow-sm">
         <MessageSquare className="size-5 text-muted-foreground" />
         <span className="font-semibold text-accent-foreground">Chat</span>

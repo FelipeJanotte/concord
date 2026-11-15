@@ -163,8 +163,8 @@ vê), `typing`, `rate:limited`, `access:updated` e `channels:visible` (v2), `sou
 
 ## Layout (`App.tsx`)
 
-`ServerRail` (72px) | `ChannelSidebar` (240px: seções texto/voz, `VoiceStatusPanel` com câmera/tela/efeitos sonoros fora da sala, `UserPanel` com `UserSettingsDialog` (Configurações: conta, voz e vídeo, aparência, notificações)/`ScreenPicker`/`Soundboard` montados) |
-`main` (`ChatView` ou `VoiceView`, com `key` = id do canal) | `MemberList` (240px, aparece só a partir de `lg`).
+`UtilityRail` (72px) | `ChannelSidebar`/`HomeSidebar` (240px por padrão, redimensionável: seções texto/voz, `VoiceStatusPanel` com câmera/tela/efeitos sonoros fora da sala, `UserPanel` com `UserSettingsDialog` (Configurações: conta, voz e vídeo, aparência, notificações)/`ScreenPicker`/`Soundboard` montados) |
+`main` (`ChatView` ou `VoiceView`, com `key` = id do canal) | `MemberList` (240px por padrão, redimensionável, aparece só a partir de `lg`). Larguras: `ResizableSide` + `lib/side-width.ts` (`docs/areas/home.md`, "Barras laterais redimensionáveis").
 
 ## Limitações conhecidas (de propósito, nesta versão)
 
