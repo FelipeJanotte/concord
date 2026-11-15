@@ -22,25 +22,27 @@ describe('overlayRoom', () => {
     expect(overlayRoom(useApp.getState())).toBeNull()
   })
 
-  it('pessoas da minha sala com foto completa, quem fala, mute e deafen', () => {
+  it('só quem está falando na minha sala, com foto completa, mute e deafen', () => {
     useApp.setState({
       myVoiceChannelId: 'jogos',
-      users: [user('s1', 'Ana', '/avatars/acc-s1?v=2'), user('s2', 'Bia')],
+      users: [user('s1', 'Ana', '/avatars/acc-s1?v=2'), user('s2', 'Bia'), user('s3', 'Caio')],
       voice: [vs('s1', 'jogos', { muted: true }), vs('s2', 'jogos', { deafened: true }), vs('s3', 'outra')],
-      speaking: { s1: true }
+      speaking: { s1: true, s3: true }
     })
     expect(overlayRoom(useApp.getState())).toEqual({
-      members: [
-        { id: 's1', name: 'Ana', avatarUrl: 'http://srv:3001/avatars/acc-s1?v=2', color: '#123456', speaking: true, muted: true, deafened: false },
-        { id: 's2', name: 'Bia', avatarUrl: null, color: '#123456', speaking: false, muted: false, deafened: true }
-      ],
+      members: [{ id: 's1', name: 'Ana', avatarUrl: 'http://srv:3001/avatars/acc-s1?v=2', color: '#123456', speaking: true, muted: true, deafened: false }],
       more: 0
     })
   })
 
-  it('chamada privada (só as pessoas, sem nome da sala); mais de 12 pessoas vira "+N"', () => {
+  it('em sala sem ninguém falando: sala vazia (o overlay some)', () => {
+    useApp.setState({ myVoiceChannelId: 'jogos', users: [user('s1', 'Ana')], voice: [vs('s1', 'jogos')], speaking: { s1: false } })
+    expect(overlayRoom(useApp.getState())).toEqual({ members: [], more: 0 })
+  })
+
+  it('chamada privada (só as pessoas, sem nome da sala); mais de 12 falando vira "+N"', () => {
     const users = Array.from({ length: 15 }, (_, i) => user(`u${i}`, `P${i}`))
-    useApp.setState({ myVoiceChannelId: 'dm-ana', users, voice: users.map((u) => vs(u.id, 'dm-ana')) })
+    useApp.setState({ myVoiceChannelId: 'dm-ana', users, voice: users.map((u) => vs(u.id, 'dm-ana')), speaking: Object.fromEntries(users.map((u) => [u.id, true])) })
     const room = overlayRoom(useApp.getState())!
     expect(room).not.toHaveProperty('channelName')
     expect(room.members).toHaveLength(12)
@@ -88,9 +90,9 @@ describe('sincronia com o processo principal', () => {
     useApp.setState({ typing: {} }) // nada que o overlay mostra mudou
     syncOverlay()
     expect(rooms).toHaveLength(2)
-    expect(rooms[1]?.members.map((m) => m.name)).toEqual(['Ana'])
+    expect(rooms[1]).toEqual({ members: [], more: 0 })
     useApp.setState({ speaking: { s1: true } })
-    expect(rooms.at(-1)?.members[0].speaking).toBe(true)
+    expect(rooms.at(-1)?.members.map((m) => m.name)).toEqual(['Ana'])
 
     toggled!(true)
     expect(useApp.getState().overlayEnabled).toBe(true)

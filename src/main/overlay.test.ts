@@ -3,10 +3,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import { OVERLAY_GAP, OVERLAY_METRICS, OVERLAY_PADDING, overlayHeight, type OverlayRoom } from '../shared/overlay'
 
-vi.mock('electron', () => ({ BrowserWindow: class {}, globalShortcut: {}, ipcMain: {}, screen: {} }))
+vi.mock('electron', () => ({ app: {}, BrowserWindow: class {}, globalShortcut: {}, ipcMain: {}, screen: {} }))
 vi.mock('@electron-toolkit/utils', () => ({ is: { dev: false } }))
 
-const { cleanConfig, cleanPosition, cleanRoom, createOverlayController, overlayBounds } = await import('./overlay')
+const { cleanConfig, cleanPosition, cleanRoom, createOverlayController, overlayBounds, overlayVisible } = await import('./overlay')
 
 const workArea = { x: 0, y: 0, width: 1920, height: 1040 }
 const member = (id: string, extra = {}) => ({ id, name: id, avatarUrl: null, color: '#fff', speaking: false, muted: false, deafened: false, ...extra })
@@ -137,6 +137,47 @@ describe('controlador', () => {
     expect(win.destroy).toHaveBeenCalled()
     controller.toggle()
     expect(deps.createWindow).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('Concord em foco', () => {
+  const on = { enabled: true, corner: 'top-left' as const, size: 'medium' as const, position: null }
+
+  it('overlayVisible: some com o Concord em foco, menos no modo de mover', () => {
+    const base = { enabled: true, hasPeople: true, editing: false, appFocused: false }
+    expect(overlayVisible(base)).toBe(true)
+    expect(overlayVisible({ ...base, appFocused: true })).toBe(false)
+    expect(overlayVisible({ ...base, hasPeople: false })).toBe(false)
+    expect(overlayVisible({ ...base, enabled: false })).toBe(false)
+    expect(overlayVisible({ ...base, appFocused: true, editing: true })).toBe(true)
+    expect(overlayVisible({ ...base, hasPeople: false, editing: true })).toBe(true)
+    expect(overlayVisible({ ...base, enabled: false, editing: true })).toBe(false)
+  })
+
+  it('esconde quando a janela principal ganha o foco e volta quando perde', () => {
+    const { controller, win } = setup()
+    controller.setConfig(on)
+    controller.setRoom(room(1))
+    expect(win.visible).toBe(true)
+    controller.setAppFocused(true)
+    expect(win.visible).toBe(false)
+    controller.setRoom(room(2))
+    expect(win.visible).toBe(false)
+    controller.setAppFocused(false)
+    expect(win.visible).toBe(true)
+    expect(win.send).toHaveBeenLastCalledWith(room(2), on, false)
+  })
+
+  it('com o Concord em foco não cria a janela; o modo de mover aparece mesmo assim', () => {
+    const { controller, deps, win } = setup()
+    controller.setAppFocused(true)
+    controller.setConfig(on)
+    controller.setRoom(room(1))
+    expect(deps.createWindow).not.toHaveBeenCalled()
+    controller.setEditing(true)
+    expect(win.visible).toBe(true)
+    controller.setEditing(false)
+    expect(win.visible).toBe(false)
   })
 })
 

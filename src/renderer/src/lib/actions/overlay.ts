@@ -1,7 +1,7 @@
 /**
  * Sobreposição em jogos (overlay, B15), lado da janela principal: guarda a preferência desta
  * máquina (`concord:overlay`), manda a configuração para o processo principal e, a cada mudança
- * da store, o estado da minha sala de voz (quem está, quem fala, mute/deafen). O atalho global
+ * da store, quem está falando na minha sala de voz (com mute/deafen). O atalho global
  * (Shift + `) chega por `onToggled` e vira a mesma preferência. Modo de mover (Ctrl + Shift + ` ou
  * `setOverlayEditing`): o processo principal avisa por `onEditing` e, ao soltar, manda a posição por
  * `onMoved` (salva em `position`; escolher um canto volta para o canto). Fora do Electron, não faz nada.
@@ -30,11 +30,11 @@ export const overlayEnv = {
 
 type St = Pick<AppState, 'myVoiceChannelId' | 'voice' | 'users' | 'speaking' | 'serverUrl'>
 
-/** O que o overlay mostra: quem está na minha sala de voz (sem o nome da sala), ou null fora de sala. */
+/** O que o overlay mostra: só quem está falando na minha sala de voz, ou null fora de sala. */
 export function overlayRoom(st: St): OverlayRoom | null {
   const channelId = st.myVoiceChannelId
   if (!channelId) return null
-  const states = st.voice.filter((v) => v.channelId === channelId)
+  const states = st.voice.filter((v) => v.channelId === channelId && st.speaking[v.userId])
   const members = states.map((v) => {
     const user = st.users.find((u) => u.id === v.userId)
     return {
@@ -42,7 +42,7 @@ export function overlayRoom(st: St): OverlayRoom | null {
       name: user?.name ?? 'Alguém',
       avatarUrl: resolveServerUrl(user?.avatarUrl, st.serverUrl) ?? null,
       color: user?.color ?? '#5865f2',
-      speaking: !!st.speaking[v.userId],
+      speaking: true,
       muted: v.muted,
       deafened: v.deafened
     }

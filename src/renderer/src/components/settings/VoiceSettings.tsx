@@ -230,7 +230,7 @@ const CORNERS: Record<OverlayCorner, string> = {
 }
 const SIZES: Record<OverlaySize, string> = { small: 'Pequeno', medium: 'Médio', large: 'Grande' }
 
-/** Sobreposição em jogos (B15): quem está na sala e quem fala, por cima do jogo. */
+/** Sobreposição em jogos (B15): quem fala na sala, por cima do jogo. */
 function GameOverlay() {
   const enabled = useApp((s) => s.overlayEnabled)
   const corner = useApp((s) => s.overlayCorner)
@@ -280,7 +280,7 @@ function GameOverlay() {
         </p>
       )}
       <p className="pl-6 text-xs text-muted-foreground">
-        Aparece quando você está numa sala de voz. Liga e desliga também pelo atalho <kbd className="rounded bg-accent px-1">{OVERLAY_SHORTCUT_LABEL}</kbd>, mesmo dentro do jogo; para mover
+        Mostra só quem está falando na sua sala de voz e some enquanto o Concord está em foco. Liga e desliga também pelo atalho <kbd className="rounded bg-accent px-1">{OVERLAY_SHORTCUT_LABEL}</kbd>, mesmo dentro do jogo; para mover
         dentro do jogo, use <kbd className="rounded bg-accent px-1">{OVERLAY_EDIT_SHORTCUT_LABEL}</kbd>. Funciona com o jogo em janela ou em tela cheia sem bordas; em tela cheia exclusiva o Windows
         não deixa nada aparecer por cima.
       </p>
