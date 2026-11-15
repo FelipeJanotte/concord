@@ -1,6 +1,6 @@
 ---
 name: concord-moderation
-description: Como funciona a moderação do Concord (v2, B6) — expulsar da voz, silenciar pelo servidor (para todos, por conta, também no LiveKit, guardado no banco em server_mutes) e apagar mensagem (autor ou manageMessages; em DM só o autor), com as regras canModerate/canDeleteMessage, eventos moderation:voice-kick, moderation:voice-mute, moderation:kicked, message:delete e message:deleted. Use ao mexer em server/modules/moderation.ts, em kickFromVoice/setServerMuted/serverMuted de server/modules/voice.ts, em server/repo/moderation.ts ou server/db/schema/moderation.ts, em deleteMessage/findMessageMeta de server/repo/messages.ts, em src/shared/types/moderation.ts, lib/actions/moderation.ts, components/voice/ModerationMenu.tsx, components/chat/MessageActions.tsx, ou ao investigar "Você não pode expulsar essa pessoa", alguém que não consegue se dessilenciar, mensagem que não some para os outros ou anexo que fica no disco.
+description: Como funciona a moderação do Concord (v2, B6) — expulsar da voz, silenciar pelo servidor (para todos, por conta, também no LiveKit, guardado no banco em server_mutes) e apagar mensagem (autor ou manageMessages; em DM só o autor), com as regras canModerate/canDeleteMessage, eventos moderation:voice-kick, moderation:voice-mute, moderation:kicked, message:delete e message:deleted. Use ao mexer em server/modules/moderation.ts, em kickFromVoice/setServerMuted/serverMuted de server/modules/voice.ts, em server/repo/moderation.ts ou server/db/schema/moderation.ts, em deleteMessage/findMessageMeta de server/repo/messages.ts, em src/shared/types/moderation.ts, lib/actions/moderation.ts, components/voice/ModerationMenu.tsx, components/chat/MessageActions.tsx, ou ao investigar "Você não pode expulsar essa pessoa", alguém que não consegue se dessilenciar ou que continua mutado depois que o moderador tirou o silêncio, mensagem que não some para os outros ou anexo que fica no disco.
 ---
 
 # Moderação (v2, B6)
@@ -65,7 +65,16 @@ Silenciar exige que a pessoa esteja numa sala que eu vejo; **tirar** o silêncio
 4. `voice:update { muted: false }` não adianta (o servidor mantém `muted` enquanto `canSpeak` for false). Sair e voltar
    também não: o token novo já sai sem microfone e o `join` responde `canSpeak: false`.
 5. Tirar o silêncio refaz o cálculo pelo cargo: se ela tem `speak`, recupera o microfone ao vivo (fluxo "Permissões
-   de voz no app" da skill `concord-voice`).
+   de voz no app" da skill `concord-voice`) **e volta desmutada sozinha**, sem precisar clicar:
+   - **Servidor:** `selfMuted` (em `server/modules/voice.ts`, por conexão) guarda a escolha da própria pessoa, vinda do
+     `voice:join` e dos `voice:update` **enquanto ela pode falar**. O que o app manda durante o silêncio (sempre
+     "mutado", por causa do `!voiceCanSpeak`, por exemplo ao ligar/desligar o áudio) não conta. Quando o `speak`
+     volta, o `applyVoiceAccess` põe `muted = selfMuted` na hora e emite. Quem tinha se mutado antes continua mutado.
+     Antes o servidor só voltava o `muted` quando o app dela mandava `voice:update`; se isso atrasasse ou falhasse,
+     ela continuava "mutada" para todos até clicar no microfone.
+   - **App:** no `voice:state` em que o meu `serverMuted` passa de true para false e eu ainda não posso falar, chama
+     `voice.syncPermissions()` (relê `localParticipant.permissions` e reabre/publica o microfone) já e de novo após
+     `UNMUTE_RESYNC_MS` (1,5 s), caso o `ParticipantPermissionsChanged` do LiveKit atrase ou se perca.
 
 ## Na tela
 
@@ -91,13 +100,15 @@ Silenciar exige que a pessoa esteja numa sala que eu vejo; **tirar** o silêncio
 
 | Arquivo | Cobre |
 |---|---|
-| `server/tests/moderation.test.ts` | Servidor real + LiveKit falso: expulsar (aviso com o nome, sai da lista, `RemoveParticipant`), hierarquia (sem permissão, dona, cargo igual, si mesmo), quem não está em sala; silenciar (lista e `UpdateParticipant` sem microfone, não se dessilencia, vale ao voltar, tirar devolve a fala, **continua depois de reiniciar o servidor e tirar também fica guardado**), validação; apagar (autor, `manageMessages`, canal que não vê sem vazar evento, arquivo do anexo apagado, id inválido). |
+| `server/tests/moderation.test.ts` | Servidor real + LiveKit falso: expulsar (aviso com o nome, sai da lista, `RemoveParticipant`), hierarquia (sem permissão, dona, cargo igual, si mesmo), quem não está em sala; silenciar (lista e `UpdateParticipant` sem microfone, não se dessilencia, vale ao voltar, tirar devolve a fala, **tirar desmuta na hora sem a pessoa mandar nada** (mesmo com `voice:update` "mutado" durante o silêncio), quem já estava mutado continua mutado, entrou silenciada volta como entrou, **continua depois de reiniciar o servidor e tirar também fica guardado**), validação; apagar (autor, `manageMessages`, canal que não vê sem vazar evento, arquivo do anexo apagado, id inválido). |
 | `server/repo/moderation.test.ts` | Repo no banco de verdade: gravar/repetir/tirar, id inválido e conta inexistente, apagar a conta silenciada (some) e a de quem silenciou (fica). |
+| `src/renderer/src/lib/actions/voice-permissions.test.ts` + `lib/voice.test.ts` | Fim do silêncio no app: relê as permissões (já e depois, se faltar), não relê se o LiveKit já avisou, manda `voice:update` desmutado; `syncPermissions` reabre e publica o microfone. |
 | `src/renderer/src/lib/actions/moderation.test.ts` | `message:deleted` na store, `moderation:kicked` (sai e avisa uma vez; de outra sala ignora), avisos de "silenciado por moderador" e o payload das ações. |
 | `src/renderer/src/components/voice/moderation.test.tsx` | Itens do botão direito (aparecem/somem pela hierarquia, mandam os eventos, confirmação), escudo na grade, lixeira (autor, `manageMessages`, DM sem moderação). |
 
 À mão (duas contas, skill `concord-dev-workflow`): a dona entra numa sala com B; botão direito em B → "Silenciar
-para todos" → B vê o escudo, o aviso e não consegue ligar o microfone; tirar → B volta a falar. "Expulsar da voz" →
+para todos" → B vê o escudo, o aviso e não consegue ligar o microfone; tirar → B volta a falar **sem clicar em nada**
+(na tela da dona o microfone de B aparece ligado na hora). "Expulsar da voz" →
 B sai e vê "<dona> tirou você da sala de voz.". B manda uma mensagem e apaga pela lixeira → some na tela da dona.
 
 ## Depuração
@@ -107,5 +118,6 @@ B sai e vê "<dona> tirou você da sala de voz.". B manda uma mensagem e apaga p
 | "Você não pode expulsar/silenciar essa pessoa" | Sem `manageMembers`, ou o cargo mais alto do alvo é igual ou maior que o seu, ou é a dona. |
 | "Essa pessoa não está numa sala de voz" | Ela não está em sala, ou está numa sala que você não vê. |
 | Pessoa silenciada continua falando | O LiveKit não recebeu o `UpdateParticipant`: veja o log `[livekit]` do servidor (`LIVEKIT_API_URL`, chave). |
+| Continua mutado depois de tirar o silêncio | O servidor volta para a escolha da pessoa (`selfMuted`): se ela tinha se mutado antes, continua (é o esperado). Se a lista mostra desmutada mas ninguém a ouve, o microfone não foi republicado: veja o console `[voz]` dela ("não foi possível ligar o microfone depois de ganhar permissão"). |
 | Silêncio sumiu sozinho | Alguém tirou, ou a conta foi apagada. Confira a tabela `server_mutes` (o servidor só lê no boot: editar o banco à mão exige reiniciar). |
 | Mensagem apagada continua na tela de alguém | Essa conexão não vê o canal agora ou estava sem histórico carregado (ao carregar, ela já não vem). |

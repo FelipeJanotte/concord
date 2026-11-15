@@ -22,6 +22,12 @@ import { listServerMutes, setServerMute } from '../repo/moderation'
 const voice = new Map<string, VoiceState>()
 /** socket.id → o que o token/LiveKit permite publicar agora (para só atualizar o que mudou) */
 const published = new Map<string, VoicePermissions>()
+/**
+ * socket.id → a escolha da própria pessoa (botão de microfone, sem microfone), separada do silêncio
+ * forçado (sem `speak`, moderador). Quando ela volta a poder falar, o `muted` da lista volta a ser
+ * isto na hora, sem esperar o app avisar (antes ficava "mutada" até clicar para se desmutar).
+ */
+const selfMuted = new Map<string, boolean>()
 /** contas silenciadas por um moderador (B6): cache do banco (`server_mutes`), carregado no `init`. */
 const serverMuted = new Set<string>()
 
@@ -101,7 +107,8 @@ export function applyVoiceAccess(io: AppServer, access: AccessState): void {
     const before = published.get(socket.id)
     if (before && before.canSpeak === next.canSpeak && before.canShare === next.canShare && before.canVideo === next.canVideo) continue
     published.set(socket.id, next)
-    if (!next.canSpeak) state.muted = true
+    // sem `speak` aparece silenciado; voltou a poder falar: volta ao que a própria pessoa escolheu
+    state.muted = !next.canSpeak || (selfMuted.get(socket.id) ?? state.muted)
     if (!next.canShare) state.sharing = false
     if (liveKitConfig) void updateVoicePermissions(liveKitConfig, state.channelId, socket.id, next)
   }
@@ -113,6 +120,7 @@ function leaveVoice(io: AppServer, socket: AppSocket, { emit = true } = {}): voi
   if (!state) return
   voice.delete(socket.id)
   published.delete(socket.id)
+  selfMuted.delete(socket.id)
   if (liveKitConfig) void kickFromRoom(liveKitConfig, state.channelId, socket.id)
   if (emit) emitVoice(io)
 }
@@ -166,6 +174,7 @@ export function clearVoiceChannel(_io: AppServer, channelId: string): void {
     if (state.channelId !== channelId) continue
     voice.delete(sid)
     published.delete(sid)
+    selfMuted.delete(sid)
   }
   // Sempre encerra: pode haver alguém no LiveKit que a lista não conhece (o 404 é ignorado).
   if (liveKitConfig) void closeRoom(liveKitConfig, channelId)
@@ -213,6 +222,7 @@ export const voiceModule: ServerModule = {
           sharing: false
         })
         published.set(socket.id, permissions)
+        selfMuted.set(socket.id, !!payload.muted)
         ack({ ok: true, ...credentials, ...permissions })
         emitVoice(io)
       })
@@ -223,8 +233,12 @@ export const voiceModule: ServerModule = {
     socket.on('voice:update', (payload) => {
       const state = voice.get(socket.id)
       if (!state) return
+      const canSpeak = published.get(socket.id)?.canSpeak !== false
+      // Sem poder falar o app sempre manda "mutado" (por causa do silêncio): isso não é escolha da
+      // pessoa e não pode ficar valendo depois que o moderador tirar o silêncio.
+      if (canSpeak) selfMuted.set(socket.id, !!payload?.muted)
       // quem não pode falar continua aparecendo silenciado
-      state.muted = !!payload?.muted || published.get(socket.id)?.canSpeak === false
+      state.muted = !!payload?.muted || !canSpeak
       state.deafened = !!payload?.deafened
       emitVoice(io)
     })

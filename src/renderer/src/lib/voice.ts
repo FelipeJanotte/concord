@@ -363,6 +363,17 @@ export class VoiceClient {
   }
 
   /**
+   * Relê o que o LiveKit deixa publicar agora (`localParticipant.permissions`) e aplica, como o evento
+   * `ParticipantPermissionsChanged` faria. Chamado quando o servidor avisa que o silêncio do moderador
+   * acabou: se o evento do LiveKit atrasou ou se perdeu, o microfone volta mesmo assim. Sem mudança, nada.
+   */
+  async syncPermissions(): Promise<void> {
+    const room = this.room
+    if (!room || this.connecting === room) return
+    await this.applyPermissions(room, permissionsFrom(room.localParticipant.permissions))
+  }
+
+  /**
    * O cargo/regra mudou com a pessoa na sala: o LiveKit já trocou o que ela pode publicar.
    * Perdeu `speak`: libera o microfone (o LiveKit já parou de repassar). Recuperou: abre e publica
    * de novo. Perdeu `share`: o LiveKit despublica a tela e o `LocalTrackUnpublished` avisa o app.
