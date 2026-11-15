@@ -1,0 +1,13 @@
+# Produção (A14): HTTPS automático (Let's Encrypt) para os dois endereços.
+# CONCORD_DOMAIN e LIVEKIT_DOMAIN vêm do .env (ver deploy/.env.example).
+
+{$CONCORD_DOMAIN} {
+	encode gzip
+	# servidor do Concord: HTTP (login, anexos, sons) + WebSocket do Socket.IO
+	reverse_proxy server:3001
+}
+
+{$LIVEKIT_DOMAIN} {
+	# sinalização do LiveKit (WebSocket); a mídia vai direto nas portas 7881/tcp, 7882/udp e 3478/udp
+	reverse_proxy livekit:7880
+}
