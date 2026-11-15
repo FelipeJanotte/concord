@@ -1,0 +1,83 @@
+# Release automática: cada PR que entra na main vira uma versão nova (tag vX.Y.Z + instalador no GitHub
+# Releases), e os apps instalados se atualizam sozinhos (A13). Skill concord-updates.
+#
+# Versão: sobe o patch da última tag. Labels no PR mudam isso: "release: minor", "release: major" ou
+# "sem release" (não publica). Subir o package.json à mão acima da última tag publica exatamente aquela versão.
+#
+# A tag criada aqui (com o GITHUB_TOKEN) não dispara outros workflows, então este chama o release.yml direto.
+# Nada é commitado na main: a versão sai da tag e só é aplicada no package.json durante o build.
+name: Release automática
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+# Dois merges seguidos não podem calcular a mesma versão: um de cada vez, na ordem.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    name: criar a tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.next.outputs.tag }}
+      notes: ${{ steps.pr.outputs.notes }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # precisa de todas as tags
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: PR que entrou
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          pr="$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" --jq '.[0] // empty')"
+          if [ -n "$pr" ]; then
+            labels="$(echo "$pr" | jq -r '[.labels[].name] | join(",")')"
+            notes="$(echo "$pr" | jq -r '"\(.title) (#\(.number))"')"
+          else
+            labels=""
+            notes="$(git log -1 --format=%s "$GITHUB_SHA")"
+          fi
+          echo "labels=$labels" >> "$GITHUB_OUTPUT"
+          {
+            echo "notes<<FIM_DAS_NOTAS"
+            echo "$notes"
+            echo "FIM_DAS_NOTAS"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Próxima versão e tag
+        id: next
+        env:
+          LABELS: ${{ steps.pr.outputs.labels }}
+        run: |
+          version="$(node .github/scripts/next-version.mjs "$LABELS")"
+          if [ -z "$version" ]; then
+            echo "PR com o label \"sem release\": nada a publicar."
+            exit 0
+          fi
+          git tag "v$version" "$GITHUB_SHA"
+          git push origin "v$version"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "Versão v$version criada."
+
+  release:
+    name: publicar
+    needs: tag
+    if: needs.tag.outputs.tag != ''
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.tag.outputs.tag }}
+      notes: ${{ needs.tag.outputs.notes }}
+    secrets: inherit

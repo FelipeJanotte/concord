@@ -10,6 +10,13 @@ import { updatesEnv } from '@/lib/actions/updates'
 import { initialState, useApp } from '@/store'
 import { UtilityRail } from './UtilityRail'
 
+// o tooltip do Radix mede o botão ao abrir (passar o mouse no clique); o jsdom não tem ResizeObserver
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+} as unknown as typeof ResizeObserver
+
 const install = vi.fn()
 
 beforeEach(() => {
