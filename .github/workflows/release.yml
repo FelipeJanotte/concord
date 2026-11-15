@@ -1,8 +1,3 @@
-# Release (A13): gera o instalador do Windows e publica no GitHub Releases com o latest.yml. Os apps
-# instalados acham a versão nova sozinhos. Roda de dois jeitos:
-# - chamado pelo auto-release.yml a cada PR que entra na main (o normal);
-# - ao criar uma tag vX.Y.Z à mão (git tag v1.2.3 && git push origin v1.2.3).
-# A versão do app vem da TAG (aplicada no package.json só durante o build; nada é commitado).
 name: Release
 
 on:

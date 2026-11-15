@@ -1,9 +1,6 @@
-// Release automática (auto-release.yml): a próxima versão a partir das tags, do package.json e dos labels do PR,
-// e a coerência dos workflows (o release.yml pode ser chamado pelo auto-release e usa a versão da tag).
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-// @ts-expect-error script .mjs sem tipos (roda direto no GitHub Actions)
 import { nextVersion, parseVersion } from '../.github/scripts/next-version.mjs'
 
 const root = join(__dirname, '..')

@@ -208,7 +208,7 @@ ponteiros para eles):
 - `docs/areas/voice.md` — como a voz funciona (LiveKit no servidor, token por sala), compartilhamento de tela, dispositivos e volume por pessoa, pressione para falar (B20), limites e depuração.
 - `docs/areas/notifications.md` — notificações (B9): quando avisar (conversa, chamada, pedido de amizade, só fora de foco), clique e selo no ícone.
 - `docs/areas/overlay.md` — sobreposição em jogos (B15): janela transparente com quem fala, atalho global, canto/tamanho, arrastar para mover (como no Discord) e o limite da tela cheia exclusiva.
-- `docs/areas/updates.md` — atualização automática (A13): electron-updater, faixa "Reiniciar para atualizar" e como publicar uma versão (tag vX.Y.Z).
+- `docs/areas/updates.md` — atualização automática (A13): electron-updater, faixa e botão "Atualizar o Concord", e a release automática a cada PR mergeado na `main` (tag vX.Y.Z).
 - `docs/areas/deploy.md` — hospedar pela internet (A14): imagem, compose de produção, LiveKit com TURN, Caddy, variáveis e guia.
 - `docs/areas/dev-workflow.md` — rodar, testar com vários usuários, build e solução de problemas conhecidos.
 
