@@ -1,9 +1,9 @@
 ---
 name: concord-tools
-description: Como funcionam as ferramentas do grupo do Concord (v4) — sorteio no servidor com crypto.randomInt, resultado postado como mensagem kind 'tool' (Message.tool tipado + content por extenso), o sorteador de times (A8: validação, Fisher–Yates, times equilibrados, lanes sem repetir com preferências, accountId de cada pessoa), mover os times para salas de voz (tools:move-teams/tools:moved), dado, moeda, sortear 1 nome e enquete (votos anônimos, poll:vote/close/mine/updated), e os eventos tools:*. Use ao mexer em server/modules/tools.ts, server/tools/move.ts, server/modules/polls.ts, server/repo/polls.ts, server/tools/**, src/shared/types/tools.ts, no kind/tool de src/shared/types/message.ts e server/db/schema/messages.ts, na barra de úteis/painel/cartão do resultado (B7/B10), ao criar uma ferramenta nova, ou ao investigar sorteio recusado, "Muitos sorteios seguidos", resultado diferente entre telas ou alguém que não foi levado para a sala do time.
+description: Como funcionam as ferramentas do grupo do Concord (v4) — sorteio no servidor com crypto.randomInt, resultado postado como mensagem kind 'tool' (Message.tool tipado + content por extenso), o sorteador de times (A8: validação, Fisher–Yates, times equilibrados, lanes sem repetir com preferências, accountId de cada pessoa), mover os times para salas de voz (tools:move-teams/tools:moved), dado, moeda, sortear 1 nome e enquete (votos anônimos, poll:vote/close/mine/updated), e os eventos tools:*. Use ao mexer em server/modules/tools.ts, server/tools/move.ts, server/modules/polls.ts, server/repo/polls.ts, server/tools/**, src/shared/types/tools.ts, no kind/tool de src/shared/types/message.ts e server/db/schema/messages.ts, nos painéis e cartões (components/tools/**: TeamRandomizerPanel, DicePanel, CoinPanel, PickPanel, PollPanel, ToolResultCard, TeamResultCard, PollCard, shared, people), no cartão do ChatView (B7/B10), ao criar uma ferramenta nova, ou ao investigar sorteio recusado, "Muitos sorteios seguidos", resultado diferente entre telas ou alguém que não foi levado para a sala do time.
 ---
 
-# Ferramentas do grupo (v4: A8 servidor do sorteador; B10 painel e cartão; a barra de úteis é da B7)
+# Ferramentas do grupo (v4: A8 servidor do sorteador; B10 painéis e cartões; a barra de úteis é da B7)
 
 ## Ideia
 
@@ -112,14 +112,39 @@ No app (`lib/actions/tools.ts`): `createPoll(channelId, pergunta, opções, mult
 3. Se alguém tem preferência, repete o sorteio `LANE_ATTEMPTS` (40) vezes e fica o que atende melhor (ex.: dois que
    só jogam de meio caem em times diferentes).
 
+## Na tela (B10)
+
+Cada ferramenta é uma linha em `TOOLS` (`components/tools/registry.ts`): ícone na barra de úteis e o painel que
+abre na área central (`ToolView`, skill `concord-home`). O resultado aparece no chat como **cartão**: o
+`MessageBody` do `ChatView` troca o texto por `<ToolResultCard>` quando `message.kind === 'tool'`.
+
+| Arquivo | Papel |
+|---|---|
+| `components/tools/registry.ts` | `TOOLS`: Sorteador de times (`teams`), Dado (`dice`), Cara ou coroa (`coin`), Sortear 1 (`pick`), Enquete (`poll`). |
+| `components/tools/shared.tsx` | Peças dos painéis: `usePostTarget` (canais de texto com `send` + conversas privadas; sugere o canal de texto aberto na comunidade, senão a conversa aberta na Home, senão o primeiro), `ChannelSelect` ("Postar em"), `usePost` (enviando/erro/último resultado), `SubmitButton`, `ToolError`, `PostedNotice` ("Postado em #canal" + "Ver no chat"). |
+| `components/tools/people.tsx` | `ImportPeopleButtons` ("Da minha sala de voz" / "Online"), `peopleInRoom`, `onlinePeople`: uma pessoa por conta, **com `accountId`**. |
+| `components/tools/{TeamRandomizerPanel,DicePanel,CoinPanel,PickPanel,PollPanel}.tsx` | Os painéis. O botão vira "… de novo" depois do primeiro resultado (repete o mesmo pedido). |
+| `components/tools/PostedResult.tsx` | Abaixo do painel: o aviso e o mesmo cartão do chat (lê a mensagem da store, então a enquete atualiza ao vivo). |
+| `components/tools/ToolResultCard.tsx` | Escolhe o cartão por `message.tool.tool`; dado, moeda e sortear 1 ficam aqui. Ferramenta desconhecida mostra o `content`. |
+| `components/tools/TeamResultCard.tsx` | Times com cor (`teamColor`: tokens `primary`, `success`, `destructive`, `accent-foreground`) e lanes; "Mover para as salas" (uma sala de voz por time ou "Não mover", salas repetidas bloqueiam) e o resumo com `MOVE_TEAMS_SKIP_LABELS`. |
+| `components/tools/PollCard.tsx` | Opções com barra de porcentagem, marcadas por `myPollVotes`; voto único troca, vários soma/tira; "Encerrar" para quem criou ou `manageMessages` (fora de DM); encerrada não vota. |
+| `components/tools/CardFrame.tsx` | Moldura dos cartões (`section` com `aria-label`). |
+
+**Sorteador:** digitar (vários separados por vírgula), importar da sala/online, tirar, nº de times, lanes com
+uma lane preferida por pessoa (vira `lanes: [lane]`). Com lanes e gente demais (`> times × 5`), avisa e não deixa
+sortear. Nome repetido (ou mesma conta) não entra duas vezes (`mergePlayers`).
+
+**Meus votos:** `loadHistory` e `loadOlderMessages` (`lib/actions/messages.ts`) chamam `loadMyPollVotes` com a
+página que chegou, então as enquetes do histórico já aparecem marcadas.
+
 ## Ferramenta nova
 
 1. Tipo na união `ToolPayload` + request/result em `tools.ts` + evento `tools:<nome>` + o texto em `toolResultText`.
 2. Funções puras (validar e sortear) em `server/tools/` com `Rand` injetado e testes com semente.
 3. Uma entrada em `TOOLS` (`server/modules/tools.ts`): `run(req, rand)` devolve o erro (texto) ou o `ToolPayload`.
    O `runTool` cuida do resto (canal, `send`, limite, `insertMessage` com `kind: 'tool'`, `emitToViewers`).
-4. Ação em `lib/actions/tools.ts`. Na tela: uma linha em `TOOLS` de `components/tools/registry.ts` (barra de úteis,
-   skill `concord-home`) + painel + cartão (B10).
+4. Ação em `lib/actions/tools.ts`. Na tela: painel em `components/tools/<Nome>Panel.tsx` (use `ToolPanel`, `usePostTarget`,
+   `ChannelSelect`, `usePost` e `PostedResult` de `shared.tsx`), um `case` no `ToolResultCard` e uma linha em `TOOLS`.
 
 ## Testes
 
@@ -136,16 +161,13 @@ No app (`lib/actions/tools.ts`): `createPoll(channelId, pergunta, opções, mult
 | `server/tests/polls.test.ts` | Servidor real: criar e votar (anônimo, `mine`), único × múltiplo, histórico + `poll:mine`, encerrar (autor, dona, recusas), canal privado e sem `send`. |
 | `server/tools/move.test.ts` | `validateMoveRequest` (formatos, salas repetidas, `null`) e `planMoves` (nome, `nome#tag`, conta, ambíguo, conta repetida, time sem sala). |
 | `server/tests/move-teams.test.ts` | Servidor real + LiveKit falso: a dona move pela conta e pelo nome, quem já está na sala, sem `manageMembers` só a si, moderador × dona, sem `connect` na sala do time, nome ambíguo, erros do pedido, sorteio de canal que não vejo. |
+| `src/renderer/src/components/tools/tools.test.tsx` | Telas (jsdom): registro, importar pessoas (uma por conta), cada painel (payload, canal sugerido, canal sem `send` some, erro, resultado), sorteador (vírgulas, online com conta, lanes, limite), cartões no chat (moeda no `ChatView`, desconhecida, mover para as salas e erro, enquete: votar, vários, encerrar, encerrada). |
 | `src/renderer/src/lib/actions/polls.test.ts` | App: `poll:updated` na mensagem, criar, votar, encerrar, `loadMyPollVotes`. |
 
 ## Pendente
 
-- Painéis e cartões do resultado (B10). A barra de úteis e o registro (`components/tools/registry.ts`, `ToolView`)
-  já existem (B7). As ações do app já existem
-  (`lib/actions/tools.ts`, lançam `Error` com a mensagem do servidor). O cartão lê `message.tool` quando
-  `message.kind === 'tool'` e escolhe pelo `message.tool.tool`.
-- Mover os times: o botão "Mover para as salas" no cartão/painel do sorteador (B10) usa `moveTeams` e mostra
-  `skipped` com `MOVE_TEAMS_SKIP_LABELS`; ao importar da sala de voz, mande o `accountId` de cada pessoa.
+- Atalho opcional no `+` do composer abrindo o mesmo painel (roadmap v4).
+- Lane: o painel deixa escolher **uma** preferida por pessoa; o contrato aceita uma lista em ordem.
 
 ## Depuração (mover times)
 

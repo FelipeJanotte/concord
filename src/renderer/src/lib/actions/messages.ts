@@ -3,6 +3,7 @@ import type { Message } from '@shared/types'
 import { omit } from '../utils'
 import { get, getSocket, notify, requireSocket, set, type AppSocket } from '../core'
 import { isChatOnScreen } from './navigation'
+import { loadMyPollVotes } from './tools'
 import { clearDraft, isUploading, readyAttachmentIds } from './uploads'
 
 export function bindMessageEvents(s: AppSocket): void {
@@ -43,6 +44,7 @@ export async function loadHistory(channelId: string): Promise<void> {
       messages: { ...st.messages, [channelId]: mergeMessages(page.messages, st.messages[channelId] ?? []) },
       hasMoreHistory: { ...st.hasMoreHistory, [channelId]: page.hasMore }
     }))
+    void loadMyPollVotes(page.messages) // enquetes do histórico: marca o que eu já votei
   } catch {
     notify('Não foi possível carregar as mensagens')
   } finally {
@@ -67,6 +69,7 @@ export async function loadOlderMessages(channelId: string): Promise<void> {
         hasMoreHistory: { ...s.hasMoreHistory, [channelId]: page.hasMore }
       }
     })
+    void loadMyPollVotes(page.messages)
   } catch {
     notify('Não foi possível carregar as mensagens antigas')
   } finally {
