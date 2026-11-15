@@ -15,7 +15,7 @@ import type { PermissionsClientEvents, PermissionsServerEvents } from './permiss
 import type { PreferencesClientEvents, PreferencesServerEvents } from './preferences'
 import type { PresenceClientEvents, PresenceServerEvents } from './presence'
 import type { SoundsClientEvents, SoundsServerEvents } from './sounds'
-import type { ToolsClientEvents } from './tools'
+import type { ToolsClientEvents, ToolsServerEvents } from './tools'
 import type { VoiceClientEvents, VoiceServerEvents } from './voice'
 
 export * from './account'
@@ -44,6 +44,7 @@ export interface ServerToClientEvents
     PreferencesServerEvents,
     PresenceServerEvents,
     SoundsServerEvents,
+    ToolsServerEvents,
     VoiceServerEvents {}
 
 export interface ClientToServerEvents

@@ -77,6 +77,22 @@ describe('limites por conta', () => {
     })
   })
 
+  it('votos em enquete: 20 seguidos; o 21º recebe erro com o tempo de espera', async () => {
+    const geral = a.state.channels.find((c) => c.type === 'text')!
+    // a enquete é criada pela outra conta (o limite de sorteios de "b" já foi gasto acima)
+    const created = await a.socket.emitWithAck('tools:poll', { channelId: geral.id, question: 'Limite?', options: ['sim', 'não'] })
+    if (!created.ok) throw new Error(created.error)
+    // Em paralelo: o balde repõe 2 votos por segundo, então em sequência (lenta, com a máquina carregada)
+    // o 21º às vezes já teria ficha nova. 30 de uma vez: 20 passam e o resto é recusado.
+    const results = await Promise.all(
+      Array.from({ length: 30 }, (_, i) => b.socket.emitWithAck('poll:vote', { messageId: created.message.id, choices: [i % 2] }))
+    )
+    expect(results.filter((r) => r.ok).length).toBeGreaterThanOrEqual(20)
+    const refused = results.filter((r) => !r.ok)
+    expect(refused.length).toBeGreaterThan(0)
+    for (const r of refused) expect(!r.ok && r.error).toMatch(/^Muitos votos seguidos\. Tente de novo em \d+ s\.$/)
+  })
+
   it('perfil: 10 alterações seguidas; a 11ª é recusada', async () => {
     for (let i = 0; i < 10; i++) expect((await a.socket.emitWithAck('account:update', { name: `Nome ${i}` })).ok).toBe(true)
     const res = await a.socket.emitWithAck('account:update', { name: 'Nome 11' })
@@ -162,13 +178,14 @@ describe('backup automático (PGlite)', () => {
     return existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.tar.gz')) : []
   }
 
-  it('faz backup no boot, de novo depois do intervalo, e mantém só os 2 mais novos', async () => {
-    const deadline = Date.now() + 4000
+  // Prazos folgados: cada backup compacta a pasta do PGlite, o que demora bem mais com a suíte inteira rodando.
+  it('faz backup no boot, de novo depois do intervalo, e mantém só os 2 mais novos', { timeout: 45_000 }, async () => {
+    const deadline = Date.now() + 15_000
     while (backups().length === 0 && Date.now() < deadline) await sleep(100)
     expect(backups()).toHaveLength(1)
 
     const count = (): number => (server.log.match(/\[backup\]/g) ?? []).length
-    const more = Date.now() + 6000
+    const more = Date.now() + 25_000
     while (count() < 3 && Date.now() < more) await sleep(200)
     expect(count()).toBeGreaterThanOrEqual(3)
     expect(backups()).toHaveLength(2)

@@ -1,5 +1,6 @@
 /**
- * Ferramentas do grupo (v4): sorteador de times (A8), dado, moeda e sortear 1 nome.
+ * Ferramentas do grupo (v4): sorteador de times (A8), dado, moeda, sortear 1 nome e criar enquete
+ * (votar e encerrar ficam em `modules/polls.ts`).
  *
  * O sorteio roda aqui, com `crypto.randomInt`, e o resultado vira uma mensagem `kind: 'tool'`
  * no canal: todos que veem o canal recebem o mesmo resultado pelo `message:new` de sempre.
@@ -13,6 +14,7 @@ import { guard, type AppServer, type AppSocket, type ServerModule } from '../con
 import { limiters, retryText } from '../middleware/rate-limit'
 import { findChannel } from '../repo/channels'
 import { insertMessage } from '../repo/messages'
+import { newPoll, validatePoll } from '../tools/poll'
 import { flipCoins, pickOne, rollDice, validateCoin, validateDice, validatePick } from '../tools/random'
 import { drawTeams, validateTeams, type Rand } from '../tools/teams'
 
@@ -46,6 +48,13 @@ const TOOLS = {
     run(req, rand) {
       const input = validatePick(req)
       return typeof input === 'string' ? input : { tool: 'pick', result: pickOne(input, rand) }
+    }
+  },
+  'tools:poll': {
+    // não sorteia nada: a enquete começa sem votos (votar e encerrar em modules/polls.ts)
+    run(req) {
+      const input = validatePoll(req)
+      return typeof input === 'string' ? input : { tool: 'poll', result: newPoll(input) }
     }
   }
 } satisfies Partial<Record<keyof ClientToServerEvents, Tool>>

@@ -1,6 +1,6 @@
 ---
 name: concord-tools
-description: Como funcionam as ferramentas do grupo do Concord (v4) — sorteio no servidor com crypto.randomInt, resultado postado como mensagem kind 'tool' (Message.tool tipado + content por extenso), o sorteador de times (A8: validação, Fisher–Yates, times equilibrados, lanes sem repetir com preferências), dado, moeda e sortear 1 nome, e os eventos tools:teams/dice/coin/pick. Use ao mexer em server/modules/tools.ts, server/tools/**, src/shared/types/tools.ts, no kind/tool de src/shared/types/message.ts e server/db/schema/messages.ts, na barra de úteis/painel/cartão do resultado (B7/B10), ao criar uma ferramenta nova, ou ao investigar sorteio recusado, "Muitos sorteios seguidos" ou resultado diferente entre telas.
+description: Como funcionam as ferramentas do grupo do Concord (v4) — sorteio no servidor com crypto.randomInt, resultado postado como mensagem kind 'tool' (Message.tool tipado + content por extenso), o sorteador de times (A8: validação, Fisher–Yates, times equilibrados, lanes sem repetir com preferências), dado, moeda, sortear 1 nome e enquete (votos anônimos, poll:vote/close/mine/updated), e os eventos tools:*. Use ao mexer em server/modules/tools.ts, server/modules/polls.ts, server/repo/polls.ts, server/tools/**, src/shared/types/tools.ts, no kind/tool de src/shared/types/message.ts e server/db/schema/messages.ts, na barra de úteis/painel/cartão do resultado (B7/B10), ao criar uma ferramenta nova, ou ao investigar sorteio recusado, "Muitos sorteios seguidos" ou resultado diferente entre telas.
 ---
 
 # Ferramentas do grupo (v4: A8 servidor do sorteador; B10 painel e cartão; a barra de úteis é da B7)
@@ -27,6 +27,11 @@ O app **não consegue** criar mensagem de ferramenta pelo `message:send`: o serv
 | `src/renderer/src/lib/actions/tools.ts` | Ações do app: `drawTeams`, `rollDice(channelId, sides, count?)`, `flipCoin(channelId, count?)`, `pickOne(channelId, opções ou texto com uma por linha)`. |
 | `server/db/schema/messages.ts` | Colunas `kind` e `tool` (jsonb), com checks: `kind` conhecido e `tool` preenchido **só e sempre** em `kind = 'tool'` (migration `0007_tools`). |
 | `server/repo/messages.ts` | Grava `kind`/`tool`; na leitura, só põe os campos em mensagens de ferramenta (mensagem de texto continua igual). |
+| `server/tools/poll.ts` | Enquete (puras): `validatePoll`, `newPoll` (sem votos), `validateChoices` (voto). |
+| `server/modules/polls.ts` | `poll:vote`, `poll:close`, `poll:mine` e o aviso `poll:updated` (criar é `tools:poll`, no `TOOLS`). |
+| `server/repo/polls.ts` | `findPoll`, `setVote` (troca os votos da conta e recalcula, com a mensagem travada `for update`), `closePoll`, `votesOf`, `channelsOfMessages`. Grava contagens e texto em `messages.tool`/`content`. |
+| `server/db/schema/polls.ts` | Tabela `poll_votes` (mensagem, conta, opção 0–9; cascade ao apagar mensagem, canal ou conta) — migration `0008_polls`. |
+| `src/renderer/src/store/tools.ts` | `myPollVotes` (id da enquete → opções que eu marquei). |
 
 ## Eventos
 
@@ -37,8 +42,27 @@ O app **não consegue** criar mensagem de ferramenta pelo `message:send`: o serv
 | `tools:coin` | `{ channelId, count }` | 1–10 moedas → `{ flips: ('cara' \| 'coroa')[] }` |
 | `tools:pick` | `{ channelId, options }` | 2–50 opções de até 100 caracteres, sem repetir (sem diferenciar maiúsculas); linhas vazias ignoradas → `{ options, picked }` |
 
+| `tools:poll` | `{ channelId, question, options, multiple? }` | pergunta 1–200, 2–10 opções de até 80, sem repetir → `PollResult { question, options, multiple, counts, voters, closed }` (começa sem votos) |
+
 Todas respondem `ToolResult` (`{ ok, message }` ou `{ ok: false, error }`), seguem as mesmas regras de canal abaixo e
 dividem o mesmo limite (`LIMITS.tool`). Pedido inválido devolve o erro de validação **sem gastar** o limite.
+
+## Enquete: votar e encerrar (`modules/polls.ts`)
+
+| Evento | Pedido | Resposta | Regras |
+|---|---|---|---|
+| `poll:vote` | `{ messageId, choices }` | `PollVoteResult` (`result`, `mine`) | ver o canal e `send`; aberta; índices válidos, sem repetir; voto único = no máximo 1; `[]` tira o voto; **substitui** o voto anterior; `LIMITS.vote` (20 seguidos, depois 2/s) |
+| `poll:close` | `messageId` | `PollCloseResult` | quem criou ou `manageMessages`; não reabre |
+| `poll:mine` | `messageIds[]` (até 100) | `Record<messageId, number[]>` | só enquetes de canais que a conta vê |
+| `poll:updated` (servidor → app) | `{ messageId, channelId, result }` | — | depois de cada voto/encerramento, para quem vê o canal (`emitToViewers`) |
+
+Votos são **anônimos**: todo mundo recebe só as contagens; cada pessoa sabe os próprios votos pelo `mine` (no voto)
+ou pelo `poll:mine` (depois de abrir o histórico). Quem não vê o canal recebe "Enquete não encontrada" em tudo.
+O histórico já traz as contagens atuais: cada voto grava o resultado em `messages.tool` e o texto em `content`.
+
+No app (`lib/actions/tools.ts`): `createPoll(channelId, pergunta, opções, multiple?)`, `votePoll(channelId, messageId, choices)`,
+`closePoll(channelId, messageId)` e `loadMyPollVotes(mensagens)` (guarda em `myPollVotes`, `[]` = não votei). O listener
+`poll:updated` troca `tool` e `content` da mensagem já carregada.
 
 ## Regras comuns e `tools:teams`
 
@@ -76,10 +100,14 @@ dividem o mesmo limite (`LIMITS.tool`). Pedido inválido devolve o erro de valid
 | `server/tests/tools.test.ts` | Servidor real: mesma mensagem para todos + histórico (times e dado), moeda e sortear 1, erros sem postar, canal de voz/privado/sem `send`, conversa privada, `message:send` não forja ferramenta. |
 | `server/tests/limits.test.ts` | `LIMITS.tool` com os limites reais, compartilhado entre ferramentas; pedido inválido não conta. |
 | `src/renderer/src/lib/actions/tools.test.ts` | Ações do app (`drawTeams`, `rollDice`, `flipCoin`, `pickOne`): parâmetros, padrões e erro. |
+| `server/tools/poll.test.ts` | Validação da enquete e da escolha do voto. |
+| `server/repo/polls.test.ts` | Votos, troca e retirada, múltipla, votos simultâneos, encerrar, `votesOf`, check do banco e cascade. |
+| `server/tests/polls.test.ts` | Servidor real: criar e votar (anônimo, `mine`), único × múltiplo, histórico + `poll:mine`, encerrar (autor, dona, recusas), canal privado e sem `send`. |
+| `src/renderer/src/lib/actions/polls.test.ts` | App: `poll:updated` na mensagem, criar, votar, encerrar, `loadMyPollVotes`. |
 
 ## Pendente
 
 - Barra de úteis e registro de ferramentas (B7), painéis e cartões do resultado (B10). As ações do app já existem
   (`lib/actions/tools.ts`, lançam `Error` com a mensagem do servidor). O cartão lê `message.tool` quando
   `message.kind === 'tool'` e escolhe pelo `message.tool.tool`.
-- Próximas ferramentas: enquete (votos guardados no banco) e mover times para salas de voz.
+- Próxima ferramenta: mover os times sorteados para salas de voz (usa o resultado do sorteador + moderação da v2).

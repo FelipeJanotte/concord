@@ -108,12 +108,44 @@ export interface PickResult {
   picked: string
 }
 
+// ---------- Enquete ----------
+
+export const POLL_MIN_OPTIONS = 2
+export const POLL_MAX_OPTIONS = 10
+export const POLL_QUESTION_MAX = 200
+export const POLL_OPTION_MAX = 80
+
+export interface PollRequest {
+  channelId: string
+  question: string
+  /** 2–10 opções de até 80 caracteres, sem repetir */
+  options: string[]
+  /** true = cada pessoa pode marcar várias opções */
+  multiple?: boolean
+}
+
+/** Estado da enquete (vai na mensagem e em `poll:updated`). Votos são anônimos: só as contagens. */
+export interface PollResult {
+  question: string
+  options: string[]
+  multiple: boolean
+  /** votos por opção, na ordem de `options` */
+  counts: number[]
+  /** quantas pessoas votaram */
+  voters: number
+  closed: boolean
+}
+
+export type PollVoteResult = { ok: true; result: PollResult; mine: number[] } | { ok: false; error: string }
+export type PollCloseResult = { ok: true; result: PollResult } | { ok: false; error: string }
+
 /** O que vai na mensagem `kind: 'tool'`. Ferramenta nova = um tipo novo nesta união. */
 export type ToolPayload =
   | { tool: 'teams'; result: TeamsResult }
   | { tool: 'dice'; result: DiceResult }
   | { tool: 'coin'; result: CoinResult }
   | { tool: 'pick'; result: PickResult }
+  | { tool: 'poll'; result: PollResult }
 export type ToolName = ToolPayload['tool']
 
 export type ToolResult = { ok: true; message: Message } | { ok: false; error: string }
@@ -129,6 +161,19 @@ export interface ToolsClientEvents {
   'tools:coin': (req: CoinRequest, ack: (res: ToolResult) => void) => void
   /** sorteia 1 entre as opções */
   'tools:pick': (req: PickRequest, ack: (res: ToolResult) => void) => void
+  /** cria uma enquete no canal */
+  'tools:poll': (req: PollRequest, ack: (res: ToolResult) => void) => void
+  /** substitui o meu voto (índices das opções; [] tira o voto). Voto único: no máximo 1 índice. */
+  'poll:vote': (req: { messageId: string; choices: number[] }, ack: (res: PollVoteResult) => void) => void
+  /** encerra a enquete (quem criou ou quem tem `manageMessages`) */
+  'poll:close': (messageId: string, ack: (res: PollCloseResult) => void) => void
+  /** os meus votos nessas enquetes (para marcar as opções depois de recarregar o histórico) */
+  'poll:mine': (messageIds: string[], ack: (votes: Record<string, number[]>) => void) => void
+}
+
+export interface ToolsServerEvents {
+  /** votos ou encerramento mudaram (para quem vê o canal) */
+  'poll:updated': (payload: { messageId: string; channelId: string; result: PollResult }) => void
 }
 
 // ---------- Funções puras ----------
@@ -182,5 +227,14 @@ export function toolResultText(payload: ToolPayload): string {
       return coinResultText(payload.result)
     case 'pick':
       return pickResultText(payload.result)
+    case 'poll':
+      return pollResultText(payload.result)
   }
+}
+
+/** "📊 Enquete: Qual mapa? — Dust 2: 3, Mirage: 1 (4 pessoas)" + "(encerrada)" quando fechou */
+export function pollResultText(result: PollResult): string {
+  const options = result.options.map((o, i) => `${o}: ${result.counts[i] ?? 0}`).join(', ')
+  const people = `${result.voters} ${result.voters === 1 ? 'pessoa' : 'pessoas'}`
+  return fitMessage(`📊 Enquete${result.closed ? ' (encerrada)' : ''}: ${result.question} — ${options} (${people})`)
 }
