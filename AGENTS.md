@@ -65,6 +65,7 @@ Gerenciador de pacotes: **npm** (não use pnpm/yarn; o projeto foi revertido do 
 | `vercel.json`, `src/renderer/src/lib/default-server.ts`, `src/renderer/src/env.d.ts` | Versão web opcional (`docs/areas/deploy.md`): a Vercel publica só `out/renderer`; `VITE_DEFAULT_SERVER` no build define o servidor padrão da tela de login (também no instalador). |
 | `docker-compose.yml`, `livekit.yaml`, `.env.example` | Infra local: PostgreSQL 17 e LiveKit (SFU). Credenciais de dev espelhadas em `server/.env.example`; `.env` na raiz (modelo `.env.example`) é do compose: `LIVEKIT_NODE_IP` para a voz de quem vem de outra máquina. |
 | `.github/workflows/ci.yml` | CI (A12): typecheck + testes em todo PR e push na `main` (Ubuntu, Node 22, PGlite, sem Docker). |
+| `.github/workflows/auto-release.yml`, `.github/workflows/release.yml`, `.github/scripts/next-version.mjs` | Release automática: cada PR mergeado na `main` vira tag `vX.Y.Z` (patch; labels `release: minor`/`release: major`/`sem release`) e instalador no GitHub Releases (skill `concord-updates`). |
 | `Dockerfile`, `docker-compose.prod.yml`, `deploy/` | Hospedagem pela internet (A14): imagem do servidor, compose de produção (servidor + Postgres com backup + LiveKit com TURN + Caddy/HTTPS), `deploy/.env.example` e o guia `deploy/README.md`. |
 | `docs/` | Documentação, organizada por gênero em pastas: `areas/` (referência por área, apontada pelas skills `concord-*`), `decisions/` (ADRs) e `ROADMAP.md` (plano das tasks). As regras e o índice das pastas estão em `docs/AGENTS.md`. |
 | `vitest.config.ts` | Testes `*.test.ts(x)` ao lado do código (`npm test`). |
@@ -207,7 +208,7 @@ ponteiros para eles):
 - `docs/areas/voice.md` — como a voz funciona (LiveKit no servidor, token por sala), compartilhamento de tela, dispositivos e volume por pessoa, pressione para falar (B20), limites e depuração.
 - `docs/areas/notifications.md` — notificações (B9): quando avisar (conversa, chamada, pedido de amizade, só fora de foco), clique e selo no ícone.
 - `docs/areas/overlay.md` — sobreposição em jogos (B15): janela transparente com quem fala, atalho global, canto/tamanho, arrastar para mover (como no Discord) e o limite da tela cheia exclusiva.
-- `docs/areas/updates.md` — atualização automática (A13): electron-updater, faixa "Reiniciar para atualizar" e como publicar uma versão (tag vX.Y.Z).
+- `docs/areas/updates.md` — atualização automática (A13): electron-updater, faixa e botão "Atualizar o Concord", e a release automática a cada PR mergeado na `main` (tag vX.Y.Z).
 - `docs/areas/deploy.md` — hospedar pela internet (A14): imagem, compose de produção, LiveKit com TURN, Caddy, variáveis e guia.
 - `docs/areas/dev-workflow.md` — rodar, testar com vários usuários, build e solução de problemas conhecidos.
 
