@@ -11,6 +11,7 @@ import { CallPanel } from './call/CallPanel'
 import { Composer } from './chat/Composer'
 import { MessageActions } from './chat/MessageActions'
 import { MessageAttachments } from './chat/MessageAttachments'
+import { ToolResultCard } from './tools/ToolResultCard'
 import { UserAvatar } from './UserAvatar'
 
 const GROUP_WINDOW_MS = 5 * 60 * 1000
@@ -199,6 +200,8 @@ function DayDivider({ ts }: { ts: number }) {
 }
 
 function MessageBody({ message }: { message: Message }) {
+  // resultado de ferramenta (v4): cartão próprio em vez do texto por extenso
+  if (message.kind === 'tool' && message.tool) return <ToolResultCard message={message} />
   return (
     <>
       {message.content && (

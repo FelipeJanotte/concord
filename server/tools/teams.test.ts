@@ -41,7 +41,7 @@ describe('validateTeams', () => {
     expect(validateTeams({ players: people(4), teamCount: 2.5 })).toBe('O número de times vai de 2 a 10')
     expect(validateTeams({ players: people(3), teamCount: 4 })).toBe('Mais times do que pessoas')
     expect(validateTeams({ players: people(11), teamCount: 2, lanes: true })).toBe(
-      'Com lanes, cada time pode ter no máximo 5 pessoas: aumente o número de times'
+      'Com 5 lanes, cada time pode ter no máximo 5 pessoas: aumente o número de times ou as lanes'
     )
   })
 
@@ -52,7 +52,8 @@ describe('validateTeams', () => {
         { name: 'Bia', lanes: [] }
       ],
       teamCount: 2,
-      lanes: false
+      lanes: false,
+      laneSet: [...LANES]
     })
     expect(valid({ players: [{ name: 'Ana', lanes: ['mid'] }, { name: 'Bia' }], teamCount: 2, lanes: true }).players[0].lanes).toEqual(['mid'])
   })
@@ -172,5 +173,48 @@ describe('conta de cada pessoa (para mover os times)', () => {
     expect(
       validateTeams({ players: [{ name: 'Ana', accountId: 'a' }, { name: 'Outra', accountId: 'a' }], teamCount: 2 })
     ).toBe('Pessoa repetida: Outra')
+  })
+})
+
+describe('lanes disponíveis (laneSet)', () => {
+  it('só sorteia as lanes escolhidas, na ordem de LANES, e o resultado diz quais valeram', () => {
+    const input = valid({ players: people(6), teamCount: 2, lanes: true, laneSet: ['adc', 'top', 'mid'] })
+    expect(input.laneSet).toEqual(['top', 'mid', 'adc'])
+    const result = drawTeams(input, seeded(5))
+    expect(result.laneSet).toEqual(['top', 'mid', 'adc'])
+    for (const team of result.teams) expect(team.members.map((m) => m.lane)).toEqual(['top', 'mid', 'adc'])
+  })
+
+  it('times menores que as lanes: lanes diferentes, todas da lista', () => {
+    const result = drawTeams(valid({ players: people(4), teamCount: 2, lanes: true, laneSet: ['top', 'jungle', 'mid'] }), seeded(9))
+    for (const team of result.teams) {
+      const lanes = team.members.map((m) => m.lane)
+      expect(new Set(lanes).size).toBe(2)
+      expect(lanes.every((l) => ['top', 'jungle', 'mid'].includes(l as string))).toBe(true)
+    }
+  })
+
+  it('o tamanho máximo do time é o número de lanes', () => {
+    expect(validateTeams({ players: people(7), teamCount: 2, lanes: true, laneSet: ['top', 'mid', 'adc'] })).toBe(
+      'Com 3 lanes, cada time pode ter no máximo 3 pessoas: aumente o número de times ou as lanes'
+    )
+    expect(validateTeams({ players: people(3), teamCount: 2, lanes: true, laneSet: ['mid'] })).toBe(
+      'Com 1 lane, cada time pode ter no máximo 1 pessoa: aumente o número de times ou as lanes'
+    )
+  })
+
+  it('recusa lista vazia, lane desconhecida ou repetida; sem lanes, a lista é ignorada', () => {
+    const base = { players: people(2), teamCount: 2, lanes: true }
+    expect(validateTeams({ ...base, laneSet: [] })).toBe('Escolha pelo menos uma lane')
+    expect(validateTeams({ ...base, laneSet: ['top', 'baron'] })).toBe('Lanes disponíveis inválidas')
+    expect(validateTeams({ ...base, laneSet: ['top', 'top'] })).toBe('Lanes disponíveis inválidas')
+    expect(validateTeams({ ...base, laneSet: 'top' })).toBe('Lanes disponíveis inválidas')
+    expect(valid({ players: people(2), teamCount: 2, laneSet: 'lixo' }).laneSet).toEqual([...LANES])
+  })
+
+  it('preferência por lane fora da lista é ignorada; todas as lanes não vão no resultado', () => {
+    const input = valid({ players: [{ name: 'Ana', lanes: ['support', 'mid'] }, { name: 'Bia' }], teamCount: 2, lanes: true, laneSet: ['top', 'mid'] })
+    expect(input.players[0].lanes).toEqual(['mid'])
+    expect(drawTeams(valid({ players: people(2), teamCount: 2, lanes: true }), seeded(1))).not.toHaveProperty('laneSet')
   })
 })
