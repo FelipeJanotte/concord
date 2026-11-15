@@ -119,7 +119,7 @@ Infra comum (contrato em conjunto): mensagem ganha `kind` (`'text' | 'tool'`) e 
 |---|---|---|---|
 | **A8 Sorteador de times (servidor)** ✅ servidor + contrato (branch `v4/a8-sorteador`; `players: [{ name, lanes? }]` no lugar de `names[]`) | A | `tools:teams { channelId, names[], teamCount, lanes? }`: valida (2–50 nomes, até 32 caracteres), embaralha (Fisher–Yates), distribui equilibrado; com `lanes` ligado e times de 5, atribui Top/Selva/Meio/Atirador/Suporte sem repetir; aceita preferências de lane opcionais por pessoa. Função pura com testes. Posta mensagem `kind: 'tool'`. | `server/modules/tools.ts`, `server/tools/teams.ts`, `shared/types/tools.ts` |
 | **B10 Sorteador (UI)** ✅ (transferida para o Dev A, junto com os painéis e cartões de dado, moeda, sortear 1 e enquete e o "Mover para as salas"; branch `v4/b10-ferramentas-ui`) | A | Ícone na barra de úteis + painel: importar nomes de quem está na sala de voz / online / digitar manualmente, nº de times, toggle de lanes, canal onde postar, "Sortear de novo". Card de resultado no chat com times coloridos e lanes. | `components/tools/{TeamRandomizerPanel,TeamResultCard,registry}.tsx` |
-| **Próximas ferramentas** (servidor ✅ dado/moeda e sorteio de 1 nome — branch `v4/ferramentas-simples`; enquete ✅ — branch `v4/enquete`; mover times ✅ servidor + ação do app — branch `v4/mover-times`, o botão fica no painel/cartão do sorteador da B10) | alternado | Mesmo molde, uma por pessoa, cada uma vira mais um ícone na barra: enquete, dado/moeda, sorteio de 1 nome, "mover times para salas de voz" (usa o resultado do sorteador + permissão de moderação da v2). | 1 arquivo de servidor + 2 de UI cada |
+| **Próximas ferramentas** (servidor ✅ dado/moeda e sorteio de 1 nome — branch `v4/ferramentas-simples`; enquete ✅ — branch `v4/enquete`; mover times ✅ servidor + ação do app — branch `v4/mover-times`; painéis e cartões de todas ✅ na B10) | alternado | Mesmo molde, uma por pessoa, cada uma vira mais um ícone na barra: enquete, dado/moeda, sorteio de 1 nome, "mover times para salas de voz" (usa o resultado do sorteador + permissão de moderação da v2). | 1 arquivo de servidor + 2 de UI cada |
 
 ## v5 — Temas personalizáveis
 
@@ -145,7 +145,7 @@ depende: B1, B2, B3, B4 e A2 já estão na `main`.
 | Supressão de ruído automática ✅ | B13 | B4 (na `main`) | médio (spike + modo automático) |
 | Sons de entrar/sair ✅ | B16 | B4 (na `main`) | pequeno |
 | Efeitos sonoros (soundboard) ✅ | A10 + B17 | A2 (na `main`); permissão opcional da v2 | médio |
-| Overlay em jogos | B15 | B2 (na `main`) | médio |
+| Overlay em jogos ✅ | B15 | B2 (na `main`) | médio |
 | Bot de música | A11 + B14 | B1 (na `main`); **decisão sobre termos de uso** | grande |
 
 ### B13 Supressão de ruído automática
@@ -252,6 +252,56 @@ pode ser bloqueado por **anti-cheat**. Fica fora; a tela de configuração deve 
 Como sempre: cada task vem com testes e com a skill da área (`concord-voice` para B13–B17; skills novas
 `concord-sounds` para A10/B17, `concord-overlay` para B15 e `concord-music` para A11/B14).
 
+## v6 — Qualidade, chat completo e voz para jogar
+
+Com a v1–v5 e os extras na `main` (falta só o bot de música, que espera a decisão sobre termos de uso), o
+próximo passo junta três frentes: **proteger a `main`** (CI) e levar o app para fora da rede local, **completar o
+chat** (o que todo mundo espera de um chat e ainda falta) e **melhorar a voz para quem joga**.
+
+**Divisão sugerida** (combinar antes de começar, como nas transferências da v5/B10/B17): cada task segue as regras
+de sempre (contrato primeiro, dono por arquivo, testes e skill no mesmo PR).
+
+### Infra e distribuição
+
+| Task | Dev | O que faz | Arquivos (dono) | Tamanho |
+|---|---|---|---|---|
+| **A12 CI no GitHub** ✅ (branch `v6/a12-ci`) | A | GitHub Actions em todo PR e push na `main`: `npm ci`, `npm run typecheck` e `npm test` (PGlite, sem Docker), com cache do npm. Badge no README e PR vermelho não mergeia (proteção de branch, se o dono do repositório ligar). | `.github/workflows/ci.yml` | pequeno |
+| **A13 Atualização automática** ✅ (branch `v6/a13-atualizacao`) | A | `electron-updater` lendo os GitHub Releases: o app confere ao abrir, baixa em segundo plano e oferece "Reiniciar para atualizar". Workflow que gera o instalador e publica a release a partir de uma tag. | `src/main/updater.ts`, `electron-builder.yml`, `.github/workflows/release.yml` | médio |
+| **A14 Hospedagem pela internet** ✅ (branch `v6/a14-hospedagem`) | A | Imagem Docker do servidor e um `docker-compose.prod.yml` (servidor + Postgres + LiveKit com TURN embutido e TLS), proxy com HTTPS (Caddy), variáveis de produção e um guia passo a passo numa VPS barata. Sem isso a voz só funciona na rede local. | `Dockerfile`, `docker-compose.prod.yml`, `deploy/**`, skill `concord-deploy` | médio |
+
+### Chat completo
+
+| Task | Dev | O que faz | Arquivos (dono) | Tamanho |
+|---|---|---|---|---|
+| **A15 Editar mensagem** ✅ (branch `v6/a15-b18-editar-responder`) | A | `message:edit { messageId, content }` só do autor (mesmas validações do envio, até `MESSAGE_MAX_LENGTH`), coluna `edited_at`, `message:edited` por `emitToViewers`. Na tela: "Editar" no menu da mensagem, edição no lugar (Enter salva, Esc cancela), "(editada)" ao lado da hora. Mensagem de ferramenta não edita. | `server/modules/messages.ts` (handler novo), `server/repo/messages.ts`, `shared/types/message.ts`, `components/chat/MessageActions.tsx` | médio |
+| **A16 Reações** | A | Tabela `message_reactions` (mensagem, conta, emoji), `message:react { messageId, emoji, on }` com limite de requisições, contagens na mensagem e `message:reactions` para quem vê o canal. Na tela: botão de reação (reusa o `EmojiPicker` do soundboard), chips com contagem e quem reagiu no tooltip; clicar no chip liga/desliga a minha. | `server/modules/reactions.ts`, `server/repo/reactions.ts`, `server/db/schema/reactions.ts`, `shared/types/reactions.ts`, `components/chat/Reactions.tsx` | médio |
+| **B18 Responder citando** ✅ (feita pelo Dev A junto com a A15; branch `v6/a15-b18-editar-responder`) | A | `message:send` aceita `replyToId` (mesmo canal, mensagem que eu vejo); a mensagem guarda e devolve um resumo da original (autor + começo do texto, ou "mensagem apagada"). Na tela: "Responder" no menu, faixa "Respondendo a Fulano" no composer, citação clicável que rola até a original. | `shared/types/message.ts` (`replyTo`), `server/repo/messages.ts`, `components/chat/ReplyPreview.tsx`, `Composer.tsx` | médio |
+| **B19 Menções @nome** | B | Autocompletar `@` no composer (membros que veem o canal), menção guardada pelo id da conta (`<@accountId>`) e desenhada como `@Nome`; a mensagem fica destacada para quem foi mencionado e **notifica mesmo em canal da comunidade** (B9). `@todos` só para quem tem uma permissão nova `mentionEveryone`. | `shared/types/message.ts` (`mentions`), `components/chat/MentionMenu.tsx`, `lib/notifications.ts` (regra nova) | médio |
+
+Ordem: A15 e B18 mexem em `shared/types/message.ts` e `server/repo/messages.ts` — contrato das duas num PR só
+antes de começar. A16 é independente. B19 depende do contrato de A15/B18 (para não conflitar no composer).
+
+### Voz para jogar
+
+| Task | Dev | O que faz | Arquivos (dono) | Tamanho |
+|---|---|---|---|---|
+| **B20 Push-to-talk** | B | Modo "pressione para falar" nas Configurações de voz: o microfone só abre enquanto a tecla escolhida está pressionada, **mesmo com o jogo na frente** (atalho global no main, como o do overlay da B15; o Electron não avisa quando a tecla é solta, então usa `uiohook-napi` ou fecha sozinho depois de um tempo sem repetir). Som curto ao abrir/fechar (opcional) e indicador na sala. | `src/main/push-to-talk.ts`, `src/preload/*`, `lib/actions/devices.ts`, `DeviceSettings.tsx` | médio |
+| **B21 Câmera na sala de voz** | B | Botão de câmera na sala (permissão de canal nova `video`, v2), escolha da câmera nas Configurações de voz, faixa de vídeo pelo LiveKit e a grade da sala mostrando os vídeos (a tela compartilhada continua em destaque). Limite de qualidade para não pesar no upload. | `lib/voice.ts`, `components/voice/{VoiceGrid,CameraTile}.tsx`, `shared/types/permissions.ts`, `server/livekit.ts` (grant) | grande |
+
+### Pendências das versões anteriores
+
+Itens pequenos que ficaram anotados nas skills (cada um com a skill da área atualizada no mesmo PR):
+
+| Item | Dev | Origem | Skill |
+|---|---|---|---|
+| Interruptor para desligar as notificações no app e som por tipo | A | B9 | `concord-notifications` |
+| Cortar o áudio para 5 s antes de enviar (em vez de recusar) | A | B17 | `concord-sounds` |
+| Soundboard nas chamadas privadas (botão no painel da chamada) | A | B17 | `concord-sounds` |
+| Várias lanes preferidas por pessoa no sorteador (o contrato já aceita a lista) | A | B10 | `concord-tools` |
+| Atalho no `+` do composer abrindo o painel das ferramentas | A | v4 | `concord-tools` |
+| Overlay: escolher outro atalho, arrastar a posição e acompanhar a troca de tema ao vivo | A | B15 | `concord-overlay` |
+| Silêncio pelo servidor guardado no banco (hoje some ao reiniciar o servidor) | B | B6 | `concord-moderation` |
+
 ## Verificação (em toda task)
 
 - `npm run typecheck` e `npm test` (vitest: `can()`, sorteador, validação de upload, repos contra Postgres de teste).
@@ -265,4 +315,10 @@ Como sempre: cada task vem com testes e com a skill da área (`concord-voice` pa
 - B16: terceira janela entra e sai da sala → as outras ouvem os dois sons; com deafen ou interruptor desligado, silêncio; reconectar não toca som.
 - A10/B17: enviar áudio de 4 s (aceita) e de 6 s ou 1 MB (recusa); tocar numa sala → só quem está nela ouve, do começo ao fim; quem está em outra sala não recebe `sound:played`.
 - B15: jogo em janela e em tela cheia sem bordas mostra o overlay com quem fala; o clique passa para o jogo; o atalho liga/desliga.
+- A12: PR com teste quebrado fica vermelho no GitHub; PR verde mostra typecheck e testes passando.
+- A13: instalar a versão N, publicar a N+1 e conferir que o app oferece "Reiniciar para atualizar" e volta na versão nova.
+- A14: com o servidor numa VPS, dois PCs em redes diferentes conversam por voz e compartilham a tela (TURN).
+- A15/A16/B18/B19: editar aparece "(editada)" nas duas janelas; reação liga/desliga e conta igual nas duas; responder rola até a original; mencionar notifica quem foi mencionado com o app em segundo plano, mesmo em canal.
+- B20: com um jogo na frente, segurar a tecla abre o microfone (a outra janela ouve) e soltar fecha.
+- B21: duas câmeras na mesma sala aparecem na grade das duas janelas; sem a permissão `video` o botão some.
 - A11/B14: `/tocar <link do YouTube>` toca para todos na sala; `/pular` e `/parar` funcionam; link de Spotify acha a música; sala vazia derruba o bot; URL de domínio não permitido é recusada.

@@ -6,6 +6,7 @@ import { setupNotifications } from './notifications'
 import { setupOverlay, teardownOverlay, type OverlayController } from './overlay'
 import { setupPushToTalk, type PushToTalkController } from './push-to-talk'
 import { setupScreenShare } from './screen-share'
+import { setupUpdater } from './updater'
 
 /** A janela principal (as notificações trazem ela de volta no clique; o overlay manda o aviso do atalho). */
 let mainWindow: BrowserWindow | null = null
@@ -69,6 +70,7 @@ app.whenReady().then(() => {
   setupScreenShare()
   overlay = setupOverlay(() => mainWindow)
   setupNotifications(() => mainWindow)
+  void setupUpdater(() => mainWindow).catch((err: unknown) => console.warn('[atualização] não iniciou:', err))
   pushToTalk = setupPushToTalk(() => mainWindow)
 
   createWindow()

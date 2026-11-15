@@ -1,0 +1,17 @@
+# Só o servidor entra na imagem (ver Dockerfile).
+node_modules
+out
+dist
+.git
+.github
+.claude
+docs
+build
+server/data
+server/.env
+**/*.test.ts
+**/*.test.tsx
+server/tests
+src/main
+src/preload
+src/renderer

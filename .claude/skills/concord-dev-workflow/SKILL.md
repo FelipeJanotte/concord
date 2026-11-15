@@ -23,7 +23,8 @@ description: Como rodar, testar, gerar o build e empacotar o Concord, e como res
 | `npm run test:watch` | vitest em modo watch; `npx vitest run server/tests/auth.test.ts` roda um arquivo só |
 | `npm run build` | typecheck + bundle em `out/` |
 | `npm start` | abre o build de `out/` |
-| `npm run dist` | build + instalador NSIS em `dist/` (config em `electron-builder.yml`) |
+| `npm run dist` | build + instalador NSIS em `dist/` (config em `electron-builder.yml`), sem publicar |
+| `npm run release` | build + instalador + publica no GitHub Releases (o workflow da tag `vX.Y.Z` usa; skill `concord-updates`) |
 
 Variáveis do servidor: `PORT`, `DATA_DIR` (padrão `server/data`, que está no `.gitignore`), `DATABASE_URL`,
 `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `UPLOAD_ORPHAN_TTL_MS` (anexo solto é apagado depois disso; padrão 1 h)
@@ -100,6 +101,11 @@ docker compose down -v   # para e APAGA o banco (recria concord_test na próxima
   mostra `Voz (LiveKit): desativada` ou o app avisa "Não foi possível conectar ao servidor de voz"; texto e contas
   funcionam normalmente.
 
+## Produção
+
+Para hospedar pela internet (voz fora da rede local, HTTPS): `deploy/README.md` e a skill `concord-deploy`
+(`docker compose -f docker-compose.prod.yml up -d --build`).
+
 ## Testes (vitest)
 
 - `vitest.config.ts` na raiz: testes `*.test.ts(x)` ao lado do código em `server/`, `src/shared/` e `src/renderer/src/`;
@@ -122,6 +128,22 @@ docker compose down -v   # para e APAGA o banco (recria concord_test na próxima
   `maxWorkers: '50%'` (um worker por núcleo saturava a CPU: cada arquivo sobe um servidor). Com a
   suíte inteira em paralelo, dezenas de servidores sobem juntos (tsx + migrations no PGlite) e o boot passa de 20 s;
   sozinho leva 1–2 s. "Hook timed out" ou "servidor não respondeu" só na suíte completa = carga, não bug.
+
+## CI no GitHub (A12)
+
+`.github/workflows/ci.yml` roda em **todo PR** e em todo push na `main`: `npm ci`, `npm run typecheck` e `npm test`
+(Ubuntu, Node 22, cache do npm). Um PR novo no mesmo branch cancela a execução anterior.
+
+- **Sem Docker:** sem `DATABASE_URL`/`DATABASE_URL_TEST` os testes usam PGlite, e a voz usa o LiveKit falso
+  (`server/tests/fake-livekit.ts`). Não há `server/.env` no CI (o `server/env.ts` só carrega se existir).
+- `ELECTRON_SKIP_BINARY_DOWNLOAD=1`: o binário do Electron não é baixado (o processo principal é testado com
+  Electron falso, `vi.mock('electron')`).
+- O badge fica no topo do `README.md`. Para o PR vermelho **não** poder ser mergeado, o dono do repositório liga a
+  proteção da `main` (Settings → Branches → exigir o check "typecheck e testes").
+- **Falhou só no CI:** quase sempre diferença de sistema (o CI é Linux; o time usa Windows): caminho com `\`,
+  letra maiúscula em nome de arquivo (o Linux diferencia) ou fim de linha. Ver o log em Actions → CI.
+- Teste que depende de tempo e passou no Windows mas falhou no CI: a máquina do CI tem 2–4 núcleos; veja
+  "Prazos" abaixo antes de aumentar timeout.
 
 ## Contas no desenvolvimento
 
