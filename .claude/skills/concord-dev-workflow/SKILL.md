@@ -101,6 +101,11 @@ docker compose down -v   # para e APAGA o banco (recria concord_test na próxima
   mostra `Voz (LiveKit): desativada` ou o app avisa "Não foi possível conectar ao servidor de voz"; texto e contas
   funcionam normalmente.
 
+## Produção
+
+Para hospedar pela internet (voz fora da rede local, HTTPS): `deploy/README.md` e a skill `concord-deploy`
+(`docker compose -f docker-compose.prod.yml up -d --build`).
+
 ## Testes (vitest)
 
 - `vitest.config.ts` na raiz: testes `*.test.ts(x)` ao lado do código em `server/`, `src/shared/` e `src/renderer/src/`;

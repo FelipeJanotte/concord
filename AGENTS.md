@@ -58,6 +58,7 @@ Gerenciador de pacotes: **npm** (não use pnpm/yarn; o projeto foi revertido do 
 | `src/renderer/src/components/ui/` | Componentes shadcn/ui (estilo new-york, importando de `radix-ui`). |
 | `docker-compose.yml`, `livekit.yaml` | Infra local: PostgreSQL 17 e LiveKit (SFU). Credenciais de dev espelhadas em `server/.env.example`. |
 | `.github/workflows/ci.yml` | CI (A12): typecheck + testes em todo PR e push na `main` (Ubuntu, Node 22, PGlite, sem Docker). |
+| `Dockerfile`, `docker-compose.prod.yml`, `deploy/` | Hospedagem pela internet (A14): imagem do servidor, compose de produção (servidor + Postgres com backup + LiveKit com TURN + Caddy/HTTPS), `deploy/.env.example` e o guia `deploy/README.md`. |
 | `vitest.config.ts` | Testes `*.test.ts(x)` ao lado do código (`npm test`). |
 | `src/renderer/src/components/` | Telas: `LoginScreen`, `ChannelSidebar`, `ChatView`, `VoiceView`, `MemberList`, `UserPanel`, `CreateChannelDialog`, `Toast`; `voice/` tem `VoiceGrid`, `ScreenTile` e `ScreenPicker` (tela compartilhada) e `DeviceSettings` (microfone e saída) e `Soundboard`/`SoundUploadForm`/`EmojiPicker` (efeitos sonoros, B17; ações em `lib/actions/sounds.ts`, estado em `store/sounds.ts`) e `MemberContextMenu` (botão direito numa pessoa: volume, silenciar, cargos, moderação, "Mensagem"/"Adicionar amigo" (B7), ver perfil) com `ModerationMenu` (silenciar para todos e expulsar da voz, B6); `UserProfileDialog` é o cartão de perfil. |
 
@@ -136,4 +137,5 @@ Leia a skill certa antes de mexer em cada área (ficam em `.claude/skills/<nome>
 - `concord-notifications` — notificações (B9): quando avisar (conversa, chamada, pedido de amizade, só fora de foco), clique e selo no ícone.
 - `concord-overlay` — sobreposição em jogos (B15): janela transparente com quem fala, atalho global, canto/tamanho e o limite da tela cheia exclusiva.
 - `concord-updates` — atualização automática (A13): electron-updater, faixa "Reiniciar para atualizar" e como publicar uma versão (tag vX.Y.Z).
+- `concord-deploy` — hospedar pela internet (A14): imagem, compose de produção, LiveKit com TURN, Caddy, variáveis e guia.
 - `concord-dev-workflow` — rodar, testar com vários usuários, build e solução de problemas conhecidos.
