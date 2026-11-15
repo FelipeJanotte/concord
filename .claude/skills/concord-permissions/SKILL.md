@@ -90,6 +90,8 @@ do seu cargo mais alto. **Ninguém dá permissão global que não tem** e **glob
 | `voice:join` | sem `view` → "Canal de voz não encontrado" (não revela sala privada); sem `connect` → "Você não tem permissão para entrar nesta sala"; ok devolve `canSpeak`/`canShare` |
 | `voice:update` | sem `speak` continua `muted: true` (não dá para se dessilenciar) |
 | `voice:state` | cada conexão recebe só as salas que pode ver (`voiceStatesFor`) |
+| `moderation:voice-kick` / `moderation:voice-mute` | `canModerate`: `manageMembers` e cargo acima do alvo (nunca a dona nem a si mesmo); sala que não vê = "não está numa sala" (skill `concord-moderation`) |
+| `message:delete` | `view` + (autor ou `manageMessages`); em DM só o autor |
 
 Para um handler novo: `await allowed(user.accountId, 'perm', channelId)` antes de agir e `emitToViewers(io,
 channelId, evento, payload)` no lugar de `io.emit` quando o evento é de um canal. Nunca confie no que a tela escondeu.

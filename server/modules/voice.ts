@@ -5,6 +5,10 @@
  * Permissões (v2, skill `concord-permissions`): entrar exige `view` + `connect`; o token
  * sai com microfone se `speak` e tela se `share`; cada um só vê o `voice:state` das salas
  * que pode ver; `applyVoiceAccess` reaplica tudo quando cargos ou regras mudam.
+ *
+ * Moderação (B6, `server/modules/moderation.ts`): `kickFromVoice` tira uma conexão da sala e
+ * `setServerMuted` silencia uma conta para todos (entra no cálculo do `speak`, então vale no
+ * token, ao vivo no LiveKit e se a pessoa sair e voltar).
  */
 import { can, channelPermissions, type AccessState, type VoicePermissions, type VoiceState } from '../../src/shared/types'
 import { accessSnapshot, allowed, currentAccess } from '../access'
@@ -16,12 +20,14 @@ import { findChannel } from '../repo/channels'
 const voice = new Map<string, VoiceState>()
 /** socket.id → o que o token/LiveKit permite publicar agora (para só atualizar o que mudou) */
 const published = new Map<string, VoicePermissions>()
+/** contas silenciadas por um moderador (B6). Em memória: some se o servidor reiniciar. */
+const serverMuted = new Set<string>()
 
 export const voiceStates = (): VoiceState[] => [...voice.values()]
 
 function voicePermissions(access: AccessState, accountId: string, channelId: string): VoicePermissions {
   const perms = channelPermissions(access, accountId, channelId)
-  return { canSpeak: perms.has('speak'), canShare: perms.has('share') }
+  return { canSpeak: perms.has('speak') && !serverMuted.has(accountId), canShare: perms.has('share') }
 }
 
 /** Sala de voz em que a conexão está (ou undefined). */
@@ -65,6 +71,7 @@ export function applyVoiceAccess(io: AppServer, access: AccessState): void {
       leaveVoice(io, socket, { emit: false })
       continue
     }
+    state.serverMuted = serverMuted.has(accountId)
     const next = voicePermissions(access, accountId, state.channelId)
     const before = published.get(socket.id)
     if (before && before.canSpeak === next.canSpeak && before.canShare === next.canShare) continue
@@ -83,6 +90,30 @@ function leaveVoice(io: AppServer, socket: AppSocket, { emit = true } = {}): voi
   published.delete(socket.id)
   if (liveKitConfig) void kickFromRoom(liveKitConfig, state.channelId, socket.id)
   if (emit) emitVoice(io)
+}
+
+/** A conta está silenciada por um moderador? */
+export function isServerMuted(accountId: string): boolean {
+  return serverMuted.has(accountId)
+}
+
+/** Tira a conexão `socketId` da sala (moderação). Devolve o estado que ela tinha, ou undefined se não estava em sala. */
+export function kickFromVoice(io: AppServer, socketId: string): VoiceState | undefined {
+  const socket = io.sockets.sockets.get(socketId)
+  const state = voice.get(socketId)
+  if (!socket || !state) return undefined
+  leaveVoice(io, socket)
+  return state
+}
+
+/**
+ * Silencia (ou tira o silêncio) da conta para todos. Vale para todas as conexões dela
+ * nas salas e para as próximas entradas; no LiveKit o microfone deixa de ser aceito.
+ */
+export function setServerMuted(io: AppServer, accountId: string, muted: boolean): void {
+  if (muted) serverMuted.add(accountId)
+  else serverMuted.delete(accountId)
+  applyVoiceAccess(io, accessSnapshot())
 }
 
 /** Tira todo mundo de uma sala (usado quando o canal é apagado). Não emite `voice:state`. */
@@ -122,6 +153,7 @@ export const voiceModule: ServerModule = {
           userId: socket.id,
           channelId: channel.id,
           muted: !!payload.muted || !permissions.canSpeak,
+          serverMuted: serverMuted.has(user.accountId),
           deafened: !!payload.deafened,
           // Entrar (ou trocar de sala) começa sem tela; o app avisa com voice:sharing ao publicar.
           sharing: false

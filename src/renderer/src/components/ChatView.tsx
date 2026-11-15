@@ -6,6 +6,7 @@ import { useCan } from '@/lib/permissions'
 import { formatDay, formatTime, formatTimestamp } from '@/lib/utils'
 import { useApp } from '@/store'
 import { Composer } from './chat/Composer'
+import { MessageActions } from './chat/MessageActions'
 import { MessageAttachments } from './chat/MessageAttachments'
 import { UserAvatar } from './UserAvatar'
 
@@ -185,7 +186,8 @@ function MessageItem({ message, compact }: { message: Message; compact: boolean 
 
   if (compact) {
     return (
-      <div className="group flex px-4 py-0.5 hover:bg-black/[0.06]">
+      <div className="group relative flex px-4 py-0.5 hover:bg-black/[0.06]">
+        <MessageActions message={message} />
         <span className="w-14 shrink-0 pt-1 pr-2 text-right text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100">
           {formatTime(message.createdAt)}
         </span>
@@ -197,7 +199,8 @@ function MessageItem({ message, compact }: { message: Message; compact: boolean 
   }
 
   return (
-    <div className="group mt-4 flex gap-4 px-4 py-0.5 hover:bg-black/[0.06]">
+    <div className="group relative mt-4 flex gap-4 px-4 py-0.5 hover:bg-black/[0.06]">
+      <MessageActions message={message} />
       <UserAvatar user={author} size="lg" className="mt-0.5" />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">

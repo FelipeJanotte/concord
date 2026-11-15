@@ -1,0 +1,252 @@
+// Moderação (B6): expulsar da voz, silenciar pelo servidor e apagar mensagem, com as regras de
+// hierarquia. Servidor de verdade + LiveKit falso (registra as chamadas da API).
+import { existsSync } from 'node:fs'
+import { join as joinPath } from 'node:path'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import type { Channel, Message, Permission, VoiceState } from '../../src/shared/types'
+import { FakeLiveKit, LIVEKIT_API_KEY, LIVEKIT_API_SECRET, LIVEKIT_URL, withEnv } from './fake-livekit'
+import { expectNoEvent, TestServer, waitFor, type ClientSocket, type TestUser } from './helpers'
+
+const livekit = new FakeLiveKit()
+let server: TestServer
+const open: ClientSocket[] = []
+
+beforeAll(async () => {
+  const apiUrl = await livekit.start()
+  server = await withEnv(
+    { LIVEKIT_URL, LIVEKIT_API_URL: apiUrl, LIVEKIT_API_KEY, LIVEKIT_API_SECRET },
+    () => TestServer.start()
+  )
+})
+
+afterEach(() => {
+  for (const s of open.splice(0)) s.close()
+})
+
+afterAll(async () => {
+  await server?.destroy()
+  await livekit.stop()
+})
+
+async function user(name?: string): Promise<TestUser> {
+  const u = await server.newUser(name)
+  open.push(u.socket)
+  return u
+}
+
+/** Cria um cargo (como a dona) e dá para a pessoa. */
+async function giveRole(u: TestUser, permissions: Permission[]): Promise<string> {
+  const owner = await server.asOwner()
+  const res = await owner.socket.emitWithAck('role:create', { name: `cargo-${u.tag}`, color: null, permissions })
+  if (!res.ok) throw new Error(res.error)
+  const set = await owner.socket.emitWithAck('member:set-roles', { accountId: u.self.accountId, roleIds: [res.role.id] })
+  if (!set.ok) throw new Error(set.error)
+  return res.role.id
+}
+
+const room = (): Promise<Channel> => server.createChannel(`Sala ${Math.random().toString(36).slice(2, 7)}`, 'voice')
+
+async function join(u: TestUser, channelId: string): Promise<{ canSpeak: boolean }> {
+  const res = await u.socket.emitWithAck('voice:join', { channelId, muted: false, deafened: false })
+  if (!res.ok) throw new Error(res.error)
+  return res
+}
+
+const stateOf = (states: VoiceState[], u: TestUser): VoiceState | undefined => states.find((v) => v.userId === u.self.id)
+
+describe('expulsar da voz', () => {
+  it('a dona expulsa: a pessoa recebe quem expulsou, sai da lista e do LiveKit', async () => {
+    const owner = await server.asOwner()
+    const ana = await user('Ana')
+    const sala = await room()
+    await join(ana, sala.id)
+    const kicked = waitFor(ana.socket, 'moderation:kicked')
+    const gone = waitFor(owner.socket, 'voice:state', (s) => !stateOf(s, ana))
+    const res = await owner.socket.emitWithAck('moderation:voice-kick', { userId: ana.self.id })
+    expect(res).toEqual({ ok: true })
+    expect((await kicked)[0]).toEqual({ channelId: sala.id, by: owner.name })
+    await gone
+    await livekit.waitCall('RemoveParticipant', (b) => b.room === sala.id && b.identity === ana.self.id)
+  })
+
+  it('sem gerenciar membros não expulsa', async () => {
+    const ana = await user('Ana')
+    const bia = await user('Bia')
+    const sala = await room()
+    await join(bia, sala.id)
+    expect(await ana.socket.emitWithAck('moderation:voice-kick', { userId: bia.self.id })).toEqual({
+      ok: false,
+      error: 'Você não pode expulsar essa pessoa'
+    })
+  })
+
+  it('moderador expulsa quem está abaixo, mas não a dona, nem quem tem cargo igual, nem a si mesmo', async () => {
+    const owner = await server.asOwner()
+    const mod = await user('Mod')
+    const igual = await user('Igual')
+    const semCargo = await user('Sem')
+    const roleId = await giveRole(mod, ['manageMembers'])
+    await owner.socket.emitWithAck('member:set-roles', { accountId: igual.self.accountId, roleIds: [roleId] })
+    const sala = await room()
+    for (const u of [owner, igual, semCargo, mod]) await join(u, sala.id)
+
+    const no = { ok: false, error: 'Você não pode expulsar essa pessoa' }
+    expect(await mod.socket.emitWithAck('moderation:voice-kick', { userId: owner.self.id })).toEqual(no)
+    expect(await mod.socket.emitWithAck('moderation:voice-kick', { userId: igual.self.id })).toEqual(no)
+    expect(await mod.socket.emitWithAck('moderation:voice-kick', { userId: mod.self.id })).toEqual(no)
+    expect(await mod.socket.emitWithAck('moderation:voice-kick', { userId: semCargo.self.id })).toEqual({ ok: true })
+    owner.socket.emit('voice:leave')
+  })
+
+  it('quem não está em sala (ou id inventado) dá erro', async () => {
+    const owner = await server.asOwner()
+    const ana = await user('Ana')
+    expect(await owner.socket.emitWithAck('moderation:voice-kick', { userId: ana.self.id })).toEqual({
+      ok: false,
+      error: 'Essa pessoa não está numa sala de voz'
+    })
+    expect(await owner.socket.emitWithAck('moderation:voice-kick', { userId: 'nada' })).toMatchObject({ ok: false })
+  })
+})
+
+describe('silenciar pelo servidor', () => {
+  it('silencia na hora (lista e LiveKit), não deixa se dessilenciar e vale ao voltar para a sala', async () => {
+    const owner = await server.asOwner()
+    const ana = await user('Ana')
+    const sala = await room()
+    await join(ana, sala.id)
+
+    const muted = waitFor(owner.socket, 'voice:state', (s) => stateOf(s, ana)?.serverMuted === true)
+    expect(await owner.socket.emitWithAck('moderation:voice-mute', { accountId: ana.self.accountId, muted: true })).toEqual({
+      ok: true
+    })
+    expect(stateOf((await muted)[0], ana)).toMatchObject({ muted: true, serverMuted: true })
+    // no LiveKit: sem o microfone (fonte 2) entre as fontes permitidas
+    await livekit.waitCall(
+      'UpdateParticipant',
+      (b) =>
+        b.identity === ana.self.id &&
+        !((b.permission as { canPublishSources?: unknown[] })?.canPublishSources ?? []).some((s) => s === 2 || s === 'MICROPHONE')
+    )
+
+    // tentar se dessilenciar não adianta
+    const still = waitFor(owner.socket, 'voice:state', (s) => stateOf(s, ana)?.muted === true)
+    ana.socket.emit('voice:update', { muted: false, deafened: false })
+    await still
+
+    // sair e voltar: continua sem poder falar
+    ana.socket.emit('voice:leave')
+    expect((await join(ana, sala.id)).canSpeak).toBe(false)
+
+    // tirar o silêncio: volta a poder falar
+    const unmuted = waitFor(owner.socket, 'voice:state', (s) => stateOf(s, ana)?.serverMuted === false)
+    expect(await owner.socket.emitWithAck('moderation:voice-mute', { accountId: ana.self.accountId, muted: false })).toEqual({
+      ok: true
+    })
+    await unmuted
+    ana.socket.emit('voice:leave')
+    expect((await join(ana, sala.id)).canSpeak).toBe(true)
+  })
+
+  it('só silencia quem está numa sala; sem permissão ou acima de mim, não', async () => {
+    const owner = await server.asOwner()
+    const ana = await user('Ana')
+    const bia = await user('Bia')
+    expect(await owner.socket.emitWithAck('moderation:voice-mute', { accountId: ana.self.accountId, muted: true })).toEqual({
+      ok: false,
+      error: 'Essa pessoa não está numa sala de voz'
+    })
+    const sala = await room()
+    await join(ana, sala.id)
+    await join(owner, sala.id)
+    expect(await bia.socket.emitWithAck('moderation:voice-mute', { accountId: ana.self.accountId, muted: true })).toMatchObject({
+      ok: false
+    })
+    expect(await ana.socket.emitWithAck('moderation:voice-mute', { accountId: owner.self.accountId, muted: true })).toMatchObject({
+      ok: false
+    })
+    expect(await owner.socket.emitWithAck('moderation:voice-mute', { accountId: ana.self.accountId, muted: 'sim' as never })).toEqual({
+      ok: false,
+      error: 'Pedido inválido'
+    })
+    owner.socket.emit('voice:leave')
+  })
+})
+
+describe('apagar mensagem', () => {
+  async function send(u: TestUser, channelId: string, content: string, attachmentIds: string[] = []): Promise<Message> {
+    const got = waitFor(u.socket, 'message:new', (m) => m.content === content)
+    u.socket.emit('message:send', { channelId, content, attachmentIds })
+    return (await got)[0]
+  }
+
+  it('o autor apaga a própria: todos que veem o canal recebem message:deleted e o histórico não tem mais', async () => {
+    const owner = await server.asOwner()
+    const ana = await user('Ana')
+    const ch = await server.createChannel(`geral-${Math.random().toString(36).slice(2, 6)}`)
+    const msg = await send(ana, ch.id, 'oi, vou apagar')
+    const seen = waitFor(owner.socket, 'message:deleted', (p) => p.messageId === msg.id)
+    expect(await ana.socket.emitWithAck('message:delete', { messageId: msg.id })).toEqual({ ok: true })
+    expect((await seen)[0]).toEqual({ channelId: ch.id, messageId: msg.id })
+    const page = await owner.socket.emitWithAck('message:history', { channelId: ch.id })
+    expect(page.messages.some((m) => m.id === msg.id)).toBe(false)
+  })
+
+  it('mensagem de outra pessoa: só com gerenciar mensagens', async () => {
+    const ana = await user('Ana')
+    const bia = await user('Bia')
+    const mod = await user('Mod')
+    await giveRole(mod, ['manageMessages'])
+    const ch = await server.createChannel(`geral-${Math.random().toString(36).slice(2, 6)}`)
+    const msg = await send(ana, ch.id, 'mensagem da ana')
+    expect(await bia.socket.emitWithAck('message:delete', { messageId: msg.id })).toEqual({
+      ok: false,
+      error: 'Você não pode apagar esta mensagem'
+    })
+    expect(await mod.socket.emitWithAck('message:delete', { messageId: msg.id })).toEqual({ ok: true })
+    expect(await mod.socket.emitWithAck('message:delete', { messageId: msg.id })).toEqual({
+      ok: false,
+      error: 'Mensagem não encontrada'
+    })
+  })
+
+  it('canal que não vejo: responde como se a mensagem não existisse e não avisa ninguém de fora', async () => {
+    const owner = await server.asOwner()
+    const ana = await user('Ana')
+    await giveRole(ana, ['manageMessages'])
+    const ch = await server.createChannel(`segredo-${Math.random().toString(36).slice(2, 6)}`)
+    await owner.socket.emitWithAck('channel:set-overrides', {
+      channelId: ch.id,
+      overrides: [{ roleId: '00000000-0000-0000-0000-000000000000', allow: [], deny: ['view'] }]
+    })
+    const msg = await send(owner, ch.id, 'só a dona vê')
+    expect(await ana.socket.emitWithAck('message:delete', { messageId: msg.id })).toEqual({
+      ok: false,
+      error: 'Mensagem não encontrada'
+    })
+    const silent = expectNoEvent(ana.socket, 'message:deleted')
+    expect(await owner.socket.emitWithAck('message:delete', { messageId: msg.id })).toEqual({ ok: true })
+    await silent
+  })
+
+  it('apaga o arquivo do anexo junto', async () => {
+    const ana = await user('Ana')
+    const ch = await server.createChannel(`anexos-${Math.random().toString(36).slice(2, 6)}`)
+    const up = await server.upload(ana.token, 'conteúdo do arquivo', { name: 'nota.txt', type: 'text/plain' })
+    if (!up.body.ok) throw new Error(up.body.error)
+    const id = up.body.attachment.id
+    const msg = await send(ana, ch.id, 'com anexo', [id])
+    const file = joinPath(server.dataDir, 'uploads', id)
+    expect(existsSync(file)).toBe(true)
+    expect(await ana.socket.emitWithAck('message:delete', { messageId: msg.id })).toEqual({ ok: true })
+    expect(existsSync(file)).toBe(false)
+  })
+
+  it('id inválido dá "não encontrada"', async () => {
+    const ana = await user('Ana')
+    expect(await ana.socket.emitWithAck('message:delete', { messageId: 'xyz' })).toEqual({
+      ok: false,
+      error: 'Mensagem não encontrada'
+    })
+  })
+})

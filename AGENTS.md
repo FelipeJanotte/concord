@@ -24,6 +24,7 @@ Gerenciador de pacotes: **npm** (não use pnpm/yarn; o projeto foi revertido do 
 | `server/modules/tools.ts`, `server/tools/` | Ferramentas do grupo (v4, A8): `tools:teams` sorteia no servidor (`crypto.randomInt`) e posta mensagem `kind: 'tool'`. Funções puras do sorteio em `server/tools/teams.ts`; contrato em `src/shared/types/tools.ts`. |
 | `server/modules/preferences.ts` | Preferências da conta (v5): tema ativo e até 10 temas salvos (`preferences:get/update`, sincroniza as janelas da mesma conta). Contrato do tema e funções puras em `src/shared/types/theme.ts`. |
 | `server/files-signing.ts` | Links de download de anexo assinados por pessoa (HMAC, validade 24 h); o download confere se a conta ainda vê o canal. |
+| `server/modules/moderation.ts` | Moderação (B6): `moderation:voice-kick`, `moderation:voice-mute` (silêncio pelo servidor, em `voice.ts`) e `message:delete`. Regras `canModerate`/`canDeleteMessage` em `src/shared/types/moderation.ts`. |
 | `server/modules/permissions.ts` | Eventos de cargos (`access:get`, `role:*`, `member:set-roles`, `channel:set-overrides`), hierarquia e `applyAccessChange` (avisa `access:updated`/`channels:visible` e tira da voz quem perdeu `connect`). |
 | `server/tests/` | Testes de integração e helpers: `helpers.ts` (`TestServer` com a dona: `asOwner()`, `createChannel()`), `database.ts` (banco de teste), `fake-livekit.ts` (LiveKit falso: `FakeLiveKit`, `liveKitEnv`). |
 | `server/middleware/rate-limit.ts` | Limite de requisições (balde de fichas) por conta/IP: mensagens, uploads, canais, perfil, "digitando", cadastro e login. Regras em `LIMITS`. |
@@ -37,10 +38,10 @@ Gerenciador de pacotes: **npm** (não use pnpm/yarn; o projeto foi revertido do 
 | `src/preload/` | Ponte `contextBridge` (`window.api.platform`, `window.api.googleSignIn` e `window.api.screen`; tipos da tela em `src/shared/screen.ts`). |
 | `src/renderer/src/store/` | Estado global zustand (`useApp`), um slice por domínio composto em `index.ts`. Só dados, sem ações. |
 | `src/renderer/src/lib/client.ts` | Login/sessão e conexão Socket.IO; chama os `bind<Dominio>Events` e **reexporta todas as ações**. Componentes importam ações daqui. |
-| `src/renderer/src/lib/actions/` | Ações e listeners por domínio (`account`, `channels`, `devices`, `messages`, `permissions`, `presence`, `uploads`, `voice`). `voice-sounds.ts`: sons de entrar/sair da sala. `devices.ts`: microfone, saída, volume e silenciar por pessoa (preferências em `concord:audio`). `uploads.ts`: rascunho de anexos por canal, envio com progresso (`transport.send`, XHR). |
+| `src/renderer/src/lib/actions/` | Ações e listeners por domínio (`account`, `channels`, `devices`, `messages`, `moderation`, `permissions`, `presence`, `uploads`, `voice`). `voice-sounds.ts`: sons de entrar/sair da sala. `devices.ts`: microfone, saída, volume e silenciar por pessoa (preferências em `concord:audio`). `uploads.ts`: rascunho de anexos por canal, envio com progresso (`transport.send`, XHR). |
 | `src/renderer/src/lib/permissions.ts` | Permissões na tela: `useCan`, `useCanAdminister`, `useNameColor` e helpers da hierarquia (mesma `can()` do servidor). |
 | `src/renderer/src/components/settings/` | Administração (B5): `CommunitySettingsDialog` (cargos e membros), `ChannelPermissionsDialog` (regras do canal), `RoleDot`. |
-| `src/renderer/src/components/chat/` | `Composer` (texto + clipe/colar), `AttachmentPreview`, `MessageAttachments` (imagem no chat / cartão de arquivo), `ImageLightbox`. Arrastar e soltar fica no `ChatView`. |
+| `src/renderer/src/components/chat/` | `Composer` (texto + clipe/colar), `AttachmentPreview`, `MessageAttachments` (imagem no chat / cartão de arquivo), `ImageLightbox`, `MessageActions` (apagar mensagem, B6). Arrastar e soltar fica no `ChatView`. |
 | `src/renderer/src/lib/core.ts` | Socket atual (`getSocket`/`requireSocket`), `set`/`get` da store e `notify`. Usado pelas ações. |
 | `src/renderer/src/lib/voice.ts` | `VoiceClient` sobre `livekit-client`: conecta na sala com o token do servidor, mute/deafen, quem está falando (`ActiveSpeakersChanged`). |
 | `src/renderer/src/lib/voice-permissions.ts` | `permissionsFrom`: o que o LiveKit deixa esta conexão publicar (microfone com `speak`, tela com `share`), usado quando as permissões mudam com a pessoa na sala. |
@@ -49,7 +50,7 @@ Gerenciador de pacotes: **npm** (não use pnpm/yarn; o projeto foi revertido do 
 | `src/renderer/src/components/ui/` | Componentes shadcn/ui (estilo new-york, importando de `radix-ui`). |
 | `docker-compose.yml`, `livekit.yaml` | Infra local: PostgreSQL 17 e LiveKit (SFU). Credenciais de dev espelhadas em `server/.env.example`. |
 | `vitest.config.ts` | Testes `*.test.ts(x)` ao lado do código (`npm test`). |
-| `src/renderer/src/components/` | Telas: `LoginScreen`, `ChannelSidebar`, `ChatView`, `VoiceView`, `MemberList`, `UserPanel`, `CreateChannelDialog`, `Toast`; `voice/` tem `VoiceGrid`, `ScreenTile` e `ScreenPicker` (tela compartilhada) e `DeviceSettings` (microfone e saída) e `MemberContextMenu` (botão direito numa pessoa: volume, silenciar, cargos, ver perfil); `UserProfileDialog` é o cartão de perfil. |
+| `src/renderer/src/components/` | Telas: `LoginScreen`, `ChannelSidebar`, `ChatView`, `VoiceView`, `MemberList`, `UserPanel`, `CreateChannelDialog`, `Toast`; `voice/` tem `VoiceGrid`, `ScreenTile` e `ScreenPicker` (tela compartilhada) e `DeviceSettings` (microfone e saída) e `MemberContextMenu` (botão direito numa pessoa: volume, silenciar, cargos, moderação, ver perfil) com `ModerationMenu` (silenciar para todos e expulsar da voz, B6); `UserProfileDialog` é o cartão de perfil. |
 
 ## Comandos
 
@@ -117,6 +118,7 @@ Leia a skill certa antes de mexer em cada área (ficam em `.claude/skills/<nome>
 - `concord-tools` — ferramentas do grupo (v4): sorteio no servidor, mensagem `kind: 'tool'`, sorteador de times (`tools:teams`, lanes e preferências) e como criar uma ferramenta nova.
 - `concord-themes` — temas personalizáveis (v5): `ThemeConfig`, `validateTheme`, código de compartilhamento e preferências da conta no servidor.
 - `concord-sounds` — efeitos sonoros (soundboard): envio por `POST /sounds`, tipo e duração pelos bytes, tocar só para a sala, sobreposição e quem apaga.
+- `concord-moderation` — moderação (B6): expulsar da voz, silenciar pelo servidor e apagar mensagem, com a hierarquia e os eventos `moderation:*`/`message:delete`.
 - `concord-attachments` — anexos: envio por `POST /uploads`, download por `GET /files`, tipo pelos bytes, storage, limpeza e a interface (clipe, colar, arrastar, prévia).
 - `concord-voice` — como a voz funciona (LiveKit no servidor, token por sala), compartilhamento de tela, dispositivos e volume por pessoa, limites e depuração.
 - `concord-dev-workflow` — rodar, testar com vários usuários, build e solução de problemas conhecidos.

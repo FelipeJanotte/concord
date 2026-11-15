@@ -9,6 +9,11 @@ export interface VoiceState {
   deafened: boolean
   /** está compartilhando a tela (indicador "ao vivo"; a imagem em si vai pelo LiveKit) */
   sharing: boolean
+  /**
+   * silenciado por um moderador (B6): não fala em nenhuma sala até tirarem.
+   * Ausente = false (servidor antigo). Quem está assim também aparece com `muted: true`.
+   */
+  serverMuted?: boolean
 }
 
 /** Como conectar na sala do LiveKit (sala = id do canal, identidade = `User.id`). */

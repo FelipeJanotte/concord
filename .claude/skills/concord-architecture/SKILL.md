@@ -117,11 +117,14 @@ Cliente → servidor (`ClientToServerEvents`):
 | `voice:update` | `{ muted, deafened }` | — | `voice:state` |
 | `voice:sharing` | `boolean` | — | liga/desliga o "ao vivo" (só para quem está numa sala); `voice:state` |
 | `typing` | `channelId` | — | broadcast `typing` (o cliente limita a 1 envio a cada 2,5 s) |
+| `moderation:voice-kick` | `{ userId }` | `OkResult` | `manageMembers` + cargo acima (`canModerate`); `moderation:kicked` para a conexão expulsa, tira da sala (também no LiveKit) + `voice:state` — skill `concord-moderation` |
+| `moderation:voice-mute` | `{ accountId, muted }` | `OkResult` | silencia a conta para todos (sem microfone no LiveKit, `VoiceState.serverMuted`) + `voice:state` |
+| `message:delete` | `{ messageId }` | `OkResult` | o autor ou `manageMessages` (em DM só o autor); apaga os anexos; `message:deleted` para quem vê o canal |
 
 Servidor → cliente (`ServerToClientEvents`): `channel:created`, `channel:deleted`, `user:joined`, `user:left`,
 `user:updated` (por `accountId`), `message:new`, `voice:state` (sempre a **lista completa** das salas que a pessoa
 vê), `typing`, `rate:limited`, `access:updated` e `channels:visible` (v2), `sound:created`, `sound:deleted` e
-`sound:played` (soundboard; o último só para a sala) `preferences:updated` (outras janelas da mesma conta), `friend:updated`, `friend:removed` e `friend:presence` (amizades; online só para amigos), `dm:created` (conversa nova, para a outra pessoa e as minhas outras janelas).
+`sound:played` (soundboard; o último só para a sala) `preferences:updated` (outras janelas da mesma conta), `friend:updated`, `friend:removed` e `friend:presence` (amizades; online só para amigos), `dm:created` (conversa nova, para a outra pessoa e as minhas outras janelas), `message:deleted` (para quem vê o canal) e `moderation:kicked` (só para a conexão expulsa da voz).
 
 ## Estado do renderer (`store/`)
 
