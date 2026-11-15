@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// "Aparência" (B12): galeria, editor ao vivo, temas salvos, compartilhar por código e o botão no painel.
+// Configurações → "Aparência" (B12): galeria, editor ao vivo, temas salvos, compartilhar por código e como chegar pelo painel.
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -11,7 +11,7 @@ import { setSocket } from '@/lib/core'
 import { THEME_PRESETS } from '@/lib/theme/presets'
 import { initialState, useApp } from '@/store'
 import { FakeSocket } from '@/test/fake-socket'
-import { AppearanceDialog } from './AppearanceDialog'
+import { AppearanceSettings } from './AppearanceSettings'
 
 globalThis.ResizeObserver ??= class {
   observe() {}
@@ -45,7 +45,7 @@ afterEach(async () => {
   setSocket(null)
 })
 
-const open = () => render(<AppearanceDialog open onOpenChange={() => {}} />)
+const open = () => render(<AppearanceSettings />)
 const theme = (): ThemeConfig => useApp.getState().theme
 const sentUpdates = (): PreferencesUpdate[] => socket.sent('preferences:update').map((a) => a[0] as PreferencesUpdate)
 
@@ -78,16 +78,14 @@ describe('galeria e editor', () => {
     expect(theme().intensity).toBe(80)
   })
 
-  it('várias mudanças viram um envio só ao fechar a janela (com o tema final)', async () => {
-    const onOpenChange = vi.fn()
-    render(<AppearanceDialog open onOpenChange={onOpenChange} />)
+  it('várias mudanças viram um envio só ao sair da seção (com o tema final)', async () => {
+    const { unmount } = open()
     await userEvent.click(screen.getByRole('button', { name: 'Oceano' }))
     await userEvent.click(screen.getByRole('button', { name: 'Neon' }))
     expect(sentUpdates()).toEqual([])
-    await userEvent.keyboard('{Escape}')
+    unmount() // trocar de seção ou fechar as Configurações
     await waitFor(() => expect(sentUpdates()).toHaveLength(1))
     expect(sentUpdates()[0]).toEqual({ theme: THEME_PRESETS.find((p) => p.id === 'neon')!.theme })
-    expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 })
 
@@ -148,15 +146,17 @@ describe('compartilhar', () => {
 })
 
 describe('painel do usuário', () => {
-  it('o botão "Aparência" abre a janela', async () => {
+  it('fica nas Configurações: engrenagem do painel → "Aparência" (sem botão de paleta separado)', async () => {
     useApp.setState({ self: { id: 's', accountId: 'me', name: 'Eu', tag: 'eu1', color: '#000000', avatarUrl: null } })
     render(
       <TooltipProvider>
         <UserPanel />
       </TooltipProvider>
     )
-    await userEvent.click(screen.getByRole('button', { name: 'Aparência' }))
-    const dialog = await screen.findByRole('dialog')
+    expect(screen.queryByRole('button', { name: 'Aparência' })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Configurações' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Configurações' })
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Aparência' }))
     expect(within(dialog).getByText('Temas prontos')).toBeTruthy()
   })
 })

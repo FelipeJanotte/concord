@@ -142,7 +142,7 @@ Para hospedar pela internet (voz fora da rede local, HTTPS): `deploy/README.md` 
 ## Contas no desenvolvimento
 
 - Toda janela precisa de uma conta. Crie contas de teste pela aba "Criar conta" (e-mails como `alguem@exemplo.test`).
-- A sessão fica no `localStorage` (`concord:token`). Para voltar ao login sem apagar a conta: "Minha conta" → "Sair da conta".
+- A sessão fica no `localStorage` (`concord:token`). Para voltar ao login sem apagar a conta: engrenagem (Configurações) → "Minha conta" → "Sair da conta".
 - **Login com Google:** precisa de um cliente OAuth do tipo "App para computador" no Google Cloud Console (gratuito),
   com as chaves em `server/.env`. Sem isso o botão aparece desativado. Ao iniciar, o servidor mostra
   `Login com Google: ativado/desativado`. Detalhes em `docs/areas/accounts.md`.

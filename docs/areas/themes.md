@@ -73,11 +73,11 @@ A v5 inteira é do **Dev A** (B11 e B12 transferidas do Dev B).
 
 ## Editor "Aparência" (B12)
 
-Botão **Aparência** (ícone de paleta) no painel do usuário (`UserPanel`), ao lado de "Minha conta".
+Seção **Aparência** das Configurações (engrenagem no painel do usuário, `UserPanel` → "Aparência"; `docs/areas/settings.md`).
 
 | Arquivo | Papel |
 |---|---|
-| `src/renderer/src/components/settings/appearance/AppearanceDialog.tsx` | A janela: temas prontos, meus temas (usar, duplicar, apagar; até 10), personalizar (base, destaque, 1–4 cores do gradiente, ângulo, intensidade, salvar com nome) e compartilhar (código do tema atual, copiar, colar o de um amigo). |
+| `src/renderer/src/components/settings/appearance/AppearanceSettings.tsx` | Configurações → "Aparência" (era a janela `AppearanceDialog`, `docs/areas/settings.md`); o tema pendente vai ao sair da seção ou fechar: temas prontos, meus temas (usar, duplicar, apagar; até 10), personalizar (base, destaque, 1–4 cores do gradiente, ângulo, intensidade, salvar com nome) e compartilhar (código do tema atual, copiar, colar o de um amigo). |
 | `src/renderer/src/components/settings/appearance/ThemeSwatch.tsx` | Miniatura de um tema desenhada com as cores **derivadas** dele (barra, canais, chat com gradiente, botão de destaque). |
 | `src/renderer/src/lib/theme/editor.ts` | Puras: `addStop`/`removeStop`/`setStop`, `sameTheme`, `matchingPreset`, `copyName`, `addSavedTheme` (nome limpo, até 10), `removeSavedTheme`. |
 
