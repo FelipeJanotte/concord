@@ -1,4 +1,5 @@
 import type { OverlayBridge, OverlayViewBridge } from '../shared/overlay'
+import type { PushToTalkBridge } from '../shared/push-to-talk'
 import type { NotificationsBridge } from '../shared/notifications'
 import type { ScreenShareBridge } from '../shared/screen'
 import type { UpdaterBridge } from '../shared/updater'
@@ -13,6 +14,7 @@ declare global {
       overlayView: OverlayViewBridge
       notifications: NotificationsBridge
       updater: UpdaterBridge
+      pushToTalk: PushToTalkBridge
     }
   }
 }

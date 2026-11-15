@@ -127,6 +127,12 @@ export class VoiceClient {
   private switchDropped = false
   private remoteAudio = new Set<RemoteTrack>()
   private muted = false
+  /**
+   * Pressione para falar (B20): o microfone fica fechado enquanto a tecla não está pressionada.
+   * Não é "silenciado" para os outros (o `voice:join`/`voice:update` continuam com `muted`): só
+   * deixa de mandar áudio, e o indicador de quem fala some.
+   */
+  private gateClosed = false
   private deafened = false
   /** ids que o LiveKit diz estarem falando (antes do filtro de mute/deafen) */
   private activeSpeakers: string[] = []
@@ -182,7 +188,7 @@ export class VoiceClient {
     let micError: unknown = null
     try {
       mic = await this.openMic()
-      if (this.muted) await mic.mute()
+      if (this.micSilenced) await mic.mute()
     } catch (err) {
       micError = err
       console.warn('[voz] sem microfone, entrando só para ouvir:', err)
@@ -293,7 +299,22 @@ export class VoiceClient {
 
   setMuted(muted: boolean): void {
     this.muted = muted
-    if (this.mic) void (muted ? this.mic.mute() : this.mic.unmute())
+    this.applyMic()
+  }
+
+  /** Pressione para falar (B20): `open` = tecla pressionada (ou modo desligado). */
+  setMicGate(open: boolean): void {
+    this.gateClosed = !open
+    this.applyMic()
+  }
+
+  /** O microfone não manda áudio: silenciado pela pessoa ou tecla do push-to-talk solta. */
+  private get micSilenced(): boolean {
+    return this.muted || this.gateClosed
+  }
+
+  private applyMic(): void {
+    if (this.mic) void (this.micSilenced ? this.mic.mute() : this.mic.unmute())
     this.publishSpeaking()
   }
 
@@ -328,7 +349,7 @@ export class VoiceClient {
       try {
         const mic = await this.openMic()
         if (this.room !== room) return void mic.stop()
-        if (this.muted) await mic.mute()
+        if (this.micSilenced) await mic.mute()
         this.mic = mic
         if (this.noiseEnabled) await this.attachNoise(mic)
         await room.localParticipant.publishTrack(mic, { source: Track.Source.Microphone })
@@ -530,7 +551,7 @@ export class VoiceClient {
     const selfId = useApp.getState().self?.id
     const next: Record<string, boolean> = {}
     for (const id of this.activeSpeakers) {
-      const silenced = id === selfId ? this.muted : this.deafened
+      const silenced = id === selfId ? this.micSilenced : this.deafened
       if (!silenced) next[id] = true
     }
     const prev = useApp.getState().speaking

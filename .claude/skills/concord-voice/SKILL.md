@@ -1,6 +1,6 @@
 ---
 name: concord-voice
-description: Como funcionam os canais de voz do Concord — LiveKit (SFU) com token emitido pelo servidor, livekit-client no app, estado das salas via Socket.IO, mute/deafen, quem está falando, compartilhar a tela, escolha de microfone/saída e volume por pessoa, limites e depuração. Use ao mexer em server/livekit.ts, server/modules/voice.ts, src/renderer/src/lib/voice.ts, nos eventos voice:* ou ao investigar áudio que não chega, token recusado, eco ou falha de conexão.
+description: Como funcionam os canais de voz do Concord — LiveKit (SFU) com token emitido pelo servidor, livekit-client no app, estado das salas via Socket.IO, mute/deafen, quem está falando, compartilhar a tela, escolha de microfone/saída e volume por pessoa, pressione para falar (push-to-talk, B20: src/main/push-to-talk.ts, uiohook-napi, lib/actions/push-to-talk.ts, IPC ptt-*), limites e depuração. Use ao mexer em server/livekit.ts, server/modules/voice.ts, src/renderer/src/lib/voice.ts, nos eventos voice:* ou ao investigar áudio que não chega, token recusado, eco ou falha de conexão.
 ---
 
 # Voz
@@ -279,6 +279,60 @@ de quem fala (processador da faixa do microfone no `livekit-client`); quem ouve 
   reaproveitado, falha → entra com a nativa, desligado = cru, ligar/desligar dentro da sala, sair), `lib/actions/devices.test.ts`
   e `components/voice/DeviceSettings.test.tsx`. **À mão (o que os testes não medem):** a qualidade e o atraso do filtro
   e o uso de CPU; falar teclando e com ventilador e ouvir na outra janela.
+
+## Pressione para falar (B20)
+
+Modo em que o microfone **só abre enquanto uma tecla (ou botão do mouse) está pressionada**, mesmo com um jogo em
+primeiro plano. Fica em Configurações de voz ("Pressione para falar"), é preferência desta máquina (`concord:ptt`:
+`enabled`, `binding`, `sounds`) e vem desligado. Tecla padrão: **V**.
+
+| Peça | Papel |
+|---|---|
+| `src/shared/push-to-talk.ts` | `PttBinding` (`kind: 'key' \| 'mouse'`, `code`, `label`), `PttConfig`, `PushToTalkBridge`, `cleanBinding`/`cleanPttConfig`, `PTT_RELEASE_DELAY_MS` (200 ms), `PTT_CAPTURE_TIMEOUT_MS` (10 s), `PTT_MOUSE_BUTTONS` (3, 4, 5). |
+| `src/main/push-to-talk.ts` | `createPushToTalkController` (lógica, testável) e `setupPushToTalk` (IPC `ptt-config`, `ptt-capture`; avisos `ptt-change` e `ptt-unavailable` para a janela principal). Nomes das teclas em `keyLabel`. |
+| `src/preload/index.ts` | `window.api.pushToTalk`: `setConfig`, `capture`, `onChange`, `onUnavailable`. |
+| `lib/actions/push-to-talk.ts` | Preferência, `syncMicGate`, `handlePttChange` (abre/fecha + som), `setPushToTalk`, `setPttSounds`, `choosePttKey`, `startPushToTalk` (chamado em `main.tsx`; `disconnect` recarrega a preferência). |
+| `store/push-to-talk.ts` | `pushToTalk`, `pttBinding`, `pttSounds`, `pttPressed`, `pttCapturing`, `pttAvailable`. |
+| `lib/voice.ts` | `setMicGate(open)`: portão do microfone separado do mute (`micSilenced = muted \|\| gateClosed`). |
+| `components/voice/PushToTalk.tsx` | `PushToTalkSettings` (seção do diálogo) e `PushToTalkHint` (indicador "Pressione V para falar" / "Microfone aberto" na sala e no painel da chamada). |
+| `lib/sounds/chime.ts` | Sons `ptt-on` (Lá5) e `ptt-off` (Mi5), uma nota curta cada. |
+
+**Por que `uiohook-napi`:** o `globalShortcut` do Electron só avisa quando o atalho é pressionado, nunca quando é solto.
+O `uiohook-napi` (MIT, N-API com binários prontos para Windows/macOS/Linux, sem compilar e sem `electron-rebuild`)
+é um gancho de teclado e mouse do sistema inteiro. Está em `dependencies` (vai no instalador; o
+`externalizeDepsPlugin` deixa fora do bundle) e é carregado com `require` só na primeira vez que o gancho é preciso:
+se o binário faltar, o resto do app continua e a janela recebe `ptt-unavailable` (o modo desliga com aviso).
+
+**Fluxo:** ligar o modo → `setConfig({ enabled: true, binding })` → o main liga o gancho → tecla pressionada →
+`ptt-change true` → `pttPressed` + `voice.setMicGate(true)` (+ som `ptt-on`) → solta → depois de 200 ms
+`ptt-change false` → portão fecha (+ `ptt-off`).
+
+**Regras:**
+- **Privacidade:** o gancho só roda com o modo ligado e uma tecla escolhida, ou enquanto a pessoa escolhe a tecla.
+  Só a tecla escolhida é comparada; nenhuma outra tecla sai do processo principal.
+- **Não é "silenciado":** o portão fechado não muda `muted` no `voice:join`/`voice:update`; os outros não veem o ícone
+  de microfone cortado, só deixam de ouvir (o LiveKit recebe o `mute()` da faixa). O "falando" da própria pessoa some.
+- Silenciado (mute/deafen), sem microfone ou sem `speak` ganham do portão: pressionar não abre nada e não toca som.
+- A repetição automática do teclado (tecla segurada) não conta; pressionar de novo dentro dos 200 ms mantém aberto.
+- Trocar a tecla ou desligar com a tecla pressionada fecha o microfone na hora.
+- Escolher a tecla: a próxima tecla ou botão do meio/lateral do mouse; clique esquerdo/direito são ignorados; Esc ou
+  10 s sem nada = desiste. Durante a escolha a tecla atual não abre o microfone.
+- O som respeita o interruptor da seção e usa o volume dos sons de entrar/sair (B16) e a saída escolhida (B4).
+- No navegador (`npm run dev` sem Electron) não existe a ponte: a seção mostra "Disponível só no app instalado".
+
+**Testes:** `src/main/push-to-talk.test.ts` (gancho só quando precisa, indisponível, pressionar/repetir/soltar com
+atraso, mouse, trocar tecla, escolher tecla, Esc, tempo esgotado, nomes), `src/shared/push-to-talk.test.ts`
+(validação), `lib/actions/push-to-talk.test.ts` (preferência, portão, sons, trocar tecla, indisponível, fora do
+Electron), `lib/voice.test.ts` (bloco B20: portão fechado entra mudo mas não "silenciado", abre/fecha, mute ganha),
+`lib/sounds/sounds.test.ts` e `components/voice/PushToTalk.test.tsx`. **À mão:** com um jogo (ou outro programa) na
+frente, segurar a tecla e conferir na outra janela que ela ouve e vê o "falando"; soltar e o som some.
+
+**Problemas conhecidos:**
+- macOS exige permissão de **Acessibilidade/Monitoramento de entrada** para o gancho; sem ela, nenhuma tecla chega
+  (ainda não há aviso específico; o Concord hoje só gera instalador Windows).
+- Jogos rodando **como administrador** no Windows não repassam teclas para programas sem privilégio: o push-to-talk
+  não vê a tecla enquanto esse jogo está em foco (mesma limitação do Discord; rodar o Concord como administrador resolve).
+- A tecla escolhida continua chegando aos outros programas (não é "engolida"): escolher uma tecla que o jogo não usa.
 
 ## Limites e evolução
 

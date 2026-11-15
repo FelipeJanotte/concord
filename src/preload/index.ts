@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { OverlayBridge, OverlayConfig, OverlayRoom, OverlayViewBridge } from '../shared/overlay'
+import type { PttBinding, PttConfig, PushToTalkBridge } from '../shared/push-to-talk'
 import type { NativeNotification, NotificationsBridge, NotificationTarget } from '../shared/notifications'
 import type { ScreenShareBridge, ScreenSource } from '../shared/screen'
 import type { UpdaterBridge, UpdateStatus } from '../shared/updater'
@@ -27,6 +28,22 @@ const overlayView: OverlayViewBridge = {
     const handler = (_e: unknown, room: OverlayRoom | null, config: OverlayConfig): void => listener(room, config)
     ipcRenderer.on('overlay-update', handler)
     return () => ipcRenderer.removeListener('overlay-update', handler)
+  }
+}
+
+/** Pressione para falar (B20): configura a escuta e recebe pressionado/solto. */
+const pushToTalk: PushToTalkBridge = {
+  setConfig: (config: PttConfig): void => ipcRenderer.send('ptt-config', config),
+  capture: (): Promise<PttBinding | null> => ipcRenderer.invoke('ptt-capture'),
+  onChange: (listener) => {
+    const handler = (_e: unknown, pressed: boolean): void => listener(pressed)
+    ipcRenderer.on('ptt-change', handler)
+    return () => ipcRenderer.removeListener('ptt-change', handler)
+  },
+  onUnavailable: (listener) => {
+    const handler = (): void => listener()
+    ipcRenderer.on('ptt-unavailable', handler)
+    return () => ipcRenderer.removeListener('ptt-unavailable', handler)
   }
 }
 
@@ -63,7 +80,9 @@ const api = {
   overlayView,
   /** Notificações nativas e selo no ícone (ver src/main/notifications.ts). */
   notifications,
-  updater
+  updater,
+  /** Pressione para falar (ver src/main/push-to-talk.ts). */
+  pushToTalk
 }
 
 if (process.contextIsolated) {
