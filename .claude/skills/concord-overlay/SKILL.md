@@ -1,6 +1,6 @@
 ---
 name: concord-overlay
-description: Como funciona a sobreposição em jogos do Concord (overlay, B15) — janela extra do Electron transparente, sem borda, sempre no topo e que não recebe cliques, mostrando quem está na minha sala de voz e quem fala; liga/desliga nas Configurações de voz e pelo atalho global Shift + `, canto e tamanho configuráveis, segunda página no electron-vite. Use ao mexer em src/main/overlay.ts, src/shared/overlay.ts, src/renderer/overlay.html, src/renderer/src/overlay/**, lib/actions/overlay.ts, store/overlay.ts, na seção "Sobreposição em jogos" do DeviceSettings, no electron.vite.config.ts (rollupOptions.input), ou ao investigar overlay que não aparece, aparece por cima de tudo sem estar em sala, rouba o clique do jogo ou atalho que não funciona.
+description: Como funciona a sobreposição em jogos do Concord (overlay, B15) — janela extra do Electron transparente, sem borda, sempre no topo e que não recebe cliques, mostrando quem está na minha sala de voz e quem fala; liga/desliga nas Configurações de voz e pelo atalho global Shift + `, canto e tamanho configuráveis, modo de mover para arrastar como no Discord (Ctrl + Shift + `, botão "Mover", IPC overlay-edit/overlay-editing/overlay-moved, posição salva), segunda página no electron-vite. Use ao mexer em src/main/overlay.ts, src/shared/overlay.ts, src/renderer/overlay.html, src/renderer/src/overlay/**, lib/actions/overlay.ts, store/overlay.ts, na seção "Sobreposição em jogos" do DeviceSettings, no electron.vite.config.ts (rollupOptions.input), ou ao investigar overlay que não aparece, aparece por cima de tudo sem estar em sala, rouba o clique do jogo, não dá para arrastar, volta para outro lugar sozinho ou atalho que não funciona.
 ---
 
 # Sobreposição em jogos (overlay, B15)
@@ -12,16 +12,16 @@ Uma janela pequena e transparente por cima do jogo com **quem está na minha sal
 
 | Arquivo | Papel |
 |---|---|
-| `src/shared/overlay.ts` | Contrato da ponte (não é Socket.IO): `OverlayConfig { enabled, corner, size }`, `OverlayRoom { channelName, members, more }`, `OverlayMember`, `OVERLAY_SHORTCUT` (`Shift+\``), `OVERLAY_MAX_MEMBERS` (12), pontes `OverlayBridge` (janela principal) e `OverlayViewBridge` (página do overlay). |
-| `src/main/overlay.ts` | `overlayBounds` (canto da área útil da tela primária, margem 16, altura pelas pessoas), `cleanConfig`/`cleanRoom` (validação), `createOverlayController` (lógica: cria a janela só quando precisa, mostra sem foco com `showInactive`, esconde, atalho, destruir) e `setupOverlay` (IPC `overlay-config`/`overlay-room`, `globalShortcut`, janela de verdade). |
+| `src/shared/overlay.ts` | Contrato da ponte (não é Socket.IO): `OverlayConfig { enabled, corner, size, position }` (`OverlayPosition { x, y }` ou null = no canto), `OverlayRoom { channelName, members, more }`, `OverlayMember`, `OVERLAY_SHORTCUT` (`Shift+\``), `OVERLAY_EDIT_SHORTCUT` (`CommandOrControl+Shift+\``, modo de mover), `OVERLAY_MAX_MEMBERS` (12), pontes `OverlayBridge` (janela principal) e `OverlayViewBridge` (página do overlay). |
+| `src/main/overlay.ts` | `overlayBounds` (posição arrastada presa à área útil da tela onde ela está, ou canto da tela primária com margem 16; altura pelas pessoas, +1 linha no modo de mover), `cleanConfig`/`cleanRoom`/`cleanPosition` (validação), `createOverlayController` (lógica: cria a janela só quando precisa, mostra sem foco com `showInactive`, esconde, atalhos, modo de mover `setEditing`/`toggleEditing`, `moved`, destruir) e `setupOverlay` (IPC `overlay-config`/`overlay-room`/`overlay-edit`, dois `globalShortcut`, janela de verdade com `setInteractive` e o evento `moved`). |
 | `src/main/index.ts` | `setupOverlay(() => mainWindow)`; destrói o overlay quando a janela principal fecha (senão o app não sairia) e solta o atalho no `will-quit`. |
 | `src/preload/index.ts` / `index.d.ts` | `window.api.overlay` (janela principal) e `window.api.overlayView` (página do overlay; o mesmo preload serve as duas janelas). |
 | `electron.vite.config.ts` | Duas páginas no renderer: `index` e `overlay` (`build.rollupOptions.input`). |
 | `src/renderer/overlay.html` | Página da janela do overlay: fundo transparente e CSP só com o necessário. |
-| `src/renderer/src/overlay/{main,OverlayApp}.tsx` | Aplica o último tema da máquina e desenha a sala que chega por `overlayView.onUpdate` (tokens do tema; cor própria só na bolinha sem foto). |
-| `src/renderer/src/store/overlay.ts` | `overlayEnabled`, `overlayCorner`, `overlaySize`. |
-| `src/renderer/src/lib/actions/overlay.ts` | `overlayRoom(state)` (pura), `loadOverlayPreferences`/`setOverlay*` (salvo em `concord:overlay`), `syncOverlay` (manda só o que mudou), `startOverlay` (chamado no `main.tsx`: assina a store e ouve o atalho). `overlayEnv.bridge` é substituído nos testes. |
-| `src/renderer/src/components/voice/DeviceSettings.tsx` | Seção "Sobreposição em jogos": interruptor, canto, tamanho e a explicação do atalho e da tela cheia. |
+| `src/renderer/src/overlay/{main,OverlayApp}.tsx` | Aplica o último tema da máquina e desenha a sala que chega por `overlayView.onUpdate` (tokens do tema; cor própria só na bolinha sem foto). No modo de mover: moldura tracejada, a página inteira com `-webkit-app-region: drag`, barra "Arraste para mover" + "Concluir" (`no-drag`), Esc e uma prévia ("Sala de voz"/"Prévia") fora de sala. |
+| `src/renderer/src/store/overlay.ts` | `overlayEnabled`, `overlayCorner`, `overlaySize`, `overlayPosition` (salvos) e `overlayEditing` (modo de mover agora; não salvo). |
+| `src/renderer/src/lib/actions/overlay.ts` | `overlayRoom(state)` (pura), `loadOverlayPreferences`/`setOverlay*` (salvo em `concord:overlay`), `syncOverlay` (manda só o que mudou), `setOverlayEditing` (botão "Mover"/"Concluir"; sincroniza a configuração antes), `startOverlay` (chamado no `main.tsx`: assina a store e ouve o atalho, `onEditing` e `onMoved`). `setOverlayCorner` zera a posição. `overlayEnv.bridge` é substituído nos testes. |
+| `src/renderer/src/components/voice/DeviceSettings.tsx` | Seção "Sobreposição em jogos": interruptor, canto (com "Onde você arrastou" quando há posição), tamanho, botão "Mover"/"Concluir" (só no app, com o overlay ligado) e a explicação dos atalhos e da tela cheia. |
 
 ## Fluxo
 
@@ -29,6 +29,9 @@ Uma janela pequena e transparente por cima do jogo com **quem está na minha sal
 store (voz, quem fala, preferência) ──syncOverlay──► IPC overlay-config / overlay-room ──► main
 main: ligado + em sala com gente? ──► cria/posiciona a janela (setBounds) + overlay-update ──► página do overlay
 atalho Shift+` (globalShortcut, com o jogo na frente) ──► main.toggle() ──► overlay-toggled ──► setOverlayEnabled (salva)
+Ctrl+Shift+` ou botão Mover (overlay-edit true) ──► main.setEditing ──► janela recebe o mouse + overlay-editing ──► overlayEditing
+arrastar e soltar (evento 'moved' da janela) ──► main.moved ──► overlay-moved ──► overlayPosition (salva) ──► overlay-config
+"Concluir" / Esc na página (overlay-edit false) ou o atalho de novo ──► trava (o clique volta a passar para o jogo)
 ```
 
 ## Regras e limites
@@ -46,19 +49,31 @@ atalho Shift+` (globalShortcut, com o jogo na frente) ──► main.toggle() �
   Discord resolve injetando código no jogo, o que é frágil e pode ser bloqueado por anti-cheat; fica fora. A tela de
   configurações explica: "use tela cheia sem bordas".
 - **Atalho:** se outro programa já usa `Shift+\``, o registro falha (log `[overlay]`) e fica só o interruptor.
+- **Modo de mover (como no Discord):** `Ctrl + Shift + \`` (mesmo dentro do jogo; liga o overlay junto se estava
+  desligado) ou o botão "Mover". A janela troca para `setIgnoreMouseEvents(false)`, `setMovable(true)`,
+  `setFocusable(true)` e ganha foco (para o Esc); o arrasto é nativo (`-webkit-app-region: drag`). Aparece mesmo
+  fora de sala, com uma prévia. Termina com "Concluir", Esc, o atalho de novo ou desligando o overlay (interruptor
+  e `Shift + \`` também travam). Só o `moved` **durante** o modo de mover vira posição: o `setBounds` do próprio
+  app não conta.
+- **Posição arrastada:** canto de cima à esquerda, em pixels da tela (vale em outro monitor: a área útil é a da tela
+  mais perto do ponto, `screen.getDisplayNearestPoint`). Sempre presa dentro da área útil (monitor desligado ou
+  resolução menor não deixam o overlay fora da tela). Com posição, cresce para baixo e alinha à esquerda. Escolher
+  um canto no seletor volta para o canto.
 
 ## Testes
 
 | Arquivo | Cobre |
 |---|---|
-| `src/main/overlay.test.ts` | Posição nos quatro cantos, tamanhos, teto de altura, validação, quando cria/mostra/esconde, "+N" na altura, atalho (avisa a janela principal), destruir e recriar. |
-| `src/renderer/src/lib/actions/overlay.test.ts` | `overlayRoom` (foto completa, quem fala, mute/deafen, chamada privada, "+N"), preferência salva/lida/inválida, sincronia só quando muda e atalho virando preferência, sem ponte. |
-| `src/renderer/src/overlay/overlay.test.tsx` | Página: nada sem sala, linhas com destaque de quem fala, ícones, foto, "+N", parar de ouvir. |
-| `src/renderer/src/components/voice/DeviceSettings.test.tsx` | Seção nas configurações: interruptor, canto, tamanho e o que fica salvo. |
+| `src/main/overlay.test.ts` | Posição nos quatro cantos, tamanhos, teto de altura, validação, quando cria/mostra/esconde, "+N" na altura, atalho (avisa a janela principal), destruir e recriar; posição arrastada (presa à tela, outro monitor, validação, área útil do ponto) e modo de mover (destrava, prévia fora de sala, só ligado, desligar trava, atalho liga junto, `moved` só no modo de mover). |
+| `src/renderer/src/lib/actions/overlay.test.ts` | `overlayRoom` (foto completa, quem fala, mute/deafen, chamada privada, "+N"), preferência salva/lida/inválida, sincronia só quando muda e atalho virando preferência, sem ponte; mover (configuração antes do pedido, `onEditing` na store, posição salva e enviada, inválida ignorada, canto zera a posição, posição volta ao reabrir). |
+| `src/renderer/src/overlay/overlay.test.tsx` | Página: nada sem sala, linhas com destaque de quem fala, ícones, foto, "+N", parar de ouvir; modo de mover (moldura arrastável, "Concluir", prévia, Esc, sem alinhar pelo canto com posição). |
+| `src/renderer/src/components/voice/DeviceSettings.test.tsx` | Seção nas configurações: interruptor, canto, tamanho e o que fica salvo; "Mover"/"Concluir", "Onde você arrastou" e sem o botão fora do app. |
 
 À mão: `npm run dev:all`, ligue o overlay em Configurações de voz, entre numa sala com outra conta e abra um jogo
 (ou qualquer janela) em tela cheia sem bordas: o overlay fica no canto, o anel acende quando alguém fala e o clique
-passa para o que está embaixo. `Shift + \`` liga/desliga.
+passa para o que está embaixo. `Shift + \`` liga/desliga. `Ctrl + Shift + \`` (ou "Mover"): arraste para outro lugar
+(e para o segundo monitor), "Concluir"/Esc, confira que o clique volta a passar para o jogo e que a posição continua
+depois de reiniciar o app; escolher um canto volta para ele.
 
 ## Problemas conhecidos / depuração
 
@@ -68,4 +83,7 @@ passa para o que está embaixo. `Shift + \`` liga/desliga.
 | Não aparece nunca | Overlay desligado, fora de sala ou sala vazia. No navegador (`localhost:5173`) não existe: só no Electron. |
 | Atalho não faz nada | Outro programa registrou `Shift+\`` antes (veja o log `[overlay]`); use o interruptor. |
 | Cores diferentes do app | A página aplica o último tema salvo na máquina (`concord:theme`) ao abrir; trocar o tema só vale no próximo carregamento do overlay. |
-| Pendente | Escolher outro atalho, arrastar a posição livremente e acompanhar a troca de tema ao vivo. |
+| Não dá para arrastar | O modo de mover não está ligado (sem a moldura tracejada) ou o overlay está desligado. `Ctrl + Shift + \`` pode estar em uso por outro programa (log `[overlay]`): use o botão "Mover". |
+| Voltou para outro lugar sozinho | A posição salva ficava fora da tela atual (monitor desligado, resolução menor): ela é presa à área útil. Escolha um canto ou arraste de novo. |
+| Ficou recebendo cliques | Modo de mover ainda ligado: "Concluir", Esc (com o overlay em foco) ou `Ctrl + Shift + \``. |
+| Pendente | Escolher outros atalhos, redimensionar arrastando e acompanhar a troca de tema ao vivo. |

@@ -149,6 +149,38 @@ describe('sobreposição em jogos (B15)', () => {
     await userEvent.selectOptions(corner, 'bottom-right')
     await userEvent.selectOptions(screen.getByLabelText('Tamanho do overlay'), 'large')
     expect(useApp.getState()).toMatchObject({ overlayCorner: 'bottom-right', overlaySize: 'large' })
-    expect(JSON.parse(localStorage.getItem('concord:overlay')!)).toEqual({ enabled: true, corner: 'bottom-right', size: 'large' })
+    expect(JSON.parse(localStorage.getItem('concord:overlay')!)).toEqual({ enabled: true, corner: 'bottom-right', size: 'large', position: null })
+  })
+
+  it("Mover: só no app, com o overlay ligado; vira Concluir no modo de mover; posição arrastada aparece no seletor", async () => {
+    const setEditing = vi.fn()
+    const w = window as unknown as { api?: unknown }
+    w.api = { overlay: { setEditing, setConfig: vi.fn(), setRoom: vi.fn() } }
+    try {
+      useApp.setState({ deviceSettingsOpen: true, overlayEnabled: false })
+      render(<DeviceSettings />)
+      const move = screen.getByRole("button", { name: "Mover" }) as HTMLButtonElement
+      expect(move.disabled).toBe(true)
+      act(() => useApp.setState({ overlayEnabled: true }))
+      await userEvent.click(move)
+      expect(setEditing).toHaveBeenLastCalledWith(true)
+      act(() => useApp.setState({ overlayEditing: true, overlayPosition: { x: 300, y: 200 } }))
+      expect(screen.getByText(/Arraste a sobreposição para onde quiser/)).toBeTruthy()
+      await userEvent.click(screen.getByRole("button", { name: "Concluir" }))
+      expect(setEditing).toHaveBeenLastCalledWith(false)
+      const corner = screen.getByLabelText("Posição do overlay") as HTMLSelectElement
+      expect(corner.value).toBe("__custom__")
+      expect(screen.getByRole("option", { name: "Onde você arrastou" })).toBeTruthy()
+      await userEvent.selectOptions(corner, "top-right")
+      expect(useApp.getState()).toMatchObject({ overlayCorner: "top-right", overlayPosition: null })
+    } finally {
+      delete w.api
+    }
+  })
+
+  it("fora do app (sem a ponte) não mostra Mover", () => {
+    useApp.setState({ deviceSettingsOpen: true, overlayEnabled: true })
+    render(<DeviceSettings />)
+    expect(screen.queryByRole("button", { name: "Mover" })).toBeNull()
   })
 })

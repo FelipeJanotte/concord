@@ -8,18 +8,30 @@ export type OverlayCorner = (typeof OVERLAY_CORNERS)[number]
 export const OVERLAY_SIZES = ['small', 'medium', 'large'] as const
 export type OverlaySize = (typeof OVERLAY_SIZES)[number]
 
+/** Posição escolhida arrastando (canto de cima à esquerda, em pixels da tela); null = no canto. */
+export interface OverlayPosition {
+  x: number
+  y: number
+}
+
 export interface OverlayConfig {
   enabled: boolean
   corner: OverlayCorner
   size: OverlaySize
+  /** arrastada para outro lugar no modo de mover; escolher um canto volta para null */
+  position: OverlayPosition | null
 }
 
-export const DEFAULT_OVERLAY_CONFIG: OverlayConfig = { enabled: false, corner: 'top-left', size: 'medium' }
+export const DEFAULT_OVERLAY_CONFIG: OverlayConfig = { enabled: false, corner: 'top-left', size: 'medium', position: null }
 
 /** Atalho global que liga/desliga o overlay (formato de acelerador do Electron). */
 export const OVERLAY_SHORTCUT = 'Shift+`'
 /** Como o atalho aparece na tela. */
 export const OVERLAY_SHORTCUT_LABEL = 'Shift + `'
+
+/** Atalho global que destrava o overlay para arrastar (e trava de novo), como no Discord. */
+export const OVERLAY_EDIT_SHORTCUT = 'CommandOrControl+Shift+`'
+export const OVERLAY_EDIT_SHORTCUT_LABEL = 'Ctrl + Shift + `'
 
 /** No máximo tantas pessoas aparecem (o resto vira "+N"). */
 export const OVERLAY_MAX_MEMBERS = 12
@@ -50,9 +62,18 @@ export interface OverlayBridge {
   setRoom: (room: OverlayRoom | null) => void
   /** o atalho global ligou/desligou o overlay (a janela principal salva a preferência) */
   onToggled: (listener: (enabled: boolean) => void) => () => void
+  /** entra/sai do modo de mover (o overlay passa a receber o mouse para ser arrastado) */
+  setEditing: (editing: boolean) => void
+  /** o modo de mover começou/acabou (pelo botão, pelo atalho, pelo "Concluir" ou Esc) */
+  onEditing: (listener: (editing: boolean) => void) => () => void
+  /** a pessoa soltou o overlay num lugar novo (a janela principal salva a posição) */
+  onMoved: (listener: (position: OverlayPosition) => void) => () => void
 }
 
 /** Ponte da página do overlay. */
 export interface OverlayViewBridge {
-  onUpdate: (listener: (room: OverlayRoom | null, config: OverlayConfig) => void) => () => void
+  /** `editing` = modo de mover: mostra a moldura, "Concluir" e (fora de sala) uma prévia */
+  onUpdate: (listener: (room: OverlayRoom | null, config: OverlayConfig, editing: boolean) => void) => () => void
+  /** "Concluir" ou Esc no modo de mover */
+  finishEditing: () => void
 }

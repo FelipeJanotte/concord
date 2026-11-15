@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { OverlayBridge, OverlayConfig, OverlayRoom, OverlayViewBridge } from '../shared/overlay'
+import type { OverlayBridge, OverlayConfig, OverlayPosition, OverlayRoom, OverlayViewBridge } from '../shared/overlay'
 import type { PttBinding, PttConfig, PushToTalkBridge } from '../shared/push-to-talk'
 import type { NativeNotification, NotificationsBridge, NotificationTarget } from '../shared/notifications'
 import type { ScreenShareBridge, ScreenSource } from '../shared/screen'
@@ -11,7 +11,7 @@ const screen: ScreenShareBridge = {
   canShareAudio: process.platform === 'win32'
 }
 
-/** Overlay (B15), lado da janela principal: manda configuração e a sala; ouve o atalho. */
+/** Overlay (B15), lado da janela principal: manda configuração e a sala; ouve o atalho e o modo de mover. */
 const overlay: OverlayBridge = {
   setConfig: (config: OverlayConfig): void => ipcRenderer.send('overlay-config', config),
   setRoom: (room: OverlayRoom | null): void => ipcRenderer.send('overlay-room', room),
@@ -19,16 +19,29 @@ const overlay: OverlayBridge = {
     const handler = (_e: unknown, enabled: boolean): void => listener(enabled)
     ipcRenderer.on('overlay-toggled', handler)
     return () => ipcRenderer.removeListener('overlay-toggled', handler)
+  },
+  setEditing: (editing: boolean): void => ipcRenderer.send('overlay-edit', editing),
+  onEditing: (listener) => {
+    const handler = (_e: unknown, editing: boolean): void => listener(editing)
+    ipcRenderer.on('overlay-editing', handler)
+    return () => ipcRenderer.removeListener('overlay-editing', handler)
+  },
+  onMoved: (listener) => {
+    const handler = (_e: unknown, position: OverlayPosition): void => listener(position)
+    ipcRenderer.on('overlay-moved', handler)
+    return () => ipcRenderer.removeListener('overlay-moved', handler)
   }
 }
 
-/** Overlay (B15), lado da página do overlay: recebe a sala e a configuração. */
+/** Overlay (B15), lado da página do overlay: recebe a sala, a configuração e o modo de mover. */
 const overlayView: OverlayViewBridge = {
   onUpdate: (listener) => {
-    const handler = (_e: unknown, room: OverlayRoom | null, config: OverlayConfig): void => listener(room, config)
+    const handler = (_e: unknown, room: OverlayRoom | null, config: OverlayConfig, editing: boolean): void =>
+      listener(room, config, editing === true)
     ipcRenderer.on('overlay-update', handler)
     return () => ipcRenderer.removeListener('overlay-update', handler)
-  }
+  },
+  finishEditing: (): void => ipcRenderer.send('overlay-edit', false)
 }
 
 /** Pressione para falar (B20): configura a escuta e recebe pressionado/solto. */

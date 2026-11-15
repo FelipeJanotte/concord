@@ -2,7 +2,9 @@
  * Sobreposição em jogos (overlay, B15), lado da janela principal: guarda a preferência desta
  * máquina (`concord:overlay`), manda a configuração para o processo principal e, a cada mudança
  * da store, o estado da minha sala de voz (quem está, quem fala, mute/deafen). O atalho global
- * (Shift + `) chega por `onToggled` e vira a mesma preferência. Fora do Electron, não faz nada.
+ * (Shift + `) chega por `onToggled` e vira a mesma preferência. Modo de mover (Ctrl + Shift + ` ou
+ * `setOverlayEditing`): o processo principal avisa por `onEditing` e, ao soltar, manda a posição por
+ * `onMoved` (salva em `position`; escolher um canto volta para o canto). Fora do Electron, não faz nada.
  * Skill `concord-overlay`.
  */
 import {
@@ -12,6 +14,7 @@ import {
   OVERLAY_SIZES,
   type OverlayBridge,
   type OverlayConfig,
+  type OverlayPosition,
   type OverlayCorner,
   type OverlayRoom,
   type OverlaySize
@@ -50,8 +53,8 @@ export function overlayRoom(st: St): OverlayRoom | null {
   return { channelName, members: members.slice(0, OVERLAY_MAX_MEMBERS), more: Math.max(0, members.length - OVERLAY_MAX_MEMBERS) }
 }
 
-export function overlayConfig(st: Pick<AppState, 'overlayEnabled' | 'overlayCorner' | 'overlaySize'>): OverlayConfig {
-  return { enabled: st.overlayEnabled, corner: st.overlayCorner, size: st.overlaySize }
+export function overlayConfig(st: Pick<AppState, 'overlayEnabled' | 'overlayCorner' | 'overlaySize' | 'overlayPosition'>): OverlayConfig {
+  return { enabled: st.overlayEnabled, corner: st.overlayCorner, size: st.overlaySize, position: st.overlayPosition }
 }
 
 function save(): void {
@@ -73,8 +76,16 @@ export function loadOverlayPreferences(): void {
   set({
     overlayEnabled: raw.enabled === true,
     overlayCorner: OVERLAY_CORNERS.includes(raw.corner as OverlayCorner) ? (raw.corner as OverlayCorner) : DEFAULT_OVERLAY_CONFIG.corner,
-    overlaySize: OVERLAY_SIZES.includes(raw.size as OverlaySize) ? (raw.size as OverlaySize) : DEFAULT_OVERLAY_CONFIG.size
+    overlaySize: OVERLAY_SIZES.includes(raw.size as OverlaySize) ? (raw.size as OverlaySize) : DEFAULT_OVERLAY_CONFIG.size,
+    overlayPosition: validPosition(raw.position)
   })
+}
+
+/** Posição salva/recebida válida (números finitos) ou null. */
+function validPosition(raw: unknown): OverlayPosition | null {
+  const p = raw as Partial<OverlayPosition> | null | undefined
+  const ok = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
+  return p && ok(p.x) && ok(p.y) ? { x: Math.round(p.x), y: Math.round(p.y) } : null
 }
 
 export function setOverlayEnabled(enabled: boolean): void {
@@ -82,8 +93,26 @@ export function setOverlayEnabled(enabled: boolean): void {
   save()
 }
 
+/** Escolher um canto tira a posição arrastada (volta para o canto). */
 export function setOverlayCorner(corner: OverlayCorner): void {
-  set({ overlayCorner: corner })
+  set({ overlayCorner: corner, overlayPosition: null })
+  save()
+}
+
+/** Modo de mover (como no Discord): o overlay passa a receber o mouse para ser arrastado. */
+export function setOverlayEditing(editing: boolean): void {
+  const bridge = overlayEnv.bridge()
+  if (!bridge) return
+  // a configuração (ligado) precisa chegar antes: o processo principal só entra com o overlay ligado
+  syncOverlay()
+  bridge.setEditing(editing)
+}
+
+/** O processo principal avisou onde o overlay foi solto. */
+function overlayMoved(raw: unknown): void {
+  const position = validPosition(raw)
+  if (!position) return
+  set({ overlayPosition: position })
   save()
 }
 
@@ -120,11 +149,17 @@ export function startOverlay(): () => void {
   if (stop) return stop
   loadOverlayPreferences()
   const unsubscribe = useApp.subscribe(syncOverlay)
-  const unToggle = overlayEnv.bridge()?.onToggled((enabled) => setOverlayEnabled(enabled)) ?? null
+  const bridge = overlayEnv.bridge()
+  const unToggle = bridge?.onToggled((enabled) => setOverlayEnabled(enabled)) ?? null
+  const unEditing = bridge?.onEditing((editing) => set({ overlayEditing: editing === true })) ?? null
+  const unMoved = bridge?.onMoved(overlayMoved) ?? null
   syncOverlay()
   stop = () => {
     unsubscribe()
     unToggle?.()
+    unEditing?.()
+    unMoved?.()
+    set({ overlayEditing: false })
     stop = null
     lastConfig = lastRoom = ''
   }
