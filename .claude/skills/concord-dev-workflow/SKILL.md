@@ -23,7 +23,8 @@ description: Como rodar, testar, gerar o build e empacotar o Concord, e como res
 | `npm run test:watch` | vitest em modo watch; `npx vitest run server/tests/auth.test.ts` roda um arquivo só |
 | `npm run build` | typecheck + bundle em `out/` |
 | `npm start` | abre o build de `out/` |
-| `npm run dist` | build + instalador NSIS em `dist/` (config em `electron-builder.yml`) |
+| `npm run dist` | build + instalador NSIS em `dist/` (config em `electron-builder.yml`), sem publicar |
+| `npm run release` | build + instalador + publica no GitHub Releases (o workflow da tag `vX.Y.Z` usa; skill `concord-updates`) |
 
 Variáveis do servidor: `PORT`, `DATA_DIR` (padrão `server/data`, que está no `.gitignore`), `DATABASE_URL`,
 `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `UPLOAD_ORPHAN_TTL_MS` (anexo solto é apagado depois disso; padrão 1 h)

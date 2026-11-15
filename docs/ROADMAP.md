@@ -266,7 +266,7 @@ de sempre (contrato primeiro, dono por arquivo, testes e skill no mesmo PR).
 | Task | Dev | O que faz | Arquivos (dono) | Tamanho |
 |---|---|---|---|---|
 | **A12 CI no GitHub** | A | GitHub Actions em todo PR e push na `main`: `npm ci`, `npm run typecheck` e `npm test` (PGlite, sem Docker), com cache do npm. Badge no README e PR vermelho não mergeia (proteção de branch, se o dono do repositório ligar). | `.github/workflows/ci.yml` | pequeno |
-| **A13 Atualização automática** | A | `electron-updater` lendo os GitHub Releases: o app confere ao abrir, baixa em segundo plano e oferece "Reiniciar para atualizar". Workflow que gera o instalador e publica a release a partir de uma tag. | `src/main/updater.ts`, `electron-builder.yml`, `.github/workflows/release.yml` | médio |
+| **A13 Atualização automática** ✅ (branch `v6/a13-atualizacao`) | A | `electron-updater` lendo os GitHub Releases: o app confere ao abrir, baixa em segundo plano e oferece "Reiniciar para atualizar". Workflow que gera o instalador e publica a release a partir de uma tag. | `src/main/updater.ts`, `electron-builder.yml`, `.github/workflows/release.yml` | médio |
 | **A14 Hospedagem pela internet** | A | Imagem Docker do servidor e um `docker-compose.prod.yml` (servidor + Postgres + LiveKit com TURN embutido e TLS), proxy com HTTPS (Caddy), variáveis de produção e um guia passo a passo numa VPS barata. Sem isso a voz só funciona na rede local. | `Dockerfile`, `docker-compose.prod.yml`, `deploy/**`, skill `concord-deploy` | médio |
 
 ### Chat completo
