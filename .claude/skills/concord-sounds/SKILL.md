@@ -72,9 +72,15 @@ chamada" em vez de "para todos na sala".
 | `src/renderer/src/components/VoiceView.tsx` | O botão, a janela e o indicador (3 linhas). |
 
 **Tocar localmente** (`sound:played`): só se ainda estou naquela sala e o som está na coleção. Marca o indicador
-até o som acabar (`durationMs`). Toca com `soundOutput.play(link completo, { volume, outputId })`: a saída escolhida
+até o som acabar (`durationMs`). O `by` do evento é a **conexão** de quem tocou (`User.id`, o socket.id), não o nome:
+o indicador procura o nome em `users` (pela conexão; se ela já saiu, pela conta; sem nada, "Alguém"). Toca com `soundOutput.play(link completo, { volume, outputId })`: a saída escolhida
 na B4 (`setSinkId`), o volume que dei para quem tocou (`userVolumes[conta]`, 100% se não mexi); com deafen ou com a
 pessoa silenciada só para mim (`userMuted`), não toca (o indicador aparece igual).
+
+**CSP:** o `<audio>` toca o link do servidor (`http(s)://<servidor>/sounds/...`), então o `media-src` da CSP
+(`src/renderer/index.html`) precisa de `http:` e `https:` (além de `blob:`, usado na prévia do envio). Sem isso o
+navegador bloqueia e **ninguém ouve**, nem quem tocou; `src/renderer/src/csp.test.ts` protege isso. Falha ao tocar
+aparece no console como `[sons] não foi possível tocar:`.
 
 **Bloqueios na janela:** fora da sala → "Entre numa sala de voz para tocar sons."; sem `speak` (ou silenciado por um
 moderador, que chega como `canSpeak: false`) → "Você não pode falar nesta sala, então não toca sons." (botões desligados). Lixeira só para quem enviou ou tem `manageMessages`.
@@ -89,7 +95,7 @@ moderador, que chega como `canSpeak: false`) → "Você não pode falar nesta sa
 |---|---|
 | `server/storage/audio.test.ts` | Tipos pelos bytes (e o que não é áudio), duração de WAV e arquivo corrompido → null. |
 | `server/repo/sounds.test.ts` | Gravar/listar/apagar/contar, nome repetido e os `check` do banco. |
-| `src/renderer/src/lib/actions/sounds.test.ts` | App: coleção (ordem, criado/apagado, recarregar ao abrir), `sound:played` (link, saída, volume por pessoa, deafen, silenciado, outra sala, indicador até acabar), tocar/apagar e enviar (nome sugerido, tamanho, duração, token, recusas, erro do servidor). |
+| `src/renderer/src/lib/actions/sounds.test.ts` | App: coleção (ordem, criado/apagado, recarregar ao abrir), `sound:played` (link, saída, volume por pessoa, deafen, silenciado, outra sala, indicador até acabar com o nome de quem tocou, conexão que já saiu), tocar/apagar e enviar (nome sugerido, tamanho, duração, token, recusas, erro do servidor). |
 | `src/renderer/src/components/voice/soundboard.test.tsx` | Tela: grade (tocar, erro, bloqueios, vazia), apagar (só o meu; `manageMessages`), enviar (prévia, nome, emoji pela grade, sem emoji, recusa local, erro), seletor de emoji (escolher/tirar, categorias, lista válida e sem repetir) e indicador. `VoiceView.test.tsx`: botão e indicador na sala. `call/call.test.tsx`: botão no painel da chamada, texto da janela e o som indo para a sala da conversa. |
 | `server/tests/sounds.test.ts` | Servidor real com LiveKit falso: envio e recusas (5 s, 512 KB, não-áudio, nome, emoji, limite por conta, CORS), lista e download assinados, tocar só para a sala, na chamada de uma conversa privada (só a outra pessoa; bloqueio recusa), fora da sala, sobreposição, sem `speak`, silenciado por um moderador (e liberado ao tirar), apagar (autor, outra pessoa, `manageMessages`). |
 
@@ -101,6 +107,8 @@ moderador, que chega como `canSpeak: false`) → "Você não pode falar nesta sa
 |---|---|
 | "Não foi possível ler a duração do áudio" | Arquivo sem cabeçalho de duração (alguns WebM gravados pelo navegador) ou corrompido. Converta para OGG/MP3. |
 | Som não toca para alguém | Só quem está **na mesma sala** recebe `sound:played`; confira o `voice:state`. O app baixa pelo link assinado (404 = link vencido: peça `sound:list` de novo). |
+| Ninguém ouve o som (nem quem tocou), mas o indicador aparece | CSP sem `http:`/`https:` em `media-src`: o console mostra "Refused to load media" ou `[sons] não foi possível tocar`. |
+| Indicador mostra um código estranho em vez do nome ("XvSA... tocou") | O app mostrou o `by` (id da conexão) direto; o nome vem de `users` (corrigido; veja "Tocar localmente"). |
 | "Espere o som anterior terminar" | Regra de sobreposição por conta (dura o tempo do som). |
 | Som tocou para os outros mas não para mim | Deafen ligado, a pessoa está silenciada só para mim (botão direito) ou o volume dela está em 0. |
 | Botões da janela desligados | Fora da sala ou sem `speak` nela (a janela diz qual). |
