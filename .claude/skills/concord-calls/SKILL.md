@@ -22,7 +22,7 @@ Este módulo só cuida do "telefone": tocar, atender, recusar, cancelar, desliga
 | `src/renderer/src/lib/actions/calls.ts` | `startCall`, `acceptCall`, `declineCall`, `cancelCall`, `hangUp`, `loadCalls`, `syncRinger` e os listeners. |
 | `src/renderer/src/lib/sounds/ringtone.ts` | `Ringer`: toque gerado na hora (Web Audio), `incoming` e `outgoing`, repete até `stop()`. |
 | `components/call/CallButton.tsx` | "Iniciar chamada" no cabeçalho da conversa. |
-| `components/call/CallPanel.tsx` | Painel no topo da conversa: chamando / tocando / em andamento (grade `VoiceGrid` + controles). |
+| `components/call/CallPanel.tsx` | Painel no topo da conversa: chamando / tocando / em andamento (grade `VoiceGrid` + controles, com "Efeitos sonoros" e o indicador de quem tocou; skill `concord-sounds`). |
 | `components/call/IncomingCall.tsx` | Cartão "Chamada recebida" no canto, em qualquer tela (some se a conversa já está aberta). |
 
 ## Contrato e eventos
@@ -79,7 +79,7 @@ Quem encerrou (desligou, recusou, cancelou) não recebe aviso.
 | `src/shared/types/calls.test.ts` | `callEndText` para cada motivo e lado. |
 | `src/renderer/src/lib/actions/calls.test.ts` | Toque (prioridade, outra janela, queda, `loadCalls`), ligar/atender (entra na sala sem trocar a tela), erros, fim (sai da sala, avisos, quem desligou, outra sala). |
 | `src/renderer/src/lib/sounds/ringtone.test.ts` | Repete no intervalo, troca de toque, volume zero. |
-| `src/renderer/src/components/call/call.test.tsx` | Botão de ligar, painel (chamando, tocando, em andamento, entrar de novo), cartão no canto, telefone na lista e "Chamada com Ana". |
+| `src/renderer/src/components/call/call.test.tsx` | Botão de ligar, painel (chamando, tocando, em andamento, entrar de novo), efeitos sonoros na chamada, cartão no canto, telefone na lista e "Chamada com Ana". |
 
 À mão (duas contas amigas, LiveKit local, skill `concord-dev-workflow`): A abre a conversa e liga → B ouve o toque e
 vê o cartão → atende → os dois se ouvem e podem compartilhar a tela → A desliga → os dois saem e B vê "Chamada
