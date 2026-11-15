@@ -1,6 +1,7 @@
 import type { OverlayBridge, OverlayViewBridge } from '../shared/overlay'
 import type { NotificationsBridge } from '../shared/notifications'
 import type { ScreenShareBridge } from '../shared/screen'
+import type { UpdaterBridge } from '../shared/updater'
 
 declare global {
   interface Window {
@@ -11,6 +12,7 @@ declare global {
       overlay: OverlayBridge
       overlayView: OverlayViewBridge
       notifications: NotificationsBridge
+      updater: UpdaterBridge
     }
   }
 }

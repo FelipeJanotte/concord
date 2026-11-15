@@ -39,8 +39,9 @@ Gerenciador de pacotes: **npm** (não use pnpm/yarn; o projeto foi revertido do 
 | `src/main/screen-share.ts` | Compartilhar tela: IPC `screen-sources`/`screen-select` e `setDisplayMediaRequestHandler` (entrega a fonte escolhida no seletor). |
 | `src/main/notifications.ts`, `src/shared/notifications.ts` | Notificações (B9): IPC `notify`/`badge`, notificação nativa com clique que abre a conversa/Amigos e selo no ícone (overlay + piscar no Windows). Regras no renderer em `lib/notifications.ts` e `lib/actions/notifications.ts`. |
 | `src/main/overlay.ts`, `src/shared/overlay.ts` | Sobreposição em jogos (B15): janela transparente sempre no topo que não recebe cliques, com quem está na minha sala e quem fala; IPC `overlay-config`/`overlay-room`/`overlay-update`/`overlay-toggled` e atalho global Shift + crase. Página própria: `src/renderer/overlay.html` + `src/renderer/src/overlay/` (2ª entrada no `electron.vite.config.ts`); lado do app em `lib/actions/overlay.ts` e `store/overlay.ts`. |
+| `src/main/updater.ts`, `src/shared/updater.ts` | Atualização automática (A13): electron-updater nos GitHub Releases (ao abrir e a cada 4 h), IPC `update-get`/`update-install`/`update-status`; faixa `components/UpdateBanner.tsx`, `lib/actions/updates.ts`, `store/updates.ts`. Publicar: tag `vX.Y.Z` → `.github/workflows/release.yml`. |
 | `src/main/google-auth.ts` | Login com Google: navegador do sistema + loopback 127.0.0.1 + PKCE; devolve o código para o servidor trocar. |
-| `src/preload/` | Ponte `contextBridge` (`window.api.platform`, `window.api.googleSignIn`, `window.api.screen`, `window.api.notifications` (B9) e `window.api.overlay`/`overlayView` (B15); tipos da tela em `src/shared/screen.ts`). |
+| `src/preload/` | Ponte `contextBridge` (`window.api.platform`, `window.api.googleSignIn`, `window.api.screen`, `window.api.notifications` (B9), `window.api.overlay`/`overlayView` (B15) e `window.api.updater` (A13); tipos da tela em `src/shared/screen.ts`). |
 | `src/renderer/src/store/` | Estado global zustand (`useApp`), um slice por domínio composto em `index.ts`. Só dados, sem ações. |
 | `src/renderer/src/lib/client.ts` | Login/sessão e conexão Socket.IO; chama os `bind<Dominio>Events` e **reexporta todas as ações**. Componentes importam ações daqui. |
 | `src/renderer/src/lib/actions/` | Ações e listeners por domínio (`account`, `channels`, `devices`, `friends` (amizades + DMs, v3), `tools` (sorteador, v4), `messages`, `moderation` (B6), `calls` (B8: ligar, atender, toque), `navigation` (B7: seção da barra de úteis, Home, abrir conversa), `permissions`, `presence`, `uploads`, `voice`, `sounds` (soundboard, B17)). `voice-sounds.ts`: sons de entrar/sair da sala. `devices.ts`: microfone, saída, volume e silenciar por pessoa (preferências em `concord:audio`). `uploads.ts`: rascunho de anexos por canal, envio com progresso (`transport.send`, XHR). |
@@ -56,6 +57,7 @@ Gerenciador de pacotes: **npm** (não use pnpm/yarn; o projeto foi revertido do 
 | `src/renderer/src/lib/noise/` | Supressão de ruído automática: `NoiseDecider` (quando ligar o filtro forte), `AutoNoiseProcessor` (processador do microfone no LiveKit) e o motor RNNoise (WASM empacotado). |
 | `src/renderer/src/components/ui/` | Componentes shadcn/ui (estilo new-york, importando de `radix-ui`). |
 | `docker-compose.yml`, `livekit.yaml` | Infra local: PostgreSQL 17 e LiveKit (SFU). Credenciais de dev espelhadas em `server/.env.example`. |
+| `.github/workflows/ci.yml` | CI (A12): typecheck + testes em todo PR e push na `main` (Ubuntu, Node 22, PGlite, sem Docker). |
 | `Dockerfile`, `docker-compose.prod.yml`, `deploy/` | Hospedagem pela internet (A14): imagem do servidor, compose de produção (servidor + Postgres com backup + LiveKit com TURN + Caddy/HTTPS), `deploy/.env.example` e o guia `deploy/README.md`. |
 | `vitest.config.ts` | Testes `*.test.ts(x)` ao lado do código (`npm test`). |
 | `src/renderer/src/components/` | Telas: `LoginScreen`, `ChannelSidebar`, `ChatView`, `VoiceView`, `MemberList`, `UserPanel`, `CreateChannelDialog`, `Toast`; `voice/` tem `VoiceGrid`, `ScreenTile` e `ScreenPicker` (tela compartilhada) e `DeviceSettings` (microfone e saída) e `Soundboard`/`SoundUploadForm`/`EmojiPicker` (efeitos sonoros, B17; ações em `lib/actions/sounds.ts`, estado em `store/sounds.ts`) e `MemberContextMenu` (botão direito numa pessoa: volume, silenciar, cargos, moderação, "Mensagem"/"Adicionar amigo" (B7), ver perfil) com `ModerationMenu` (silenciar para todos e expulsar da voz, B6); `UserProfileDialog` é o cartão de perfil. |
@@ -75,7 +77,8 @@ npm run db:generate # gera a migration depois de mudar server/db/schema (ver con
 npm run db:import-json [arquivo]  # importa um db.json antigo para o banco
 npm run db:restore [arquivo]      # restaura um backup do PGlite (servidor parado)
 npm run build       # typecheck + build em out/
-npm run dist        # instalador Windows em dist/
+npm run dist        # instalador Windows em dist/ (sem publicar)
+npm run release     # instalador + publica no GitHub Releases (usado pelo workflow da tag vX.Y.Z)
 ```
 
 ## Regras do projeto
@@ -133,5 +136,6 @@ Leia a skill certa antes de mexer em cada área (ficam em `.claude/skills/<nome>
 - `concord-voice` — como a voz funciona (LiveKit no servidor, token por sala), compartilhamento de tela, dispositivos e volume por pessoa, limites e depuração.
 - `concord-notifications` — notificações (B9): quando avisar (conversa, chamada, pedido de amizade, só fora de foco), clique e selo no ícone.
 - `concord-overlay` — sobreposição em jogos (B15): janela transparente com quem fala, atalho global, canto/tamanho e o limite da tela cheia exclusiva.
+- `concord-updates` — atualização automática (A13): electron-updater, faixa "Reiniciar para atualizar" e como publicar uma versão (tag vX.Y.Z).
 - `concord-deploy` — hospedar pela internet (A14): imagem, compose de produção, LiveKit com TURN, Caddy, variáveis e guia.
 - `concord-dev-workflow` — rodar, testar com vários usuários, build e solução de problemas conhecidos.
