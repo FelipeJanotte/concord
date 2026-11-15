@@ -53,6 +53,13 @@ describe('outras pessoas', () => {
     expect(play).toHaveBeenCalledWith('join', { volume: 0.3, outputId: 'fone' })
   })
 
+  it('o volume de saída multiplica o volume dos sons', async () => {
+    useApp.setState({ voiceSoundsVolume: 0.8, outputVolume: 0.5 })
+    await enterRoom()
+    socket.receive('voice:state', [st('eu'), st('ana')])
+    expect(play).toHaveBeenCalledWith('join', { volume: 0.4, outputId: null })
+  })
+
   it('movimento em outra sala não toca nada', async () => {
     await enterRoom()
     socket.receive('voice:state', [st('eu'), st('ana', 'outra')])

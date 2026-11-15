@@ -99,8 +99,40 @@ describe('DeviceSettings', () => {
 
   it('o volume das pessoas não fica mais aqui: aponta para o botão direito', async () => {
     await openDialog()
-    expect(screen.queryByRole('slider', { name: /^Volume de / })).toBeNull()
+    expect(screen.queryByRole('slider', { name: /^Volume de (Ana|Bia|Caio)/ })).toBeNull()
     expect(screen.getByText(/clique com o botão direito na pessoa/)).toBeTruthy()
+  })
+
+  it('volume do microfone (até 200%) e de saída (até 100%): ajusta na hora e volta para 100%', async () => {
+    const mic = vi.spyOn(voice, 'setMicGain').mockResolvedValue()
+    const out = vi.spyOn(voice, 'setOutputVolume').mockImplementation(() => {})
+    await openDialog()
+    const micSlider = screen.getByRole('slider', { name: 'Volume do microfone' }) as HTMLInputElement
+    const outSlider = screen.getByRole('slider', { name: 'Volume de saída' }) as HTMLInputElement
+    expect([micSlider.max, outSlider.max]).toEqual(['200', '100'])
+    expect([micSlider.value, outSlider.value]).toEqual(['100', '100'])
+    expect(screen.queryAllByRole('button', { name: 'Voltar para 100%' }).every((b) => (b as HTMLButtonElement).disabled)).toBe(true)
+
+    fireEvent.change(micSlider, { target: { value: '150' } })
+    fireEvent.change(outSlider, { target: { value: '40' } })
+    expect(useApp.getState()).toMatchObject({ micGain: 1.5, outputVolume: 0.4 })
+    expect(mic).toHaveBeenLastCalledWith(1.5)
+    expect(out).toHaveBeenLastCalledWith(0.4)
+    expect(screen.getByText('150%')).toBeTruthy()
+    expect(screen.getByText('40%')).toBeTruthy()
+
+    const [resetMic] = screen.getAllByRole('button', { name: 'Voltar para 100%' })
+    await userEvent.click(resetMic)
+    expect(useApp.getState().micGain).toBe(1)
+    expect(mic).toHaveBeenLastCalledWith(1)
+  })
+
+  it('volume de saída vale para o "Testar" dos sons da sala', async () => {
+    const play = vi.spyOn(chimes, 'play').mockReturnValue(true)
+    useApp.setState({ voiceSoundsVolume: 0.5, outputVolume: 0.5 })
+    await openDialog()
+    await userEvent.click(screen.getByRole('button', { name: 'Testar' }))
+    expect(play).toHaveBeenCalledWith('join', { volume: 0.25, outputId: null })
   })
 
   it('sons de entrar/sair: interruptor, volume e Testar', async () => {

@@ -20,13 +20,13 @@ let watchedChannel: string | null = null
 export function playVoiceSound(sound: UiSound): void {
   const st = get()
   if (!st.voiceSoundsEnabled || st.deafened) return
-  chimes.play(sound, { volume: st.voiceSoundsVolume, outputId: st.audioOutputId })
+  chimes.play(sound, { volume: st.voiceSoundsVolume * st.outputVolume, outputId: st.audioOutputId })
 }
 
 /** Botão "Testar" das configurações: toca mesmo com o interruptor desligado. */
 export function previewVoiceSound(): void {
   const st = get()
-  chimes.play('join', { volume: st.voiceSoundsVolume, outputId: st.audioOutputId })
+  chimes.play('join', { volume: st.voiceSoundsVolume * st.outputVolume, outputId: st.audioOutputId })
 }
 
 /** Entrei numa sala (ou troquei): passa a acompanhar essa e toca o som de entrada. */

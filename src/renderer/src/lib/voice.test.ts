@@ -1056,3 +1056,134 @@ describe('pressione para falar (B20)', () => {
     expect(mic!.unmute).not.toHaveBeenCalled()
   })
 })
+
+describe('volume do microfone e de saída', () => {
+  const micOf = (accountId: string) => ({ identity: 'sock-' + accountId, attributes: { accountId } })
+  type FakeGainProc = { gain: number; setGain: ReturnType<typeof vi.fn> }
+  let noiseProcs: FakeGainProc[]
+  let gainProcs: FakeGainProc[]
+
+  function volumeClient(): VoiceClient {
+    noiseProcs = []
+    gainProcs = []
+    const c = new VoiceClient({
+      createRoom: () => {
+        const room = new FakeRoom()
+        rooms.push(room)
+        return room as unknown as Room
+      },
+      createMicTrack: async () => {
+        mic = new FakeMic()
+        return mic as unknown as LocalAudioTrack
+      },
+      createAudioContext: () => ({}) as AudioContext,
+      createNoiseProcessor: (_onMode, gain) => {
+        const p = { gain, setGain: vi.fn() }
+        noiseProcs.push(p)
+        return p as never
+      },
+      createGainProcessor: (gain) => {
+        const p = { gain, setGain: vi.fn() }
+        gainProcs.push(p)
+        return p as never
+      }
+    })
+    c.setSocket(socket.asSocket())
+    return c
+  }
+
+  it('com a supressão ligada, o volume entra no processador de ruído (ao entrar e na hora)', async () => {
+    const c = volumeClient()
+    await c.setMicGain(1.5)
+    await c.join('sala-1')
+    expect(noiseProcs[0].gain).toBe(1.5)
+    expect(gainProcs).toHaveLength(0)
+    await c.setMicGain(0.5)
+    expect(noiseProcs[0].setGain).toHaveBeenLastCalledWith(0.5)
+  })
+
+  it('supressão desligada em 100%: microfone cru; mudar o volume dentro da sala põe o processador de volume', async () => {
+    const c = volumeClient()
+    await c.setNoiseSuppression(false)
+    await c.join('sala-1')
+    expect(mic!.setProcessor).not.toHaveBeenCalled()
+    await c.setMicGain(1.8)
+    expect(gainProcs).toHaveLength(1)
+    expect(gainProcs[0].gain).toBe(1.8)
+    expect(mic!.setProcessor).toHaveBeenCalledWith(gainProcs[0])
+    await c.setMicGain(1)
+    expect(gainProcs[0].setGain).toHaveBeenLastCalledWith(1)
+    expect(gainProcs).toHaveLength(1)
+  })
+
+  it('supressão desligada com volume ajustado: o processador de volume entra antes de publicar', async () => {
+    const c = volumeClient()
+    await c.setNoiseSuppression(false)
+    await c.setMicGain(0.4)
+    await c.join('sala-1')
+    expect(gainProcs[0].gain).toBe(0.4)
+    expect(mic!.setProcessor.mock.invocationCallOrder[0]).toBeLessThan(lastRoom().localParticipant.publishTrack.mock.invocationCallOrder[0])
+  })
+
+  it('desligar a supressão dentro da sala mantém o volume (troca pelo processador de volume)', async () => {
+    const c = volumeClient()
+    await c.setMicGain(1.2)
+    await c.join('sala-1')
+    await c.setNoiseSuppression(false)
+    expect(mic!.stopProcessor).toHaveBeenCalled()
+    expect(gainProcs[0].gain).toBe(1.2)
+  })
+
+  it('volume do microfone fora de 0–200% ou inválido é corrigido', async () => {
+    const c = volumeClient()
+    await c.setMicGain(9)
+    await c.join('sala-1')
+    expect(noiseProcs[0].gain).toBe(2)
+    await c.setMicGain(-1)
+    expect(noiseProcs[0].setGain).toHaveBeenLastCalledWith(0)
+    await c.setMicGain(Number.NaN)
+    expect(noiseProcs[0].setGain).toHaveBeenLastCalledWith(1)
+  })
+
+  it('fora da sala, mudar o volume do microfone não abre nada', async () => {
+    const c = volumeClient()
+    await c.setNoiseSuppression(false)
+    await c.setMicGain(1.5)
+    expect(gainProcs).toHaveLength(0)
+    expect(mic).toBeNull()
+  })
+
+  it('volume de saída multiplica o volume de cada pessoa e vale para o áudio da tela', async () => {
+    client.setUserVolume('acc-ana', 0.5)
+    client.setOutputVolume(0.6)
+    await client.join('sala-1')
+    const ana = new FakeRemoteTrack(Track.Kind.Audio, Track.Source.Microphone)
+    const bia = new FakeRemoteTrack(Track.Kind.Audio, Track.Source.Microphone)
+    const tela = new FakeRemoteTrack(Track.Kind.Audio, Track.Source.ScreenShareAudio)
+    lastRoom().fire(RoomEvent.TrackSubscribed, ana, {}, micOf('acc-ana'))
+    lastRoom().fire(RoomEvent.TrackSubscribed, bia, {}, micOf('acc-bia'))
+    lastRoom().fire(RoomEvent.TrackSubscribed, tela, {}, micOf('acc-ana'))
+    expect(ana.setVolume).toHaveBeenLastCalledWith(0.3)
+    expect(bia.setVolume).toHaveBeenLastCalledWith(0.6)
+    expect(tela.setVolume).toHaveBeenLastCalledWith(0.6)
+
+    client.setOutputVolume(1)
+    expect(ana.setVolume).toHaveBeenLastCalledWith(0.5)
+    expect(bia.setVolume).toHaveBeenLastCalledWith(1)
+    expect(tela.setVolume).toHaveBeenLastCalledWith(1)
+
+    client.setUserMuted('acc-bia', true)
+    client.setOutputVolume(0.8)
+    expect(bia.setVolume).toHaveBeenLastCalledWith(0)
+  })
+
+  it('volume de saída fora de 0–100% é corrigido', async () => {
+    await client.join('sala-1')
+    const ana = new FakeRemoteTrack(Track.Kind.Audio, Track.Source.Microphone)
+    lastRoom().fire(RoomEvent.TrackSubscribed, ana, {}, micOf('acc-ana'))
+    client.setOutputVolume(3)
+    expect(ana.setVolume).toHaveBeenLastCalledWith(1)
+    client.setOutputVolume(-2)
+    expect(ana.setVolume).toHaveBeenLastCalledWith(0)
+  })
+})

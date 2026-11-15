@@ -18,6 +18,10 @@
  *
  * Supressão de ruído automática (B13): `lib/noise/processor.ts` entra como processador do microfone
  * (`setProcessor`) antes de publicar; `setNoiseSuppression(false)` manda o áudio cru.
+ *
+ * Volumes (Configurações de voz): `setMicGain` (0 a 200%) entra no processador do microfone (o de
+ * ruído, ou o `MicGainProcessor` com a supressão desligada; em 100% sem supressão, nenhum) e
+ * `setOutputVolume` (0 a 100%) multiplica o volume de cada pessoa e vale para todo áudio da sala.
  */
 import {
   createLocalAudioTrack,
@@ -35,6 +39,7 @@ import type { JoinVoiceResult, VoicePermissions } from '@shared/types'
 import { permissionsFrom } from './voice-permissions'
 import { loadRnnoiseEngine } from './noise/engine'
 import { AutoNoiseProcessor, type NoiseMode } from './noise/processor'
+import { clampMicGain, clampOutputVolume, MicGainProcessor, type GainControl } from './mic-gain'
 import { useApp } from '@/store'
 import type { AppSocket } from './core'
 
@@ -55,8 +60,10 @@ export interface VoiceDeps {
   createRoom: (opts: { outputDeviceId: string | null }) => Room
   /** `deviceId` null = microfone padrão do sistema; `noiseSuppression` = supressão nativa do WebRTC */
   createMicTrack: (deviceId: string | null, opts?: { noiseSuppression: boolean }) => Promise<LocalAudioTrack>
-  /** processador da supressão automática; avisa o modo atual */
-  createNoiseProcessor: (onMode: (mode: NoiseMode) => void) => AutoNoiseProcessor
+  /** processador da supressão automática; avisa o modo atual; `gain` = volume do microfone */
+  createNoiseProcessor: (onMode: (mode: NoiseMode) => void, gain: number) => AutoNoiseProcessor
+  /** só o volume do microfone (supressão desligada) */
+  createGainProcessor: (gain: number) => MicGainProcessor
   /** AudioContext a 48 kHz (o RNNoise só trabalha nessa taxa) */
   createAudioContext: () => AudioContext
   listDevices: (kind: MediaDeviceKind) => Promise<MediaDeviceInfo[]>
@@ -80,7 +87,8 @@ const defaultDeps: VoiceDeps = {
       noiseSuppression: opts?.noiseSuppression ?? true,
       ...(deviceId ? { deviceId } : {})
     }),
-  createNoiseProcessor: (onMode) =>
+  createGainProcessor: (gain) => new MicGainProcessor(gain),
+  createNoiseProcessor: (onMode, gain) =>
     new AutoNoiseProcessor(
       {
         loadEngine: loadRnnoiseEngine,
@@ -89,7 +97,8 @@ const defaultDeps: VoiceDeps = {
         setInterval: (fn, ms) => window.setInterval(fn, ms),
         clearInterval: (id) => window.clearInterval(id as number)
       },
-      onMode
+      onMode,
+      gain
     ),
   createAudioContext: () => new AudioContext({ sampleRate: 48000 }),
   // false = não pede permissão só para listar (sem permissão, os nomes vêm vazios).
@@ -174,6 +183,11 @@ export class VoiceClient {
   onNoiseModeChange: ((mode: NoiseMode | 'off' | null) => void) | null = null
   private noiseEnabled = true
   private audioContext: AudioContext | null = null
+  /** volume do microfone (0 a 2) e o processador que o aplica agora (null = microfone sem processador) */
+  private micGain = 1
+  private gainControl: GainControl | null = null
+  /** volume de saída (0 a 1), multiplica o de cada pessoa */
+  private outputVolume = 1
 
   private readonly deps: VoiceDeps
 
@@ -247,7 +261,7 @@ export class VoiceClient {
       // Saiu, trocou de sala ou a conexão com o Concord caiu enquanto conectava: não é sucesso.
       if (this.room !== room) return { micError, cancelled: true, ...permissions }
       // O filtro entra antes de publicar: ninguém chega a ouvir o áudio cru.
-      if (mic && this.noiseEnabled) await this.attachNoise(mic)
+      if (mic) await this.attachProcessor(mic)
       if (mic) await room.localParticipant.publishTrack(mic, { source: Track.Source.Microphone })
       // O Electron libera autoplay, mas no navegador (npm run dev em localhost:5173) isso destrava o áudio.
       void room.startAudio().catch(() => {})
@@ -302,6 +316,7 @@ export class VoiceClient {
     this.remoteAudio.clear()
     this.voices.clear()
     this.mic?.stop() // o LiveKit destrói o processador junto com a faixa
+    this.gainControl = null
     this.onNoiseModeChange?.(null)
     this.mic = null
     this.activeSpeakers = []
@@ -358,6 +373,7 @@ export class VoiceClient {
     if (prev.canSpeak && !next.canSpeak && this.mic) {
       const mic = this.mic
       this.mic = null
+      this.gainControl = null
       await room.localParticipant.unpublishTrack(mic).catch(() => {})
       mic.stop()
     } else if (!prev.canSpeak && next.canSpeak && !this.mic) {
@@ -366,7 +382,7 @@ export class VoiceClient {
         if (this.room !== room) return void mic.stop()
         if (this.micSilenced) await mic.mute()
         this.mic = mic
-        if (this.noiseEnabled) await this.attachNoise(mic)
+        await this.attachProcessor(mic)
         await room.localParticipant.publishTrack(mic, { source: Track.Source.Microphone })
       } catch (err) {
         console.warn('[voz] não foi possível ligar o microfone depois de ganhar permissão:', err)
@@ -429,8 +445,45 @@ export class VoiceClient {
       await this.attachNoise(mic)
     } else {
       await mic.stopProcessor()
+      this.gainControl = null
       await this.setNative(mic, false)
       this.onNoiseModeChange?.('off')
+      if (this.micGain !== 1) await this.attachGain(mic)
+    }
+  }
+
+  // ---------- volumes ----------
+
+  /** Volume do microfone (0 a 2). Na hora, se estiver numa sala; senão vale para a próxima entrada. */
+  async setMicGain(gain: number): Promise<void> {
+    this.micGain = clampMicGain(gain)
+    if (this.gainControl) return this.gainControl.setGain(this.micGain)
+    // supressão desligada e microfone cru: só põe um processador quando o volume sai de 100%
+    if (this.mic && this.room && !this.noiseEnabled && this.micGain !== 1) await this.attachGain(this.mic)
+  }
+
+  /** Volume de saída (0 a 1): todo áudio da sala, junto com o volume de cada pessoa. */
+  setOutputVolume(volume: number): void {
+    this.outputVolume = clampOutputVolume(volume)
+    for (const track of this.remoteAudio) this.applyVolume(track, this.voices.get(track) ?? null)
+  }
+
+  /** Processador do microfone antes de publicar: o de ruído (com o volume) ou só o volume. */
+  private async attachProcessor(mic: LocalAudioTrack): Promise<void> {
+    if (this.noiseEnabled) await this.attachNoise(mic)
+    else if (this.micGain !== 1) await this.attachGain(mic)
+  }
+
+  private async attachGain(mic: LocalAudioTrack): Promise<void> {
+    try {
+      this.audioContext ??= this.deps.createAudioContext()
+      await mic.setAudioContext(this.audioContext)
+      const processor = this.deps.createGainProcessor(this.micGain)
+      await mic.setProcessor(processor)
+      this.gainControl = processor
+    } catch (err) {
+      this.gainControl = null
+      console.warn('[voz] não foi possível ajustar o volume do microfone:', err)
     }
   }
 
@@ -439,8 +492,11 @@ export class VoiceClient {
     try {
       this.audioContext ??= this.deps.createAudioContext()
       await mic.setAudioContext(this.audioContext)
-      await mic.setProcessor(this.deps.createNoiseProcessor((mode) => this.onNoiseModeChange?.(mode)))
+      const processor = this.deps.createNoiseProcessor((mode) => this.onNoiseModeChange?.(mode), this.micGain)
+      await mic.setProcessor(processor)
+      this.gainControl = processor
     } catch (err) {
+      this.gainControl = null
       console.warn('[ruído] não foi possível ligar o filtro automático:', err)
       this.onNoiseModeChange?.('light-fallback')
     }
@@ -465,8 +521,10 @@ export class VoiceClient {
     }
   }
 
-  private applyVolume(track: RemoteTrack, accountId: string): void {
-    const volume = this.mutedUsers.has(accountId) ? 0 : (this.volumes.get(accountId) ?? 1)
+  /** Volume de uma faixa: o de saída × o da pessoa (`accountId` null = áudio da tela, só o de saída). */
+  private applyVolume(track: RemoteTrack, accountId: string | null): void {
+    const personal = accountId === null ? 1 : this.mutedUsers.has(accountId) ? 0 : (this.volumes.get(accountId) ?? 1)
+    const volume = personal * this.outputVolume
     ;(track as RemoteTrack & { setVolume?: (v: number) => void }).setVolume?.(volume)
   }
 
@@ -531,7 +589,7 @@ export class VoiceClient {
         if (track.source === Track.Source.Microphone && accountId) {
           this.voices.set(track, accountId)
           this.applyVolume(track, accountId)
-        }
+        } else if (this.outputVolume !== 1) this.applyVolume(track, null)
       })
       .on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack, _pub: RemoteTrackPublication, participant: Participant) => {
         if (track.kind === Track.Kind.Video) {

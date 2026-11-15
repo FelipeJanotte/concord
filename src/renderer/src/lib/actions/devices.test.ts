@@ -9,7 +9,9 @@ import {
   selectAudioInput,
   selectAudioOutput,
   setUserMuted,
+  setMicGain,
   setNoiseSuppression,
+  setOutputVolume,
   setUserVolume,
   setVoiceSounds
 } from './devices'
@@ -79,7 +81,7 @@ describe('escolher dispositivo', () => {
     await selectAudioInput('mic-usb')
     await selectAudioOutput('fone')
     expect(useApp.getState()).toMatchObject({ audioInputId: 'mic-usb', audioOutputId: 'fone' })
-    expect(saved()).toEqual({ input: 'mic-usb', output: 'fone', camera: null, volumes: {}, muted: [], sounds: { enabled: true, volume: 0.5 }, noise: true })
+    expect(saved()).toEqual({ input: 'mic-usb', output: 'fone', camera: null, volumes: {}, muted: [], sounds: { enabled: true, volume: 0.5 }, noise: true, micGain: 1, outputVolume: 1 })
     expect(voice.setInputDevice).toHaveBeenCalledWith('mic-usb')
     expect(voice.setOutputDevice).toHaveBeenCalledWith('fone')
 
@@ -245,5 +247,47 @@ describe('supressão de ruído (B13)', () => {
     expect(useApp.getState().noiseMode).toBe('advanced')
     voice.onNoiseModeChange?.(null)
     expect(useApp.getState().noiseMode).toBeNull()
+  })
+})
+
+describe('volume do microfone e de saída', () => {
+  it('começam em 100% e são aplicados no VoiceClient ao carregar', () => {
+    const mic = vi.spyOn(voice, 'setMicGain').mockResolvedValue()
+    const out = vi.spyOn(voice, 'setOutputVolume').mockImplementation(() => {})
+    loadAudioPreferences()
+    expect(useApp.getState()).toMatchObject({ micGain: 1, outputVolume: 1 })
+    expect(mic).toHaveBeenCalledWith(1)
+    expect(out).toHaveBeenCalledWith(1)
+  })
+
+  it('ajustar salva, avisa o VoiceClient e volta igual depois de reabrir', async () => {
+    const mic = vi.spyOn(voice, 'setMicGain').mockResolvedValue()
+    const out = vi.spyOn(voice, 'setOutputVolume').mockImplementation(() => {})
+    await setMicGain(1.5)
+    setOutputVolume(0.4)
+    expect(useApp.getState()).toMatchObject({ micGain: 1.5, outputVolume: 0.4 })
+    expect(saved()).toMatchObject({ micGain: 1.5, outputVolume: 0.4 })
+    expect(mic).toHaveBeenLastCalledWith(1.5)
+    expect(out).toHaveBeenLastCalledWith(0.4)
+    useApp.setState({ micGain: 1, outputVolume: 1 })
+    loadAudioPreferences()
+    expect(useApp.getState()).toMatchObject({ micGain: 1.5, outputVolume: 0.4 })
+  })
+
+  it('corrige valores fora do limite (microfone até 200%, saída até 100%) e dados ruins', async () => {
+    vi.spyOn(voice, 'setMicGain').mockResolvedValue()
+    vi.spyOn(voice, 'setOutputVolume').mockImplementation(() => {})
+    await setMicGain(7)
+    setOutputVolume(2)
+    expect(useApp.getState()).toMatchObject({ micGain: 2, outputVolume: 1 })
+    storage.setItem('concord:audio', JSON.stringify({ micGain: 'alto', outputVolume: -3 }))
+    loadAudioPreferences()
+    expect(useApp.getState()).toMatchObject({ micGain: 1, outputVolume: 0 })
+  })
+
+  it('falha ao ajustar o microfone vira aviso', async () => {
+    vi.spyOn(voice, 'setMicGain').mockRejectedValue(new Error('falhou'))
+    await setMicGain(1.2)
+    expect(useApp.getState().notice?.text).toBe('Não foi possível ajustar o volume do microfone.')
   })
 })

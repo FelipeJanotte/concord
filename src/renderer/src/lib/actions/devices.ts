@@ -1,10 +1,11 @@
 /**
- * Dispositivos de áudio, câmera (B21) e volume por pessoa (B4). Tudo é preferência desta máquina:
+ * Dispositivos de áudio, câmera (B21), volume do microfone e de saída, e volume por pessoa (B4). Tudo é preferência desta máquina:
  * fica no localStorage (`concord:audio`) e é aplicado ao VoiceClient ao abrir o app.
  * Nada vai para o servidor.
  */
 import { get, notify, set } from '../core'
 import { voice } from '../voice'
+import { clampMicGain, clampOutputVolume } from '../mic-gain'
 
 // O que a supressão de ruído está fazendo agora (aparece em Configurações de voz).
 voice.onNoiseModeChange = (mode) => set({ noiseMode: mode })
@@ -28,6 +29,10 @@ interface SavedAudio {
   sounds: { enabled: boolean; volume: number }
   /** supressão de ruído automática (B13) */
   noise: boolean
+  /** volume do microfone (0 a 2) */
+  micGain: number
+  /** volume de saída (0 a 1) */
+  outputVolume: number
 }
 
 function readSaved(): SavedAudio {
@@ -38,7 +43,9 @@ function readSaved(): SavedAudio {
     volumes: {},
     muted: [],
     sounds: { enabled: true, volume: 0.5 },
-    noise: true
+    noise: true,
+    micGain: 1,
+    outputVolume: 1
   }
   try {
     const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null
@@ -61,7 +68,9 @@ function readSaved(): SavedAudio {
             ? data.sounds.volume
             : empty.sounds.volume
       },
-      noise: typeof data.noise === 'boolean' ? data.noise : empty.noise
+      noise: typeof data.noise === 'boolean' ? data.noise : empty.noise,
+      micGain: clampMicGain(data.micGain),
+      outputVolume: clampOutputVolume(data.outputVolume)
     }
   } catch {
     return empty
@@ -69,7 +78,8 @@ function readSaved(): SavedAudio {
 }
 
 function save(): void {
-  const { audioInputId, audioOutputId, cameraId, userVolumes, userMuted, voiceSoundsEnabled, voiceSoundsVolume, noiseSuppression } = get()
+  const { audioInputId, audioOutputId, cameraId, userVolumes, userMuted, voiceSoundsEnabled, voiceSoundsVolume, noiseSuppression, micGain, outputVolume } =
+    get()
   try {
     localStorage.setItem(
       STORAGE_KEY,
@@ -80,7 +90,9 @@ function save(): void {
         volumes: userVolumes,
         muted: Object.keys(userMuted),
         sounds: { enabled: voiceSoundsEnabled, volume: voiceSoundsVolume },
-        noise: noiseSuppression
+        noise: noiseSuppression,
+        micGain,
+        outputVolume
       })
     )
   } catch {
@@ -101,9 +113,13 @@ export function loadAudioPreferences(): void {
     userMuted,
     voiceSoundsEnabled: saved.sounds.enabled,
     voiceSoundsVolume: saved.sounds.volume,
-    noiseSuppression: saved.noise
+    noiseSuppression: saved.noise,
+    micGain: saved.micGain,
+    outputVolume: saved.outputVolume
   })
   void voice.setNoiseSuppression(saved.noise)
+  void voice.setMicGain(saved.micGain)
+  voice.setOutputVolume(saved.outputVolume)
   void voice.setInputDevice(saved.input)
   void voice.setOutputDevice(saved.output)
   void voice.setCameraDevice(saved.camera)
@@ -193,6 +209,27 @@ export function setUserMuted(accountId: string, muted: boolean): void {
   })
   save()
   voice.setUserMuted(accountId, muted)
+}
+
+/** Volume do microfone (0 a 2 = 0% a 200%). Vale na hora, mesmo dentro da sala. */
+export async function setMicGain(gain: number): Promise<void> {
+  const v = clampMicGain(gain)
+  set({ micGain: v })
+  save()
+  try {
+    await voice.setMicGain(v)
+  } catch (err) {
+    console.error('[voz] não foi possível ajustar o volume do microfone:', err)
+    notify('Não foi possível ajustar o volume do microfone.')
+  }
+}
+
+/** Volume de saída (0 a 1): voz de todos, áudio da tela, efeitos sonoros e sons da sala. */
+export function setOutputVolume(volume: number): void {
+  const v = clampOutputVolume(volume)
+  set({ outputVolume: v })
+  save()
+  voice.setOutputVolume(v)
 }
 
 /** Liga/desliga e ajusta o volume dos sons de entrar/sair da sala (B16). */

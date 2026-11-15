@@ -119,7 +119,7 @@ export function bindSoundsEvents(s: AppSocket): void {
     if (st.deafened || st.userMuted[accountId]) return
     const url = resolveServerUrl(sound.url, st.serverUrl)
     if (!url) return
-    soundOutput.play(url, { volume: st.userVolumes[accountId] ?? 1, outputId: st.audioOutputId })
+    soundOutput.play(url, { volume: (st.userVolumes[accountId] ?? 1) * st.outputVolume, outputId: st.audioOutputId })
   })
 }
 

@@ -83,6 +83,12 @@ describe('sound:played', () => {
     expect(play).toHaveBeenCalledWith('http://srv:3001/sounds/s1?a=1&e=2&s=3', { volume: 0.4, outputId: 'fone' })
   })
 
+  it('o volume de saída multiplica o volume da pessoa', () => {
+    useApp.setState({ myVoiceChannelId: 'sala', userVolumes: { 'acc-ana': 0.5 }, outputVolume: 0.5 })
+    socket.receive('sound:played', played)
+    expect(play).toHaveBeenCalledWith(expect.any(String), { volume: 0.25, outputId: null })
+  })
+
   it('indicador de quem tocou até o som acabar', () => {
     vi.useFakeTimers()
     useApp.setState({ myVoiceChannelId: 'sala' })

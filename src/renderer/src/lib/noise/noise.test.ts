@@ -200,6 +200,20 @@ function setup(opts: { cores?: number; engineFails?: boolean } = {}) {
 }
 
 describe('AutoNoiseProcessor', () => {
+  it('volume do microfone: seco e molhado passam pelo ganho de volume antes da saída; setGain muda na hora', async () => {
+    const s = setup()
+    await s.init()
+    const volume = s.ctx.gains[2]
+    expect(volume.gain.value).toBe(1)
+    expect(s.dry().connections).toEqual([volume])
+    expect(s.wet().connections).toEqual([volume])
+    expect(volume.connections.map((n) => n.kind)).toEqual(['destination'])
+    s.proc.setGain(1.5)
+    expect(volume.gain.value).toBe(1.5)
+    s.proc.setGain(10)
+    expect(volume.gain.value).toBe(2)
+  })
+
   it('começa no leve (seco), gera a faixa processada e mede o ruído', async () => {
     const s = setup()
     await s.init()
