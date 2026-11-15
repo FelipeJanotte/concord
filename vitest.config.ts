@@ -19,6 +19,7 @@ export default defineConfig({
     setupFiles: ['server/env.ts'],
     // Os testes de integração (server/tests/) sobem o servidor real em cada arquivo.
     testTimeout: 15_000,
-    hookTimeout: 30_000
+    // Subir o servidor real (beforeAll) com dezenas de arquivos em paralelo chega a passar de 30 s.
+    hookTimeout: 60_000
   }
 })

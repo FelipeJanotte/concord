@@ -97,7 +97,6 @@ async function handleUpload(io: AppServer, req: IncomingMessage, res: ServerResp
     return reply(res, 429, { ok: false, error: `Muitos envios seguidos. ${retryText(limited.retryAfterMs)}` })
   }
   if (Number(req.headers['content-length']) > SOUND_MAX_BYTES) {
-    res.setHeader('connection', 'close')
     reply(res, 413, { ok: false, error: 'O som pode ter no máximo 512 KB' })
     discardBody(req, SOUND_MAX_BYTES * 4) // o app precisa conseguir ler o 413
     return
@@ -108,7 +107,6 @@ async function handleUpload(io: AppServer, req: IncomingMessage, res: ServerResp
     data = await readBody(req, SOUND_MAX_BYTES)
   } catch (err) {
     if (err instanceof TooLarge) {
-      res.setHeader('connection', 'close')
       reply(res, 413, { ok: false, error: 'O som pode ter no máximo 512 KB' })
       discardBody(req, SOUND_MAX_BYTES * 4)
       return

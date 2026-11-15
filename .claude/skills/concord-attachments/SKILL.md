@@ -48,8 +48,9 @@ escolhe/cola/arrasta ─► addFiles(channelId, files)
    ─► transport.send (XHR, progresso em upload.onprogress) ─► POST /uploads
 servidor: token ─► limite 'upload' ─► Content-Length > 25 MB? 413
    ─► stream: LimitAndPeek conta bytes (413 se passar) e guarda os 256 KB iniciais
-   (depois do 413 o resto do corpo é descartado com `discardBody`, até 2× o limite, para o app ler a resposta;
-    com teto menor, 25 MB + 1 byte derrubava a conexão no último byte e o app via "fetch failed")
+   (depois do 413 o resto do corpo é descartado com `discardBody`, até 2× o limite, **sem** `Connection: close`:
+    com ele o Node destrói o socket logo após a resposta e, no Windows, o app ainda enviando perde o 413 por
+    ECONNRESET — "fetch failed". Teto de descarte menor que o corpo derruba a conexão no último byte, mesmo efeito.)
    ─► storage.save(id) grava em <id>.part e renomeia no fim (queda no meio = nada salvo)
    ─► sniffImage(começo) ─► insertAttachment (message_id null) ─► { ok, attachment }
 app: PendingUpload 'done' ─► Enter ─► sendMessage espera não haver 'uploading'

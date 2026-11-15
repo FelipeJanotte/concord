@@ -122,7 +122,8 @@ export class TestServer {
     child.stdout?.on('data', (d: Buffer) => (this.output += d.toString()))
     child.stderr?.on('data', (d: Buffer) => (this.output += d.toString()))
 
-    const deadline = Date.now() + 20_000
+    // Com a suíte inteira em paralelo (dezenas de servidores subindo juntos) o boot passa de 20 s.
+    const deadline = Date.now() + 45_000
     while (Date.now() < deadline) {
       if (child.exitCode !== null) throw new Error(`servidor saiu (código ${child.exitCode}):\n${this.output}`)
       try {
@@ -133,7 +134,7 @@ export class TestServer {
       }
       await sleep(150)
     }
-    throw new Error(`servidor não respondeu em 20 s:\n${this.output}`)
+    throw new Error(`servidor não respondeu em 45 s:\n${this.output}`)
   }
 
   /**

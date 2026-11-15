@@ -118,6 +118,9 @@ docker compose down -v   # para e APAGA o banco (recria concord_test na próxima
   `server/data`; `server.newUser()`, `waitFor(socket, 'evento', filtro)`, `expectNoEvent(...)` e `server.restart()`.
 - **Ações do app**: `src/renderer/src/lib/actions/*.test.ts` com `FakeSocket` (`src/renderer/src/test/fake-socket.ts`).
 - Toda tarefa traz testes; só está pronta com `npm run typecheck && npm test` 100% verdes.
+- Prazos: `testTimeout` 15 s, `hookTimeout` 60 s e o boot do `TestServer` até 45 s (`server/tests/helpers.ts`). Com a
+  suíte inteira em paralelo, dezenas de servidores sobem juntos (tsx + migrations no PGlite) e o boot passa de 20 s;
+  sozinho leva 1–2 s. "Hook timed out" ou "servidor não respondeu" só na suíte completa = carga, não bug.
 
 ## Contas no desenvolvimento
 
