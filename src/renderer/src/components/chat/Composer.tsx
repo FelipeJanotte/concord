@@ -1,17 +1,44 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react'
 import { Paperclip, SendHorizontal } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
-import { MESSAGE_MAX_LENGTH, type Channel } from '@shared/types'
+import { EVERYONE_TOKEN, MENTION_EVERYONE, MESSAGE_MAX_LENGTH, mentionToken, type Channel } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { addFiles, cancelReply, editLastMessage, notifyTyping, sendMessage } from '@/lib/client'
-import { chatLabel } from '@/lib/dms'
-import { useCan } from '@/lib/permissions'
+import { chatLabel, findDm } from '@/lib/dms'
+import {
+  activeMentionQuery,
+  candidatesFrom,
+  filterCandidates,
+  fromEditable,
+  insertMention,
+  type MentionCandidate,
+  type MentionMap
+} from '@/lib/mentions'
+import { allows, useCan } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
 import { AttachmentPreview } from './AttachmentPreview'
+import { MentionMenu } from './MentionMenu'
 import { ReplyBanner } from './ReplyPreview'
 
 const EMPTY: never[] = []
+
+/**
+ * Quem pode ser mencionado aqui (B19): quem está online e vê o canal (menos eu); numa conversa
+ * privada, a outra pessoa. "@todos" só fora de DM e com a permissão `mentionEveryone`.
+ */
+function useMentionCandidates(channel: Channel): MentionCandidate[] {
+  const users = useApp((s) => s.users)
+  const access = useApp((s) => s.access)
+  const me = useApp((s) => s.self?.accountId)
+  const dm = useApp((s) => findDm(s.dms, channel.id))
+  const canEveryone = useCan('mentionEveryone')
+  return useMemo(() => {
+    if (dm) return candidatesFrom([{ accountId: dm.other.id, name: dm.other.name, tag: dm.other.tag }], false)
+    const people = users.filter((u) => u.accountId !== me && allows(access, u.accountId, 'view', channel.id))
+    return candidatesFrom(people, canEveryone)
+  }, [users, access, me, dm, canEveryone, channel.id])
+}
 
 /** Campo de mensagem: texto, anexos (clipe, colar ou arrastar) e "digitando". */
 export function Composer({ channel }: { channel: Channel }) {
@@ -26,6 +53,28 @@ export function Composer({ channel }: { channel: Channel }) {
   const label = useApp((s) => chatLabel(channel, s.dms))
   const canSend = allowedSend && !uploading && (!!value.trim() || ready)
   const replying = useApp((s) => !!s.replyingTo[channel.id])
+  // menções (B19): quem pode ser mencionado, o "@algo" sendo digitado e os rótulos já escolhidos
+  const candidates = useMentionCandidates(channel)
+  const [mention, setMention] = useState<{ start: number; query: string } | null>(null)
+  const [active, setActive] = useState(0)
+  const chosen = useRef<MentionMap>({})
+  const options = mention ? filterCandidates(candidates, mention.query) : []
+
+  function trackMention(text: string, caret: number): void {
+    const next = activeMentionQuery(text, caret)
+    setMention(next)
+    if (next?.query !== mention?.query) setActive(0)
+  }
+
+  function pickMention(item: MentionCandidate): void {
+    const el = ref.current
+    if (!el || !mention) return
+    const { text, caret } = insertMention(value, mention.start, el.selectionStart ?? value.length, item.label)
+    chosen.current[item.label] = item.id === MENTION_EVERYONE ? EVERYONE_TOKEN : mentionToken(item.id)
+    setValue(text)
+    setMention(null)
+    requestAnimationFrame(() => el.setSelectionRange(caret, caret))
+  }
 
   // clicou em "Responder": o campo ganha o foco para já escrever
   useEffect(() => {
@@ -34,6 +83,8 @@ export function Composer({ channel }: { channel: Channel }) {
 
   useEffect(() => {
     setValue('')
+    setMention(null)
+    chosen.current = {}
     ref.current?.focus()
   }, [channel.id])
 
@@ -46,10 +97,33 @@ export function Composer({ channel }: { channel: Channel }) {
 
   function send() {
     if (!canSend) return
-    if (sendMessage(channel.id, value)) setValue('')
+    // os "@Nome" escolhidos viram o token da conta antes de ir para o servidor
+    if (sendMessage(channel.id, fromEditable(value, chosen.current))) {
+      setValue('')
+      setMention(null)
+      chosen.current = {}
+    }
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    // menu de menções aberto: setas escolhem, Enter/Tab confirmam, Esc fecha
+    if (options.length > 0) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault()
+        setActive((i) => (i + (e.key === 'ArrowDown' ? 1 : options.length - 1)) % options.length)
+        return
+      }
+      if ((e.key === 'Enter' || e.key === 'Tab') && !e.shiftKey) {
+        e.preventDefault()
+        pickMention(options[Math.min(active, options.length - 1)])
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setMention(null)
+        return
+      }
+    }
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault()
       send()
@@ -82,6 +156,7 @@ export function Composer({ channel }: { channel: Channel }) {
 
   return (
     <div className="shrink-0 px-4">
+      <MentionMenu items={options} active={Math.min(active, Math.max(0, options.length - 1))} onPick={pickMention} />
       <ReplyBanner channelId={channel.id} />
       <div className={cn('rounded-lg bg-composer', replying && 'rounded-t-none')}>
         <AttachmentPreview channelId={channel.id} uploads={uploads} />
@@ -117,8 +192,11 @@ export function Composer({ channel }: { channel: Channel }) {
             placeholder={channel.type === 'dm' ? `Conversar com ${label}` : `Conversar em ${label}`}
             onChange={(e) => {
               setValue(e.target.value)
+              trackMention(e.target.value, e.target.selectionStart ?? e.target.value.length)
               if (e.target.value) notifyTyping(channel.id)
             }}
+            onSelect={(e) => trackMention(e.currentTarget.value, e.currentTarget.selectionStart ?? 0)}
+            onBlur={() => setMention(null)}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
             className="max-h-[200px] flex-1 resize-none bg-transparent py-1.5 text-[15px] leading-[22px] outline-none placeholder:text-muted-foreground"

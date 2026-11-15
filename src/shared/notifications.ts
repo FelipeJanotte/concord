@@ -2,7 +2,7 @@
 // `window.api.notifications` (preload) até o processo principal (`src/main/notifications.ts`).
 
 /** O que abrir quando a pessoa clica na notificação. */
-export type NotificationTarget = { kind: 'dm'; channelId: string } | { kind: 'friends' }
+export type NotificationTarget = { kind: 'dm'; channelId: string } | { kind: 'channel'; channelId: string } | { kind: 'friends' }
 
 export interface NativeNotification {
   title: string

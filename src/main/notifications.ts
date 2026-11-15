@@ -28,7 +28,9 @@ export function cleanNotification(raw: unknown): NativeNotification | null {
 function cleanTarget(raw: unknown): NotificationTarget | null {
   const t = raw as Partial<{ kind: string; channelId: unknown }> | null
   if (t?.kind === 'friends') return { kind: 'friends' }
-  if (t?.kind === 'dm' && typeof t.channelId === 'string' && t.channelId.length <= 64) return { kind: 'dm', channelId: t.channelId }
+  if ((t?.kind === 'dm' || t?.kind === 'channel') && typeof t.channelId === 'string' && t.channelId.length <= 64) {
+    return { kind: t.kind, channelId: t.channelId }
+  }
   return null
 }
 

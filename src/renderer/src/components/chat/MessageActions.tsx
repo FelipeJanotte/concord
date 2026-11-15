@@ -1,13 +1,13 @@
 /**
  * Ações sobre uma mensagem, ao passar o mouse:
- * - Responder (B18): quem pode mandar mensagem no canal;
+ * - Reagir (A16) e Responder (B18): quem pode mandar mensagem no canal;
  * - Editar (A15): o autor, só mensagem de texto;
  * - Apagar (B6): o autor e, fora das conversas privadas, quem tem "Gerenciar mensagens" (mesma regra do servidor).
  */
-import { CornerUpLeft, Pencil, Trash2 } from 'lucide-react'
+import { CornerUpLeft, Pencil, SmilePlus, Trash2 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { canDeleteMessage, type Message } from '@shared/types'
-import { deleteMessage, notify, startEdit, startReply } from '@/lib/client'
+import { deleteMessage, notify, openReactionPicker, startEdit, startReply } from '@/lib/client'
 import { findDm } from '@/lib/dms'
 import { useCan } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
@@ -33,6 +33,11 @@ export function MessageActions({ message }: { message: Message }) {
 
   return (
     <div className="absolute -top-3 right-4 z-10 hidden rounded-md border border-border bg-panel shadow-sm group-hover:flex group-focus-within:flex">
+      {canReply && (
+        <ActionButton label="Adicionar reação" onClick={() => openReactionPicker(message.id)}>
+          <SmilePlus className="size-4" />
+        </ActionButton>
+      )}
       {canReply && (
         <ActionButton label="Responder" onClick={() => startReply(message)}>
           <CornerUpLeft className="size-4" />

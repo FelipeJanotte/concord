@@ -1,13 +1,20 @@
 // Mensagens dos canais de texto e das conversas privadas, "digitando", editar (A15) e responder citando (B18).
 import { randomUUID } from 'node:crypto'
-import { ATTACHMENTS_PER_MESSAGE, MESSAGE_MAX_LENGTH, type Message } from '../../src/shared/types'
+import { ATTACHMENTS_PER_MESSAGE, EVERYONE_TOKEN, MESSAGE_MAX_LENGTH, type Message } from '../../src/shared/types'
 import { allowed, emitToViewers } from '../access'
 import { signMessage } from '../files-signing'
 import { guard, type ServerModule } from '../context'
 import { limiters } from '../middleware/rate-limit'
 import { findChannel } from '../repo/channels'
-import { editMessage, findEditable, findReplyTarget, insertMessage, listMessages } from '../repo/messages'
+import { editMessage, findEditable, findReplyTarget, insertMessage, listMessages, resolveMentions } from '../repo/messages'
 import { isUuid } from '../repo/util'
+
+/** Sem a permissão `mentionEveryone`, o `<@todos>` vira texto comum (B19): ninguém é avisado. */
+async function checkEveryone(accountId: string, content: string): Promise<string> {
+  if (!content.toLowerCase().includes(EVERYONE_TOKEN)) return content
+  if (await allowed(accountId, 'mentionEveryone')) return content
+  return content.replace(/<@todos>/gi, '@todos')
+}
 
 export const messagesModule: ServerModule = {
   socket(io, socket) {
@@ -60,18 +67,20 @@ export const messagesModule: ServerModule = {
           if (attachmentIds.length > 0 && !(await allowed(user.accountId, 'attach', channel.id))) return
           // resposta (B18): só a uma mensagem do mesmo canal; inválida = vai sem a citação
           const replyTo = replyToId ? await findReplyTarget(replyToId, channel.id) : undefined
+          // menções (B19): @todos só com permissão; numa conversa privada não há @todos
+          const text = channel.type === 'dm' ? content.replace(/<@todos>/gi, '@todos') : await checkEveryone(user.accountId, content)
           const message: Message = {
             id: randomUUID(),
             channelId: channel.id,
             author: { ...user },
-            content,
+            content: text,
             attachments: [],
             createdAt: Date.now(),
             ...(replyTo ? { replyTo } : {})
           }
           // null = algum anexo não é desta pessoa ou já foi usado: nada é gravado.
           const saved = await insertMessage(message, attachmentIds)
-          if (saved) await emitToViewers(io, channel.id, 'message:new', saved, { forAccount: signMessage })
+          if (saved) await emitToViewers(io, channel.id, 'message:new', { ...saved, ...(await resolveMentions(text)) }, { forAccount: signMessage })
         })
       )
     })
@@ -83,20 +92,27 @@ export const messagesModule: ServerModule = {
         const user = socket.data.user
         if (!user) return ack({ ok: false, error: 'Não autenticado' })
         if (typeof payload?.messageId !== 'string' || typeof payload.content !== 'string') return ack({ ok: false, error: 'Pedido inválido' })
-        const content = payload.content.trim()
-        if (content.length > MESSAGE_MAX_LENGTH) return ack({ ok: false, error: `A mensagem pode ter no máximo ${MESSAGE_MAX_LENGTH} caracteres` })
+        const raw = payload.content.trim()
+        if (raw.length > MESSAGE_MAX_LENGTH) return ack({ ok: false, error: `A mensagem pode ter no máximo ${MESSAGE_MAX_LENGTH} caracteres` })
         const meta = await findEditable(payload.messageId)
         // sem ver o canal: igual a mensagem inexistente
         if (!meta || !(await allowed(user.accountId, 'view', meta.channelId))) return ack({ ok: false, error: 'Mensagem não encontrada' })
         if (meta.authorId !== user.accountId || meta.kind !== 'text') return ack({ ok: false, error: 'Você só pode editar as suas mensagens' })
         if (!(await allowed(user.accountId, 'send', meta.channelId))) return ack({ ok: false, error: 'Você não pode enviar mensagens neste canal' })
+        const content = await checkEveryone(user.accountId, raw)
         if (!content && meta.attachments === 0) return ack({ ok: false, error: 'A mensagem não pode ficar vazia (para tirar, apague)' })
         if (content === meta.content) return ack({ ok: true })
         const limited = limiters.message.take(user.accountId)
         if (!limited.ok) return ack({ ok: false, error: 'Muitas mensagens seguidas. Espere um pouco.' })
         const editedAt = await editMessage(payload.messageId, user.accountId, content)
         if (editedAt === null) return ack({ ok: false, error: 'Mensagem não encontrada' })
-        await emitToViewers(io, meta.channelId, 'message:edited', { channelId: meta.channelId, messageId: payload.messageId, content, editedAt })
+        await emitToViewers(io, meta.channelId, 'message:edited', {
+          channelId: meta.channelId,
+          messageId: payload.messageId,
+          content,
+          editedAt,
+          ...(await resolveMentions(content))
+        })
         ack({ ok: true })
       })
     })

@@ -20,7 +20,7 @@
 import type { Channel } from './channel'
 
 /** Permissões da comunidade inteira. */
-export const GLOBAL_PERMISSIONS = ['manageChannels', 'manageRoles', 'manageMembers', 'manageMessages'] as const
+export const GLOBAL_PERMISSIONS = ['manageChannels', 'manageRoles', 'manageMembers', 'manageMessages', 'mentionEveryone'] as const
 /** Permissões que cada canal pode liberar ou negar por cargo. */
 export const CHANNEL_PERMISSIONS = ['view', 'send', 'attach', 'connect', 'speak', 'share', 'video'] as const
 
@@ -34,6 +34,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   manageRoles: 'Gerenciar cargos (abaixo do seu cargo mais alto)',
   manageMembers: 'Gerenciar membros (atribuir cargos, silenciar e expulsar da voz)',
   manageMessages: 'Gerenciar mensagens (apagar mensagens de outras pessoas)',
+  mentionEveryone: 'Mencionar @todos (avisa todo mundo que vê o canal)',
   view: 'Ver o canal',
   send: 'Enviar mensagens',
   attach: 'Enviar anexos',

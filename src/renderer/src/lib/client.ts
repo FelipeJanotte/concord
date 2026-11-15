@@ -23,6 +23,7 @@ import { bindNotificationEvents, stopNotifications } from './actions/notificatio
 import { bindCallsEvents, loadCalls } from './actions/calls'
 import { bindPermissionsEvents } from './actions/permissions'
 import { bindPresenceEvents } from './actions/presence'
+import { bindReactionsEvents } from './actions/reactions'
 import { bindSoundsEvents, loadSounds } from './actions/sounds'
 import { bindVoiceEvents, OUT_OF_VOICE } from './actions/voice'
 import { clearAllDrafts } from './actions/uploads'
@@ -131,6 +132,7 @@ export function connect(url: string, token: string): Promise<void> {
   bindPresenceEvents(s)
   bindChannelEvents(s)
   bindMessageEvents(s)
+  bindReactionsEvents(s)
   bindVoiceEvents(s)
   bindLimitEvents(s)
   bindPermissionsEvents(s)
@@ -228,6 +230,7 @@ export type { AppSocket } from './core'
 export * from './actions/account'
 export * from './actions/channels'
 export * from './actions/messages'
+export * from './actions/reactions'
 export * from './actions/moderation'
 export * from './actions/navigation'
 export { acceptCall, cancelCall, declineCall, hangUp, startCall } from './actions/calls'

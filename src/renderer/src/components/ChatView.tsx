@@ -1,10 +1,10 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type DragEvent } from 'react'
 import { Hash, Loader2, Upload } from 'lucide-react'
-import type { Channel, DmEntry, Message } from '@shared/types'
+import { mentionsAccount, type Channel, type DmEntry, type Message } from '@shared/types'
 import { addFiles, loadHistory, loadOlderMessages } from '@/lib/client'
 import { chatLabel, findDm } from '@/lib/dms'
 import { useCan } from '@/lib/permissions'
-import { formatDay, formatTime, formatTimestamp } from '@/lib/utils'
+import { cn, formatDay, formatTime, formatTimestamp } from '@/lib/utils'
 import { useApp } from '@/store'
 import { CallButton } from './call/CallButton'
 import { CallPanel } from './call/CallPanel'
@@ -12,6 +12,8 @@ import { Composer } from './chat/Composer'
 import { MessageActions } from './chat/MessageActions'
 import { MessageAttachments } from './chat/MessageAttachments'
 import { MessageEditor } from './chat/MessageEditor'
+import { MessageText } from './chat/MessageText'
+import { Reactions } from './chat/Reactions'
 import { messageElementId, ReplyQuote } from './chat/ReplyPreview'
 import { ToolResultCard } from './tools/ToolResultCard'
 import { UserAvatar } from './UserAvatar'
@@ -204,7 +206,14 @@ function DayDivider({ ts }: { ts: number }) {
 function MessageBody({ message }: { message: Message }) {
   const editing = useApp((s) => s.editingMessageId === message.id)
   // resultado de ferramenta (v4): cartão próprio em vez do texto por extenso
-  if (message.kind === 'tool' && message.tool) return <ToolResultCard message={message} />
+  if (message.kind === 'tool' && message.tool) {
+    return (
+      <>
+        <ToolResultCard message={message} />
+        <Reactions message={message} />
+      </>
+    )
+  }
   return (
     <>
       {editing ? (
@@ -212,7 +221,7 @@ function MessageBody({ message }: { message: Message }) {
       ) : (
         message.content && (
           <p className="text-[15px] leading-[22px] break-words whitespace-pre-wrap">
-            {message.content}
+            <MessageText message={message} />
             {message.editedAt && (
               <span className="ml-1 text-[10px] text-muted-foreground" title={`Editada em ${formatTimestamp(message.editedAt)}`}>
                 (editada)
@@ -222,6 +231,7 @@ function MessageBody({ message }: { message: Message }) {
         )
       )}
       <MessageAttachments attachments={message.attachments ?? []} />
+      <Reactions message={message} />
     </>
   )
 }
@@ -230,11 +240,14 @@ function MessageItem({ message, compact }: { message: Message; compact: boolean 
   // Se o autor estiver online, mostra o nome/foto atuais.
   const live = useApp((s) => (compact ? undefined : s.users.find((u) => u.accountId === message.author.accountId)))
   const author = live ?? message.author
+  // mencionou a mim (ou @todos): a mensagem fica destacada (B19)
+  const mentioned = useApp((s) => message.author.accountId !== s.self?.accountId && mentionsAccount(message.content, s.self?.accountId))
+  const highlight = mentioned && 'border-l-2 border-primary bg-primary/10'
 
   // resposta (B18) nunca fica compacta: a citação vai em cima do nome
   if (compact && !message.replyTo) {
     return (
-      <div id={messageElementId(message.id)} className="group relative flex px-4 py-0.5 transition-colors hover:bg-black/[0.06] data-[highlight=true]:bg-primary/15">
+      <div id={messageElementId(message.id)} className={cn('group relative flex px-4 py-0.5 transition-colors hover:bg-black/[0.06] data-[highlight=true]:bg-primary/15', highlight)}>
         <MessageActions message={message} />
         <span className="w-14 shrink-0 pt-1 pr-2 text-right text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100">
           {formatTime(message.createdAt)}
@@ -247,7 +260,7 @@ function MessageItem({ message, compact }: { message: Message; compact: boolean 
   }
 
   return (
-    <div id={messageElementId(message.id)} className="group relative mt-4 flex gap-4 px-4 py-0.5 transition-colors hover:bg-black/[0.06] data-[highlight=true]:bg-primary/15">
+    <div id={messageElementId(message.id)} className={cn('group relative mt-4 flex gap-4 px-4 py-0.5 transition-colors hover:bg-black/[0.06] data-[highlight=true]:bg-primary/15', highlight)}>
       <MessageActions message={message} />
       <UserAvatar user={author} size="lg" className={message.replyTo ? 'mt-5' : 'mt-0.5'} />
       <div className="min-w-0 flex-1">

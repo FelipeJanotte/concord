@@ -134,3 +134,22 @@ describe('ligação com os eventos', () => {
     expect(st().section).toBe('community')
   })
 })
+
+describe('clique numa menção de canal (B19)', () => {
+  it('abre o canal de texto; canal que sumiu ou de voz não faz nada', () => {
+    useApp.setState({
+      ...initialState,
+      self: me,
+      section: 'home',
+      channels: [
+        { id: 'geral', name: 'geral', type: 'text', createdAt: 0 },
+        { id: 'sala', name: 'Sala', type: 'voice', createdAt: 0 }
+      ]
+    })
+    openNotificationTarget({ kind: 'channel', channelId: 'sala' })
+    openNotificationTarget({ kind: 'channel', channelId: 'sumiu' })
+    expect(useApp.getState().section).toBe('home')
+    openNotificationTarget({ kind: 'channel', channelId: 'geral' })
+    expect(useApp.getState()).toMatchObject({ section: 'community', view: { kind: 'text', channelId: 'geral' } })
+  })
+})

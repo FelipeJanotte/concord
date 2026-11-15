@@ -4,28 +4,39 @@
  * não lido, a chamada tocando e o selo da Home). Mostrar e desenhar o selo ficam no processo
  * principal (`src/main/notifications.ts`); a ligação com os eventos em `lib/actions/notifications.ts`.
  */
-import type { CallInfo, FriendEntry, Message } from '@shared/types'
+import { mentionsAccount, mentionsToPlain, type CallInfo, type FriendEntry, type Message } from '@shared/types'
 import type { NativeNotification } from '@shared/notifications'
 import type { AppState } from '@/store'
 import { findDm } from './dms'
 import { homeBadge } from './home'
 
-type St = Pick<AppState, 'self' | 'dms' | 'friends' | 'unread' | 'calls'>
+type St = Pick<AppState, 'self' | 'dms' | 'friends' | 'unread' | 'calls'> & Partial<Pick<AppState, 'channels'>>
 
 /** Texto curto da mensagem para a notificação (anexo sem texto vira "📎 1 anexo"). */
 export function messagePreview(message: Message): string {
-  const text = message.content.replace(/\s+/g, ' ').trim()
+  // menções (B19) aparecem como "@Nome"
+  const plain = mentionsToPlain(message.content, (id) => message.mentions?.find((m) => m.accountId === id)?.name)
+  const text = plain.replace(/\s+/g, ' ').trim()
   if (text) return text.length > 120 ? `${text.slice(0, 119)}…` : text
   const n = message.attachments?.length ?? 0
   return n > 0 ? `📎 ${n} ${n === 1 ? 'anexo' : 'anexos'}` : 'Nova mensagem'
 }
 
-/** Mensagem nova numa conversa privada, de outra pessoa, com a janela fora de foco. */
+/**
+ * Mensagem nova de outra pessoa, com a janela fora de foco: em conversa privada, sempre; em canal da
+ * comunidade, só quando me menciona (ou @todos, B19). O resto fica só na bolinha de não lido.
+ */
 export function messageNotification(message: Message, st: St, focused: boolean): NativeNotification | null {
   if (focused || !st.self || message.author.accountId === st.self.accountId) return null
   const dm = findDm(st.dms, message.channelId)
-  if (!dm) return null // canais da comunidade não notificam (só a bolinha de não lido)
-  return { title: dm.other.name, body: messagePreview(message), target: { kind: 'dm', channelId: dm.channel.id } }
+  if (dm) return { title: dm.other.name, body: messagePreview(message), target: { kind: 'dm', channelId: dm.channel.id } }
+  if (!mentionsAccount(message.content, st.self.accountId)) return null
+  const channel = st.channels?.find((c) => c.id === message.channelId)
+  return {
+    title: channel ? `${message.author.name} em #${channel.name}` : message.author.name,
+    body: messagePreview(message),
+    target: { kind: 'channel', channelId: message.channelId }
+  }
 }
 
 /** Alguém está me ligando (chamada tocando para mim), com a janela fora de foco. */

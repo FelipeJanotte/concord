@@ -2,7 +2,7 @@
  * Acesso às contas. Todas as funções são async e devolvem objetos novos: quem
  * chama altera a conta só por `updateAccount`.
  */
-import { and, eq, ne, sql } from 'drizzle-orm'
+import { and, eq, inArray, ne, sql } from 'drizzle-orm'
 import { db, uniqueViolation } from '../db/client'
 import { accounts } from '../db/schema'
 import type { Account } from './types'
@@ -15,6 +15,14 @@ const toAccount = (row: Row): Account => ({ ...row, createdAt: row.createdAt.get
 /** Caminho público da foto (`/avatars/<id>?v=<versão>`), ou null sem foto. */
 export function avatarUrl(a: Pick<Account, 'id' | 'avatarType' | 'avatarVersion'>): string | null {
   return a.avatarType ? `/avatars/${a.id}?v=${a.avatarVersion}` : null
+}
+
+/** Nome atual de cada conta (para as menções, B19). Ids inválidos ou inexistentes ficam de fora. */
+export async function accountNames(ids: string[]): Promise<Map<string, string>> {
+  const valid = [...new Set(ids)].filter(isUuid)
+  if (valid.length === 0) return new Map()
+  const rows = await db().select({ id: accounts.id, name: accounts.name }).from(accounts).where(inArray(accounts.id, valid))
+  return new Map(rows.map((r) => [r.id, r.name]))
 }
 
 export async function findAccount(id: string): Promise<Account | undefined> {

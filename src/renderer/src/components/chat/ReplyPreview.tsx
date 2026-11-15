@@ -1,7 +1,7 @@
 // Responder citando (B18): a citação em cima da mensagem (clicar rola até a original) e a faixa
 // "Respondendo a Fulano" em cima do campo de mensagem.
 import { CornerUpLeft, X } from 'lucide-react'
-import type { ReplyPreview } from '@shared/types'
+import { mentionsToPlain, type ReplyPreview } from '@shared/types'
 import { cancelReply } from '@/lib/client'
 import { useApp } from '@/store'
 
@@ -18,7 +18,14 @@ export function scrollToMessage(id: string): boolean {
   return true
 }
 
+/** O texto da citação com "@Nome" no lugar dos tokens de menção (nome de quem está online). */
+function usePlain(content: string): string {
+  const users = useApp((s) => s.users)
+  return mentionsToPlain(content, (id) => users.find((u) => u.accountId === id)?.name)
+}
+
 export function ReplyQuote({ reply }: { reply: ReplyPreview }) {
+  const text = usePlain(reply.content)
   if (reply.deleted) {
     return (
       <p className="mb-0.5 flex items-center gap-1 text-xs text-muted-foreground italic">
@@ -36,7 +43,7 @@ export function ReplyQuote({ reply }: { reply: ReplyPreview }) {
     >
       <CornerUpLeft className="size-3 shrink-0" />
       <span className="shrink-0 font-semibold">@{reply.authorName}</span>
-      <span className="truncate">{reply.content || '📎 anexo'}</span>
+      <span className="truncate">{text || '📎 anexo'}</span>
     </button>
   )
 }
@@ -44,12 +51,13 @@ export function ReplyQuote({ reply }: { reply: ReplyPreview }) {
 /** Faixa em cima do campo: com quem estou falando e o X para desistir. */
 export function ReplyBanner({ channelId }: { channelId: string }) {
   const reply = useApp((s) => s.replyingTo[channelId])
+  const text = usePlain(reply?.content ?? '')
   if (!reply) return null
   return (
     <div role="status" className="flex items-center gap-2 rounded-t-lg bg-panel px-3 py-1.5 text-sm text-muted-foreground">
       <span className="min-w-0 flex-1 truncate">
         Respondendo a <strong className="text-accent-foreground">{reply.authorName}</strong>
-        {reply.content && <span className="ml-1">— {reply.content}</span>}
+        {text && <span className="ml-1">— {text}</span>}
       </span>
       <button type="button" aria-label="Cancelar resposta" onClick={() => cancelReply(channelId)} className="hover:text-accent-foreground">
         <X className="size-4" />

@@ -1,7 +1,9 @@
 // Mensagens dos canais de texto e "digitando".
 import type { User } from './account'
 import type { Attachment } from './attachment'
+import type { Mention } from './mentions'
 import type { OkResult } from './permissions'
+import type { Reaction } from './reactions'
 import type { ToolPayload } from './tools'
 
 export const MESSAGE_MAX_LENGTH = 2000
@@ -56,6 +58,10 @@ export interface Message {
   editedAt?: number
   /** a mensagem que esta responde (B18); ausente = não é resposta */
   replyTo?: ReplyPreview
+  /** reações (A16), na ordem em que cada emoji apareceu; ausente = nenhuma */
+  reactions?: Reaction[]
+  /** contas mencionadas no texto com o nome atual (B19); ausente = nenhuma (o @todos está no próprio texto) */
+  mentions?: Mention[]
 }
 
 /** `message:send`: texto e/ou anexos já enviados por `POST /uploads` (do próprio usuário, ainda não usados). */
@@ -79,6 +85,8 @@ export interface MessageEdited {
   messageId: string
   content: string
   editedAt: number
+  /** as menções do texto novo (B19) */
+  mentions?: Mention[]
 }
 
 /** `message:history`: sem `before` = página mais recente; com `before` = as anteriores àquela mensagem. */
