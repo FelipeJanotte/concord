@@ -362,6 +362,8 @@ O `uiohook-napi` (MIT, N-API com binários prontos para Windows/macOS/Linux, sem
 é um gancho de teclado e mouse do sistema inteiro. Está em `dependencies` (vai no instalador; o
 `externalizeDepsPlugin` deixa fora do bundle) e é carregado com `require` só na primeira vez que o gancho é preciso:
 se o binário faltar, o resto do app continua e a janela recebe `ptt-unavailable` (o modo desliga com aviso).
+O `electron-builder.yml` tem `npmRebuild: false`: sem isso o `npm run dist` tentava recompilar o `uiohook-napi` com
+o `node-gyp` (exige Python e Visual Studio) mesmo ele já trazendo o binário pronto em `prebuilds/win32-x64`.
 
 **Fluxo:** ligar o modo → `setConfig({ enabled: true, binding })` → o main liga o gancho → tecla pressionada →
 `ptt-change true` → `pttPressed` + `voice.setMicGate(true)` (+ som `ptt-on`) → solta → depois de 200 ms

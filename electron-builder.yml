@@ -1,5 +1,8 @@
 appId: com.concord.app
 productName: Concord
+# Não recompila dependências nativas: a única é o uiohook-napi (B20), que usa N-API e já traz o binário pronto
+# para cada sistema (prebuilds/). Recompilar exigiria Python + Visual Studio na máquina que gera o instalador.
+npmRebuild: false
 directories:
   buildResources: build
 files:
