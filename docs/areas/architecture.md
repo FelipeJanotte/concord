@@ -106,8 +106,8 @@ Cliente → servidor (`ClientToServerEvents`):
 | `sound:list` | — | `Sound[]` | coleção de efeitos sonoros (links assinados para quem pede) — `docs/areas/sounds.md` |
 | `sound:play` | `{ channelId, soundId }` | `SoundResult` | exige estar na sala e `speak`; `sound:played` só para quem está nela; não toca por cima do próprio som anterior |
 | `sound:delete` | `soundId` | `SoundResult` | o autor ou `manageMessages`; `sound:deleted` para todos |
-| `preferences:get` | — | `Preferences` | tema ativo e temas salvos da conta (padrão se nada salvo) — `docs/areas/themes.md` |
-| `preferences:update` | `{ theme?, savedThemes? }` | `PreferencesResult` | valida com `validateTheme`; `preferences:updated` para as outras janelas da mesma conta |
+| `preferences:get` | — | `Preferences` | tema ativo, temas salvos e canais silenciados da conta (padrão se nada salvo) — `docs/areas/themes.md` |
+| `preferences:update` | `{ theme?, savedThemes?, mutedChannels? }` | `PreferencesResult` | valida com `validateTheme`; `mutedChannels`: até 500 uuids (silenciar canal, `docs/areas/notifications.md`); `preferences:updated` para as outras janelas da mesma conta |
 | `friend:list` / `friend:request` / `friend:accept` / `friend:decline` / `friend:remove` / `friend:block` / `friend:unblock` | `"nome#id"` ou `accountId` | `FriendEntry[]` / `FriendResult` | amizades (v3) — `docs/areas/friends.md` |
 | `dm:list` / `dm:open` | — / `accountId` | `DmEntry[]` / `DmOpenResult` | conversas privadas (v3): abrir só entre amigos ou se já existe; mensagens usam os `message:*` de sempre — `docs/areas/dms.md` |
 | `tools:teams` | `{ channelId, players, teamCount, lanes?, laneSet? }` | `ToolResult` | sorteio no servidor; posta mensagem `kind: 'tool'` (`message:new` para quem vê o canal) — `docs/areas/tools.md` |
