@@ -56,16 +56,18 @@ Gerenciador de pacotes: **npm** (não use pnpm/yarn; o projeto foi revertido do 
 | `src/renderer/src/components/chat/` | `Composer` (texto + clipe/colar), `AttachmentPreview`, `MessageAttachments` (imagem no chat / cartão de arquivo), `ImageLightbox`, `MessageActions` (responder, editar e apagar), `MessageEditor` (editar no lugar, A15), `ReplyPreview` (citação e faixa "Respondendo a", B18) e `Reactions` (chips e seletor de emoji, A16; reusa o `EmojiPicker` de `voice/`), `MessageText` (menções e links clicáveis) e `MentionMenu` (menções @nome, B19; puras em `lib/mentions.ts`, contrato em `src/shared/types/mentions.ts`). Arrastar e soltar fica no `ChatView`. |
 | `src/renderer/src/lib/core.ts` | Socket atual (`getSocket`/`requireSocket`), `set`/`get` da store e `notify`. Usado pelas ações. |
 | `src/renderer/src/lib/voice.ts` | `VoiceClient` sobre `livekit-client`: conecta na sala com o token do servidor, mute/deafen, quem está falando (`ActiveSpeakersChanged`). |
+| `src/renderer/src/lib/tile-layout.ts` | Grade da sala de voz centralizada com tamanho automático: `bestTileLayout` (colunas e largura do quadro 16:9 pelo espaço) e `useElementSize` (mede com `ResizeObserver`). Usado pelo `TileGrid` da `VoiceGrid`. |
 | `src/renderer/src/lib/mic-gain.ts` | Volume do microfone (0–200%) e de saída (0–100%): limites e `MicGainProcessor` (ganho no microfone com a supressão de ruído desligada). Aplicado em `voice.setMicGain`/`setOutputVolume`; preferências em `lib/actions/devices.ts`. |
 | `src/renderer/src/lib/voice-permissions.ts` | `permissionsFrom`: o que o LiveKit deixa esta conexão publicar (microfone com `speak`, tela com `share`), usado quando as permissões mudam com a pessoa na sala. |
 | `src/renderer/src/lib/sounds/` | Sons da interface gerados pela Web Audio (`ChimePlayer`) e `roomChanges` (quem entrou/saiu da minha sala). Ligados em `lib/actions/voice-sounds.ts`. `Ringer` (`ringtone.ts`): toque das chamadas (B8). |
 | `src/renderer/src/lib/noise/` | Supressão de ruído automática: `NoiseDecider` (quando ligar o filtro forte), `AutoNoiseProcessor` (processador do microfone no LiveKit) e o motor RNNoise (WASM empacotado). |
 | `src/renderer/src/components/ui/` | Componentes shadcn/ui (estilo new-york, importando de `radix-ui`). |
-| `vercel.json`, `src/renderer/src/lib/default-server.ts`, `src/renderer/src/env.d.ts` | Versão web opcional (skill `concord-deploy`): a Vercel publica só `out/renderer`; `VITE_DEFAULT_SERVER` no build define o servidor padrão da tela de login (também no instalador). |
+| `vercel.json`, `src/renderer/src/lib/default-server.ts`, `src/renderer/src/env.d.ts` | Versão web opcional (`docs/areas/deploy.md`): a Vercel publica só `out/renderer`; `VITE_DEFAULT_SERVER` no build define o servidor padrão da tela de login (também no instalador). |
 | `docker-compose.yml`, `livekit.yaml`, `.env.example` | Infra local: PostgreSQL 17 e LiveKit (SFU). Credenciais de dev espelhadas em `server/.env.example`; `.env` na raiz (modelo `.env.example`) é do compose: `LIVEKIT_NODE_IP` para a voz de quem vem de outra máquina. |
 | `.github/workflows/ci.yml` | CI (A12): typecheck + testes em todo PR e push na `main` (Ubuntu, Node 22, PGlite, sem Docker). |
 | `.github/workflows/auto-release.yml`, `.github/workflows/release.yml`, `.github/scripts/next-version.mjs` | Release automática: cada PR mergeado na `main` vira tag `vX.Y.Z` (patch; labels `release: minor`/`release: major`/`sem release`) e instalador no GitHub Releases (skill `concord-updates`). |
 | `Dockerfile`, `docker-compose.prod.yml`, `deploy/` | Hospedagem pela internet (A14): imagem do servidor, compose de produção (servidor + Postgres com backup + LiveKit com TURN + Caddy/HTTPS), `deploy/.env.example` e o guia `deploy/README.md`. |
+| `docs/` | Documentação, organizada por gênero em pastas: `areas/` (referência por área, apontada pelas skills `concord-*`), `decisions/` (ADRs) e `ROADMAP.md` (plano das tasks). As regras e o índice das pastas estão em `docs/AGENTS.md`. |
 | `vitest.config.ts` | Testes `*.test.ts(x)` ao lado do código (`npm test`). |
 | `src/renderer/src/components/` | Telas: `LoginScreen`, `ChannelSidebar`, `ChatView`, `VoiceView`, `MemberList`, `UserPanel` (com o `VoiceStatusPanel` "Voz conectada": câmera, tela e efeitos sonoros fora da sala; monta `DeviceSettings`, `ScreenPicker` e `Soundboard` uma vez só), `CreateChannelDialog`, `Toast`; `voice/` tem `VoiceGrid` (`featuredScreen`: qual tela fica em destaque), `ScreenTile` (miniatura e `ScreenStage`: tela em destaque com "Assistindo", seletor das telas ao vivo, "Ver grade" e tela cheia via `lib/fullscreen.ts`) e `ScreenPicker` (tela compartilhada) e `DeviceSettings` (microfone, saída, volume do microfone e de saída) e `CameraTile` (câmera de cada um na grade, B21) e `Soundboard`/`SoundUploadForm`/`EmojiPicker` (efeitos sonoros, B17; ações em `lib/actions/sounds.ts`, estado em `store/sounds.ts`) e `MemberContextMenu` (botão direito numa pessoa: volume, silenciar, cargos, moderação, "Mensagem"/"Adicionar amigo" (B7), ver perfil) com `ModerationMenu` (silenciar para todos e expulsar da voz, B6); `UserProfileDialog` é o cartão de perfil. |
 
@@ -88,7 +90,61 @@ npm run dist        # instalador Windows em dist/ (sem publicar)
 npm run release     # instalador + publica no GitHub Releases (usado pelo workflow da tag vX.Y.Z)
 ```
 
+## Princípios de código (P0–P8: valem por cima de qualquer regra de domínio)
+
+**P0 — TDD.** O teste que falha vem **antes** da implementação. Teste honesto, que quebraria de verdade se o
+comportamento quebrasse: teste que afirma que um mock foi chamado prova que o mock funciona. Antes de dizer que
+algo está coberto, quebre a implementação e veja o teste morrer.
+
+**P1 — Clean Code e Clean Architecture** (Uncle Bob), até o fim: a dependência aponta para o domínio, nunca o
+contrário. No Concord isso é literal — `server/modules/` não importa `server/db/` (R4) e componente não usa socket
+direto (R2).
+
+**P2 — Zero comentários.** Nenhum. Nem `TODO`, `FIXME` ou similar. Código que precisa de comentário para ser
+entendido é código ruim: arrume o **nome** da função, da variável, do tipo. O que precisa ser documentado vai para
+`docs/`, nunca ao lado do código — comentário apodrece longe do que descreve.
+
+**P3 — Código desacoplado.** Escreva pensando primeiro em quem vai manter. Meça acoplamento por "o que quebra se
+eu mudar isto": se não dá para mudar A sem abrir B para ver o que ele assumia, estão acoplados.
+
+**P4 — KISS, YAGNI, DRY** na frente de tudo. DRY vale para **conhecimento**, não para caracteres: duas linhas
+iguais que mudam por motivos diferentes continuam duas.
+
+**P5 — Pense e defina antes de escrever.** Decisão de forma (onde mora, quem depende de quem, qual contrato) é
+tomada antes do primeiro arquivo, não descoberta no meio do diff.
+
+**P6 — Simplicidade primeiro.** O mínimo de código que resolve o problema pedido. Nada especulativo:
+
+- nenhuma funcionalidade além da pedida;
+- abstração só quando você **sabe** que vai expandir — se não sabe, **pergunte**;
+- nenhuma "flexibilidade" ou configuração que ninguém pediu (flag com um valor só, wrapper com um chamador);
+- nenhum tratamento de erro para cenário impossível.
+
+A pergunta de controle: *o que um sênior de 20+ anos faria aqui para o código ficar mais limpo e mais fácil de
+manter?*
+
+**P7 — Execução guiada por objetivo.** Defina o critério de sucesso e repita até verificar. Transforme a tarefa
+num objetivo verificável:
+
+- "adicionar validação" → "escrever os testes de entrada inválida e fazê-los passar";
+- "corrigir o bug" → "escrever o teste que reproduz o sintoma e fazê-lo passar";
+- "refatorar X" → "garantir que os testes passam antes e depois".
+
+Tarefa de vários passos ganha um plano curto, cada passo com a sua verificação:
+
+```
+1. Passo → verifica: comando/checagem
+2. Passo → verifica: comando/checagem
+```
+
+Critério forte deixa quem executa fechar o laço sozinho; "faz funcionar" obriga a perguntar a cada passo.
+
+**P8 — Evidência antes de "pronto".** "Funciona", "passou", "corrigido" são afirmações sobre um comando que você
+**acabou de rodar e cujo resultado leu**. Se não rodou, diga o estado real.
+
 ## Regras do projeto
+
+Regras deste projeto (R1–R14); os princípios acima (P0–P8) valem por cima delas.
 
 1. **Todo evento novo começa em `src/shared/types/<dominio>.ts`.** Depois `server/modules/`, depois `lib/actions/`, depois UI.
 2. Componentes **leem** estado com `useApp(selector)` e **agem** chamando funções de `@/lib/client`. Não use o socket direto em componentes.
@@ -97,53 +153,77 @@ npm run release     # instalador + publica no GitHub Releases (usado pelo workfl
 5. **Toda tarefa vem com testes automatizados** (vitest, `*.test.ts` ao lado do código). Uma tarefa só está completa quando `npm test` **e** `npm run typecheck` passam por completo. Testes de integração do servidor ficam em `server/tests/<dominio>.test.ts` e sobem o servidor de verdade (`server/tests/helpers.ts`); ações do app são testadas com o socket falso (`src/renderer/src/test/fake-socket.ts`); componentes com `// @vitest-environment jsdom` + Testing Library (veja `components/chat/chat.test.tsx`).
 6. Handlers async do servidor rodam dentro de `guard('evento', async () => { ... })` (erro não derruba o processo).
 7. Seletores que retornam arrays/objetos novos (ex.: `filter`) usam `useShallow` de `zustand/react/shallow`.
-8. **Permissões (v2):** handler que lê ou muda algo de um canal confere `await allowed(accountId, 'view' | 'send' | ..., channelId)`; evento de canal vai por `emitToViewers` (nunca `io.emit`, que vazaria canal privado). A dona (primeira conta) pode tudo. Skill `concord-permissions`.
+8. **Permissões (v2):** handler que lê ou muda algo de um canal confere `await allowed(accountId, 'view' | 'send' | ..., channelId)`; evento de canal vai por `emitToViewers` (nunca `io.emit`, que vazaria canal privado). A dona (primeira conta) pode tudo. `docs/areas/permissions.md`.
 9. O servidor **valida tudo** que chega (tipo, tamanho, existência do canal); nunca confie no cliente. Ação nova que pode ser abusada (cria coisa, manda para todos) ganha uma regra em `LIMITS` (`server/middleware/rate-limit.ts`).
 10. Visual: use os tokens de cor do tema (`bg-sidebar`, `bg-rail`, `bg-panel`, `bg-composer`, `text-muted-foreground`, `text-success`...) definidos em `src/renderer/src/assets/globals.css`. Não use cores hex soltas nos componentes.
 11. Novos componentes shadcn: `npx shadcn@latest add <nome>` (o `components.json` já aponta para os aliases certos).
 12. Textos da interface em **português do Brasil**.
 13. Aliases: `@/` → `src/renderer/src/`, `@shared/` → `src/shared/` (o servidor importa por caminho relativo `../src/shared/types`).
-14. **Toda tarefa, todo módulo novo e toda alteração vêm com a skill correspondente** em `.claude/skills/`. Sem isso a tarefa **não está finalizada**, mesmo com testes e typecheck passando. Ver "Definição de pronto" abaixo.
+14. **Toda tarefa, todo módulo novo e toda alteração vêm com a documentação correspondente** em `docs/areas/<area>.md`. Sem isso a tarefa **não está finalizada**, mesmo com testes e typecheck passando. Ver "Definição de pronto" abaixo.
 
 ## Definição de pronto
 
 Uma tarefa (task do roadmap, correção, refatoração ou mudança de comportamento) só está **finalizada** quando:
 
 1. `npm run typecheck` **e** `npm test` passam por completo, com testes novos cobrindo a mudança (regra 5).
-2. **A skill está em dia com o código entregue:**
+2. **A documentação da área está em dia com o código entregue** (`docs/areas/<area>.md`):
    - **Área nova** (domínio, módulo do servidor, processo do Electron, conjunto de telas): crie
-     `.claude/skills/concord-<area>/SKILL.md`, com frontmatter `name` e `description` (a `description` diz
-     **quando** usar a skill, citando arquivos e eventos), e acrescente-a na lista "Skills detalhadas" abaixo.
-     Se a área for pequena e pertencer a uma skill que já existe, uma **seção nova** nessa skill basta.
-   - **Alteração** em algo que já tem skill: atualize as seções afetadas no mesmo PR. Nada de skill descrevendo
+     `docs/areas/<area>.md` e a skill-ponteiro `.claude/skills/concord-<area>/SKILL.md` — só frontmatter
+     (`name` e `description`, e a `description` diz **quando** abrir o doc, citando arquivos e eventos) mais
+     a linha que manda ler o doc. Acrescente a área na lista "Documentação por área" abaixo.
+     Se a área for pequena e pertencer a um doc que já existe, uma **seção nova** nesse doc basta.
+   - **Alteração** em algo que já tem doc: atualize as seções afetadas no mesmo PR. Nada de doc descrevendo
      comportamento antigo (evento removido, arquivo renomeado, regra que mudou).
-   - O conteúdo mínimo de cada skill ou seção: o que faz e por quê, arquivos envolvidos, eventos e contratos
+   - O conteúdo mínimo de cada doc ou seção: o que faz e por quê, arquivos envolvidos, eventos e contratos
      (`shared/types`), fluxo principal, regras e limites, como testar e problemas conhecidos/depuração.
-3. Eventos novos ou alterados aparecem na tabela de eventos da `concord-architecture`.
-4. Arquivo ou pasta nova aparece no "Mapa rápido" deste arquivo.
-5. O PR diz quais skills foram criadas ou atualizadas. Revisor: PR sem skill atualizada volta.
+   - **Nada de conteúdo nas skills `concord-*`.** Elas são só o gatilho que leva ao doc; regra duplicada
+     divergiria no PR seguinte. As skills de **competência** (`wise-dev`, `test-strategy`, `code-quality`,
+     `token-efficiency`, `semantic-docs`) são a exceção: descrevem *como trabalhar*, não como o Concord é, e
+     carregam o próprio conteúdo em `reference/`.
+3. Decisão que **custa caro desfazer** (troca de biblioteca, formato de dado, limite, protocolo) vira um ADR em
+   `docs/decisions/NNNN-*.md`, com as alternativas descartadas. Modelo em `docs/decisions/README.md`.
+4. Eventos novos ou alterados aparecem na tabela de eventos de `docs/areas/architecture.md`.
+5. Arquivo ou pasta nova aparece no "Mapa rápido" deste arquivo.
+6. O PR diz quais docs e ADRs foram criados ou atualizados. Revisor: PR sem doc atualizado volta.
 
-## Skills detalhadas
+## Documentação por área
 
-Leia a skill certa antes de mexer em cada área (ficam em `.claude/skills/<nome>/SKILL.md`):
+Leia o doc certo antes de mexer em cada área (ficam em `docs/areas/<area>.md`; as skills `concord-*` são só
+ponteiros para eles):
 
-- `concord-architecture` — visão completa: fluxo de dados, todos os eventos, estado, ciclo de conexão.
-- `concord-add-feature` — passo a passo para adicionar uma funcionalidade de ponta a ponta, com exemplo.
-- `concord-accounts` — contas: cadastro/login com e-mail e senha, sessões, login com Google, perfil `nome#id` e foto, regra do id único e imutável.
-- `concord-messages` — mensagens: envio, histórico, editar (A15), responder citando (B18), reações (A16), menções @nome (B19) e links clicáveis.
-- `concord-permissions` — cargos e permissões (v2): regra de cálculo compartilhada, @todos, dona, regras por canal, hierarquia, eventos `role:*` e o que cada handler bloqueia.
-- `concord-friends` — amizades (v3): pedidos por `nome#id`, bloqueio, online só para amigos e os eventos `friend:*`.
-- `concord-dms` — conversas privadas (v3): canal `dm` com dois membros, quem pode abrir, acesso só dos membros, bloqueio e os eventos `dm:*`.
-- `concord-tools` — ferramentas do grupo (v4): sorteio no servidor, mensagem `kind: 'tool'`, sorteador de times (`tools:teams`, lanes e preferências), dado, moeda, sortear 1 nome e como criar uma ferramenta nova.
-- `concord-themes` — temas personalizáveis (v5): `ThemeConfig`, `validateTheme`, código de compartilhamento e preferências da conta no servidor.
-- `concord-sounds` — efeitos sonoros (soundboard): envio por `POST /sounds`, tipo e duração pelos bytes, tocar só para a sala, sobreposição e quem apaga.
-- `concord-calls` — chamadas privadas (B8): ligar, tocar, atender, desligar, tempos limite e os eventos `call:*`.
-- `concord-home` — navegação (B7): barra de úteis, Home (Amigos e conversas), `section`/`homeView`, "Mensagem" no botão direito e o registro de ferramentas.
-- `concord-moderation` — moderação (B6): expulsar da voz, silenciar pelo servidor e apagar mensagem, com a hierarquia e os eventos `moderation:*`/`message:delete`.
-- `concord-attachments` — anexos: envio por `POST /uploads`, download por `GET /files`, tipo pelos bytes, storage, limpeza e a interface (clipe, colar, arrastar, prévia).
-- `concord-voice` — como a voz funciona (LiveKit no servidor, token por sala), compartilhamento de tela, dispositivos e volume por pessoa, pressione para falar (B20), limites e depuração.
-- `concord-notifications` — notificações (B9): quando avisar (conversa, chamada, pedido de amizade, só fora de foco), clique e selo no ícone.
-- `concord-overlay` — sobreposição em jogos (B15): janela transparente com quem fala, atalho global, canto/tamanho, arrastar para mover (como no Discord) e o limite da tela cheia exclusiva.
-- `concord-updates` — atualização automática (A13): electron-updater, faixa "Reiniciar para atualizar" e como publicar uma versão (tag vX.Y.Z).
-- `concord-deploy` — hospedar pela internet (A14): imagem, compose de produção, LiveKit com TURN, Caddy, variáveis e guia.
-- `concord-dev-workflow` — rodar, testar com vários usuários, build e solução de problemas conhecidos.
+- `docs/areas/architecture.md` — visão completa: fluxo de dados, todos os eventos, estado, ciclo de conexão.
+- `docs/areas/add-feature.md` — passo a passo para adicionar uma funcionalidade de ponta a ponta, com exemplo.
+- `docs/areas/accounts.md` — contas: cadastro/login com e-mail e senha, sessões, login com Google, perfil `nome#id` e foto, regra do id único e imutável.
+- `docs/areas/messages.md` — mensagens: envio, histórico, editar (A15), responder citando (B18), reações (A16), menções @nome (B19) e links clicáveis.
+- `docs/areas/permissions.md` — cargos e permissões (v2): regra de cálculo compartilhada, @todos, dona, regras por canal, hierarquia, eventos `role:*` e o que cada handler bloqueia.
+- `docs/areas/friends.md` — amizades (v3): pedidos por `nome#id`, bloqueio, online só para amigos e os eventos `friend:*`.
+- `docs/areas/dms.md` — conversas privadas (v3): canal `dm` com dois membros, quem pode abrir, acesso só dos membros, bloqueio e os eventos `dm:*`.
+- `docs/areas/tools.md` — ferramentas do grupo (v4): sorteio no servidor, mensagem `kind: 'tool'`, sorteador de times (`tools:teams`, lanes e preferências), dado, moeda, sortear 1 nome e como criar uma ferramenta nova.
+- `docs/areas/themes.md` — temas personalizáveis (v5): `ThemeConfig`, `validateTheme`, código de compartilhamento e preferências da conta no servidor.
+- `docs/areas/sounds.md` — efeitos sonoros (soundboard): envio por `POST /sounds`, tipo e duração pelos bytes, tocar só para a sala, sobreposição e quem apaga.
+- `docs/areas/calls.md` — chamadas privadas (B8): ligar, tocar, atender, desligar, tempos limite e os eventos `call:*`.
+- `docs/areas/home.md` — navegação (B7): barra de úteis, Home (Amigos e conversas), `section`/`homeView`, "Mensagem" no botão direito e o registro de ferramentas.
+- `docs/areas/moderation.md` — moderação (B6): expulsar da voz, silenciar pelo servidor e apagar mensagem, com a hierarquia e os eventos `moderation:*`/`message:delete`.
+- `docs/areas/attachments.md` — anexos: envio por `POST /uploads`, download por `GET /files`, tipo pelos bytes, storage, limpeza e a interface (clipe, colar, arrastar, prévia).
+- `docs/areas/voice.md` — como a voz funciona (LiveKit no servidor, token por sala), compartilhamento de tela, dispositivos e volume por pessoa, pressione para falar (B20), limites e depuração.
+- `docs/areas/notifications.md` — notificações (B9): quando avisar (conversa, chamada, pedido de amizade, só fora de foco), clique e selo no ícone.
+- `docs/areas/overlay.md` — sobreposição em jogos (B15): janela transparente com quem fala, atalho global, canto/tamanho, arrastar para mover (como no Discord) e o limite da tela cheia exclusiva.
+- `docs/areas/updates.md` — atualização automática (A13): electron-updater, faixa "Reiniciar para atualizar" e como publicar uma versão (tag vX.Y.Z).
+- `docs/areas/deploy.md` — hospedar pela internet (A14): imagem, compose de produção, LiveKit com TURN, Caddy, variáveis e guia.
+- `docs/areas/dev-workflow.md` — rodar, testar com vários usuários, build e solução de problemas conhecidos.
+
+## Estilo das respostas
+
+Poucas palavras, o suficiente para entender. Simples, curto, **ultra resumido** — e **sem perder detalhe**.
+O leitor quer ler **o mínimo** e entender **o máximo**. Resultado primeiro; se algo falhou, na primeira frase.
+Tabela em vez de parágrafo para fatos. Sem emoji. Sem narrar o processo.
+
+## Git
+
+- Trabalhe em **git worktree** dentro de `.claude/worktrees/<nome>` (ignorado pelo git).
+- Worktree nova sai sempre da `main` — exceto em branch empilhada (stacked) para trabalho em paralelo.
+- **Sempre rebase na `main`** antes de trabalhar e ao pesquisar, para não decidir em cima de código velho.
+  Lembre da R4: `npm run db:generate` só **depois** do rebase.
+- **Conventional Commits** (`feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`), **Conventional Branches**
+  (`feat/<assunto>`, `fix/<assunto>`; a task do roadmap entra no corpo da mensagem, ex.: `feat: ... (B21)`) e o
+  título do PR no mesmo formato. O histórico anterior à adoção não segue isso; não reescreva.

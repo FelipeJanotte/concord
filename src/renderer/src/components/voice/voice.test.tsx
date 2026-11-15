@@ -255,3 +255,59 @@ describe('VoiceGrid', () => {
     expect(useApp.getState().notice?.text).toBe('Não foi possível abrir em tela cheia.')
   })
 })
+
+describe('grade centralizada com tamanho automático', () => {
+  /** Simula a área medida da grade (o jsdom não tem layout nem ResizeObserver). */
+  function withArea(width: number, height: number): () => void {
+    const observers: Array<() => void> = []
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(cb: () => void) {
+          observers.push(cb)
+        }
+        observe(): void {}
+        disconnect(): void {}
+      }
+    )
+    const w = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(width)
+    const h = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(height)
+    return () => {
+      w.mockRestore()
+      h.mockRestore()
+      vi.unstubAllGlobals()
+    }
+  }
+  const grid = (): HTMLElement => screen.getByText('Ana').closest('[data-tile-grid]') as HTMLElement
+
+  it('centraliza e calcula o tamanho dos quadros pelo espaço: 2 pessoas numa área larga = lado a lado, grandes', () => {
+    const restore = withArea(1200, 500)
+    try {
+      render(<VoiceGrid members={[state('eu'), state('ana')]} />)
+      const el = grid()
+      expect(el.dataset.columns).toBe('2')
+      expect(el.style.getPropertyValue('--tile-w')).toBe('592px') // (1200 - 16) / 2
+      expect(el.className).toContain('justify-center')
+      expect(el.className).toContain('[align-content:safe_center]')
+    } finally {
+      restore()
+    }
+  })
+
+  it('no painel da chamada (sem altura definida) os quadros ficam lado a lado até o tamanho máximo', () => {
+    const restore = withArea(1000, 0)
+    try {
+      render(<VoiceGrid members={[state('eu'), state('ana')]} fill={false} />)
+      expect(grid().dataset.columns).toBe('2')
+      expect(grid().style.getPropertyValue('--tile-w')).toBe('320px')
+    } finally {
+      restore()
+    }
+  })
+
+  it('antes de medir (ou sem ResizeObserver) usa um tamanho padrão, sem quebrar', () => {
+    render(<VoiceGrid members={[state('eu'), state('ana')]} />)
+    expect(grid().dataset.columns).toBeUndefined()
+    expect(grid().className).toContain('[&>*]:w-[var(--tile-w,240px)]')
+  })
+})

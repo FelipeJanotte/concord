@@ -1,6 +1,4 @@
 // @vitest-environment jsdom
-// Botão de atualizar o app na barra de úteis (A13): só com versão nova, acima do "Início"; baixando não clica,
-// pronta reinicia e instala.
 import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -10,7 +8,6 @@ import { updatesEnv } from '@/lib/actions/updates'
 import { initialState, useApp } from '@/store'
 import { UtilityRail } from './UtilityRail'
 
-// o tooltip do Radix mede o botão ao abrir (passar o mouse no clique); o jsdom não tem ResizeObserver
 globalThis.ResizeObserver ??= class {
   observe() {}
   unobserve() {}

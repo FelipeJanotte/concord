@@ -76,7 +76,7 @@ export function CallPanel({ dm }: { dm: DmEntry }) {
     <Frame>
       <div className="max-h-[50vh] overflow-y-auto p-4">
         {members.length > 0 ? (
-          <VoiceGrid members={members} />
+          <VoiceGrid members={members} fill={false} />
         ) : (
           <p className="py-6 text-center text-muted-foreground">Ninguém na chamada ainda.</p>
         )}
