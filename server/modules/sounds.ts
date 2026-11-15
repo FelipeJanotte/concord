@@ -5,7 +5,7 @@
  *   `X-Sound-Name`, `X-Sound-Emoji`. Tipo pelos bytes (MP3/OGG/WAV/WebM) e duração
  *   lida do arquivo (até 5 s). Limites: sons por conta e no total.
  * - `GET /sounds/<id>`: link assinado por conta (o mesmo esquema dos anexos).
- * - `sound:play`: exige estar na sala e poder falar nela (`speak`); 1 a cada 3 s por conta
+ * - `sound:play`: exige estar na sala e poder falar nela (`speak`, sem silêncio de moderador, B6); 1 a cada 3 s por conta
  *   e nunca por cima do som anterior da mesma conta; `sound:played` só para a sala.
  * - `sound:delete`: o autor ou quem tem `manageMessages`.
  * Os bytes ficam em DATA_DIR/sounds (fora da pasta dos anexos, que tem limpeza própria).
@@ -32,7 +32,7 @@ import { countSounds, deleteSound, findSound, insertSound, listSounds } from '..
 import { DuplicateError } from '../repo/util'
 import { diskStorage } from '../storage'
 import { audioDurationMs, sniffAudio } from '../storage/audio'
-import { voiceChannelOf, voiceSocketsIn } from './voice'
+import { isServerMuted, voiceChannelOf, voiceSocketsIn } from './voice'
 
 export const soundStorage = diskStorage(SOUND_DIR)
 
@@ -216,6 +216,8 @@ export const soundsModule: ServerModule = {
         if (!(await allowed(user.accountId, 'speak', channelId))) {
           return ack(fail('Você não tem permissão para falar nesta sala'))
         }
+        // silenciado por um moderador (B6) não fala nem toca sons, em nenhuma sala
+        if (isServerMuted(user.accountId)) return ack(fail('Um moderador silenciou você nas salas de voz'))
         const stored = typeof payload.soundId === 'string' ? await findSound(payload.soundId) : undefined
         if (!stored) return ack(fail('Som não encontrado'))
         const now = Date.now()

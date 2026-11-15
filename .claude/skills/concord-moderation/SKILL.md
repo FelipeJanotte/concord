@@ -8,7 +8,8 @@ description: Como funciona a moderação do Concord (v2, B6) — expulsar da voz
 Três ações para manter a comunidade em ordem, todas decididas no **servidor** (a tela só esconde o que daria erro):
 
 1. **Expulsar da voz:** tira uma conexão da sala de voz (e da sala do LiveKit). Ela pode voltar, se tiver `connect`.
-2. **Silenciar pelo servidor ("Silenciar para todos"):** a conta não fala em nenhuma sala até alguém tirar. Diferente
+2. **Silenciar pelo servidor ("Silenciar para todos"):** a conta não fala nem toca efeitos sonoros
+   (`sound:play` recusa, skill `concord-sounds`) em nenhuma sala até alguém tirar. Diferente
    do "Silenciar" da B4, que é só para mim e local.
 3. **Apagar mensagem:** a própria, ou de outra pessoa com `manageMessages`. Os anexos vão junto (banco e disco).
 

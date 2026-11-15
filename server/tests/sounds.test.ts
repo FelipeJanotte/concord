@@ -173,6 +173,21 @@ describe('tocar na sala', () => {
     })
   })
 
+  it('silenciado por um moderador (B6) não toca sons; tirar o silêncio libera', async () => {
+    const owner = await server.asOwner()
+    const a = await user()
+    const r = await room()
+    await join(a, r.id)
+    const sound = await soundOk(a)
+    expect(await owner.socket.emitWithAck('moderation:voice-mute', { accountId: a.account.id, muted: true })).toEqual({ ok: true })
+    expect(await a.socket.emitWithAck('sound:play', { channelId: r.id, soundId: sound.id })).toEqual({
+      ok: false,
+      error: 'Um moderador silenciou você nas salas de voz'
+    })
+    expect(await owner.socket.emitWithAck('moderation:voice-mute', { accountId: a.account.id, muted: false })).toEqual({ ok: true })
+    expect(await a.socket.emitWithAck('sound:play', { channelId: r.id, soundId: sound.id })).toEqual({ ok: true })
+  })
+
   it('não toca por cima do próprio som anterior', async () => {
     const a = await user()
     const r = await room()
