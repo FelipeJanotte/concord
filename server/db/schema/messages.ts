@@ -25,7 +25,14 @@ export const messages = pgTable(
     kind: text('kind').notNull().default('text'),
     /** resultado tipado da ferramenta; só (e sempre) em kind = 'tool' */
     tool: jsonb('tool').$type<ToolPayload>(),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    /** última edição pelo autor (A15); null = nunca editada */
+    editedAt: timestamp('edited_at', { withTimezone: true }),
+    /**
+     * mensagem que esta responde (B18), do mesmo canal. Sem chave estrangeira de propósito: se a
+     * original for apagada, o id fica e a leitura mostra "mensagem apagada".
+     */
+    replyToId: uuid('reply_to_id')
   },
   (t) => [
     // Vazio é permitido para mensagem só com anexos (o servidor exige texto ou anexo).

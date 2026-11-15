@@ -3,12 +3,13 @@ import { Paperclip, SendHorizontal } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { MESSAGE_MAX_LENGTH, type Channel } from '@shared/types'
 import { Button } from '@/components/ui/button'
-import { addFiles, notifyTyping, sendMessage } from '@/lib/client'
+import { addFiles, cancelReply, editLastMessage, notifyTyping, sendMessage } from '@/lib/client'
 import { chatLabel } from '@/lib/dms'
 import { useCan } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
 import { AttachmentPreview } from './AttachmentPreview'
+import { ReplyBanner } from './ReplyPreview'
 
 const EMPTY: never[] = []
 
@@ -24,6 +25,12 @@ export function Composer({ channel }: { channel: Channel }) {
   const allowedAttach = useCan('attach', channel.id)
   const label = useApp((s) => chatLabel(channel, s.dms))
   const canSend = allowedSend && !uploading && (!!value.trim() || ready)
+  const replying = useApp((s) => !!s.replyingTo[channel.id])
+
+  // clicou em "Responder": o campo ganha o foco para já escrever
+  useEffect(() => {
+    if (replying) ref.current?.focus()
+  }, [replying])
 
   useEffect(() => {
     setValue('')
@@ -46,6 +53,12 @@ export function Composer({ channel }: { channel: Channel }) {
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault()
       send()
+    } else if (e.key === 'Escape' && replying) {
+      e.preventDefault()
+      cancelReply(channel.id)
+    } else if (e.key === 'ArrowUp' && !value && editLastMessage(channel.id)) {
+      // seta para cima no campo vazio: edita a minha última mensagem (A15)
+      e.preventDefault()
     }
   }
 
@@ -69,7 +82,8 @@ export function Composer({ channel }: { channel: Channel }) {
 
   return (
     <div className="shrink-0 px-4">
-      <div className="rounded-lg bg-composer">
+      <ReplyBanner channelId={channel.id} />
+      <div className={cn('rounded-lg bg-composer', replying && 'rounded-t-none')}>
         <AttachmentPreview channelId={channel.id} uploads={uploads} />
         <div className="flex items-end gap-2 py-1.5 pr-1.5 pl-2">
           {allowedAttach && (

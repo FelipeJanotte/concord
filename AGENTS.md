@@ -48,7 +48,7 @@ Gerenciador de pacotes: **npm** (não use pnpm/yarn; o projeto foi revertido do 
 | `src/renderer/src/components/rail/`, `home/`, `friends/`, `dm/`, `tools/` | Navegação (B7): `UtilityRail` (barra de úteis), `HomeSidebar`, `FriendsView` (abas e adicionar), `DmList`, registro de ferramentas (`tools/registry.ts`) e `ToolView`. Em `tools/` também os painéis e cartões no chat das ferramentas (B10: `*Panel.tsx`, `ToolResultCard`, `TeamResultCard` com "Mover para as salas", `PollCard`, `shared.tsx`, `people.tsx`). Estado em `store/navigation.ts`; helpers em `lib/dms.ts` e `lib/home.ts`. |
 | `src/renderer/src/components/call/` | Chamadas (B8): `CallButton` (ligar), `CallPanel` (chamando/tocando/em andamento no topo da conversa) e `IncomingCall` (cartão no canto). Toque em `lib/sounds/ringtone.ts`; estado em `store/calls.ts`. |
 | `src/renderer/src/components/settings/` | Administração (B5): `CommunitySettingsDialog` (cargos e membros), `ChannelPermissionsDialog` (regras do canal), `RoleDot`. |
-| `src/renderer/src/components/chat/` | `Composer` (texto + clipe/colar), `AttachmentPreview`, `MessageAttachments` (imagem no chat / cartão de arquivo), `ImageLightbox`, `MessageActions` (apagar mensagem, B6). Arrastar e soltar fica no `ChatView`. |
+| `src/renderer/src/components/chat/` | `Composer` (texto + clipe/colar), `AttachmentPreview`, `MessageAttachments` (imagem no chat / cartão de arquivo), `ImageLightbox`, `MessageActions` (responder, editar e apagar), `MessageEditor` (editar no lugar, A15) e `ReplyPreview` (citação e faixa "Respondendo a", B18). Arrastar e soltar fica no `ChatView`. |
 | `src/renderer/src/lib/core.ts` | Socket atual (`getSocket`/`requireSocket`), `set`/`get` da store e `notify`. Usado pelas ações. |
 | `src/renderer/src/lib/voice.ts` | `VoiceClient` sobre `livekit-client`: conecta na sala com o token do servidor, mute/deafen, quem está falando (`ActiveSpeakersChanged`). |
 | `src/renderer/src/lib/voice-permissions.ts` | `permissionsFrom`: o que o LiveKit deixa esta conexão publicar (microfone com `speak`, tela com `share`), usado quando as permissões mudam com a pessoa na sala. |
@@ -119,6 +119,7 @@ Leia a skill certa antes de mexer em cada área (ficam em `.claude/skills/<nome>
 - `concord-architecture` — visão completa: fluxo de dados, todos os eventos, estado, ciclo de conexão.
 - `concord-add-feature` — passo a passo para adicionar uma funcionalidade de ponta a ponta, com exemplo.
 - `concord-accounts` — contas: cadastro/login com e-mail e senha, sessões, login com Google, perfil `nome#id` e foto, regra do id único e imutável.
+- `concord-messages` — mensagens: envio, histórico, editar (A15) e responder citando (B18).
 - `concord-permissions` — cargos e permissões (v2): regra de cálculo compartilhada, @todos, dona, regras por canal, hierarquia, eventos `role:*` e o que cada handler bloqueia.
 - `concord-friends` — amizades (v3): pedidos por `nome#id`, bloqueio, online só para amigos e os eventos `friend:*`.
 - `concord-dms` — conversas privadas (v3): canal `dm` com dois membros, quem pode abrir, acesso só dos membros, bloqueio e os eventos `dm:*`.

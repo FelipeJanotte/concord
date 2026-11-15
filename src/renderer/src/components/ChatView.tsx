@@ -11,6 +11,8 @@ import { CallPanel } from './call/CallPanel'
 import { Composer } from './chat/Composer'
 import { MessageActions } from './chat/MessageActions'
 import { MessageAttachments } from './chat/MessageAttachments'
+import { MessageEditor } from './chat/MessageEditor'
+import { messageElementId, ReplyQuote } from './chat/ReplyPreview'
 import { ToolResultCard } from './tools/ToolResultCard'
 import { UserAvatar } from './UserAvatar'
 
@@ -200,12 +202,24 @@ function DayDivider({ ts }: { ts: number }) {
 }
 
 function MessageBody({ message }: { message: Message }) {
+  const editing = useApp((s) => s.editingMessageId === message.id)
   // resultado de ferramenta (v4): cartão próprio em vez do texto por extenso
   if (message.kind === 'tool' && message.tool) return <ToolResultCard message={message} />
   return (
     <>
-      {message.content && (
-        <p className="text-[15px] leading-[22px] break-words whitespace-pre-wrap">{message.content}</p>
+      {editing ? (
+        <MessageEditor message={message} />
+      ) : (
+        message.content && (
+          <p className="text-[15px] leading-[22px] break-words whitespace-pre-wrap">
+            {message.content}
+            {message.editedAt && (
+              <span className="ml-1 text-[10px] text-muted-foreground" title={`Editada em ${formatTimestamp(message.editedAt)}`}>
+                (editada)
+              </span>
+            )}
+          </p>
+        )
       )}
       <MessageAttachments attachments={message.attachments ?? []} />
     </>
@@ -217,9 +231,10 @@ function MessageItem({ message, compact }: { message: Message; compact: boolean 
   const live = useApp((s) => (compact ? undefined : s.users.find((u) => u.accountId === message.author.accountId)))
   const author = live ?? message.author
 
-  if (compact) {
+  // resposta (B18) nunca fica compacta: a citação vai em cima do nome
+  if (compact && !message.replyTo) {
     return (
-      <div className="group relative flex px-4 py-0.5 hover:bg-black/[0.06]">
+      <div id={messageElementId(message.id)} className="group relative flex px-4 py-0.5 transition-colors hover:bg-black/[0.06] data-[highlight=true]:bg-primary/15">
         <MessageActions message={message} />
         <span className="w-14 shrink-0 pt-1 pr-2 text-right text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100">
           {formatTime(message.createdAt)}
@@ -232,10 +247,11 @@ function MessageItem({ message, compact }: { message: Message; compact: boolean 
   }
 
   return (
-    <div className="group relative mt-4 flex gap-4 px-4 py-0.5 hover:bg-black/[0.06]">
+    <div id={messageElementId(message.id)} className="group relative mt-4 flex gap-4 px-4 py-0.5 transition-colors hover:bg-black/[0.06] data-[highlight=true]:bg-primary/15">
       <MessageActions message={message} />
-      <UserAvatar user={author} size="lg" className="mt-0.5" />
+      <UserAvatar user={author} size="lg" className={message.replyTo ? 'mt-5' : 'mt-0.5'} />
       <div className="min-w-0 flex-1">
+        {message.replyTo && <ReplyQuote reply={message.replyTo} />}
         <div className="flex items-baseline gap-2">
           <span
             className="font-medium"
