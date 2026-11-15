@@ -1,10 +1,10 @@
 /**
  * Painel da chamada no topo da conversa privada (B8): chamando / tocando / em andamento.
  * Em andamento mostra a grade da sala da conversa (mesma `VoiceGrid` das salas, com a tela
- * compartilhada) e os controles de microfone, áudio, tela e desligar.
+ * compartilhada) e os controles de microfone, áudio, tela, efeitos sonoros e desligar.
  */
 import type { ReactNode } from 'react'
-import { AudioLines, HeadphoneOff, Headphones, Mic, MicOff, MonitorOff, MonitorUp, Phone, PhoneOff } from 'lucide-react'
+import { AudioLines, HeadphoneOff, Headphones, Mic, MicOff, MonitorOff, MonitorUp, Music, Phone, PhoneOff } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import type { DmEntry } from '@shared/types'
 import { Button } from '@/components/ui/button'
@@ -16,6 +16,7 @@ import {
   joinVoice,
   notify,
   openDeviceSettings,
+  openSoundboard,
   toggleDeafen,
   toggleMute,
   toggleScreenShare
@@ -25,6 +26,7 @@ import { UserAvatar } from '../UserAvatar'
 import { ControlButton } from '../VoiceView'
 import { PushToTalkHint } from '../voice/PushToTalk'
 import { ScreenPicker } from '../voice/ScreenPicker'
+import { Soundboard, SoundsPlayingBar } from '../voice/Soundboard'
 import { VoiceGrid } from '../voice/VoiceGrid'
 
 function report(action: Promise<void>, fallback: string): void {
@@ -80,6 +82,7 @@ export function CallPanel({ dm }: { dm: DmEntry }) {
           <p className="py-6 text-center text-muted-foreground">Ninguém na chamada ainda.</p>
         )}
       </div>
+      {inRoom && <SoundsPlayingBar />}
       {inRoom && <PushToTalkHint />}
       <div className="flex items-center justify-center gap-3 pb-4">
         {inRoom ? (
@@ -93,6 +96,7 @@ export function CallPanel({ dm }: { dm: DmEntry }) {
         )}
       </div>
       <ScreenPicker />
+      <Soundboard />
     </Frame>
   )
 }
@@ -123,6 +127,10 @@ function InCallControls({ onHangUp }: { onHangUp: () => void }) {
           {sharing ? <MonitorOff /> : <MonitorUp />}
         </ControlButton>
       )}
+      {/* efeitos sonoros da comunidade também na chamada (só a outra pessoa ouve) */}
+      <ControlButton label="Efeitos sonoros" onClick={openSoundboard}>
+        <Music />
+      </ControlButton>
       <ControlButton label="Configurações de voz" onClick={openDeviceSettings}>
         <AudioLines />
       </ControlButton>

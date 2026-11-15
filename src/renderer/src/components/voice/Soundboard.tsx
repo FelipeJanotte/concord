@@ -8,6 +8,7 @@ import { closeSoundboard, deleteSound, playSound } from '@/lib/client'
 import { useCan } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
+import { findDm } from '@/lib/dms'
 import { SoundUploadForm } from './SoundUploadForm'
 
 export function Soundboard() {
@@ -16,6 +17,8 @@ export function Soundboard() {
   const loaded = useApp((s) => s.soundsLoaded)
   const inRoom = useApp((s) => !!s.myVoiceChannelId)
   const canSpeak = useApp((s) => s.voiceCanSpeak)
+  // na chamada de uma conversa privada só a outra pessoa ouve
+  const inCall = useApp((s) => !!s.myVoiceChannelId && !!findDm(s.dms, s.myVoiceChannelId))
   const [error, setError] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
 
@@ -44,7 +47,9 @@ export function Soundboard() {
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>Efeitos sonoros</DialogTitle>
-          <DialogDescription>Clique num som para tocar para todos na sala. Cada som tem até 5 segundos.</DialogDescription>
+          <DialogDescription>
+            Clique num som para tocar para {inCall ? 'a outra pessoa da chamada' : 'todos na sala'}. Cada som tem até 5 segundos.
+          </DialogDescription>
         </DialogHeader>
 
         {uploading ? (

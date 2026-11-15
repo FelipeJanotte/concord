@@ -1,6 +1,6 @@
 ---
 name: concord-sounds
-description: Como funcionam os efeitos sonoros da comunidade (soundboard, A10 servidor / B17 tela) — envio por POST /sounds (até 512 KB e 5 s, tipo pelos bytes, duração com music-metadata), coleção com links assinados, sound:play só para a sala de voz, regra de não tocar por cima, apagar pelo autor ou manageMessages. Use ao mexer em server/modules/sounds.ts, server/repo/sounds.ts, server/db/schema/sounds.ts, server/storage/audio.ts, src/shared/types/sounds.ts, na tela do soundboard (B17: components/voice/Soundboard.tsx, SoundUploadForm.tsx, EmojiPicker.tsx, lib/actions/sounds.ts, store/sounds.ts, botão no VoiceView), ou ao investigar som recusado, som que não toca para alguém ou "Espere o som anterior terminar".
+description: Como funcionam os efeitos sonoros da comunidade (soundboard, A10 servidor / B17 tela) — envio por POST /sounds (até 512 KB e 5 s, tipo pelos bytes, duração com music-metadata), coleção com links assinados, sound:play só para a sala de voz, regra de não tocar por cima, apagar pelo autor ou manageMessages. Use ao mexer em server/modules/sounds.ts, server/repo/sounds.ts, server/db/schema/sounds.ts, server/storage/audio.ts, src/shared/types/sounds.ts, na tela do soundboard (B17: components/voice/Soundboard.tsx, SoundUploadForm.tsx, EmojiPicker.tsx, lib/actions/sounds.ts, store/sounds.ts, botão no VoiceView e no painel da chamada privada, CallPanel), ou ao investigar som recusado, som que não toca para alguém ou "Espere o som anterior terminar".
 ---
 
 # Efeitos sonoros (soundboard)
@@ -55,6 +55,12 @@ cada app baixa GET /sounds/<id>?a&e&s (link assinado) e toca localmente
 Botão **"Efeitos sonoros"** (ícone de nota) nos controles da sala de voz, só para quem está conectado. Abre a
 janela com a grade da coleção; clicar num som toca para todos na sala.
 
+**Nas chamadas privadas** (B8) o mesmo botão fica nos controles do painel da chamada (`components/call/CallPanel.tsx`),
+com o indicador "fulano tocou X" acima deles. A coleção é a mesma da comunidade e o som vai para a sala de voz da
+conversa (o `sound:play` usa `myVoiceChannelId`): só a outra pessoa ouve. O servidor não precisou mudar: numa conversa
+o `speak` vale para os dois membros sem bloqueio (`allowed` → `allowedInDm`). A janela diz "para a outra pessoa da
+chamada" em vez de "para todos na sala".
+
 | Arquivo | Papel |
 |---|---|
 | `src/renderer/src/store/sounds.ts` | `sounds` (ordem de nome), `soundsLoaded`, `soundsPlaying` (conta → `{ soundId, by, until }`, o indicador) e `soundboardOpen`. |
@@ -83,8 +89,8 @@ nesta sala, então não toca sons." (botões desligados). Lixeira só para quem 
 | `server/storage/audio.test.ts` | Tipos pelos bytes (e o que não é áudio), duração de WAV e arquivo corrompido → null. |
 | `server/repo/sounds.test.ts` | Gravar/listar/apagar/contar, nome repetido e os `check` do banco. |
 | `src/renderer/src/lib/actions/sounds.test.ts` | App: coleção (ordem, criado/apagado, recarregar ao abrir), `sound:played` (link, saída, volume por pessoa, deafen, silenciado, outra sala, indicador até acabar), tocar/apagar e enviar (nome sugerido, tamanho, duração, token, recusas, erro do servidor). |
-| `src/renderer/src/components/voice/soundboard.test.tsx` | Tela: grade (tocar, erro, bloqueios, vazia), apagar (só o meu; `manageMessages`), enviar (prévia, nome, emoji pela grade, sem emoji, recusa local, erro), seletor de emoji (escolher/tirar, categorias, lista válida e sem repetir) e indicador. `VoiceView.test.tsx`: botão e indicador na sala. |
-| `server/tests/sounds.test.ts` | Servidor real com LiveKit falso: envio e recusas (5 s, 512 KB, não-áudio, nome, emoji, limite por conta, CORS), lista e download assinados, tocar só para a sala, fora da sala, sobreposição, sem `speak`, apagar (autor, outra pessoa, `manageMessages`). |
+| `src/renderer/src/components/voice/soundboard.test.tsx` | Tela: grade (tocar, erro, bloqueios, vazia), apagar (só o meu; `manageMessages`), enviar (prévia, nome, emoji pela grade, sem emoji, recusa local, erro), seletor de emoji (escolher/tirar, categorias, lista válida e sem repetir) e indicador. `VoiceView.test.tsx`: botão e indicador na sala. `call/call.test.tsx`: botão no painel da chamada, texto da janela e o som indo para a sala da conversa. |
+| `server/tests/sounds.test.ts` | Servidor real com LiveKit falso: envio e recusas (5 s, 512 KB, não-áudio, nome, emoji, limite por conta, CORS), lista e download assinados, tocar só para a sala, na chamada de uma conversa privada (só a outra pessoa; bloqueio recusa), fora da sala, sobreposição, sem `speak`, apagar (autor, outra pessoa, `manageMessages`). |
 
 Áudios de teste são gerados na hora (`server/tests/audio-fixtures.ts`, `wav(segundos)`), sem binários no repositório.
 
@@ -97,4 +103,4 @@ nesta sala, então não toca sons." (botões desligados). Lixeira só para quem 
 | "Espere o som anterior terminar" | Regra de sobreposição por conta (dura o tempo do som). |
 | Som tocou para os outros mas não para mim | Deafen ligado, a pessoa está silenciada só para mim (botão direito) ou o volume dela está em 0. |
 | Botões da janela desligados | Fora da sala ou sem `speak` nela (a janela diz qual). |
-| Pendente | Cortar o áudio para 5 s antes de enviar (hoje o arquivo longo é recusado) e tocar nas chamadas privadas (o botão só existe na sala da comunidade). |
+| Pendente | Cortar o áudio para 5 s antes de enviar (hoje o arquivo longo é recusado). |

@@ -168,3 +168,17 @@ describe('indicadores', () => {
     expect(useApp.getState().homeView).toEqual({ kind: 'dm', channelId: 'dm1' })
   })
 })
+
+describe('efeitos sonoros na chamada', () => {
+  it('"Efeitos sonoros" no painel abre a grade, que fala da outra pessoa da chamada e toca na sala da conversa', async () => {
+    const sound = { id: 's1', name: 'Buzina', emoji: '📯', uploaderId: 'ana', durationMs: 1000, url: '/sounds/s1', createdAt: 0 }
+    socket.replyTo('sound:list', () => [sound])
+    socket.replyTo('sound:play', () => ({ ok: true }))
+    setup({ calls: { dm1: call({ status: 'active' }) }, myVoiceChannelId: 'dm1', voice: [inRoom(me), inRoom(ana)] })
+    ui(<CallPanel dm={dm} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Efeitos sonoros' }))
+    expect(screen.getByText(/a outra pessoa da chamada/)).toBeTruthy()
+    await userEvent.click(await screen.findByRole('button', { name: 'Tocar Buzina' }))
+    expect(socket.sent('sound:play')).toEqual([[{ channelId: 'dm1', soundId: 's1' }]])
+  })
+})

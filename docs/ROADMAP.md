@@ -296,7 +296,7 @@ Itens pequenos que ficaram anotados nas skills (cada um com a skill da área atu
 |---|---|---|---|
 | Interruptor para desligar as notificações no app e som por tipo | A | B9 | `concord-notifications` |
 | Cortar o áudio para 5 s antes de enviar (em vez de recusar) | A | B17 | `concord-sounds` |
-| Soundboard nas chamadas privadas (botão no painel da chamada) | A | B17 | `concord-sounds` |
+| Soundboard nas chamadas privadas (botão no painel da chamada) ✅ (feita pelo Dev B; branch `v6/soundboard-chamadas`) | A | B17 | `concord-sounds` |
 | Várias lanes preferidas por pessoa no sorteador (o contrato já aceita a lista) | A | B10 | `concord-tools` |
 | Atalho no `+` do composer abrindo o painel das ferramentas | A | v4 | `concord-tools` |
 | Overlay: escolher outro atalho, arrastar a posição e acompanhar a troca de tema ao vivo | A | B15 | `concord-overlay` |

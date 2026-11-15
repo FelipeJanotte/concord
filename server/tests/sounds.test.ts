@@ -173,6 +173,31 @@ describe('tocar na sala', () => {
     })
   })
 
+  it('na chamada de uma conversa privada: só a outra pessoa ouve; com bloqueio, recusa', async () => {
+    const a = await user()
+    const b = await user()
+    const c = await user()
+    expect((await a.socket.emitWithAck('friend:request', `${b.name}#${b.tag}`)).ok).toBe(true)
+    expect((await b.socket.emitWithAck('friend:accept', a.account.id)).ok).toBe(true)
+    const opened = await a.socket.emitWithAck('dm:open', b.account.id)
+    if (!opened.ok) throw new Error(opened.error)
+    const dm = opened.dm.channel.id
+    await join(a, dm)
+    await join(b, dm)
+    await join(c, (await room()).id)
+    const sound = await soundOk(a)
+
+    const got = waitFor(b.socket, 'sound:played', (p) => p.soundId === sound.id && p.channelId === dm)
+    const notOther = expectNoEvent(c.socket, 'sound:played')
+    expect(await a.socket.emitWithAck('sound:play', { channelId: dm, soundId: sound.id })).toEqual({ ok: true })
+    await got
+    await notOther
+
+    // bloquear tira os dois da sala da conversa: tocar ali passa a ser recusado
+    expect((await b.socket.emitWithAck('friend:block', a.account.id)).ok).toBe(true)
+    expect(await a.socket.emitWithAck('sound:play', { channelId: dm, soundId: sound.id })).toMatchObject({ ok: false })
+  })
+
   it('não toca por cima do próprio som anterior', async () => {
     const a = await user()
     const r = await room()
