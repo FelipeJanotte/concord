@@ -183,7 +183,7 @@ describe('ligação com os eventos', () => {
 })
 
 describe('clique numa menção de canal (B19)', () => {
-  it('abre o canal de texto; canal que sumiu ou de voz não faz nada', () => {
+  it('abre o canal de texto; sala de voz abre a sala com o chat; canal que sumiu não faz nada', () => {
     useApp.setState({
       ...initialState,
       self: me,
@@ -193,9 +193,11 @@ describe('clique numa menção de canal (B19)', () => {
         { id: 'sala', name: 'Sala', type: 'voice', createdAt: 0 }
       ]
     })
-    openNotificationTarget({ kind: 'channel', channelId: 'sala' })
     openNotificationTarget({ kind: 'channel', channelId: 'sumiu' })
     expect(useApp.getState().section).toBe('home')
+    openNotificationTarget({ kind: 'channel', channelId: 'sala' })
+    expect(useApp.getState()).toMatchObject({ section: 'community', view: { kind: 'voice', channelId: 'sala' }, voiceChatOpen: true })
+    expect(useApp.getState().myVoiceChannelId).toBeNull() // não entra na voz
     openNotificationTarget({ kind: 'channel', channelId: 'geral' })
     expect(useApp.getState()).toMatchObject({ section: 'community', view: { kind: 'text', channelId: 'geral' } })
   })

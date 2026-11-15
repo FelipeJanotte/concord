@@ -36,7 +36,8 @@ export function messageNotification(message: Message, st: St, focused: boolean):
   if (mode === 'mentions' && !mentionsAccount(message.content, st.self.accountId)) return null
   const channel = st.channels?.find((c) => c.id === message.channelId)
   return {
-    title: channel ? `${message.author.name} em #${channel.name}` : message.author.name,
+    // chat da sala de voz: o nome sem "#" (como aparece na barra lateral)
+    title: channel ? `${message.author.name} em ${channel.type === 'voice' ? channel.name : `#${channel.name}`}` : message.author.name,
     body: messagePreview(message),
     target: { kind: 'channel', channelId: message.channelId }
   }
