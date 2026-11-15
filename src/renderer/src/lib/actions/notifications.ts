@@ -8,6 +8,7 @@ import type { NativeNotification, NotificationsBridge, NotificationTarget } from
 import { useApp } from '@/store'
 import { badgeCount, callNotification, drawBadge, friendRequestNotification, messageNotification } from '../notifications'
 import { get, type AppSocket } from '../core'
+import { selectTextChannel } from './channels'
 import { openDmChat, showFriends } from './navigation'
 
 export const notificationEnv = {
@@ -23,7 +24,10 @@ function show(n: NativeNotification | null): void {
 export function openNotificationTarget(target: NotificationTarget | null): void {
   if (!target) return
   if (target.kind === 'friends') showFriends()
-  else if (get().dms.some((d) => d.channel.id === target.channelId)) openDmChat(target.channelId)
+  // menção num canal da comunidade (B19): abre o canal, se eu ainda vejo
+  else if (target.kind === 'channel') {
+    if (get().channels.some((c) => c.id === target.channelId && c.type === 'text')) selectTextChannel(target.channelId)
+  } else if (get().dms.some((d) => d.channel.id === target.channelId)) openDmChat(target.channelId)
 }
 
 let lastBadge = -1

@@ -1,6 +1,6 @@
 ---
 name: concord-messages
-description: Como funcionam as mensagens do Concord — envio (message:send, fila por conexão, limites), histórico paginado (message:history), editar a própria mensagem (A15: message:edit/message:edited, edited_at, "(editada)", edição no lugar com Enter/Esc e seta para cima) responder citando (B18: replyToId, ReplyPreview pronto do servidor, faixa "Respondendo a", citação que rola até a original, "mensagem apagada") e reações (A16: message:react/message:reactions, tabela message_reactions, chips e seletor de emoji). Use ao mexer em server/modules/messages.ts, server/repo/messages.ts, server/db/schema/messages.ts, src/shared/types/message.ts, lib/actions/messages.ts, store/messages.ts, server/modules/reactions.ts, server/repo/reactions.ts, src/shared/types/reactions.ts, components/chat/{Composer,MessageActions,MessageEditor,ReplyPreview,Reactions}.tsx ou no MessageBody/MessageItem do ChatView, ou ao investigar mensagem que não chega, "(editada)" que não aparece, "Você só pode editar as suas mensagens" ou citação errada.
+description: Como funcionam as mensagens do Concord — envio (message:send, fila por conexão, limites), histórico paginado (message:history), editar a própria mensagem (A15: message:edit/message:edited, edited_at, "(editada)", edição no lugar com Enter/Esc e seta para cima) responder citando (B18: replyToId, ReplyPreview pronto do servidor, faixa "Respondendo a", citação que rola até a original, "mensagem apagada") reações (A16: message:react/message:reactions, tabela message_reactions, chips e seletor de emoji) e menções @nome (B19: <@id>, autocompletar no campo, @todos com mentionEveryone, destaque e notificação em canal). Use ao mexer em server/modules/messages.ts, server/repo/messages.ts, server/db/schema/messages.ts, src/shared/types/message.ts, lib/actions/messages.ts, store/messages.ts, server/modules/reactions.ts, server/repo/reactions.ts, src/shared/types/reactions.ts, src/shared/types/mentions.ts, lib/mentions.ts, components/chat/{Composer,MessageActions,MessageEditor,ReplyPreview,Reactions,MessageText,MentionMenu}.tsx ou no MessageBody/MessageItem do ChatView, ou ao investigar mensagem que não chega, "(editada)" que não aparece, "Você só pode editar as suas mensagens" ou citação errada.
 ---
 
 # Mensagens
@@ -72,6 +72,30 @@ Ordem: emojis na ordem em que apareceram na mensagem; contas na ordem em que rea
 vê sem vazar, limite de 20, sem `send`, cascade ao apagar) e `components/chat/reactions.test.tsx` (listener,
 liga/tira, quem reagiu, chips, seletor pela barra e pelo "+", Esc, erro, sem permissão).
 
+## Menções @nome (B19)
+
+No texto a menção é **`<@id-da-conta>`** (o nome muda, o id não); `<@todos>` avisa todo mundo que vê o canal.
+Na tela e nos campos a pessoa vê e digita "@Nome".
+
+| Arquivo | Papel |
+|---|---|
+| `src/shared/types/mentions.ts` | `MENTION_SOURCE` (regex), `EVERYONE_TOKEN`, `mentionToken`, `parseMentions` (até 20 contas), `mentionsAccount`, `mentionsToPlain` ("@Nome"/"@alguém"), `Mention { accountId, name }`. `Message.mentions?` e `MessageEdited.mentions?`. |
+| `src/shared/types/permissions.ts` | Permissão global nova `mentionEveryone` ("Mencionar @todos"); o @todos não começa com ela. |
+| `server/modules/messages.ts` | `checkEveryone`: sem `mentionEveryone`, `<@todos>` vira texto comum "@todos" (no envio e na edição; em conversa privada sempre). O `message:new`/`message:edited` saem com `mentions` resolvidas. |
+| `server/repo/messages.ts` / `accounts.ts` | `resolveMentions` e `withMentions` (no histórico), `accountNames` (nome atual de cada conta; inexistente fica de fora). |
+| `src/renderer/src/lib/mentions.ts` | Puras: `splitMentions`, `candidatesFrom` (rótulo `@Nome`, ou `@Nome#tag` com nome repetido; `@todos` primeiro), `activeMentionQuery`, `filterCandidates`, `insertMention`, `fromEditable`/`toEditable` (campo ⇄ token). |
+| `components/chat/MentionMenu.tsx` | Lista acima do campo (clique por `mousedown` para não perder o foco). |
+| `components/chat/Composer.tsx` | Detecta o "@" antes do cursor, candidatos = online que veem o canal (menos eu; numa DM, a outra pessoa; `@todos` com permissão e fora de DM), setas/Enter/Tab/Esc, e no envio troca os rótulos escolhidos pelo token. Digitar "@Ana" sem escolher no menu fica texto comum. |
+| `components/chat/MessageText.tsx` | Desenha os tokens como "@Nome" (nome do servidor, senão de quem está online, senão "@alguém"); a menção a mim ou @todos fica mais forte. |
+| `components/ChatView.tsx` | Mensagem que me menciona (ou @todos, de outra pessoa) ganha a borda e o fundo de destaque. |
+| `components/chat/MessageEditor.tsx` / `ReplyPreview.tsx` | O editor mostra "@Nome" e salva o token; a citação e a faixa mostram "@Nome". |
+| `lib/notifications.ts` | Menção em canal da comunidade notifica fora de foco ("Ana em #geral"); clique abre o canal (alvo `channel`, B9). |
+
+Testes: `src/shared/types/mentions.test.ts`, `src/renderer/src/lib/mentions.test.ts`, `server/tests/mentions.test.ts`
+(nomes no envio, na edição e no histórico; id inexistente; @todos sem/com permissão e na edição) e
+`components/chat/mentions.test.tsx` (menu, envio com token, @todos com permissão, setas/Esc, DM, "@Nome",
+destaque, editar, notificação).
+
 ## Testes
 
 | Arquivo | Cobre |
@@ -88,4 +112,5 @@ liga/tira, quem reagiu, chips, seletor pela barra e pelo "+", Esc, erro, sem per
 | Citação não rola | A original não está carregada (role para cima para carregar mais) ou foi apagada. |
 | Resposta chegou sem citação | `replyToId` de outro canal ou inexistente: o servidor manda sem citação de propósito. |
 | Não consigo reagir | Sem `send` no canal (os chips ficam desligados) ou a mensagem já tem 20 emojis diferentes. |
-| Pendente | Histórico de edições, editar anexos e responder com menção automática (B19). |
+| Menção não avisou | Quem escreveu não escolheu no menu (ficou texto), a pessoa não vê o canal, ou é @todos sem a permissão `mentionEveryone` (vira texto). |
+| Pendente | Histórico de edições, editar anexos, responder já mencionando o autor e menção a cargo (@Moderadores). |

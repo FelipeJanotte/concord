@@ -13,7 +13,7 @@ da Home + chamadas tocando para mim).
 
 | Arquivo | Papel |
 |---|---|
-| `src/shared/notifications.ts` | Contrato da ponte (não é Socket.IO): `NativeNotification { title, body, target?, silent? }`, `NotificationTarget` (`dm` + `channelId` ou `friends`), limites de tamanho e `NotificationsBridge` (`show`, `setBadge`, `onClick`). |
+| `src/shared/notifications.ts` | Contrato da ponte (não é Socket.IO): `NativeNotification { title, body, target?, silent? }`, `NotificationTarget` (`dm` ou `channel` + `channelId`, ou `friends`), limites de tamanho e `NotificationsBridge` (`show`, `setBadge`, `onClick`). |
 | `src/main/notifications.ts` | Processo principal: `setupNotifications(getWindow)` registra os IPC `notify` e `badge`; `cleanNotification`/`cleanBadgeCount` validam o que vem do renderer. Mostra o `Notification` do Electron (guardado num `Set` até fechar, senão o clique se perde) e, no clique, restaura/foca a janela e manda `notification-click` com o alvo. |
 | `src/main/index.ts` | Guarda a janela principal (`mainWindow`) e chama `setupNotifications`. A permissão `notifications` já era liberada. |
 | `src/preload/index.ts` / `index.d.ts` | `window.api.notifications` (IPC `notify`, `badge` e o ouvinte de `notification-click`). |
@@ -24,7 +24,8 @@ da Home + chamadas tocando para mim).
 
 - **Só com a janela fora de foco** (`document.hasFocus()` falso). Com o app na frente, a própria tela já mostra o
   não lido, o cartão da chamada e o selo da Home.
-- **Mensagem:** só em conversa privada (`dm`) e de outra pessoa. Canais da comunidade não notificam (só a bolinha).
+- **Mensagem:** de outra pessoa, em conversa privada (`dm`) sempre; em canal da comunidade **só quando me menciona ou
+  é @todos** (B19, título "Ana em #geral", clique abre o canal: alvo `channel`). O resto fica só na bolinha.
   Título = nome da pessoa; texto = a mensagem (espaços juntos, até 120) ou "📎 N anexos". Clique abre a conversa.
 - **Chamada:** `call:updated` com `status: 'ringing'` e eu como `calleeId`. Notificação **sem som** do sistema (o app
   já toca o toque da B8). Clique abre a conversa (onde fica o "Atender").

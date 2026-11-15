@@ -130,3 +130,12 @@ describe('selo', () => {
     expect(app.setBadgeCount).toHaveBeenCalledWith(4)
   })
 })
+
+describe('alvo de canal (menção, B19)', () => {
+  it('aceita { kind: "channel", channelId }', () => {
+    expect(cleanNotification({ title: 'Ana em #geral', body: '@Eu', target: { kind: 'channel', channelId: 'c1' } })).toMatchObject({
+      target: { kind: 'channel', channelId: 'c1' }
+    })
+    expect(cleanNotification({ title: 'A', body: 'b', target: { kind: 'channel', channelId: 'x'.repeat(65) } })).not.toHaveProperty('target')
+  })
+})

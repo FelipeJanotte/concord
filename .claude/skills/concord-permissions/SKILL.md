@@ -29,7 +29,7 @@ cargos atribuídos; cada canal pode **liberar** ou **negar** permissões por car
 
 - **Globais:** `manageChannels` (criar/apagar canal, editar regras de canal; **sempre vê** todos os canais),
   `manageRoles` (cargos abaixo do seu), `manageMembers` (atribuir cargos abaixo do seu; silenciar/expulsar da voz na
-  B6), `manageMessages` (apagar mensagem de outras pessoas, B6).
+  B6), `manageMessages` (apagar mensagem de outras pessoas, B6), `mentionEveryone` (mencionar @todos, B19: sem ela o `<@todos>` vira texto comum).
 - **Por canal:** `view`, `send`, `attach`, `connect`, `speak`, `share`.
 - **@todos:** id fixo `EVERYONE_ROLE_ID` (`00000000-…`), posição 0, sempre existe, não pode ser apagado nem
   renomeado (só mudam as permissões). Numa comunidade nova tem todas as permissões **de canal** e nenhuma global.

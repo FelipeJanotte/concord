@@ -1,5 +1,5 @@
 // Histórico, envio de mensagens e "digitando".
-import { replyPreviewText, type Message } from '@shared/types'
+import { replyPreviewText, type Mention, type Message } from '@shared/types'
 import { omit } from '../utils'
 import { get, getSocket, notify, requireSocket, set, type AppSocket } from '../core'
 import { isChatOnScreen } from './navigation'
@@ -24,7 +24,7 @@ export function bindMessageEvents(s: AppSocket): void {
   )
 
   // editada (A15): troca o texto e atualiza as citações que apontam para ela (B18)
-  s.on('message:edited', ({ channelId, messageId, content, editedAt }) => applyEdit(channelId, messageId, content, editedAt))
+  s.on('message:edited', ({ channelId, messageId, content, editedAt, mentions }) => applyEdit(channelId, messageId, content, editedAt, { mentions }))
 
   // apagada (B6): as respostas a ela passam a citar "mensagem apagada" (a lista em si é tratada em moderation.ts)
   s.on('message:deleted', ({ channelId, messageId }) =>
@@ -136,7 +136,11 @@ export function notifyTyping(channelId: string): void {
 // ---------- Editar (A15) e responder citando (B18) ----------
 
 /** Troca o texto da mensagem já carregada e das citações a ela no mesmo canal. */
-function applyEdit(channelId: string, messageId: string, content: string, editedAt: number): void {
+/**
+ * `extra.mentions` (do `message:edited`, B19) troca as menções; sem `extra` (edição local, antes do
+ * evento chegar) ficam as que já estavam.
+ */
+function applyEdit(channelId: string, messageId: string, content: string, editedAt: number, extra?: { mentions?: Mention[] }): void {
   set((st) => {
     const list = st.messages[channelId]
     if (!list) return {}
@@ -145,7 +149,11 @@ function applyEdit(channelId: string, messageId: string, content: string, edited
       messages: {
         ...st.messages,
         [channelId]: list.map((m) => {
-          if (m.id === messageId) return { ...m, content, editedAt }
+          if (m.id === messageId) {
+            if (!extra) return { ...m, content, editedAt }
+            const { mentions: _old, ...rest } = m
+            return extra.mentions?.length ? { ...rest, content, editedAt, mentions: extra.mentions } : { ...rest, content, editedAt }
+          }
           if (m.replyTo?.id === messageId && !m.replyTo.deleted) return { ...m, replyTo: { ...m.replyTo, content: preview } }
           return m
         })

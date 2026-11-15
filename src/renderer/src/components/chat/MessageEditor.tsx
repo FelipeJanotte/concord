@@ -1,10 +1,13 @@
 // Editar mensagem no lugar (A15): Enter salva, Shift+Enter quebra linha, Esc cancela.
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { MESSAGE_MAX_LENGTH, type Message } from '@shared/types'
 import { cancelEdit, editMessage } from '@/lib/client'
+import { fromEditable, toEditable } from '@/lib/mentions'
 
 export function MessageEditor({ message }: { message: Message }) {
-  const [value, setValue] = useState(message.content)
+  // menções (B19): no campo aparecem como "@Nome" e voltam a ser o token ao salvar
+  const editable = useMemo(() => toEditable(message.content, message.mentions), [message.content, message.mentions])
+  const [value, setValue] = useState(editable.text)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
@@ -20,7 +23,7 @@ export function MessageEditor({ message }: { message: Message }) {
     setBusy(true)
     setError(null)
     try {
-      await editMessage(message, value)
+      await editMessage(message, fromEditable(value, editable.map))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Não foi possível editar a mensagem')
     } finally {

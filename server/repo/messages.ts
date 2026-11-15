@@ -6,10 +6,10 @@
  * conta não existe mais (ou em mensagens importadas de antes das contas).
  */
 import { and, desc, eq, inArray, isNull, lt } from 'drizzle-orm'
-import { HISTORY_PAGE_SIZE, replyPreviewText, type Attachment, type Message, type ReplyPreview, type ToolPayload } from '../../src/shared/types'
+import { HISTORY_PAGE_SIZE, parseMentions, replyPreviewText, type Attachment, type Mention, type Message, type ReplyPreview, type ToolPayload } from '../../src/shared/types'
 import { db } from '../db/client'
 import { accounts, attachments, messages } from '../db/schema'
-import { avatarUrl } from './accounts'
+import { accountNames, avatarUrl } from './accounts'
 import { attachmentsByMessage, toAttachment } from './attachments'
 import { reactionsByMessage } from './reactions'
 import { isUuid } from './util'
@@ -53,6 +53,7 @@ export async function listMessages(
   const page = rows.slice(0, size).reverse()
   const files = await attachmentsByMessage(page.map(({ m }) => m.id))
   const reactions = await reactionsByMessage(page.map(({ m }) => m.id))
+  const names = await accountNames(page.flatMap(({ m }) => parseMentions(m.content).accountIds))
   const replies = await replyPreviews(page.map(({ m }) => m.replyToId).filter((id): id is string => !!id))
   return {
     hasMore,
@@ -65,6 +66,7 @@ export async function listMessages(
       createdAt: m.createdAt.getTime(),
       ...(m.editedAt ? { editedAt: m.editedAt.getTime() } : {}),
       ...(reactions.get(m.id) ? { reactions: reactions.get(m.id) } : {}),
+      ...withMentions(m.content, names),
       ...(m.replyToId ? { replyTo: replies.get(m.replyToId) ?? deletedReply(m.replyToId) } : {}),
       author: a
         ? { id: a.id, accountId: a.id, name: a.name, tag: a.tag, color: a.color, avatarUrl: avatarUrl(a) }
@@ -122,6 +124,19 @@ export async function insertMessage(message: Message, attachmentIds: string[] = 
     if (err instanceof InvalidAttachments) return null
     throw err
   }
+}
+
+/** `{ mentions }` com as contas do texto que existem (nada se não menciona ninguém). */
+function withMentions(content: string, names: Map<string, string>): { mentions?: Mention[] } {
+  const mentions = parseMentions(content)
+    .accountIds.filter((id) => names.has(id))
+    .map((id) => ({ accountId: id, name: names.get(id)! }))
+  return mentions.length > 0 ? { mentions } : {}
+}
+
+/** As menções de um texto com o nome atual de cada conta (B19); contas inexistentes ficam de fora. */
+export async function resolveMentions(content: string): Promise<{ mentions?: Mention[] }> {
+  return withMentions(content, await accountNames(parseMentions(content).accountIds))
 }
 
 const deletedReply = (id: string): ReplyPreview => ({ id, authorName: '', authorAccountId: null, content: '', deleted: true })
