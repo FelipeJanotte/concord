@@ -11,7 +11,7 @@ import { openTool, showCommunity, showHome } from '@/lib/client'
 import { communityUnread, homeBadge } from '@/lib/home'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
-import { UpdateRailSlot } from './UpdateButton'
+import { UpdateCheckButton, UpdateRailSlot } from './UpdateButton'
 
 export function UtilityRail({ tools = TOOLS }: { tools?: readonly ToolDefinition[] }) {
   const section = useApp((s) => s.section)
@@ -55,6 +55,7 @@ export function UtilityRail({ tools = TOOLS }: { tools?: readonly ToolDefinition
           </RailButton>
         )
       })}
+      <UpdateCheckButton />
     </nav>
   )
 }

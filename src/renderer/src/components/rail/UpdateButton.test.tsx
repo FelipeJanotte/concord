@@ -15,10 +15,12 @@ globalThis.ResizeObserver ??= class {
 } as unknown as typeof ResizeObserver
 
 const install = vi.fn()
+const check = vi.fn()
 
 beforeEach(() => {
   install.mockClear()
-  vi.spyOn(updatesEnv, 'bridge').mockReturnValue({ install, getStatus: vi.fn(), onStatus: vi.fn() } as unknown as UpdaterBridge)
+  check.mockClear()
+  vi.spyOn(updatesEnv, 'bridge').mockReturnValue({ install, check, getStatus: vi.fn(), onStatus: vi.fn() } as unknown as UpdaterBridge)
   useApp.setState({ ...initialState })
 })
 afterEach(() => {
@@ -35,13 +37,38 @@ const rail = () =>
 const labels = () => screen.getAllByRole('button').map((b) => b.getAttribute('aria-label'))
 
 describe('botão de atualizar na barra de úteis', () => {
-  it('sem atualização (em dia, procurando ou com erro): não aparece', () => {
-    for (const update of [{ state: 'idle' }, { state: 'checking' }, { state: 'error', message: 'x' }] as const) {
+  it('sem atualização (em dia ou com erro): só o botão pequeno de procurar, no fim da barra', () => {
+    for (const update of [{ state: 'idle' }, { state: 'error', message: 'x' }] as const) {
       useApp.setState({ update })
       rail()
-      expect(labels()).toEqual(['Início', 'Concord'])
+      expect(labels()).toEqual(['Início', 'Concord', 'Procurar atualizações'])
       cleanup()
     }
+  })
+
+  it('procurar atualizações: clicar pede a verificação', async () => {
+    rail()
+    await userEvent.click(screen.getByRole('button', { name: 'Procurar atualizações' }))
+    expect(check).toHaveBeenCalledOnce()
+  })
+
+  it('procurando: botão girando, sem novo pedido ao clicar', async () => {
+    useApp.setState({ update: { state: 'checking' } })
+    rail()
+    await userEvent.click(screen.getByRole('button', { name: 'Procurando atualizações' }))
+    expect(check).not.toHaveBeenCalled()
+  })
+
+  it('baixando ou pronta: o botão de procurar some', () => {
+    useApp.setState({ update: { state: 'ready', version: '0.2.0' } })
+    rail()
+    expect(screen.queryByRole('button', { name: /Procura/ })).toBeNull()
+  })
+
+  it('fora do Electron (versão web): sem botão de procurar', () => {
+    vi.spyOn(updatesEnv, 'bridge').mockReturnValue(null)
+    rail()
+    expect(labels()).toEqual(['Início', 'Concord'])
   })
 
   it('baixando: aparece acima do Início com o progresso e não instala ao clicar', async () => {

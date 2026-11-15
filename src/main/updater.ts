@@ -72,6 +72,10 @@ export function createUpdaterController({ updater, isPackaged, send, setInterval
       check()
       every(check, UPDATE_CHECK_INTERVAL_MS)
     },
+    checkNow(): void {
+      if (!isPackaged) return set({ state: 'error', message: 'A atualização só funciona no app instalado.' })
+      check()
+    },
     status: (): UpdateStatus => status,
     /** reinicia e instala; só faz algo com a versão já baixada */
     install(): void {
@@ -92,7 +96,7 @@ export function pickAutoUpdater(mod: unknown): UpdaterLike {
   return updater as UpdaterLike
 }
 
-/** Liga ao Electron (IPC `update-get`/`update-install`, aviso `update-status`). */
+/** Liga ao Electron (IPC `update-get`/`update-check`/`update-install`, aviso `update-status`). */
 export async function setupUpdater(getWindow: () => BrowserWindow | null): Promise<void> {
   // import dinâmico: o electron-updater só é carregado no app de verdade (não nos testes)
   const controller = createUpdaterController({
@@ -101,6 +105,7 @@ export async function setupUpdater(getWindow: () => BrowserWindow | null): Promi
     send: (status) => getWindow()?.webContents.send('update-status', status)
   })
   ipcMain.handle('update-get', () => controller.status())
+  ipcMain.on('update-check', () => controller.checkNow())
   ipcMain.on('update-install', () => controller.install())
   controller.start()
 }

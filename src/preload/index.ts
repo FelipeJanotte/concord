@@ -78,6 +78,7 @@ const updater: UpdaterBridge = {
     ipcRenderer.on('update-status', handler)
     return () => ipcRenderer.removeListener('update-status', handler)
   },
+  check: (): void => ipcRenderer.send('update-check'),
   install: (): void => ipcRenderer.send('update-install')
 }
 

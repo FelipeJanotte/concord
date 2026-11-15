@@ -5,25 +5,28 @@ import { act, cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { UpdateStatus } from '@shared/updater'
-import { installUpdate, startUpdates, updatesEnv } from '@/lib/actions/updates'
+import { checkForUpdates, installUpdate, startUpdates, updatesEnv } from '@/lib/actions/updates'
 import { initialState, useApp } from '@/store'
 import { UpdateBanner } from './UpdateBanner'
 
 let listener: ((s: UpdateStatus) => void) | null
 let install: ReturnType<typeof vi.fn<() => void>>
+let check: ReturnType<typeof vi.fn<() => void>>
 let stop: () => void
 
 beforeEach(() => {
   useApp.setState({ ...initialState })
   listener = null
   install = vi.fn<() => void>()
+  check = vi.fn<() => void>()
   vi.spyOn(updatesEnv, 'bridge').mockReturnValue({
     getStatus: async () => ({ state: 'checking' }),
     onStatus: (fn) => {
       listener = fn
       return () => (listener = null)
     },
-    install
+    install,
+    check
   })
   stop = startUpdates()
 })
@@ -67,5 +70,29 @@ describe('atualização', () => {
     stop()
     vi.spyOn(updatesEnv, 'bridge').mockReturnValue(null)
     expect(() => startUpdates()()).not.toThrow()
+  })
+
+  it('procurar agora: pede à ponte e, sem versão nova, avisa que já está na mais nova', () => {
+    checkForUpdates()
+    expect(check).toHaveBeenCalledOnce()
+    act(() => listener!({ state: 'checking' }))
+    act(() => listener!({ state: 'idle' }))
+    expect(useApp.getState().notice).toMatchObject({ text: 'O Concord já está na versão mais nova.', kind: 'info' })
+  })
+
+  it('procurar agora com erro: mostra o motivo', () => {
+    checkForUpdates()
+    act(() => listener!({ state: 'error', message: 'A atualização só funciona no app instalado.' }))
+    expect(useApp.getState().notice).toMatchObject({ text: 'A atualização só funciona no app instalado.', kind: 'error' })
+  })
+
+  it('verificação automática (sem clicar) não avisa; o aviso vale uma vez por clique', () => {
+    act(() => listener!({ state: 'checking' }))
+    act(() => listener!({ state: 'idle' }))
+    expect(useApp.getState().notice).toBeNull()
+    checkForUpdates()
+    act(() => listener!({ state: 'downloading', version: '1.1.0', percent: 0 }))
+    act(() => listener!({ state: 'idle' }))
+    expect(useApp.getState().notice).toBeNull()
   })
 })
