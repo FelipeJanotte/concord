@@ -1,7 +1,8 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type DragEvent } from 'react'
 import { Hash, Loader2, Upload } from 'lucide-react'
-import type { Channel, Message } from '@shared/types'
-import { addFiles, loadOlderMessages } from '@/lib/client'
+import type { Channel, DmEntry, Message } from '@shared/types'
+import { addFiles, loadHistory, loadOlderMessages } from '@/lib/client'
+import { chatLabel, findDm } from '@/lib/dms'
 import { useCan } from '@/lib/permissions'
 import { formatDay, formatTime, formatTimestamp } from '@/lib/utils'
 import { useApp } from '@/store'
@@ -18,7 +19,10 @@ const LOAD_OLDER_THRESHOLD = 200
 const hasFiles = (e: DragEvent): boolean => Array.from(e.dataTransfer?.types ?? []).includes('Files')
 
 export function ChatView({ channelId }: { channelId: string }) {
-  const channel = useApp((s) => s.channels.find((c) => c.id === channelId))
+  // canal da comunidade ou conversa privada (B7: os canais `dm` só existem em `dms`)
+  const dm = useApp((s) => findDm(s.dms, channelId))
+  const channel = useApp((s) => s.channels.find((c) => c.id === channelId)) ?? dm?.channel
+  const label = useApp((s) => (channel ? chatLabel(channel, s.dms) : ''))
   const messages = useApp((s) => s.messages[channelId])
   const hasMore = useApp((s) => !!s.hasMoreHistory[channelId])
   const loadingOlder = useApp((s) => !!s.loadingOlder[channelId])
@@ -36,6 +40,12 @@ export function ChatView({ channelId }: { channelId: string }) {
     stickToBottom.current = true
     restoreFromBottom.current = null
   }, [channelId])
+
+  // sem histórico (primeira vez, ou depois de reconectar): busca a página mais recente
+  const missing = messages === undefined
+  useEffect(() => {
+    if (missing && channel) void loadHistory(channelId)
+  }, [missing, channelId, !!channel])
 
   useLayoutEffect(() => {
     const el = scrollRef.current
@@ -62,8 +72,12 @@ export function ChatView({ channelId }: { channelId: string }) {
   return (
     <>
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-black/25 px-4 shadow-sm">
-        <Hash className="size-6 text-muted-foreground" />
-        <h1 className="font-semibold text-accent-foreground">{channel.name}</h1>
+        {dm ? (
+          <UserAvatar user={dm.other} size="sm" />
+        ) : (
+          <Hash className="size-6 text-muted-foreground" />
+        )}
+        <h1 className="font-semibold text-accent-foreground">{dm ? dm.other.name : channel.name}</h1>
       </header>
 
       <div
@@ -111,7 +125,7 @@ export function ChatView({ channelId }: { channelId: string }) {
                   {loadingOlder && <Loader2 className="size-5 animate-spin" aria-label="Carregando mensagens antigas" />}
                 </div>
               ) : (
-                <ChannelWelcome channel={channel} />
+                <ChannelWelcome channel={channel} dm={dm} />
               )}
               {messages.map((m, i) => {
                 const prev = messages[i - 1]
@@ -137,7 +151,7 @@ export function ChatView({ channelId }: { channelId: string }) {
         {dragging && (
           <div className="pointer-events-none absolute inset-2 z-10 flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-primary bg-background/90 text-accent-foreground">
             <Upload className="size-10 text-primary" />
-            <p className="text-lg font-semibold">Solte para enviar em #{channel.name}</p>
+            <p className="text-lg font-semibold">Solte para enviar em {label}</p>
             <p className="text-sm text-muted-foreground">Até 10 arquivos de 25 MB</p>
           </div>
         )}
@@ -146,7 +160,19 @@ export function ChatView({ channelId }: { channelId: string }) {
   )
 }
 
-function ChannelWelcome({ channel }: { channel: Channel }) {
+function ChannelWelcome({ channel, dm }: { channel: Channel; dm?: DmEntry }) {
+  if (dm) {
+    return (
+      <div className="mx-4 mt-6 mb-2">
+        <UserAvatar user={dm.other} size="xl" className="mb-3" />
+        <h2 className="text-3xl font-bold text-accent-foreground">{dm.other.name}</h2>
+        <p className="text-sm text-muted-foreground">
+          {dm.other.name}#{dm.other.tag}
+        </p>
+        <p className="mt-2 text-muted-foreground">Este é o começo da sua conversa com @{dm.other.name}.</p>
+      </div>
+    )
+  }
   return (
     <div className="mx-4 mt-6 mb-2">
       <div className="mb-3 flex size-16 items-center justify-center rounded-full bg-accent">

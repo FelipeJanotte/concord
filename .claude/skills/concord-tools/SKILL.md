@@ -88,7 +88,8 @@ No app (`lib/actions/tools.ts`): `createPoll(channelId, pergunta, opções, mult
 2. Funções puras (validar e sortear) em `server/tools/` com `Rand` injetado e testes com semente.
 3. Uma entrada em `TOOLS` (`server/modules/tools.ts`): `run(req, rand)` devolve o erro (texto) ou o `ToolPayload`.
    O `runTool` cuida do resto (canal, `send`, limite, `insertMessage` com `kind: 'tool'`, `emitToViewers`).
-4. Ação em `lib/actions/tools.ts`. Na tela: entrada no registro da barra de úteis (B7) + painel + cartão (B10).
+4. Ação em `lib/actions/tools.ts`. Na tela: uma linha em `TOOLS` de `components/tools/registry.ts` (barra de úteis,
+   skill `concord-home`) + painel + cartão (B10).
 
 ## Testes
 
@@ -107,7 +108,8 @@ No app (`lib/actions/tools.ts`): `createPoll(channelId, pergunta, opções, mult
 
 ## Pendente
 
-- Barra de úteis e registro de ferramentas (B7), painéis e cartões do resultado (B10). As ações do app já existem
+- Painéis e cartões do resultado (B10). A barra de úteis e o registro (`components/tools/registry.ts`, `ToolView`)
+  já existem (B7). As ações do app já existem
   (`lib/actions/tools.ts`, lançam `Error` com a mensagem do servidor). O cartão lê `message.tool` quando
   `message.kind === 'tool'` e escolhe pelo `message.tool.tool`.
 - Próxima ferramenta: mover os times sorteados para salas de voz (usa o resultado do sorteador + moderação da v2).

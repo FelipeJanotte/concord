@@ -1,13 +1,16 @@
 import { useEffect } from 'react'
 import { Loader2, MessageSquare } from 'lucide-react'
 import { restoreSession } from '@/lib/client'
-import { Separator } from '@/components/ui/separator'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { ChannelSidebar } from '@/components/ChannelSidebar'
 import { ChatView } from '@/components/ChatView'
+import { FriendsView } from '@/components/friends/FriendsView'
+import { HomeSidebar } from '@/components/home/HomeSidebar'
 import { LoginScreen } from '@/components/LoginScreen'
 import { MemberList } from '@/components/MemberList'
+import { UtilityRail } from '@/components/rail/UtilityRail'
 import { Toast } from '@/components/Toast'
+import { ToolView } from '@/components/tools/ToolView'
 import { VoiceView } from '@/components/VoiceView'
 import { useApp } from '@/store'
 
@@ -29,6 +32,8 @@ export default function App() {
 function MainLayout() {
   const view = useApp((s) => s.view)
   const status = useApp((s) => s.status)
+  const section = useApp((s) => s.section)
+  const homeView = useApp((s) => s.homeView)
 
   return (
     <div className="flex h-full flex-col">
@@ -39,10 +44,19 @@ function MainLayout() {
         </div>
       )}
       <div className="flex min-h-0 flex-1 overflow-hidden select-none">
-        <ServerRail />
-        <ChannelSidebar />
+        <UtilityRail />
+        {/* ferramenta aberta: a barra de canais continua como contexto (canal/sala atual) */}
+        {section === 'home' ? <HomeSidebar /> : <ChannelSidebar />}
         <main className="flex min-w-0 flex-1 flex-col bg-background">
-          {view?.kind === 'voice' ? (
+          {section === 'tool' ? (
+            <ToolView />
+          ) : section === 'home' ? (
+            homeView.kind === 'dm' ? (
+              <ChatView key={homeView.channelId} channelId={homeView.channelId} />
+            ) : (
+              <FriendsView />
+            )
+          ) : view?.kind === 'voice' ? (
             <VoiceView key={view.channelId} channelId={view.channelId} />
           ) : view?.kind === 'text' ? (
             <ChatView key={view.channelId} channelId={view.channelId} />
@@ -50,29 +64,9 @@ function MainLayout() {
             <EmptyState />
           )}
         </main>
-        <MemberList />
+        {section === 'community' && <MemberList />}
       </div>
     </div>
-  )
-}
-
-function ServerRail() {
-  const serverUrl = useApp((s) => s.serverUrl)
-  return (
-    <nav className="flex w-[72px] shrink-0 flex-col items-center gap-2 bg-rail py-3">
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button className="relative flex size-12 items-center justify-center rounded-2xl bg-primary text-lg font-bold text-white">
-            <span className="absolute -left-3 h-10 w-1 rounded-r-full bg-white" />C
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="right">
-          <div className="font-semibold">Concord</div>
-          <div className="text-xs text-muted-foreground">{serverUrl}</div>
-        </TooltipContent>
-      </Tooltip>
-      <Separator className="mx-auto w-8" />
-    </nav>
   )
 }
 
