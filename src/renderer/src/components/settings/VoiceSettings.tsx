@@ -18,9 +18,12 @@ import {
   setOverlayEditing,
   setOverlayEnabled,
   setOverlaySize,
+  setVoiceLeveler,
+  setVoiceLevelerTarget,
   setVoiceSounds,
   type AudioDevice
 } from '@/lib/client'
+import type { LevelerTarget } from '@/lib/leveler/level'
 import { OVERLAY_EDIT_SHORTCUT_LABEL, OVERLAY_SHORTCUT_LABEL, type OverlayCorner, type OverlaySize } from '@shared/overlay'
 import { MIC_GAIN_MAX, OUTPUT_VOLUME_MAX } from '@/lib/mic-gain'
 import { useApp } from '@/store'
@@ -82,6 +85,8 @@ export function VoiceSettings() {
       </div>
 
       <VolumeSettings />
+
+      <VoiceLevelerSettings />
 
       <NoiseSuppression />
 
@@ -150,6 +155,40 @@ function VolumeSlider({ id, label, value, max, onChange }: { id: string; label: 
         />
         <span className="w-10 text-right text-xs text-muted-foreground tabular-nums">{value}%</span>
       </div>
+    </div>
+  )
+}
+
+const LEVELER_TARGET_LABELS: Record<LevelerTarget, string> = { low: 'Baixo', medium: 'Médio', high: 'Alto' }
+
+function VoiceLevelerSettings() {
+  const enabled = useApp((s) => s.voiceLeveler)
+  const target = useApp((s) => s.voiceLevelerTarget)
+  return (
+    <div className="space-y-2 border-t border-border pt-4">
+      <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+        <input type="checkbox" checked={enabled} onChange={(e) => setVoiceLeveler(e.target.checked)} className="size-4 accent-primary" />
+        Equalizador automático
+      </label>
+      <div className="flex items-center gap-2 pl-6">
+        <select
+          aria-label="Volume-alvo do equalizador"
+          value={target}
+          disabled={!enabled}
+          onChange={(e) => setVoiceLevelerTarget(e.target.value as LevelerTarget)}
+          className="h-9 rounded-md border border-border bg-input px-2 text-sm text-foreground disabled:opacity-60"
+        >
+          {(Object.keys(LEVELER_TARGET_LABELS) as LevelerTarget[]).map((t) => (
+            <option key={t} value={t}>
+              {LEVELER_TARGET_LABELS[t]}
+            </option>
+          ))}
+        </select>
+      </div>
+      <p className="pl-6 text-xs text-muted-foreground">
+        Mede a voz de cada pessoa da sala e aumenta quem está baixo ou abaixa quem está alto, para todos ficarem no mesmo volume.
+        Só muda o que você ouve. Quanto o equalizador está mexendo em cada um aparece no botão direito sobre a pessoa.
+      </p>
     </div>
   )
 }
