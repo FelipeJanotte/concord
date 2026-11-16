@@ -4,20 +4,36 @@
  * processo principal (`window.api.notifications`) e o "a janela está em foco?" ficam em
  * `notificationEnv`, que os testes substituem. Fora do Electron (navegador), não faz nada.
  */
+import type { Message } from '@shared/types'
 import type { NativeNotification, NotificationsBridge, NotificationTarget } from '@shared/notifications'
 import { useApp, type ChannelNotifyMode } from '@/store'
-import { badgeCount, callNotification, drawBadge, friendRequestNotification, messageNotification } from '../notifications'
+import { NOTIFICATION_SOUND_KINDS, type NotificationSoundKind } from '@/store/notifications'
+import { badgeCount, callNotification, drawBadge, friendRequestNotification, friendRequestSound, messageNotification, messageSound } from '../notifications'
+import { ChimePlayer } from '../sounds/chime'
 import { get, set, type AppSocket } from '../core'
 import { selectTextChannel } from './channels'
-import { openDmChat, openVoiceChat, showFriends } from './navigation'
+import { isChatOnScreen, openDmChat, openVoiceChat, showFriends } from './navigation'
+
+const notificationChimes = new ChimePlayer()
 
 export const notificationEnv = {
   bridge: (): NotificationsBridge | null => (typeof window !== 'undefined' ? (window.api?.notifications ?? null) : null),
-  isFocused: (): boolean => typeof document !== 'undefined' && document.hasFocus()
+  isFocused: (): boolean => typeof document !== 'undefined' && document.hasFocus(),
+  playSound: (kind: NotificationSoundKind, opts: { volume: number; outputId: string | null }): void => {
+    notificationChimes.play(`notify-${kind}`, opts)
+  }
 }
 
-function show(n: NativeNotification | null): void {
-  if (n) notificationEnv.bridge()?.show(n)
+function playSound(kind: NotificationSoundKind | null): boolean {
+  if (!kind) return false
+  const st = get()
+  notificationEnv.playSound(kind, { volume: st.outputVolume, outputId: st.audioOutputId })
+  return true
+}
+
+function show(n: NativeNotification | null, soundPlayed = false): void {
+  if (!n || !get().notificationsEnabled) return
+  notificationEnv.bridge()?.show(soundPlayed ? { ...n, silent: true } : n)
 }
 
 /** Clique numa notificação: abre a conversa ou a tela de amigos. */
@@ -36,7 +52,7 @@ export function openNotificationTarget(target: NotificationTarget | null): void 
 let lastBadge = -1
 /** Manda o número (e a imagem, no Windows) só quando muda. */
 export function syncBadge(): void {
-  const count = badgeCount(get())
+  const count = get().notificationsEnabled ? badgeCount(get()) : 0
   if (count === lastBadge) return
   lastBadge = count
   notificationEnv.bridge()?.setBadge(count, drawBadge(count))
@@ -54,20 +70,26 @@ export function stopNotifications(): void {
   notificationEnv.bridge()?.setBadge(0, null)
 }
 
-export function bindNotificationEvents(s: AppSocket): void {
-  // pedidos que já avisei (o friend:updated também chega quando outra coisa muda na relação)
-  const announced = new Set<string>()
+function onMessage(message: Message): void {
+  const st = get()
+  const focused = notificationEnv.isFocused()
+  const soundPlayed = playSound(messageSound(message, st, focused && isChatOnScreen(st, message.channelId)))
+  show(messageNotification(message, st, focused), soundPlayed)
+}
 
-  s.on('message:new', (message) => show(messageNotification(message, get(), notificationEnv.isFocused())))
+export function bindNotificationEvents(s: AppSocket): void {
+  const announcedRequests = new Set<string>()
+
+  s.on('message:new', onMessage)
   s.on('call:updated', (call) => show(callNotification(call, get(), notificationEnv.isFocused())))
   s.on('friend:updated', (entry) => {
-    if (entry.status !== 'incoming') return void announced.delete(entry.account.id)
-    if (announced.has(entry.account.id)) return
-    announced.add(entry.account.id)
-    show(friendRequestNotification(entry, notificationEnv.isFocused()))
+    if (entry.status !== 'incoming') return void announcedRequests.delete(entry.account.id)
+    if (announcedRequests.has(entry.account.id)) return
+    announcedRequests.add(entry.account.id)
+    const soundPlayed = playSound(friendRequestSound(entry, get()))
+    show(friendRequestNotification(entry, notificationEnv.isFocused()), soundPlayed)
   })
 
-  // selo: recalcula a cada mudança da store (só manda quando o número muda)
   if (!stopBadge) {
     stopBadge = useApp.subscribe(syncBadge)
     syncBadge()
@@ -75,33 +97,61 @@ export function bindNotificationEvents(s: AppSocket): void {
   if (!stopClick) stopClick = notificationEnv.bridge()?.onClick(openNotificationTarget) ?? null
 }
 
-// ---------- preferência: mensagens de canal ----------
-
 const STORAGE_KEY = 'concord:notifications'
 const MODES: readonly ChannelNotifyMode[] = ['all', 'mentions', 'none']
 
-/** Lê a preferência salva nesta máquina (padrão: toda mensagem). Chamado uma vez ao carregar. */
-export function loadNotificationPreferences(): void {
-  let mode: ChannelNotifyMode = 'all'
+interface SavedPreferences {
+  channels?: unknown
+  enabled?: unknown
+  sounds?: Partial<Record<NotificationSoundKind, unknown>>
+}
+
+function readSaved(): SavedPreferences {
   try {
     const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null
-    const saved = raw ? (JSON.parse(raw) as { channels?: unknown }).channels : undefined
-    if (MODES.includes(saved as ChannelNotifyMode)) mode = saved as ChannelNotifyMode
+    const parsed: unknown = raw ? JSON.parse(raw) : null
+    return parsed && typeof parsed === 'object' ? (parsed as SavedPreferences) : {}
   } catch {
-    // salvo corrompido ou armazenamento bloqueado: fica o padrão
+    return {}
   }
-  set({ channelNotifications: mode })
+}
+
+function savePreferences(): void {
+  const { channelNotifications, notificationsEnabled, notificationSounds } = get()
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ channels: channelNotifications, enabled: notificationsEnabled, sounds: notificationSounds }))
+  } catch (err) {
+    console.warn('[notificações] não foi possível salvar a preferência:', err)
+  }
+}
+
+const savedFlag = (value: unknown): boolean => (typeof value === 'boolean' ? value : true)
+
+export function loadNotificationPreferences(): void {
+  const saved = readSaved()
+  const sounds = saved.sounds && typeof saved.sounds === 'object' ? saved.sounds : {}
+  set({
+    channelNotifications: MODES.includes(saved.channels as ChannelNotifyMode) ? (saved.channels as ChannelNotifyMode) : 'all',
+    notificationsEnabled: savedFlag(saved.enabled),
+    notificationSounds: { dm: savedFlag(sounds.dm), mention: savedFlag(sounds.mention), friend: savedFlag(sounds.friend) }
+  })
 }
 
 loadNotificationPreferences()
 
-/** "Notificar mensagens de canal": toda mensagem, só menções ou nada. Vale nesta máquina. */
 export function setChannelNotifications(mode: ChannelNotifyMode): void {
   if (!MODES.includes(mode)) return
   set({ channelNotifications: mode })
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ channels: mode }))
-  } catch {
-    // modo privado / armazenamento bloqueado: vale só até fechar o app
-  }
+  savePreferences()
+}
+
+export function setNotificationsEnabled(enabled: boolean): void {
+  set({ notificationsEnabled: enabled })
+  savePreferences()
+}
+
+export function setNotificationSound(kind: NotificationSoundKind, enabled: boolean): void {
+  if (!NOTIFICATION_SOUND_KINDS.includes(kind)) return
+  set({ notificationSounds: { ...get().notificationSounds, [kind]: enabled } })
+  savePreferences()
 }

@@ -7,19 +7,21 @@
 // Alturas: cada linha (pessoa, "+N", barra do modo de mover) tem exatamente `OVERLAY_METRICS[size].line`,
 // com `OVERLAY_GAP` entre elas e `OVERLAY_PADDING` em volta — os mesmos números com que o processo principal
 // calcula o tamanho da janela (`overlayHeight`). Assim nada fica cortado embaixo.
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent } from 'react'
 import { HeadphoneOff, MicOff, Move } from 'lucide-react'
+import { validateTheme } from '@shared/types'
 import {
-  OVERLAY_EDIT_SHORTCUT_LABEL,
   OVERLAY_GAP,
   OVERLAY_METRICS,
   OVERLAY_PADDING,
+  overlayWidth,
   type OverlayConfig,
   type OverlayMember,
   type OverlayRoom,
   type OverlaySize,
   type OverlayViewBridge
 } from '@shared/overlay'
+import { applyTheme } from '@/lib/theme/apply'
 import { cn } from '@/lib/utils'
 
 /** Tamanho dos textos e ícones (as alturas vêm de `OVERLAY_METRICS`). */
@@ -54,6 +56,15 @@ export function OverlayApp({ bridge }: { bridge: OverlayViewBridge | null }) {
     [bridge]
   )
 
+  useEffect(
+    () =>
+      bridge?.onTheme((theme) => {
+        const valid = validateTheme(theme)
+        if (valid) applyTheme(valid, { windowEffects: false })
+      }),
+    [bridge]
+  )
+
   // Esc trava de novo (a janela só tem foco no modo de mover)
   useEffect(() => {
     if (!editing) return
@@ -77,7 +88,7 @@ export function OverlayApp({ bridge }: { bridge: OverlayViewBridge | null }) {
       data-editing={editing || undefined}
       style={{ padding: OVERLAY_PADDING, gap: OVERLAY_GAP, ...(editing ? DRAG : {}) }}
       className={cn(
-        'flex h-screen flex-col select-none',
+        'relative flex h-screen flex-col select-none',
         bottom && 'justify-end',
         right && 'items-end',
         // outline (e não border): não ocupa espaço, então não come a altura calculada para as linhas
@@ -87,7 +98,7 @@ export function OverlayApp({ bridge }: { bridge: OverlayViewBridge | null }) {
       {editing && (
         <div style={{ height: line }} className="flex w-full shrink-0 items-center gap-1 rounded-md bg-background/90 px-2 text-foreground">
           <Move className={cn('shrink-0', text.icon)} />
-          <span className={cn('flex-1 truncate', text.bar)} title={`Arraste para mover · Esc ou ${OVERLAY_EDIT_SHORTCUT_LABEL} para travar`}>
+          <span className={cn('flex-1 truncate', text.bar)} title="Arraste para mover · Esc para travar">
             Arraste para mover
           </span>
           <button
@@ -110,6 +121,40 @@ export function OverlayApp({ bridge }: { bridge: OverlayViewBridge | null }) {
           </li>
         )}
       </ul>
+      {editing && <ResizeGrip bridge={bridge} startWidth={overlayWidth(config)} leftSide={right} />}
+    </div>
+  )
+}
+
+function ResizeGrip({ bridge, startWidth, leftSide }: { bridge: OverlayViewBridge | null; startWidth: number; leftSide: boolean }) {
+  const dragStart = useRef<{ screenX: number; width: number } | null>(null)
+  const widthAt = (e: PointerEvent): number => {
+    const start = dragStart.current!
+    const moved = e.screenX - start.screenX
+    return start.width + (leftSide ? -moved : moved)
+  }
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Redimensionar"
+      title="Arraste para mudar a largura"
+      style={NO_DRAG}
+      className={cn('absolute inset-y-0 flex w-3 cursor-ew-resize items-center justify-center', leftSide ? 'left-0' : 'right-0')}
+      onPointerDown={(e) => {
+        e.currentTarget.setPointerCapture?.(e.pointerId)
+        dragStart.current = { screenX: e.screenX, width: startWidth }
+      }}
+      onPointerMove={(e) => {
+        if (dragStart.current) bridge?.resize(widthAt(e), false)
+      }}
+      onPointerUp={(e) => {
+        if (!dragStart.current) return
+        bridge?.resize(widthAt(e), true)
+        dragStart.current = null
+      }}
+    >
+      <span className="h-8 w-1 rounded-full bg-primary" />
     </div>
   )
 }

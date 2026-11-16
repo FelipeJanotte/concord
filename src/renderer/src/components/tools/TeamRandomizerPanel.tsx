@@ -1,5 +1,3 @@
-// Painel do sorteador de times (B10): pessoas (digitadas ou importadas da sala de voz / online),
-// número de times, lanes (quais valem + preferência por pessoa) e o canal. "Sortear de novo" repete o pedido.
 import { useState, type FormEvent } from 'react'
 import { UserPlus, X } from 'lucide-react'
 import {
@@ -19,11 +17,10 @@ import { drawTeams } from '@/lib/client'
 import { cn } from '@/lib/utils'
 import { PostedResult } from './PostedResult'
 import { ImportPeopleButtons, type Person } from './people'
-import { ChannelSelect, Field, selectClass, SubmitButton, ToolError, ToolPanel, usePost, usePostTarget } from './shared'
+import { ChannelSelect, Field, SubmitButton, ToolError, ToolPanel, usePost, usePostTarget } from './shared'
 
 const key = (name: string): string => name.replace(/\s+/g, ' ').trim().toLocaleLowerCase('pt-BR')
 
-/** Junta pessoas novas à lista sem repetir (mesma conta ou mesmo nome). */
 export function mergePlayers(current: TeamPlayer[], extra: Array<TeamPlayer | Person>): TeamPlayer[] {
   const out = [...current]
   for (const p of extra) {
@@ -35,13 +32,48 @@ export function mergePlayers(current: TeamPlayer[], extra: Array<TeamPlayer | Pe
   return out
 }
 
+function LanePreferences({
+  name,
+  available,
+  chosen,
+  onToggle
+}: {
+  name: string
+  available: Lane[]
+  chosen: Lane[]
+  onToggle: (lane: Lane) => void
+}) {
+  return (
+    <div role="group" aria-label={`Lanes preferidas de ${name}`} className="flex flex-wrap gap-1">
+      {available.map((l) => {
+        const rank = chosen.indexOf(l) + 1
+        return (
+          <button
+            key={l}
+            type="button"
+            aria-pressed={rank > 0}
+            aria-label={rank > 0 ? `${LANE_LABELS[l]}, ${rank}ª preferência` : LANE_LABELS[l]}
+            onClick={() => onToggle(l)}
+            className={cn(
+              'flex h-7 items-center gap-1 rounded-full px-2.5 text-xs font-semibold',
+              rank > 0 ? 'bg-primary text-primary-foreground' : 'bg-accent text-muted-foreground hover:bg-accent/80'
+            )}
+          >
+            {rank > 0 && <span className="rounded-full bg-primary-foreground/20 px-1.5 tabular-nums">{rank}ª</span>}
+            {LANE_LABELS[l]}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 export function TeamRandomizerPanel() {
   const { targets, channelId, setChannelId } = usePostTarget()
   const [players, setPlayers] = useState<TeamPlayer[]>([])
   const [draft, setDraft] = useState('')
   const [teamCount, setTeamCount] = useState(2)
   const [lanes, setLanes] = useState(false)
-  /** lanes disponíveis neste sorteio (com poucas pessoas por time, nem todas fazem sentido) */
   const [laneSet, setLaneSet] = useState<Lane[]>([...LANES])
   const { busy, error, posted, post } = usePost()
 
@@ -54,16 +86,21 @@ export function TeamRandomizerPanel() {
     setDraft('')
   }
 
-  const setLane = (i: number, lane: Lane | ''): void =>
-    setPlayers((prev) => prev.map((p, j) => (j === i ? { ...p, lanes: lane ? [lane] : [] } : p)))
+  const preferred = (p: TeamPlayer): Lane[] => (p.lanes ?? []).filter((l) => laneSet.includes(l))
+  const togglePreference = (i: number, lane: Lane): void =>
+    setPlayers((prev) =>
+      prev.map((p, j) => {
+        if (j !== i) return p
+        const current = preferred(p)
+        return { ...p, lanes: current.includes(lane) ? current.filter((l) => l !== lane) : [...current, lane] }
+      })
+    )
 
   const teamSize = teamCount > 0 ? Math.ceil(players.length / teamCount) : 0
   const noLanes = lanes && laneSet.length === 0
   const tooManyForLanes = lanes && !noLanes && players.length > teamCount * laneSet.length
   const ready = !!channelId && players.length >= TEAMS_MIN_PLAYERS && teamCount <= players.length && !tooManyForLanes && !noLanes
-  // a preferência só vale se a lane estiver disponível (o servidor também ignora as outras)
-  const preferred = (p: TeamPlayer): Lane | '' => (p.lanes?.[0] && laneSet.includes(p.lanes[0]) ? p.lanes[0] : '')
-  const toSend = (): TeamPlayer[] => players.map((p) => ({ ...p, lanes: preferred(p) ? [preferred(p) as Lane] : [] }))
+  const toSend = (): TeamPlayer[] => players.map((p) => ({ ...p, lanes: preferred(p) }))
 
   return (
     <ToolPanel description="Sorteia times equilibrados no servidor e posta no canal. Depois dá para levar cada time para uma sala de voz.">
@@ -84,26 +121,15 @@ export function TeamRandomizerPanel() {
       </Field>
       <ImportPeopleButtons onImport={(people) => setPlayers((prev) => mergePlayers(prev, people))} />
 
+      {players.length > 0 && lanes && (
+        <p className="text-xs text-muted-foreground">Clique nas lanes de cada pessoa na ordem de preferência (1ª, 2ª...). Sem nenhuma, vale qualquer lane.</p>
+      )}
       {players.length > 0 && (
         <ul aria-label="Pessoas do sorteio" className="flex flex-col gap-1">
           {players.map((p, i) => (
-            <li key={p.accountId ?? p.name} className="flex items-center gap-2 rounded-md bg-panel px-3 py-1.5 text-sm">
-              <span className="flex-1 truncate">{p.name}</span>
-              {lanes && (
-                <select
-                  aria-label={`Lane preferida de ${p.name}`}
-                  value={preferred(p)}
-                  onChange={(e) => setLane(i, e.target.value as Lane | '')}
-                  className={`${selectClass} h-8 w-32`}
-                >
-                  <option value="">Qualquer lane</option>
-                  {laneSet.map((l) => (
-                    <option key={l} value={l}>
-                      {LANE_LABELS[l]}
-                    </option>
-                  ))}
-                </select>
-              )}
+            <li key={p.accountId ?? p.name} className="flex flex-wrap items-center gap-2 rounded-md bg-panel px-3 py-1.5 text-sm">
+              <span className="min-w-24 flex-1 truncate">{p.name}</span>
+              {lanes && <LanePreferences name={p.name} available={laneSet} chosen={preferred(p)} onToggle={(lane) => togglePreference(i, lane)} />}
               <Button
                 variant="ghost"
                 size="icon-sm"

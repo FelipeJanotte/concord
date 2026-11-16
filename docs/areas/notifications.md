@@ -2,7 +2,7 @@
 
 Avisar quem está com o Concord em segundo plano: **mensagem numa conversa privada**, **alguém ligando** e
 **pedido de amizade**. Além disso, o ícone do app mostra quantos avisos estão pendentes (o mesmo número do selo
-da Home + chamadas tocando para mim).
+da Home + chamadas tocando para mim). Dá para desligar tudo no próprio app e escolher um som curto por tipo de aviso.
 
 ## Arquivos
 
@@ -12,8 +12,11 @@ da Home + chamadas tocando para mim).
 | `src/main/notifications.ts` | Processo principal: `setupNotifications(getWindow)` registra os IPC `notify` e `badge`; `cleanNotification`/`cleanBadgeCount` validam o que vem do renderer. Mostra o `Notification` do Electron (guardado num `Set` até fechar, senão o clique se perde) e, no clique, restaura/foca a janela e manda `notification-click` com o alvo. |
 | `src/main/index.ts` | Guarda a janela principal (`mainWindow`) e chama `setupNotifications`. A permissão `notifications` já era liberada. |
 | `src/preload/index.ts` / `index.d.ts` | `window.api.notifications` (IPC `notify`, `badge` e o ouvinte de `notification-click`). |
-| `src/renderer/src/lib/notifications.ts` | Regras puras: `messageNotification`, `callNotification`, `friendRequestNotification`, `messagePreview`, `badgeCount`, `drawBadge` (bolinha com o número em canvas, cor do token `--destructive`). |
-| `src/renderer/src/lib/actions/notifications.ts` | `bindNotificationEvents` (ouve `message:new`, `call:updated`, `friend:updated`; assina a store para o selo; registra o clique), `syncBadge`, `openNotificationTarget`, `stopNotifications` (chamado no `disconnect`: para tudo e zera o selo). `notificationEnv` (ponte e foco) é substituído nos testes. |
+| `src/renderer/src/lib/notifications.ts` | Regras puras: `messageNotification`, `callNotification`, `friendRequestNotification`, `messageSound`, `friendRequestSound`, `messagePreview`, `badgeCount`, `drawBadge` (bolinha com o número em canvas, cor do token `--destructive`). |
+| `src/renderer/src/lib/actions/notifications.ts` | `bindNotificationEvents` (ouve `message:new`, `call:updated`, `friend:updated`; assina a store para o selo; registra o clique), `syncBadge`, `openNotificationTarget`, `stopNotifications` (chamado no `disconnect`: para tudo e zera o selo) e as preferências (`setChannelNotifications`, `setNotificationsEnabled`, `setNotificationSound`, `loadNotificationPreferences`). `notificationEnv` (ponte, foco e `playSound`) é substituído nos testes. |
+| `src/renderer/src/store/notifications.ts` | Preferências desta máquina: `channelNotifications`, `notificationsEnabled`, `notificationSounds` (`NotificationSoundKind`: `dm`, `mention`, `friend`). |
+| `src/renderer/src/lib/sounds/chime.ts` | Os três sons (`notify-dm`, `notify-mention`, `notify-friend`) no mesmo `ChimePlayer` dos sons da sala, gerados pela Web Audio (sem arquivo). |
+| `src/renderer/src/components/settings/NotificationSettings.tsx` | Configurações → "Notificações": interruptor geral, "Notificar mensagens de canal" e "Tocar um som" por tipo. |
 
 ## Regras
 
@@ -25,7 +28,8 @@ da Home + chamadas tocando para mim).
   `channel`). O que não notifica fica só na bolinha.
 - **Preferência:** fica em Configurações → "Notificações" (`components/settings/NotificationSettings.tsx`, `ChannelNotificationSetting`, `docs/areas/settings.md`),
   vale nesta máquina: `setChannelNotifications`/`loadNotificationPreferences` em `lib/actions/notifications.ts`
-  (`localStorage` `concord:notifications` = `{ channels }`; valor estranho volta a `all`); estado em `store/notifications.ts`.
+  (`localStorage` `concord:notifications` = `{ channels, enabled, sounds: { dm, mention, friend } }`; modo estranho volta a
+  `all`, interruptor que não é booleano volta a ligado, salvo antigo só com `channels` continua valendo); estado em `store/notifications.ts`.
   Título = nome da pessoa; texto = a mensagem (espaços juntos, até 120) ou "📎 N anexos". Clique abre a conversa.
 - **Chamada:** `call:updated` com `status: 'ringing'` e eu como `calleeId`. Notificação **sem som** do sistema (o app
   já toca o toque da B8). Clique abre a conversa (onde fica o "Atender").
@@ -36,6 +40,22 @@ da Home + chamadas tocando para mim).
   Recalculado a cada mudança da store, enviado só quando o número muda. **Windows:** `setOverlayIcon` com a imagem
   do `drawBadge` (só aceita `data:image/png`) e `flashFrame(true)` quando o número sobe com a janela em segundo
   plano (para quando a janela ganha foco). **macOS/Linux:** `app.setBadgeCount`.
+- **Interruptor geral** ("Mostrar notificações do Concord", `notificationsEnabled`, padrão ligado): desligado, nenhuma
+  notificação nativa (mensagem, chamada, pedido) **e o selo do ícone fica em 0** (sem número, sem imagem no Windows, sem
+  piscar): é o "não me avise fora do app" sem ir às configurações do Windows. Uma regra só, em `show()` e `syncBadge()`
+  de `lib/actions/notifications.ts`. Dentro do app nada muda (bolinhas, selo da Home, cartão e toque da chamada).
+  "Notificar mensagens de canal" fica travado enquanto está desligado. Religar manda o número atual.
+- **Som por tipo** ("Tocar um som", `notificationSounds`, os três ligados por padrão): conversa privada (`dm`), menção em
+  canal (@eu ou @todos, `mention`) e pedido de amizade recebido (`friend`), cada um com seu liga/desliga. Regras em
+  `messageSound`/`friendRequestSound`:
+  - toca **também com o app em foco**, menos quando a mensagem chega na conversa/canal que está na tela (janela em foco
+    e `isChatOnScreen`); pedido toca uma vez por pedido (mesma regra do aviso);
+  - mudo com **ensurdecer** (`deafened`) e em **canal/conversa silenciados**; mensagem minha não toca;
+  - **independente** do interruptor geral e de "Notificar mensagens de canal" (dá para ter só som, sem aviso do
+    sistema; menção toca mesmo com o canal em "Nenhuma");
+  - quando o som do Concord toca, a notificação nativa vai com `silent: true` (sem som duplo); com o som do tipo
+    desligado, a notificação mantém o som do sistema;
+  - volume = volume de saída (`outputVolume`), na saída escolhida (`audioOutputId`). Chamada: só o toque da B8.
 - O main valida tudo: título obrigatório, cortes em `NOTIFICATION_TITLE_MAX`/`NOTIFICATION_BODY_MAX`, alvo
   desconhecido vira "sem alvo", selo inteiro de 0 a 999.
 - **Fora do Electron** (renderer aberto no navegador durante o `npm run dev`): `window.api` não existe e nada acontece.
@@ -67,14 +87,16 @@ Preferência pessoal, por canal (texto, sala de voz ou conversa privada), **liga
 | Arquivo | Cobre |
 |---|---|
 | `src/main/notifications.test.ts` | Electron falso: validação, notificação mostrada e clique (restaura, foca, manda o alvo), selo no Windows (imagem, piscar e parar ao focar, imagem que não é PNG ignorada, descer não pisca) e no macOS. |
-| `src/renderer/src/lib/actions/notifications.test.ts` | Regras (texto, conversa × canal × minha, foco, modos de canal `all`/`mentions`/`none`, preferência salva, chamada só tocando para mim, pedido, selo) e a ligação (eventos → notificação, pedido sem repetir, selo acompanha a store e zera ao sair, clique abre a conversa/amigos). |
+| `src/renderer/src/lib/actions/notifications.test.ts` | Regras (texto, conversa × canal × minha, foco, modos de canal `all`/`mentions`/`none`, preferência salva, chamada só tocando para mim, pedido, selo, som por tipo com interruptor, ensurdecer e silenciado) e a ligação (eventos → notificação, pedido sem repetir, selo acompanha a store e zera ao sair, clique abre a conversa/amigos, interruptor geral sem aviso e selo 0, som no lugar do som do sistema, som em foco menos na conversa aberta). |
+| `src/renderer/src/lib/sounds/sounds.test.ts` | Os três sons de notificação são diferentes entre si. |
 | `src/renderer/src/components/mute-channel.test.tsx` | Botão direito no canal de texto, na sala de voz e na conversa: silenciar/reativar, esmaecer e enviar a lista. |
 | `src/renderer/src/lib/actions/preferences.test.ts` | `setChannelMuted` (na hora, tira o não lido, não reenvia, erro volta), canais silenciados ao carregar e vindos de outra janela. |
 | `server/tests/preferences.test.ts` | `mutedChannels` guardado sem repetir, sincronizado, mantido ao trocar o tema; recusa id inválido e lista grande. |
-| `src/renderer/src/components/settings/NotificationSettings.test.tsx` | A escolha em Configurações → "Notificações" mostra o modo atual e troca na hora. |
+| `src/renderer/src/components/settings/NotificationSettings.test.tsx` | A escolha em Configurações → "Notificações" mostra o modo atual e troca na hora; interruptor geral desliga e trava a escolha de canal; cada som liga/desliga sozinho. |
 
 À mão: duas contas (`docs/areas/dev-workflow.md`); minimize a janela de A; B manda mensagem na conversa, liga e
-envia pedido → A vê as três notificações e o número na barra de tarefas; clicar abre a conversa/Amigos.
+envia pedido → A vê as três notificações, ouve o som de cada tipo e vê o número na barra de tarefas; clicar abre a conversa/Amigos.
+Desligue "Mostrar notificações do Concord" → nada aparece e o número some (os sons continuam); desligue cada som e repita.
 
 ## Problemas conhecidos / depuração
 
@@ -85,4 +107,6 @@ envia pedido → A vê as três notificações e o número na barra de tarefas; 
 | Selo não some | Ele segue o não lido da Home e as chamadas tocando; abrir a conversa ou responder o pedido zera. Sair da conta também zera. |
 | Canal sem notificação nem bolinha | Está silenciado (item esmaecido na lista): botão direito → "Reativar canal". |
 | Mensagem de canal não notifica | "Notificar mensagens de canal" em Configurações → "Notificações" está em "Só menções" ou "Nenhuma", ou a janela estava em foco. |
-| Pendente | Silenciar por um tempo ("por 1 hora"), desligar tudo no app (hoje só pelo Windows) e som próprio por tipo. |
+| Nenhuma notificação nem número no ícone com o Windows liberado | "Mostrar notificações do Concord" desligado em Configurações → "Notificações". |
+| Som não toca | Tipo desligado em "Tocar um som", ensurdecido, canal/conversa silenciado ou a conversa estava aberta na tela. |
+| Pendente | Silenciar por um tempo ("por 1 hora"). |

@@ -6,7 +6,9 @@ import type { Sound } from '@shared/types'
 import {
   bindSoundsEvents,
   checkSoundFile,
+  clipSound,
   deleteSound,
+  inspectSoundFile,
   loadSounds,
   playSound,
   refreshSounds,
@@ -178,6 +180,40 @@ describe('enviar', () => {
     expect(await checkSoundFile(file())).toMatch('Não foi possível ler esse áudio')
     duration.mockResolvedValueOnce(4800)
     expect(await checkSoundFile(file())).toBeNull()
+  })
+
+  it('arquivo curto e pequeno vai como está', async () => {
+    vi.spyOn(soundTransport, 'duration').mockResolvedValue(4800)
+    const decode = vi.spyOn(soundTransport, 'decode')
+    expect(await inspectSoundFile(file())).toEqual({ kind: 'ready' })
+    expect(decode).not.toHaveBeenCalled()
+  })
+
+  it('arquivo longo, grande ou sem duração legível vai para o corte', async () => {
+    const audio = { sampleRate: 1000, channels: [new Float32Array(12_000)] }
+    vi.spyOn(soundTransport, 'decode').mockResolvedValue(audio)
+    const duration = vi.spyOn(soundTransport, 'duration')
+    duration.mockResolvedValue(12_000)
+    expect(await inspectSoundFile(file())).toEqual({ kind: 'clip', audio, durationMs: 12_000 })
+    duration.mockResolvedValue(3000)
+    expect(await inspectSoundFile(file(600 * 1024))).toEqual({ kind: 'clip', audio, durationMs: 12_000 })
+    duration.mockResolvedValue(null)
+    expect(await inspectSoundFile(file())).toEqual({ kind: 'clip', audio, durationMs: 12_000 })
+  })
+
+  it('áudio que o navegador não decodifica é recusado', async () => {
+    vi.spyOn(soundTransport, 'duration').mockResolvedValue(null)
+    vi.spyOn(soundTransport, 'decode').mockResolvedValue(null)
+    expect(await inspectSoundFile(file())).toEqual({ kind: 'error', error: 'Não foi possível ler esse áudio. Use MP3, OGG, WAV ou WebM.' })
+  })
+
+  it('clipSound devolve o trecho de 5 s em WAV', async () => {
+    const left = Float32Array.from({ length: 8000 }, (_, i) => i / 8000)
+    const clip = clipSound({ sampleRate: 1000, channels: [left] }, 2000)
+    expect(clip.type).toBe('audio/wav')
+    expect(clip.size).toBe(44 + 5000 * 2)
+    const v = new DataView(await clip.arrayBuffer())
+    expect(v.getInt16(44, true)).toBe(Math.round(left[2000] * 32767))
   })
 
   it('envia com o token, nome limpo e emoji; o som entra na coleção', async () => {

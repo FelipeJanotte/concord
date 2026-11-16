@@ -20,6 +20,7 @@ import { useApp } from '@/store'
 import { AttachmentPreview } from './AttachmentPreview'
 import { MentionMenu } from './MentionMenu'
 import { ReplyBanner } from './ReplyPreview'
+import { ToolsMenu } from './ToolsMenu'
 
 const EMPTY: never[] = []
 
@@ -171,6 +172,7 @@ export function Composer({ channel }: { channel: Channel }) {
       <div className={cn('rounded-lg bg-composer', replying && 'rounded-t-none')}>
         <AttachmentPreview channelId={channel.id} uploads={uploads} />
         <div className="flex items-end gap-2 py-1.5 pr-1.5 pl-2">
+          {channel.type !== 'voice' && <ToolsMenu channelId={channel.id} />}
           {allowedAttach && (
             <Button
               size="icon-sm"

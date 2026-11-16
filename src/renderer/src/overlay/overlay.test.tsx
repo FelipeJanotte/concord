@@ -5,23 +5,33 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { OVERLAY_GAP, OVERLAY_METRICS, OVERLAY_PADDING, type OverlayConfig, type OverlayRoom, type OverlayViewBridge } from '@shared/overlay'
+import type { ThemeConfig } from '@shared/types'
 import { OverlayApp } from './OverlayApp'
 
-const CONFIG: OverlayConfig = { enabled: true, corner: 'top-left', size: 'medium', position: null }
+const CONFIG: OverlayConfig = { enabled: true, corner: 'top-left', size: 'medium', position: null, width: null }
 
 function fakeBridge() {
   let listener: ((room: OverlayRoom | null, config: OverlayConfig, editing: boolean) => void) | null = null
+  let themeListener: ((theme: ThemeConfig) => void) | null = null
   const finishEditing = vi.fn()
+  const resize = vi.fn()
   const bridge: OverlayViewBridge = {
     onUpdate: (fn) => {
       listener = fn
       return () => (listener = null)
     },
-    finishEditing
+    finishEditing,
+    resize,
+    onTheme: (fn) => {
+      themeListener = fn
+      return () => (themeListener = null)
+    }
   }
   return {
     bridge,
     finishEditing,
+    resize,
+    pushTheme: (theme: unknown) => act(() => themeListener?.(theme as ThemeConfig)),
     push: (room: OverlayRoom | null, config: OverlayConfig = CONFIG, editing = false) => act(() => listener?.(room, config, editing)),
     has: () => !!listener
   }
@@ -136,5 +146,47 @@ describe('modo de mover', () => {
     const root = container.firstElementChild as HTMLElement
     expect(root.className).not.toContain('justify-end')
     expect(root.className).not.toContain('items-end')
+  })
+})
+
+describe('redimensionar arrastando', () => {
+  it('só no modo de mover: arrastar a alça manda a largura nova e, ao soltar, a final', () => {
+    const { bridge, push, resize } = fakeBridge()
+    render(<OverlayApp bridge={bridge} />)
+    push({ members: [member('a', 'Ana')], more: 0 })
+    expect(screen.queryByRole('separator', { name: 'Redimensionar' })).toBeNull()
+    push({ members: [member('a', 'Ana')], more: 0 }, CONFIG, true)
+    const grip = screen.getByRole('separator', { name: 'Redimensionar' })
+    fireEvent.pointerDown(grip, { screenX: 100, pointerId: 1 })
+    fireEvent.pointerMove(grip, { screenX: 160, pointerId: 1 })
+    expect(resize).toHaveBeenLastCalledWith(OVERLAY_METRICS.medium.width + 60, false)
+    fireEvent.pointerUp(grip, { screenX: 170, pointerId: 1 })
+    expect(resize).toHaveBeenLastCalledWith(OVERLAY_METRICS.medium.width + 70, true)
+    fireEvent.pointerMove(grip, { screenX: 400, pointerId: 1 })
+    expect(resize).toHaveBeenCalledTimes(2)
+  })
+
+  it('no canto da direita a alça fica à esquerda e arrastar para a esquerda alarga', () => {
+    const { bridge, push, resize } = fakeBridge()
+    render(<OverlayApp bridge={bridge} />)
+    push({ members: [member('a', 'Ana')], more: 0 }, { ...CONFIG, corner: 'top-right', width: 400 }, true)
+    const grip = screen.getByRole('separator', { name: 'Redimensionar' })
+    expect(grip.className).toContain('left-0')
+    fireEvent.pointerDown(grip, { screenX: 500, pointerId: 1 })
+    fireEvent.pointerUp(grip, { screenX: 450, pointerId: 1 })
+    expect(resize).toHaveBeenLastCalledWith(450, true)
+  })
+})
+
+describe('tema ao vivo', () => {
+  it('aplica o tema que chega do app; tema inválido é ignorado', () => {
+    const { bridge, pushTheme } = fakeBridge()
+    render(<OverlayApp bridge={bridge} />)
+    pushTheme({ base: 'claro', accent: '#ff0055', background: { stops: ['#ffffff'], angle: 180 }, intensity: 0 })
+    expect(document.documentElement.dataset.themeBase).toBe('claro')
+    pushTheme({ base: 'neon' })
+    expect(document.documentElement.dataset.themeBase).toBe('claro')
+    pushTheme({ base: 'escuro', accent: '#5865f2', background: { stops: ['#313338'], angle: 180 }, intensity: 0 })
+    expect(document.documentElement.dataset.themeBase).toBe('escuro')
   })
 })

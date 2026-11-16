@@ -294,12 +294,12 @@ Itens pequenos que ficaram anotados nas skills (cada um com a skill da área atu
 
 | Item | Dev | Origem | Skill |
 |---|---|---|---|
-| Interruptor para desligar as notificações no app e som por tipo | A | B9 | `concord-notifications` |
-| Cortar o áudio para 5 s antes de enviar (em vez de recusar) | A | B17 | `concord-sounds` |
+| Interruptor para desligar as notificações no app e som por tipo ✅ (branch `feat/pendencias-v6`) | A | B9 | `concord-notifications` |
+| Cortar o áudio para 5 s antes de enviar (em vez de recusar) ✅ (branch `feat/pendencias-v6`; o app deixa escolher o trecho e corta para WAV mono 44,1 kHz; servidor inalterado) | A | B17 | `concord-sounds` |
 | Soundboard nas chamadas privadas (botão no painel da chamada) ✅ (feita pelo Dev B; branch `v6/soundboard-chamadas`) | A | B17 | `concord-sounds` |
-| Várias lanes preferidas por pessoa no sorteador (o contrato já aceita a lista) | A | B10 | `concord-tools` |
-| Atalho no `+` do composer abrindo o painel das ferramentas | A | v4 | `concord-tools` |
-| Overlay: escolher outro atalho, arrastar a posição e acompanhar a troca de tema ao vivo | A | B15 | `concord-overlay` |
+| Várias lanes preferidas por pessoa no sorteador (o contrato já aceita a lista) ✅ (branch `feat/pendencias-v6`; painel com 1ª, 2ª... por pessoa) | A | B10 | `concord-tools` |
+| Atalho no `+` do composer abrindo o painel das ferramentas ✅ (branch `feat/pendencias-v6`; navega para o `ToolView` com `toolChannelId` = chat atual; não aparece no chat da sala de voz) | A | v4 | `concord-tools` |
+| Overlay: escolher outro atalho, arrastar a posição e acompanhar a troca de tema ao vivo ✅ (branch `feat/pendencias-v6`; também redimensionar a largura arrastando) | A | B15 | `concord-overlay` |
 | Silêncio pelo servidor guardado no banco ✅ (branch `v6/silencio-no-banco`; tabela `server_mutes`) | B | B6 | `concord-moderation` |
 
 ## Verificação (em toda task)

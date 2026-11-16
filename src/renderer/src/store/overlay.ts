@@ -1,5 +1,13 @@
 // Sobreposição em jogos (overlay, B15): preferência desta máquina (salva em `concord:overlay`).
-import { DEFAULT_OVERLAY_CONFIG, type OverlayCorner, type OverlayPosition, type OverlaySize } from '@shared/overlay'
+import {
+  DEFAULT_OVERLAY_CONFIG,
+  DEFAULT_OVERLAY_SHORTCUTS,
+  type OverlayCorner,
+  type OverlayPosition,
+  type OverlayShortcutAction,
+  type OverlayShortcuts,
+  type OverlaySize
+} from '@shared/overlay'
 
 export interface OverlayState {
   overlayEnabled: boolean
@@ -7,6 +15,10 @@ export interface OverlayState {
   overlaySize: OverlaySize
   /** posição arrastada no modo de mover; null = no canto escolhido */
   overlayPosition: OverlayPosition | null
+  overlayWidth: number | null
+  overlayShortcuts: OverlayShortcuts
+  overlayShortcutTaken: OverlayShortcutAction[]
+  overlayRecording: OverlayShortcutAction | null
   /** modo de mover ligado agora (não é salvo) */
   overlayEditing: boolean
 }
@@ -16,5 +28,9 @@ export const overlayInitial: OverlayState = {
   overlayCorner: DEFAULT_OVERLAY_CONFIG.corner,
   overlaySize: DEFAULT_OVERLAY_CONFIG.size,
   overlayPosition: DEFAULT_OVERLAY_CONFIG.position,
+  overlayWidth: DEFAULT_OVERLAY_CONFIG.width,
+  overlayShortcuts: DEFAULT_OVERLAY_SHORTCUTS,
+  overlayShortcutTaken: [],
+  overlayRecording: null,
   overlayEditing: false
 }

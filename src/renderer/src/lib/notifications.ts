@@ -7,6 +7,7 @@
 import { mentionsAccount, mentionsToPlain, type CallInfo, type FriendEntry, type Message } from '@shared/types'
 import type { NativeNotification } from '@shared/notifications'
 import type { AppState } from '@/store'
+import type { NotificationSoundKind } from '@/store/notifications'
 import { findDm } from './dms'
 import { homeBadge } from './home'
 
@@ -60,6 +61,18 @@ export function friendRequestNotification(entry: FriendEntry, focused: boolean):
     body: `${entry.account.name}#${entry.account.tag} enviou um pedido de amizade.`,
     target: { kind: 'friends' }
   }
+}
+
+type SoundSt = Pick<AppState, 'self' | 'dms' | 'mutedChannels' | 'deafened' | 'notificationSounds'>
+
+export function messageSound(message: Message, st: SoundSt, seen: boolean): NotificationSoundKind | null {
+  if (seen || st.deafened || !st.self || message.author.accountId === st.self.accountId || st.mutedChannels.includes(message.channelId)) return null
+  const kind: NotificationSoundKind | null = findDm(st.dms, message.channelId) ? 'dm' : mentionsAccount(message.content, st.self.accountId) ? 'mention' : null
+  return kind && st.notificationSounds[kind] ? kind : null
+}
+
+export function friendRequestSound(entry: FriendEntry, st: Pick<SoundSt, 'deafened' | 'notificationSounds'>): NotificationSoundKind | null {
+  return entry.status === 'incoming' && !st.deafened && st.notificationSounds.friend ? 'friend' : null
 }
 
 /** Número do selo: o mesmo da Home (pedidos + conversas não lidas) + chamadas tocando para mim. */

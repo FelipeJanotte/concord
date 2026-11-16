@@ -9,10 +9,12 @@ import {
   notificationEnv,
   openNotificationTarget,
   setChannelNotifications,
+  setNotificationSound,
+  setNotificationsEnabled,
   stopNotifications
 } from '@/lib/actions/notifications'
 import { setSocket } from '@/lib/core'
-import { badgeCount, callNotification, friendRequestNotification, messageNotification, messagePreview } from '@/lib/notifications'
+import { badgeCount, callNotification, friendRequestNotification, friendRequestSound, messageNotification, messagePreview, messageSound } from '@/lib/notifications'
 import { initialState, useApp } from '@/store'
 import { FakeSocket } from '@/test/fake-socket'
 
@@ -72,7 +74,11 @@ describe('regras', () => {
     })
     setChannelNotifications('mentions')
     expect(st().channelNotifications).toBe('mentions')
-    expect(JSON.parse(localStorage.getItem('concord:notifications') ?? '{}')).toEqual({ channels: 'mentions' })
+    expect(JSON.parse(localStorage.getItem('concord:notifications') ?? '{}')).toEqual({
+      channels: 'mentions',
+      enabled: true,
+      sounds: { dm: true, mention: true, friend: true }
+    })
     useApp.setState({ channelNotifications: 'all' })
     loadNotificationPreferences()
     expect(st().channelNotifications).toBe('mentions')
@@ -104,6 +110,65 @@ describe('regras', () => {
     expect(friendRequestNotification(request(), true)).toBeNull()
   })
 
+  it('som da mensagem: conversa privada e menção, cada um com seu interruptor; não na conversa que estou vendo', () => {
+    useApp.setState({ channels: [{ id: 'geral', name: 'geral', type: 'text', createdAt: 0 }] })
+    const mention = msg({ channelId: 'geral', content: '<@todos> olha' })
+    expect(messageSound(msg(), st(), false)).toBe('dm')
+    expect(messageSound(mention, st(), false)).toBe('mention')
+    expect(messageSound(msg({ channelId: 'geral', content: 'bora jogar?' }), st(), false)).toBeNull()
+    expect(messageSound(msg(), st(), true)).toBeNull()
+    expect(messageSound(msg({ author: me }), st(), false)).toBeNull()
+
+    useApp.setState({ channelNotifications: 'none' })
+    expect(messageSound(mention, st(), false)).toBe('mention')
+
+    useApp.setState({ notificationSounds: { dm: false, mention: true, friend: true } })
+    expect(messageSound(msg(), st(), false)).toBeNull()
+    expect(messageSound(mention, st(), false)).toBe('mention')
+    useApp.setState({ notificationSounds: { dm: true, mention: false, friend: true } })
+    expect(messageSound(mention, st(), false)).toBeNull()
+  })
+
+  it('som fica mudo com ensurdecer e em canal/conversa silenciados', () => {
+    useApp.setState({ channels: [{ id: 'geral', name: 'geral', type: 'text', createdAt: 0 }] })
+    const mention = msg({ channelId: 'geral', content: '<@todos> reunião' })
+    useApp.setState({ mutedChannels: ['geral', 'dm-ana'] })
+    expect(messageSound(msg(), st(), false)).toBeNull()
+    expect(messageSound(mention, st(), false)).toBeNull()
+    useApp.setState({ mutedChannels: [], deafened: true })
+    expect(messageSound(msg(), st(), false)).toBeNull()
+    expect(messageSound(mention, st(), false)).toBeNull()
+    expect(friendRequestSound(request(), st())).toBeNull()
+  })
+
+  it('som do pedido de amizade: só pedido recebido e com o interruptor ligado', () => {
+    expect(friendRequestSound(request(), st())).toBe('friend')
+    expect(friendRequestSound(request('friend'), st())).toBeNull()
+    useApp.setState({ notificationSounds: { dm: true, mention: true, friend: false } })
+    expect(friendRequestSound(request(), st())).toBeNull()
+  })
+
+  it('interruptores salvos nesta máquina; valor estranho volta a ligado', () => {
+    const data = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => data.get(k) ?? null,
+      setItem: (k: string, v: string) => void data.set(k, v),
+      removeItem: (k: string) => void data.delete(k)
+    })
+    setNotificationsEnabled(false)
+    setNotificationSound('mention', false)
+    expect(st()).toMatchObject({ notificationsEnabled: false, notificationSounds: { dm: true, mention: false, friend: true } })
+    useApp.setState({ notificationsEnabled: true, notificationSounds: { dm: true, mention: true, friend: true } })
+    loadNotificationPreferences()
+    expect(st()).toMatchObject({ notificationsEnabled: false, notificationSounds: { dm: true, mention: false, friend: true } })
+    localStorage.setItem('concord:notifications', '{"channels":"all","enabled":"não","sounds":{"dm":1,"friend":false}}')
+    loadNotificationPreferences()
+    expect(st()).toMatchObject({ notificationsEnabled: true, notificationSounds: { dm: true, mention: true, friend: false } })
+    setNotificationSound('qualquer' as never, false)
+    expect(st().notificationSounds).toEqual({ dm: true, mention: true, friend: false })
+    vi.unstubAllGlobals()
+  })
+
   it('selo: pedidos + conversas não lidas + chamada tocando para mim', () => {
     useApp.setState({ friends: [request()], unread: { 'dm-ana': true, geral: true }, calls: { 'dm-ana': ringing } })
     expect(badgeCount(st())).toBe(3)
@@ -116,8 +181,11 @@ describe('ligação com os eventos', () => {
   let badges: Array<[number, string | null]>
   let clickListener: ((t: NotificationTarget | null) => void) | null
   let focused: boolean
+  let played: string[]
 
   beforeEach(() => {
+    played = []
+    vi.spyOn(notificationEnv, 'playSound').mockImplementation((kind) => void played.push(kind))
     shown = []
     badges = []
     clickListener = null
@@ -151,6 +219,48 @@ describe('ligação com os eventos', () => {
     focused = true
     socket.receive('message:new', msg({ id: 'm2' }))
     expect(shown).toHaveLength(3)
+  })
+
+  it('notificações desligadas: nada aparece e o selo fica zerado', () => {
+    setNotificationsEnabled(false)
+    socket.receive('message:new', msg())
+    socket.receive('call:updated', ringing)
+    socket.receive('friend:updated', request())
+    useApp.setState({ unread: { 'dm-ana': true }, friends: [request()] })
+    expect(shown).toEqual([])
+    expect(badges.at(-1)).toEqual([0, null])
+    setNotificationsEnabled(true)
+    expect(badges.at(-1)?.[0]).toBe(2)
+  })
+
+  it('som toca no lugar do som do sistema; com o som desligado, a notificação mantém o do sistema', () => {
+    socket.receive('message:new', msg())
+    expect(played).toEqual(['dm'])
+    expect(shown.at(-1)).toMatchObject({ title: 'Ana', silent: true })
+    useApp.setState({ notificationSounds: { dm: false, mention: true, friend: true } })
+    socket.receive('message:new', msg({ id: 'm2' }))
+    expect(played).toEqual(['dm'])
+    expect(shown.at(-1)?.silent).toBeUndefined()
+  })
+
+  it('som com o app em foco, menos na conversa aberta; pedido toca uma vez', () => {
+    focused = true
+    socket.receive('message:new', msg())
+    expect(played).toEqual(['dm'])
+    useApp.setState({ section: 'home', homeView: { kind: 'dm', channelId: 'dm-ana' } })
+    socket.receive('message:new', msg({ id: 'm2' }))
+    expect(played).toEqual(['dm'])
+    socket.receive('friend:updated', request())
+    socket.receive('friend:updated', { ...request(), online: true })
+    expect(played).toEqual(['dm', 'friend'])
+    expect(shown).toEqual([])
+  })
+
+  it('som toca mesmo com as notificações desligadas', () => {
+    setNotificationsEnabled(false)
+    socket.receive('message:new', msg())
+    expect(played).toEqual(['dm'])
+    expect(shown).toEqual([])
   })
 
   it('o mesmo pedido não avisa duas vezes; depois de resolvido, um pedido novo avisa de novo', () => {

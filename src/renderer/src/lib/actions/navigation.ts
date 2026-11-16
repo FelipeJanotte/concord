@@ -60,9 +60,8 @@ export async function messageAccount(accountId: string): Promise<void> {
   openDmChat(dm.channel.id)
 }
 
-/** Abre o painel de uma ferramenta da barra de úteis (o canal ou a sala atual continuam como contexto). */
-export function openTool(toolId: string): void {
-  set({ section: 'tool', toolId })
+export function openTool(toolId: string, toolChannelId: string | null = null): void {
+  set({ section: 'tool', toolId, toolChannelId })
 }
 
 /** O chat deste canal está na tela agora? (para não marcar como não lido) */

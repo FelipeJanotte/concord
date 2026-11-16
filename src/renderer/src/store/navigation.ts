@@ -12,6 +12,7 @@ export interface NavigationState {
   homeView: HomeView
   /** ferramenta aberta (id do registro `components/tools/registry.ts`) quando `section` é 'tool' */
   toolId: string | null
+  toolChannelId: string | null
   /** painel "Chat" da sala de voz aberto (vale para a sala em `view`; fica aberto ao trocar de sala) */
   voiceChatOpen: boolean
 }
@@ -20,5 +21,6 @@ export const navigationInitial: NavigationState = {
   section: 'community',
   homeView: { kind: 'friends' },
   toolId: null,
+  toolChannelId: null,
   voiceChatOpen: false
 }

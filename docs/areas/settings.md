@@ -13,7 +13,7 @@ O conteúdo de cada seção continua documentado na área dela (links abaixo); a
 | `src/renderer/src/components/settings/AccountSettings.tsx` | "Minha conta" (era `ProfileDialog`): foto, nome, id, como entra, Salvar e "Sair da conta" — `docs/areas/accounts.md`. |
 | `src/renderer/src/components/settings/VoiceSettings.tsx` | "Voz e vídeo" (era `voice/DeviceSettings.tsx`): dispositivos, volumes, equalizador automático, ruído, pressione para falar, sons da sala, sobreposição — `docs/areas/voice.md` e `docs/areas/overlay.md`. |
 | `src/renderer/src/components/settings/appearance/AppearanceSettings.tsx` | "Aparência" (era `AppearanceDialog`) — `docs/areas/themes.md`. |
-| `src/renderer/src/components/settings/NotificationSettings.tsx` | "Notificações" (`NotificationSettings`, com a `ChannelNotificationSetting`, que antes ficava dentro de "Minha conta") — `docs/areas/notifications.md`. |
+| `src/renderer/src/components/settings/NotificationSettings.tsx` | "Notificações" (`NotificationSettings`: interruptor "Mostrar notificações do Concord", a `ChannelNotificationSetting`, que antes ficava dentro de "Minha conta", e "Tocar um som" por tipo) — `docs/areas/notifications.md`. |
 | `src/renderer/src/store/settings.ts` | `settingsSection: 'account' \| 'voice' \| 'appearance' \| 'notifications' \| null` (null = fechada). Não é salvo. |
 | `src/renderer/src/lib/actions/settings.ts` | `openSettings(section = 'account')`, `closeSettings()` (fecha e manda o tema pendente: `flushPendingTheme`). `openDeviceSettings()` (em `lib/actions/devices.ts`) = `openSettings('voice')`. |
 | `src/renderer/src/components/UserPanel.tsx` | Engrenagem "Configurações" (e clicar no próprio nome) → "Minha conta"; monta o `UserSettingsDialog` uma vez só. O botão de paleta separado saiu. |

@@ -133,6 +133,27 @@ describe('drawTeams', () => {
     }
   })
 
+  it('a validação guarda as preferências na ordem da pessoa, sem as lanes fora das disponíveis', () => {
+    const input = valid({ players: [{ name: 'Ana', lanes: ['support', 'jungle', 'top'] }, { name: 'Bia' }], teamCount: 2, lanes: true, laneSet: ['top', 'support'] })
+    expect(input.players[0].lanes).toEqual(['support', 'top'])
+  })
+
+  it('quando a 1ª preferência já é de outro no time, a pessoa fica com a 2ª', () => {
+    const players: TeamPlayer[] = [
+      { name: 'Ana', lanes: ['mid', 'top'] },
+      { name: 'Bia', lanes: ['mid', 'jungle'] },
+      { name: 'Caio', lanes: ['mid', 'adc'] },
+      { name: 'Duda', lanes: ['mid', 'support'] }
+    ]
+    for (let seed = 0; seed < 20; seed++) {
+      const result = drawTeams(valid({ players, teamCount: 2, lanes: true }), seeded(seed))
+      for (const team of result.teams) {
+        expect(team.members.filter((m) => m.lane === 'mid')).toHaveLength(1)
+        for (const m of team.members) expect(players.find((p) => p.name === m.name)!.lanes).toContain(m.lane)
+      }
+    }
+  })
+
   it('a 1ª preferência vale mais que a 2ª', () => {
     const players: TeamPlayer[] = [
       { name: 'Ana', lanes: ['top', 'mid'] },

@@ -8,8 +8,8 @@ v4, lidas de um registro. É só tela: não há evento novo. Amizades e conversa
 
 | Arquivo | Papel |
 |---|---|
-| `store/navigation.ts` | `section: 'community' \| 'home' \| 'tool'`, `homeView: { kind: 'friends' } \| { kind: 'dm', channelId }`, `toolId`. |
-| `lib/actions/navigation.ts` | `showCommunity`, `showHome`, `showFriends`, `openDmChat(channelId)`, `messageAccount(accountId)`, `openTool(toolId)`, `openVoiceChat(channelId)` e `setVoiceChatOpen(open)` (chat da sala de voz, ver `docs/areas/messages.md`), `isChatOnScreen(state, channelId)` (sala de voz só conta com o painel "Chat" aberto). Reexportadas por `lib/client.ts`. |
+| `store/navigation.ts` | `section: 'community' \| 'home' \| 'tool'`, `homeView: { kind: 'friends' } \| { kind: 'dm', channelId }`, `toolId`, `toolChannelId` (destino escolhido pelo `+` do composer, `docs/areas/tools.md`). |
+| `lib/actions/navigation.ts` | `showCommunity`, `showHome`, `showFriends`, `openDmChat(channelId)`, `messageAccount(accountId)`, `openTool(toolId, toolChannelId?)` (o `+` do composer passa o canal do chat), `openVoiceChat(channelId)` e `setVoiceChatOpen(open)` (chat da sala de voz, ver `docs/areas/messages.md`), `isChatOnScreen(state, channelId)` (sala de voz só conta com o painel "Chat" aberto). Reexportadas por `lib/client.ts`. |
 | `lib/dms.ts` | `findDm(dms, channelId)`, `chatLabel(channel, dms)` (`#geral` / `@Ana`) e `DM_PERMISSIONS`. |
 | `lib/home.ts` | `homeBadge` (selo do Início) e `communityUnread` (bolinha da comunidade). |
 | `components/rail/UtilityRail.tsx` | A barra de úteis (substitui o antigo `ServerRail` do `App.tsx`). No topo, acima do Início, o botão de atualizar o app quando há versão nova (`UpdateRailSlot`, `docs/areas/updates.md`). |
@@ -94,7 +94,7 @@ de canais e a da Home dividem a mesma (`navigation`), então trocar de seção n
 
 | Arquivo | Cobre |
 |---|---|
-| `lib/actions/navigation.test.ts` | Seções, a Home lembra a conversa, ferramenta fecha ao escolher canal, `messageAccount` (sucesso e erro), não lido por seção. |
+| `lib/actions/navigation.test.ts` | Seções, a Home lembra a conversa, ferramenta fecha ao escolher canal, `toolChannelId` do `+` do composer, `messageAccount` (sucesso e erro), não lido por seção. |
 | `lib/home.test.ts` | `homeBadge`, `communityUnread`, `findDm`, `chatLabel`, `DM_PERMISSIONS`. |
 | `lib/side-width.test.ts`, `components/ResizableSide.test.tsx` | Limites, largura guardada (inválida, sem armazenamento), arrastar nas duas bordas, mínimo/máximo, só grava ao soltar, duplo clique volta ao padrão. |
 | `components/home/home.test.tsx` | Barra (selo, troca de seção, ferramenta do registro), Home (ordem, online, vazio, selo de pedidos), chat da conversa (@nome, sem cargos, busca o histórico), tela Amigos (abas, ações, confirmações, adicionar), botão direito ("Mensagem", "Adicionar amigo", nada quando bloqueada). |

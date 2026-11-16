@@ -72,6 +72,20 @@ describe('ChimePlayer', () => {
     expect(ctx.oscillators.map((o) => o.frequency.calls[0][1])).toEqual([880, 659.25])
   })
 
+  it('notificações (B9): um som diferente para conversa privada, menção e pedido de amizade', () => {
+    const { p, ctx } = player()
+    const freqs = (sound: 'notify-dm' | 'notify-mention' | 'notify-friend'): number[] => {
+      const before = ctx.oscillators.length
+      p.play(sound, { volume: 1, outputId: null })
+      return ctx.oscillators.slice(before).map((o) => o.frequency.calls[0][1])
+    }
+    const dm = freqs('notify-dm')
+    const mention = freqs('notify-mention')
+    const friend = freqs('notify-friend')
+    expect(dm.length).toBeGreaterThan(0)
+    expect(new Set([dm.join(), mention.join(), friend.join()]).size).toBe(3)
+  })
+
   it('o volume escala o pico (100% ainda é baixo) e zero não toca', () => {
     const { p, ctx } = player()
     p.play('join', { volume: 1, outputId: null })

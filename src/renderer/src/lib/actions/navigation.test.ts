@@ -77,6 +77,13 @@ describe('seções', () => {
     selectTextChannel('geral')
     expect(useApp.getState()).toMatchObject({ section: 'community', toolId: null })
   })
+
+  it('ferramenta pelo + do composer guarda o canal; pela barra de úteis volta a sugerir', () => {
+    openTool('dice', 'dm-ana')
+    expect(useApp.getState()).toMatchObject({ section: 'tool', toolId: 'dice', toolChannelId: 'dm-ana' })
+    openTool('coin')
+    expect(useApp.getState().toolChannelId).toBeNull()
+  })
 })
 
 describe('"Mensagem"', () => {

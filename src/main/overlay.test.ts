@@ -14,7 +14,7 @@ const room = (n: number, more = 0): OverlayRoom => ({ members: Array.from({ leng
 
 describe('overlayBounds', () => {
   it('cada canto com margem de 16 px; altura cresce com as pessoas', () => {
-    const cfg = { enabled: true, size: 'medium' as const, position: null }
+    const cfg = { enabled: true, size: 'medium' as const, position: null, width: null }
     expect(overlayBounds(workArea, { ...cfg, corner: 'top-left' }, 2)).toEqual({ x: 16, y: 16, width: 250, height: 8 * 2 + 34 * 2 + 4 })
     const br = overlayBounds(workArea, { ...cfg, corner: 'bottom-right' }, 2)
     expect([br.x + br.width, br.y + br.height]).toEqual([1920 - 16, 1040 - 16])
@@ -22,10 +22,10 @@ describe('overlayBounds', () => {
   })
 
   it('tamanhos diferentes e altura com teto', () => {
-    const small = overlayBounds(workArea, { enabled: true, corner: 'top-left', size: 'small', position: null }, 1)
-    const large = overlayBounds(workArea, { enabled: true, corner: 'top-left', size: 'large', position: null }, 1)
+    const small = overlayBounds(workArea, { enabled: true, corner: 'top-left', size: 'small', position: null, width: null }, 1)
+    const large = overlayBounds(workArea, { enabled: true, corner: 'top-left', size: 'large', position: null, width: null }, 1)
     expect([small.width, large.width]).toEqual([200, 320])
-    const many = overlayBounds(workArea, { enabled: true, corner: 'top-left', size: 'small', position: null }, 500)
+    const many = overlayBounds(workArea, { enabled: true, corner: 'top-left', size: 'small', position: null, width: null }, 500)
     expect(many.height).toBe(8 * 2 + 26 * 13 + 4 * 12) // 12 pessoas + "+N"
   })
 
@@ -33,7 +33,7 @@ describe('overlayBounds', () => {
     for (const size of ['small', 'medium', 'large'] as const) {
       const { line } = OVERLAY_METRICS[size]
       for (const n of [1, 2, 5]) {
-        const b = overlayBounds(workArea, { enabled: true, corner: 'top-left', size, position: null }, n)
+        const b = overlayBounds(workArea, { enabled: true, corner: 'top-left', size, position: null, width: null }, n)
         expect(b.height).toBe(OVERLAY_PADDING * 2 + n * line + (n - 1) * OVERLAY_GAP)
         expect(b.height).toBe(overlayHeight(size, n))
       }
@@ -41,16 +41,16 @@ describe('overlayBounds', () => {
     // a foto cabe na linha com folga para o anel de quem fala (2 px de cada lado)
     for (const { line, avatar } of Object.values(OVERLAY_METRICS)) expect(line - avatar).toBeGreaterThanOrEqual(4)
     // modo de mover: mais uma linha (a barra "Concluir")
-    const cfg = { enabled: true, corner: 'top-left' as const, size: 'medium' as const, position: null }
+    const cfg = { enabled: true, corner: 'top-left' as const, size: 'medium' as const, position: null, width: null }
     expect(overlayBounds(workArea, cfg, 2, true).height).toBe(overlayHeight('medium', 3))
   })
 })
 
 describe('validação', () => {
   it('configuração desconhecida volta ao padrão', () => {
-    expect(cleanConfig(null)).toEqual({ enabled: false, corner: 'top-left', size: 'medium', position: null })
-    expect(cleanConfig({ enabled: true, corner: 'meio', size: 'enorme' })).toEqual({ enabled: true, corner: 'top-left', size: 'medium', position: null })
-    expect(cleanConfig({ enabled: 'sim', corner: 'bottom-right', size: 'large' })).toEqual({ enabled: false, corner: 'bottom-right', size: 'large', position: null })
+    expect(cleanConfig(null)).toEqual({ enabled: false, corner: 'top-left', size: 'medium', position: null, width: null })
+    expect(cleanConfig({ enabled: true, corner: 'meio', size: 'enorme' })).toEqual({ enabled: true, corner: 'top-left', size: 'medium', position: null, width: null })
+    expect(cleanConfig({ enabled: 'sim', corner: 'bottom-right', size: 'large' })).toEqual({ enabled: false, corner: 'bottom-right', size: 'large', position: null, width: null })
   })
 
   it('sala: corta textos e pessoas, só aceita foto http/data', () => {
@@ -81,12 +81,28 @@ function setup() {
     isDestroyed: () => win.destroyed,
     destroy: vi.fn(() => (win.destroyed = true)),
     send: vi.fn(),
+    sendTheme: vi.fn(),
     setInteractive: vi.fn(),
     visible: false,
     destroyed: false
   }
-  const deps = { createWindow: vi.fn(() => win), workArea: vi.fn((_p?: unknown) => workArea), notifyToggled: vi.fn(), notifyEditing: vi.fn(), notifyMoved: vi.fn() }
-  return { controller: createOverlayController(deps), deps, win }
+  const registered = new Map<string, () => void>()
+  const taken = new Set<string>()
+  const deps = {
+    createWindow: vi.fn(() => win),
+    workArea: vi.fn((_p?: unknown) => workArea),
+    notifyToggled: vi.fn(),
+    notifyEditing: vi.fn(),
+    notifyMoved: vi.fn(),
+    notifyResized: vi.fn(),
+    registerShortcut: vi.fn((accelerator: string, run: () => void) => {
+      if (taken.has(accelerator)) return false
+      registered.set(accelerator, run)
+      return true
+    }),
+    unregisterShortcut: vi.fn((accelerator: string) => void registered.delete(accelerator))
+  }
+  return { controller: createOverlayController(deps), deps, win, registered, taken }
 }
 
 describe('controlador', () => {
@@ -97,7 +113,7 @@ describe('controlador', () => {
     controller.setConfig({ enabled: true, corner: 'top-left', size: 'medium' })
     expect(deps.createWindow).toHaveBeenCalledTimes(1)
     expect(win.setBounds).toHaveBeenCalledWith(expect.objectContaining({ x: 16, y: 16, width: 250 }))
-    expect(win.send).toHaveBeenLastCalledWith(room(2), { enabled: true, corner: 'top-left', size: 'medium', position: null }, false)
+    expect(win.send).toHaveBeenLastCalledWith(room(2), { enabled: true, corner: 'top-left', size: 'medium', position: null, width: null }, false)
     expect(win.showInactive).toHaveBeenCalledTimes(1)
     controller.setRoom(room(3))
     expect(deps.createWindow).toHaveBeenCalledTimes(1)
@@ -141,7 +157,7 @@ describe('controlador', () => {
 })
 
 describe('Concord em foco', () => {
-  const on = { enabled: true, corner: 'top-left' as const, size: 'medium' as const, position: null }
+  const on = { enabled: true, corner: 'top-left' as const, size: 'medium' as const, position: null, width: null }
 
   it('overlayVisible: some com o Concord em foco, menos no modo de mover', () => {
     const base = { enabled: true, hasPeople: true, editing: false, appFocused: false }
@@ -182,7 +198,7 @@ describe('Concord em foco', () => {
 })
 
 describe('posição arrastada', () => {
-  const at = (x: number, y: number) => ({ enabled: true, corner: 'bottom-right' as const, size: 'medium' as const, position: { x, y } })
+  const at = (x: number, y: number) => ({ enabled: true, corner: 'bottom-right' as const, size: 'medium' as const, position: { x, y }, width: null })
 
   it('vale no lugar do canto e não sai da área útil da tela', () => {
     expect(overlayBounds(workArea, at(500, 300), 2)).toMatchObject({ x: 500, y: 300, width: 250 })
@@ -193,7 +209,7 @@ describe('posição arrastada', () => {
   })
 
   it('o modo de mover ganha uma linha de altura para a barra "Concluir"', () => {
-    const cfg = { enabled: true, corner: 'top-left' as const, size: 'medium' as const, position: null }
+    const cfg = { enabled: true, corner: 'top-left' as const, size: 'medium' as const, position: null, width: null }
     expect(overlayBounds(workArea, cfg, 2, true).height - overlayBounds(workArea, cfg, 2).height).toBe(34 + 4)
   })
 
@@ -215,7 +231,7 @@ describe('posição arrastada', () => {
 })
 
 describe('modo de mover', () => {
-  const on = { enabled: true, corner: 'top-left' as const, size: 'medium' as const, position: null }
+  const on = { enabled: true, corner: 'top-left' as const, size: 'medium' as const, position: null, width: null }
 
   it('destrava a janela (recebe o mouse), avisa a janela principal e manda o modo para a página', () => {
     const { controller, deps, win } = setup()
@@ -277,5 +293,107 @@ describe('modo de mover', () => {
     controller.moved({ x: 300.4, y: 200, width: 250, height: 100 })
     expect(deps.notifyMoved).toHaveBeenLastCalledWith({ x: 300, y: 200 })
     expect(controller.current().config.position).toEqual({ x: 300, y: 200 })
+  })
+})
+
+describe('atalhos escolhidos', () => {
+  it('registra os dois atalhos e cada um faz a sua ação', () => {
+    const { controller, deps, registered } = setup()
+    expect(controller.setShortcuts({ toggle: 'Alt+1', edit: 'Alt+2' })).toEqual({ toggle: true, edit: true })
+    expect([...registered.keys()]).toEqual(['Alt+1', 'Alt+2'])
+    registered.get('Alt+1')!()
+    expect(deps.notifyToggled).toHaveBeenLastCalledWith(true)
+    registered.get('Alt+2')!()
+    expect(controller.current().editing).toBe(true)
+  })
+
+  it('trocar solta os antigos; atalho ocupado por outro programa volta como não registrado', () => {
+    const { controller, registered, taken } = setup()
+    controller.setShortcuts({ toggle: 'Alt+1', edit: 'Alt+2' })
+    taken.add('Ctrl+Shift+O')
+    expect(controller.setShortcuts({ toggle: 'Ctrl+Shift+O', edit: 'Alt+3' })).toEqual({ toggle: false, edit: true })
+    expect([...registered.keys()]).toEqual(['Alt+3'])
+  })
+
+  it('inválidos ou repetidos voltam ao padrão', () => {
+    const { controller, registered } = setup()
+    controller.setShortcuts({ toggle: 'Alt+1', edit: 'Alt+1' })
+    expect([...registered.keys()]).toEqual(['Shift+`', 'CommandOrControl+Shift+`'])
+    controller.setShortcuts('lixo')
+    expect([...registered.keys()]).toEqual(['Shift+`', 'CommandOrControl+Shift+`'])
+  })
+
+  it('pausa enquanto a pessoa grava um atalho novo e volta depois; soltar ao sair do app', () => {
+    const { controller, registered } = setup()
+    controller.setShortcuts({ toggle: 'Alt+1', edit: 'Alt+2' })
+    controller.pauseShortcuts(true)
+    expect(registered.size).toBe(0)
+    controller.pauseShortcuts(false)
+    expect([...registered.keys()]).toEqual(['Alt+1', 'Alt+2'])
+    controller.pauseShortcuts(true)
+    expect(controller.setShortcuts({ toggle: 'Alt+4', edit: 'Alt+5' })).toEqual({ toggle: true, edit: true })
+    expect([...registered.keys()]).toEqual(['Alt+4', 'Alt+5'])
+    controller.releaseShortcuts()
+    expect(registered.size).toBe(0)
+  })
+
+  it('um erro do Electron ao registrar conta como não registrado', () => {
+    const { controller, deps } = setup()
+    deps.registerShortcut.mockImplementationOnce(() => {
+      throw new Error('acelerador inválido')
+    })
+    expect(controller.setShortcuts({ toggle: 'Alt+1', edit: 'Alt+2' })).toEqual({ toggle: false, edit: true })
+  })
+})
+
+describe('redimensionar arrastando', () => {
+  const on = { enabled: true, corner: 'top-left' as const, size: 'medium' as const, position: null, width: null }
+
+  it('a largura arrastada vale no lugar da do tamanho, presa aos limites', () => {
+    expect(overlayBounds(workArea, { ...on, width: 420 }, 1).width).toBe(420)
+    expect(overlayBounds(workArea, { ...on, corner: 'top-right', width: 420 }, 1).x).toBe(1920 - 420 - 16)
+    expect(cleanConfig({ ...on, width: 5 }).width).toBe(140)
+    expect(cleanConfig({ ...on, width: 'larga' }).width).toBeNull()
+  })
+
+  it('só no modo de mover: muda a janela ao arrastar e avisa a janela principal ao soltar', () => {
+    const { controller, deps, win } = setup()
+    controller.setConfig(on)
+    controller.resize(400, true)
+    expect(deps.notifyResized).not.toHaveBeenCalled()
+    controller.setEditing(true)
+    controller.resize(380.4, false)
+    expect(win.setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ width: 380 }))
+    expect(deps.notifyResized).not.toHaveBeenCalled()
+    controller.resize(9_999, true)
+    expect(win.setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ width: 640 }))
+    expect(deps.notifyResized).toHaveBeenLastCalledWith(640)
+    expect(controller.current().config.width).toBe(640)
+    controller.resize('x', true)
+    expect(deps.notifyResized).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('tema ao vivo', () => {
+  const theme = { base: 'claro', accent: '#ff0055', background: { stops: ['#ffffff'], angle: 180 }, intensity: 0 }
+
+  it('repassa o tema válido para a janela aberta e guarda para a próxima', () => {
+    const { controller, win } = setup()
+    controller.setTheme(theme)
+    expect(win.sendTheme).not.toHaveBeenCalled()
+    expect(controller.current().theme).toMatchObject(theme)
+    controller.setConfig({ enabled: true, corner: 'top-left', size: 'medium' })
+    controller.setRoom(room(1))
+    controller.setTheme({ ...theme, accent: '#00aa55' })
+    expect(win.sendTheme).toHaveBeenLastCalledWith(expect.objectContaining({ accent: '#00aa55' }))
+  })
+
+  it('tema inválido é ignorado', () => {
+    const { controller, win } = setup()
+    controller.setConfig({ enabled: true, corner: 'top-left', size: 'medium' })
+    controller.setRoom(room(1))
+    controller.setTheme({ base: 'neon' })
+    expect(win.sendTheme).not.toHaveBeenCalled()
+    expect(controller.current().theme).toBeNull()
   })
 })
