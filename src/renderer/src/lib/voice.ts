@@ -561,6 +561,10 @@ export class VoiceClient {
     return () => void track.detach(el)
   }
 
+  screenMediaTrack(userId: string): MediaStreamTrack | undefined {
+    return this.screens.get(userId)?.mediaStreamTrack
+  }
+
   // ---------- câmera (B21) ----------
 
   /** Liga ou desliga a própria câmera na sala atual (qualidade limitada: `CAMERA_CAPTURE`). */

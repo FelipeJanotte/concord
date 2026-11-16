@@ -15,7 +15,7 @@ import { UserAvatar } from './UserAvatar'
 import { MuteChannelMenu, useChannelMuted } from './MuteChannelMenu'
 import { MemberContextMenu } from './voice/MemberContextMenu'
 import { ServerMutedIcon } from './voice/ModerationMenu'
-import { LiveBadge } from './voice/ScreenTile'
+import { LivePreview } from './voice/LivePreview'
 import { UserPanel, VoiceStatusPanel } from './UserPanel'
 
 export function ChannelSidebar() {
@@ -357,7 +357,7 @@ function VoiceMember({ state }: { state: VoiceState }) {
       >
         <UserAvatar user={user} size="sm" speaking={speaking} />
         <span className={cn('flex-1 truncate', speaking && 'text-accent-foreground')}>{user.name}</span>
-        {state.sharing && <LiveBadge />}
+        {state.sharing && <LivePreview userId={state.userId} />}
         {mutedByMe && <VolumeX className="size-3.5 text-destructive" aria-label="Silenciado por você" />}
         {state.serverMuted && <ServerMutedIcon />}
         {state.deafened ? (
