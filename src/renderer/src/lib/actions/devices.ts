@@ -7,9 +7,11 @@ import { get, notify, set } from '../core'
 import { voice } from '../voice'
 import { openSettings } from './settings'
 import { clampMicGain, clampOutputVolume } from '../mic-gain'
+import { clampLevelerTarget, type LevelerTarget } from '../leveler/level'
 
 // O que a supressão de ruído está fazendo agora (aparece em Configurações de voz).
 voice.onNoiseModeChange = (mode) => set({ noiseMode: mode })
+voice.onLevelerGains = (gains) => set({ levelerGains: gains })
 
 const STORAGE_KEY = 'concord:audio'
 
@@ -34,6 +36,8 @@ interface SavedAudio {
   micGain: number
   /** volume de saída (0 a 1) */
   outputVolume: number
+  leveler: boolean
+  levelerTarget: LevelerTarget
   soundboardVolume: number
 }
 
@@ -48,6 +52,8 @@ function readSaved(): SavedAudio {
     noise: true,
     micGain: 1,
     outputVolume: 1,
+    leveler: false,
+    levelerTarget: 'medium',
     soundboardVolume: 1
   }
   try {
@@ -74,6 +80,8 @@ function readSaved(): SavedAudio {
       noise: typeof data.noise === 'boolean' ? data.noise : empty.noise,
       micGain: clampMicGain(data.micGain),
       outputVolume: clampOutputVolume(data.outputVolume),
+      leveler: data.leveler === true,
+      levelerTarget: clampLevelerTarget(data.levelerTarget),
       soundboardVolume: clampOutputVolume(data.soundboardVolume)
     }
   } catch {
@@ -82,8 +90,21 @@ function readSaved(): SavedAudio {
 }
 
 function save(): void {
-  const { audioInputId, audioOutputId, cameraId, userVolumes, userMuted, voiceSoundsEnabled, voiceSoundsVolume, noiseSuppression, micGain, outputVolume, soundboardVolume } =
-    get()
+  const {
+    audioInputId,
+    audioOutputId,
+    cameraId,
+    userVolumes,
+    userMuted,
+    voiceSoundsEnabled,
+    voiceSoundsVolume,
+    noiseSuppression,
+    micGain,
+    outputVolume,
+    voiceLeveler,
+    voiceLevelerTarget,
+    soundboardVolume
+  } = get()
   try {
     localStorage.setItem(
       STORAGE_KEY,
@@ -97,6 +118,8 @@ function save(): void {
         noise: noiseSuppression,
         micGain,
         outputVolume,
+        leveler: voiceLeveler,
+        levelerTarget: voiceLevelerTarget,
         soundboardVolume
       })
     )
@@ -121,8 +144,12 @@ export function loadAudioPreferences(): void {
     noiseSuppression: saved.noise,
     micGain: saved.micGain,
     outputVolume: saved.outputVolume,
+    voiceLeveler: saved.leveler,
+    voiceLevelerTarget: saved.levelerTarget,
     soundboardVolume: saved.soundboardVolume
   })
+  voice.setLevelerTarget(saved.levelerTarget)
+  voice.setLeveler(saved.leveler)
   void voice.setNoiseSuppression(saved.noise)
   void voice.setMicGain(saved.micGain)
   voice.setOutputVolume(saved.outputVolume)
@@ -264,6 +291,19 @@ export async function setNoiseSuppression(enabled: boolean): Promise<void> {
     console.error('[ruído] não foi possível trocar:', err)
     notify('Não foi possível mudar a supressão de ruído.')
   }
+}
+
+export function setVoiceLeveler(enabled: boolean): void {
+  set({ voiceLeveler: enabled })
+  save()
+  voice.setLeveler(enabled)
+}
+
+export function setVoiceLevelerTarget(target: LevelerTarget): void {
+  const t = clampLevelerTarget(target)
+  set({ voiceLevelerTarget: t })
+  save()
+  voice.setLevelerTarget(t)
 }
 
 /** Botões de configurações de voz (sala, chamada, "Voz conectada"): abre as configurações em "Voz e vídeo". */

@@ -1,4 +1,6 @@
 // Dispositivos de áudio e volume por pessoa (B4). Preferências desta máquina (salvas no localStorage).
+import type { LevelerTarget } from '@/lib/leveler/level'
+import type { LevelerGains } from '@/lib/leveler/leveler'
 
 export interface DevicesState {
   /** microfone escolhido; null = padrão do sistema */
@@ -24,6 +26,9 @@ export interface DevicesState {
   noiseSuppression: boolean
   /** o que a supressão está fazendo agora; 'off' = desligada; null = fora de sala */
   noiseMode: 'off' | 'light' | 'advanced' | 'light-fallback' | null
+  voiceLeveler: boolean
+  voiceLevelerTarget: LevelerTarget
+  levelerGains: LevelerGains
 }
 
 export const devicesInitial: DevicesState = {
@@ -38,5 +43,8 @@ export const devicesInitial: DevicesState = {
   outputVolume: 1,
   soundboardVolume: 1,
   noiseSuppression: true,
-  noiseMode: null
+  noiseMode: null,
+  voiceLeveler: false,
+  voiceLevelerTarget: 'medium',
+  levelerGains: {}
 }

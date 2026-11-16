@@ -354,7 +354,7 @@ duas barras laterais), como no Discord:
 - **Silenciar alguém:** também por conta. O volume aplicado vira 0, mas o valor ajustado continua em `userVolumes`;
   ao tirar o silêncio, volta ao que era. Mexer no volume enquanto silenciado só guarda o valor. Não afeta os outros:
   é só no meu app (para silenciar para todos, B6 "silenciar pelo servidor").
-- **Preferências desta máquina:** `localStorage` `concord:audio` = `{ input, output, camera, volumes, muted, sounds, noise, micGain, outputVolume, soundboardVolume }`, lido ao carregar o
+- **Preferências desta máquina:** `localStorage` `concord:audio` = `{ input, output, camera, volumes, muted, sounds, noise, micGain, outputVolume, leveler, levelerTarget, soundboardVolume }`, lido ao carregar o
   app (`loadAudioPreferences`) e de novo depois do `disconnect()` (sair da conta não apaga). Dados inválidos ou
   armazenamento bloqueado: volta aos padrões sem quebrar.
 - **Lista:** `Room.getLocalDevices(kind, false)` (não pede permissão só para listar). Os apelidos do Windows
@@ -397,6 +397,50 @@ Dois controles em Configurações de voz (`VolumeSettings` em `settings/VoiceSet
   (controles, "Voltar para 100%", "Testar" com o volume de saída), `sounds.test.ts` e `voice-sounds.test.ts`.
   À mão: numa sala com outra janela, subir o microfone para 200% e baixar para 0% (o outro ouve mudar na hora, com e
   sem a supressão de ruído); baixar a saída e conferir voz, tela e efeitos sonoros.
+
+## Equalizador automático de vozes
+
+Opcional (desligado por padrão), em Configurações → Voz e vídeo. Mede a voz de cada pessoa da sala e aumenta quem
+está baixo ou abaixa quem está alto, para todos ficarem no mesmo volume. **Só cliente e só para quem ouve:** cada um
+liga e escolhe o alvo para si; nenhum evento novo; o áudio enviado não muda. Por que no ouvinte e com Web Audio
+própria: `docs/decisions/0004-equalizador-no-ouvinte.md`.
+
+| Peça | Papel |
+|---|---|
+| `lib/leveler/level.ts` | Puras: `rmsDb` (nível do bloco em dBFS), `nextGain` (próximo ganho rumo ao alvo), `LEVELER_TARGETS` (`low` -30, `medium` -24, `high` -18 dBFS), `clampLevelerTarget`, limites `LEVELER_GAIN_MIN` 0,25 e `LEVELER_GAIN_MAX` 3, piso de fala `SPEECH_FLOOR_DB` -50. |
+| `lib/leveler/leveler.ts` | `VoiceLeveler`: um `AudioContext` para todas as vozes; por voz `MediaStreamSource → Analyser → Gain → destination`; laço de 100 ms que mede e ajusta; `setVolume` (o volume pedido pelo app), `setTarget`, `setOutput` (`setSinkId`), `onGainsChange` e `destroy`. |
+| `lib/voice.ts` | `setLeveler(bool)`, `setLevelerTarget`, `onLevelerGains`. Com ele ligado, o microfone de cada pessoa (`Track.Source.Microphone` com `accountId`) vai para o `VoiceLeveler`; o áudio da tela continua no caminho normal. |
+| `lib/actions/devices.ts` + `store/devices.ts` | `voiceLeveler` (padrão `false`), `voiceLevelerTarget` (padrão `medium`), `levelerGains` (só em memória); `setVoiceLeveler`, `setVoiceLevelerTarget`; salvos em `concord:audio` como `leveler` e `levelerTarget`. |
+| `components/settings/VoiceSettings.tsx` | Seção "Equalizador automático": interruptor e "Volume-alvo" (Baixo/Médio/Alto, bloqueado com ele desligado). |
+| `components/voice/MemberContextMenu.tsx` | Com ele ligado, "Equalizador: +40%", "−25%" ou "sem ajuste" abaixo do volume da pessoa. |
+
+**Fluxo:**
+
+```
+elemento <audio> do LiveKit (mudo: só faz o Chrome entregar o áudio WebRTC)
+faixa ─► MediaStreamSource ─► Analyser (mede) ─► Gain (automático × volume pedido) ─► destination
+volume pedido = deafen ? 0 : silenciado ? 0 : volume da pessoa × volume de saída
+```
+
+- **Regras do ajuste:** só mede com fala (bloco acima de -50 dBFS); silêncio e ruído de fundo não sobem o ganho.
+  Abaixa em cerca de 1 s e sobe em cerca de 3 s (abaixar rápido evita susto; subir devagar evita "bombear" o
+  ruído). Ganho de 0,25 a 3 (−75% a +200%). Cada mudança aplicada com `setTargetAtTime` (sem estalo). O ganho é
+  medido antes do volume da pessoa: baixar alguém no botão direito continua valendo por cima do equalizador.
+- **Ligar/desligar dentro da sala** troca na hora as faixas de caminho; ao desligar, o elemento volta a tocar com
+  `setVolume` como antes. Sair da sala desmonta o `VoiceLeveler` (fecha o `AudioContext`); a próxima sala cria outro.
+- **Deafen** no caminho do equalizador zera o ganho (o elemento já está mudo). **Saída escolhida** (B4) vai para o
+  `AudioContext.setSinkId`, como no `ChimePlayer`.
+- **Aviso do ganho:** `onGainsChange` só dispara quando o ganho arredondado (passos de 5%) muda; contas em 100% não
+  aparecem no mapa.
+- **Testes:** `lib/leveler/level.test.ts` (nível, convergência, piso, limites, abaixa mais rápido do que sobe),
+  `lib/leveler/leveler.test.ts` (nós ligados, voz baixa sobe e alta desce, volume pedido, deafen, remover, saída,
+  destroy), `lib/voice.test.ts` (bloco "equalizador automático": caminhos, tela de fora, deafen, alternar na sala,
+  sair, alvo/saída, ganho repassado), `lib/actions/devices.test.ts`, `VoiceSettings.test.tsx` e
+  `MemberContextMenu.test.tsx`. À mão: 2–3 contas numa sala, uma falando baixo e outra alto; ligar o equalizador e
+  conferir o ganho no botão direito e o volume igualando; deafen silencia; trocar a saída; desligar volta ao normal.
+- **Problemas conhecidos:** quem fica muito tempo em silêncio mantém o último ganho (de propósito: não sobe ruído).
+  Microfone com muito ruído constante acima de -50 dBFS pode ser tratado como fala; a supressão de ruído de quem fala
+  (B13) resolve. Log `[equalizador] saída indisponível` = a saída escolhida não deu, tocando na padrão.
 
 ## Sons de entrar e sair da sala (B16)
 
@@ -545,3 +589,6 @@ frente, segurar a tecla e conferir na outra janela que ela ouve e vê o "falando
 11. Supressão de ruído "indisponível neste computador": veja no console o log `[ruído]` (WASM bloqueado pela CSP,
     AudioWorklet sem suporte, menos de 3 núcleos). A voz continua com a supressão nativa. Som "abafado" ou robótico:
     desligue o interruptor para comparar com o microfone cru.
+12. Equalizador ligado e alguém continua baixo: o ganho para em 300% (veja "Equalizador: +200%" no botão direito);
+    o microfone da pessoa está baixo demais e ela precisa subir o "Volume do microfone". "sem ajuste" o tempo todo:
+    a pessoa ainda não falou acima do piso de fala ou o equalizador não entrou (veja `[equalizador]` no console).
