@@ -53,6 +53,8 @@ Assim, ir para a Home e voltar mantém o canal ou a sala abertos, e a Home lembr
 - **Início:** `homeBadge` = pedidos recebidos + conversas não lidas (aparece no `aria-label`, ex.: "Início (2)").
 - **Concord:** bolinha à esquerda quando algum canal da comunidade tem não lido e a seção é outra.
 - **Amigos** (Home) e aba **Pendentes**: só pedidos recebidos.
+- Canal ou conversa **silenciados** (botão direito → "Silenciar") não ficam como não lidos e aparecem esmaecidos
+  (`docs/areas/notifications.md`, "Silenciar canal").
 
 ## Botão direito numa pessoa
 

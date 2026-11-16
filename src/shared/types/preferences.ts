@@ -6,15 +6,19 @@
  */
 import type { SavedTheme, ThemeConfig } from './theme'
 
+export const MUTED_CHANNELS_MAX = 500
+
 export interface Preferences {
   theme: ThemeConfig
   savedThemes: SavedTheme[]
+  mutedChannels: string[]
 }
 
 /** Só os campos enviados mudam; `savedThemes` substitui a lista inteira. */
 export interface PreferencesUpdate {
   theme?: ThemeConfig
   savedThemes?: SavedTheme[]
+  mutedChannels?: string[]
 }
 
 export type PreferencesResult = { ok: true; preferences: Preferences } | { ok: false; error: string }

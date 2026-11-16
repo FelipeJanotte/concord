@@ -15,7 +15,7 @@ export function bindMessageEvents(s: AppSocket): void {
       return {
         messages: list ? { ...st.messages, [message.channelId]: [...list, message] } : st.messages,
         unread:
-          !isActive && message.author.id !== st.self?.id ? { ...st.unread, [message.channelId]: true } : st.unread,
+          !isActive && message.author.id !== st.self?.id && !st.mutedChannels.includes(message.channelId) ? { ...st.unread, [message.channelId]: true } : st.unread,
         typing: typingInChannel?.[message.author.id]
           ? { ...st.typing, [message.channelId]: omit(typingInChannel, message.author.id) }
           : st.typing

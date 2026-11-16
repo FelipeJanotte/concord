@@ -145,6 +145,12 @@ describe('mensagens', () => {
     expect(useApp.getState().unread).toEqual({ outro: true })
   })
 
+  it('canal silenciado não fica como não lido', () => {
+    useApp.setState({ mutedChannels: ['outro'] })
+    socket.receive('message:new', message('1', 'outro', user('b')))
+    expect(useApp.getState().unread).toEqual({})
+  })
+
   it('"digitando" expira e some quando a pessoa envia', () => {
     const b = user('b')
     vi.useFakeTimers()
