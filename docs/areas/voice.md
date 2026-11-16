@@ -483,6 +483,15 @@ de quem fala (processador da faixa do microfone no `livekit-client`); quem ouve 
   `off` = desligada pela pessoa; `null` = fora de sala.
 - **Nunca derruba a voz:** qualquer falha do filtro cai para a supressão nativa e a pessoa entra/continua falando; só
   aparece um log `[ruído]` e a frase do diálogo muda.
+- **Sempre mono (correção do "só do lado esquerdo" e dos picotes):** o RNNoise está configurado com `maxChannels: 1` e
+  só processa o canal 0. Com microfone de dois canais (headset USB, placa de som), o canal direito saía zerado, e a
+  faixa de saída (`MediaStreamDestination`, com 2 canais por padrão) levava isso adiante. O `livekit-client` publica em
+  **estéreo** quando a faixa tem 2 canais e, em estéreo, **desliga RED e DTX**: quem ouvia tinha a voz só no lado
+  esquerdo e picotes com a perda de pacotes. Agora o nó do RNNoise e a saída dos dois processadores
+  (`createMonoDestination`/`forceMono` em `lib/mic-gain.ts`) mixam para 1 canal, e o microfone é publicado com
+  `MIC_PUBLISH` (`forceStereo: false`) em `lib/voice.ts`, então RED e DTX continuam ligados mesmo com microfone
+  estéreo cru. Testes: blocos "em mono" de `noise.test.ts` e `mic-gain.test.ts` e "microfone publicado em mono" de
+  `voice.test.ts`.
 - **CSP:** `script-src` ganhou `'wasm-unsafe-eval'` (necessário para compilar WebAssembly; não libera `eval` de JS).
 - **Trocar de motor:** outra função com a assinatura de `NoiseEngineLoader` (ex.: o GTCRN do mesmo pacote, ou
   DeepFilterNet3). O resto não muda.
@@ -589,6 +598,10 @@ frente, segurar a tecla e conferir na outra janela que ela ouve e vê o "falando
 11. Supressão de ruído "indisponível neste computador": veja no console o log `[ruído]` (WASM bloqueado pela CSP,
     AudioWorklet sem suporte, menos de 3 núcleos). A voz continua com a supressão nativa. Som "abafado" ou robótico:
     desligue o interruptor para comparar com o microfone cru.
-12. Equalizador ligado e alguém continua baixo: o ganho para em 300% (veja "Equalizador: +200%" no botão direito);
+12. Voz de alguém só num lado do fone, ou picotando: confira no `chrome://webrtc-internals` de quem fala se o
+    `outbound-rtp` de áudio está com 1 canal e o SDP sem `stereo=1`. Com 2 canais, o microfone saiu do caminho
+    mono (`MIC_PUBLISH` e `forceMono`, seção "Supressão de ruído automática"). Picote com 1 canal = rede: veja
+    `packetsLost` e `jitter` no `inbound-rtp` de quem ouve.
+13. Equalizador ligado e alguém continua baixo: o ganho para em 300% (veja "Equalizador: +200%" no botão direito);
     o microfone da pessoa está baixo demais e ela precisa subir o "Volume do microfone". "sem ajuste" o tempo todo:
     a pessoa ainda não falou acima do piso de fala ou o equalizador não entrou (veja `[equalizador]` no console).

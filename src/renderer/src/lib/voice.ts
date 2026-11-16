@@ -55,6 +55,7 @@ const AUDIO_CAPTURE = { echoCancellation: true, noiseSuppression: true, autoGain
  */
 const CAMERA_CAPTURE = { resolution: { width: 640, height: 360, frameRate: 24 } }
 const CAMERA_PUBLISH = { simulcast: false, videoEncoding: { maxBitrate: 350_000, maxFramerate: 24 } }
+const MIC_PUBLISH = { source: Track.Source.Microphone, forceStereo: false }
 
 const SCREEN_CAPTURE = { resolution: { width: 1920, height: 1080, frameRate: 15 }, contentHint: 'detail' as const }
 
@@ -272,7 +273,7 @@ export class VoiceClient {
       if (this.room !== room) return { micError, cancelled: true, ...permissions }
       // O filtro entra antes de publicar: ninguém chega a ouvir o áudio cru.
       if (mic) await this.attachProcessor(mic)
-      if (mic) await room.localParticipant.publishTrack(mic, { source: Track.Source.Microphone })
+      if (mic) await room.localParticipant.publishTrack(mic, MIC_PUBLISH)
       // O Electron libera autoplay, mas no navegador (npm run dev em localhost:5173) isso destrava o áudio.
       void room.startAudio().catch(() => {})
     } catch (err) {
@@ -406,7 +407,7 @@ export class VoiceClient {
         if (this.micSilenced) await mic.mute()
         this.mic = mic
         await this.attachProcessor(mic)
-        await room.localParticipant.publishTrack(mic, { source: Track.Source.Microphone })
+        await room.localParticipant.publishTrack(mic, MIC_PUBLISH)
       } catch (err) {
         console.warn('[voz] não foi possível ligar o microfone depois de ganhar permissão:', err)
       }

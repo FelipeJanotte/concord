@@ -131,12 +131,14 @@ class FakeCtx {
   gains: FakeGain[] = []
   analyser = new FakeAnalyser()
   outTrack = { id: 'processada' }
+  destination: (FakeNode & { channelCount?: number; channelCountMode?: string }) | null = null
   createMediaStreamSource() {
     return new FakeNode('source')
   }
   createMediaStreamDestination() {
     const n = new FakeNode('destination') as FakeNode & { stream: { getAudioTracks: () => unknown[] } }
     n.stream = { getAudioTracks: () => [this.outTrack] }
+    this.destination = n
     return n
   }
   createGain() {
@@ -290,5 +292,24 @@ describe('AutoNoiseProcessor', () => {
     await s.init()
     expect(() => s.run(0.03, 2000)).not.toThrow()
     expect(s.proc.currentMode).toBe('advanced')
+  })
+})
+
+describe('AutoNoiseProcessor em mono', () => {
+  it('microfone estéreo vira mono antes do RNNoise e a faixa processada sai com um canal', async () => {
+    const s = setup()
+    await s.init()
+    const engine = s.engineNode as FakeNode & { channelCount?: number; channelCountMode?: string }
+    expect(engine.channelCount).toBe(1)
+    expect(engine.channelCountMode).toBe('explicit')
+    expect(s.ctx.destination?.channelCount).toBe(1)
+    expect(s.ctx.destination?.channelCountMode).toBe('explicit')
+  })
+
+  it('sem o filtro avançado, a faixa processada também sai com um canal', async () => {
+    const s = setup({ engineFails: true })
+    await s.init()
+    expect(s.ctx.destination?.channelCount).toBe(1)
+    expect(s.ctx.destination?.channelCountMode).toBe('explicit')
   })
 })

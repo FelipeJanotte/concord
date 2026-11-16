@@ -141,7 +141,7 @@ describe('join', () => {
     expect(socket.sent('voice:join')).toEqual([[{ channelId: 'sala-1', muted: false, deafened: false }]])
     const room = lastRoom()
     expect(room.connect).toHaveBeenCalledWith('ws://livekit.test:7880', 'jwt-de-teste', { autoSubscribe: true })
-    expect(room.localParticipant.publishTrack).toHaveBeenCalledWith(mic, { source: Track.Source.Microphone })
+    expect(room.localParticipant.publishTrack).toHaveBeenCalledWith(mic, { source: Track.Source.Microphone, forceStereo: false })
     expect(room.startAudio).toHaveBeenCalled()
   })
 
@@ -856,7 +856,7 @@ describe('permissões de voz (v2): speak e share', () => {
     room.localParticipant.permissions = { canPublish: true, canPublishSources: [1, 2] }
     room.fire(RoomEvent.ParticipantPermissionsChanged, {}, room.localParticipant)
     await vi.waitFor(() => expect(changed).toHaveBeenCalledWith({ canSpeak: true, canShare: false, canVideo: true }))
-    expect(room.localParticipant.publishTrack).toHaveBeenCalledWith(mic, { source: Track.Source.Microphone })
+    expect(room.localParticipant.publishTrack).toHaveBeenCalledWith(mic, { source: Track.Source.Microphone, forceStereo: false })
     expect(mic!.mute).toHaveBeenCalled()
   })
 
@@ -1234,7 +1234,7 @@ describe('syncPermissions (fim do silêncio do moderador)', () => {
     expect(room.localParticipant.publishTrack).not.toHaveBeenCalled()
     room.localParticipant.permissions = { canPublish: true, canPublishSources: [1, 2, 3] } // o LiveKit já trocou, sem evento
     await client.syncPermissions()
-    expect(room.localParticipant.publishTrack).toHaveBeenCalledWith(mic, { source: Track.Source.Microphone })
+    expect(room.localParticipant.publishTrack).toHaveBeenCalledWith(mic, { source: Track.Source.Microphone, forceStereo: false })
     expect(changed).toHaveBeenCalledWith({ canSpeak: true, canShare: true, canVideo: true })
   })
 
@@ -1246,6 +1246,13 @@ describe('syncPermissions (fim do silêncio do moderador)', () => {
     await client.syncPermissions()
     expect(changed).not.toHaveBeenCalled()
     expect(lastRoom().localParticipant.publishTrack).toHaveBeenCalledTimes(1) // só o da entrada
+  })
+})
+
+describe('microfone publicado em mono', () => {
+  it('nunca publica em estéreo, mesmo com microfone de dois canais (mantém RED e DTX)', async () => {
+    await client.join('sala-1')
+    expect(lastRoom().localParticipant.publishTrack).toHaveBeenCalledWith(mic, expect.objectContaining({ forceStereo: false }))
   })
 })
 
