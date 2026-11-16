@@ -11,6 +11,7 @@ import { LoginScreen } from '@/components/LoginScreen'
 import { MemberList } from '@/components/MemberList'
 import { ResizableSide } from '@/components/ResizableSide'
 import { UtilityRail } from '@/components/rail/UtilityRail'
+import { TitleBar } from '@/components/TitleBar'
 import { Toast } from '@/components/Toast'
 import { ToolView } from '@/components/tools/ToolView'
 import { UpdateBanner } from '@/components/UpdateBanner'
@@ -27,7 +28,10 @@ export default function App() {
 
   return (
     <TooltipProvider delayDuration={150}>
-      {self ? <MainLayout /> : <LoginScreen />}
+      <div className="flex h-full flex-col">
+        <TitleBar />
+        <div className="min-h-0 flex-1">{self ? <MainLayout /> : <LoginScreen />}</div>
+      </div>
       {self && <IncomingCall />}
       <Toast />
     </TooltipProvider>

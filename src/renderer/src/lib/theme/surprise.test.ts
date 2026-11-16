@@ -70,16 +70,23 @@ describe('vidro no motor', () => {
     expect(withAlpha('#112233', 0.5)).toBe('#11223380')
   })
 
-  it('glassTheme deixa as superfícies semitransparentes; menus, campos, bordas e destaque ficam opacos', () => {
+  it('glassTheme deixa as superfícies semitransparentes; bordas, destaque e textos ficam opacos', () => {
     const theme = THEME_PRESETS.find((p) => p.id === 'vidro')!.theme
     const opaque = deriveTokens(theme)
     const glass = glassTheme(opaque)
     for (const [token, opacity] of Object.entries(GLASS_OPACITY)) {
       expect(glass.tokens[token as keyof typeof glass.tokens]).toBe(withAlpha(opaque.tokens[token as keyof typeof opaque.tokens], opacity!))
     }
-    for (const token of ['popover', 'input', 'border', 'primary', 'foreground'] as const) expect(glass.tokens[token]).toBe(opaque.tokens[token])
+    for (const token of ['border', 'primary', 'foreground', 'popover-foreground'] as const) expect(glass.tokens[token]).toBe(opaque.tokens[token])
     expect(glass.gradient).toContain('150deg')
     expect(glass.gradientStops.every((s) => s.length === 9)).toBe(true)
+  })
+
+  it('camadas do liquid glass: o que flutua (menus, janelas) é mais opaco que as superfícies da janela', () => {
+    const { popover, ...windowSurfaces } = GLASS_OPACITY
+    for (const opacity of Object.values(windowSurfaces)) expect(opacity!).toBeLessThan(popover!)
+    expect(popover!).toBeGreaterThanOrEqual(0.8)
+    expect(GLASS_OPACITY.rail!).toBeLessThanOrEqual(0.4)
   })
 
   it('temas prontos translúcidos existem (escuro e claro)', () => {

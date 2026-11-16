@@ -10,6 +10,7 @@ import { setupPushToTalk, type PushToTalkController } from './push-to-talk'
 import { setupScreenShare } from './screen-share'
 import { setupTranslucency } from './translucency'
 import { setupUpdater } from './updater'
+import { setupWindowControls, titleBarOptions, watchMaximized } from './window-controls'
 
 /** A janela principal (as notificações trazem ela de volta no clique; o overlay manda o aviso do atalho). */
 let mainWindow: BrowserWindow | null = null
@@ -26,6 +27,7 @@ function createWindow(): void {
     title: 'Concord',
     backgroundColor: '#1e1f22',
     autoHideMenuBar: true,
+    ...titleBarOptions(process.platform),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false
@@ -39,6 +41,7 @@ function createWindow(): void {
     overlay?.destroy()
   })
   win.on('ready-to-show', () => win.show())
+  watchMaximized(win)
 
   // Links externos abrem no navegador padrão; só http/https (nada de file:, javascript: etc.).
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -82,6 +85,7 @@ app.whenReady().then(() => {
 
   setupScreenShare()
   setupTranslucency(() => mainWindow)
+  setupWindowControls(() => mainWindow)
   overlay = setupOverlay(() => mainWindow)
   setupNotifications(() => mainWindow)
   void setupUpdater(() => mainWindow).catch((err: unknown) => console.warn('[atualização] não iniciou:', err))

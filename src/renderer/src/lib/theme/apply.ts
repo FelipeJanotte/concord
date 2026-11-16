@@ -1,40 +1,30 @@
-/**
- * Aplica um tema na tela: escreve os tokens derivados como variáveis CSS no `:root` (com uma transição curta)
- * e guarda o tema na máquina, para o app abrir já com ele antes do login (`loadLocalTheme`).
- * Tema translúcido (vidro): onde o sistema tem o efeito, pede o material à janela (`window.api.translucency`)
- * e deixa as superfícies semitransparentes (`glassTheme`); onde não tem, aplica o tema opaco.
- */
 import { DEFAULT_THEME, validateTheme, type ThemeConfig } from '@shared/types'
 import type { TranslucencyBridge } from '@shared/translucency'
 import { deriveTokens, glassTheme, THEME_TOKENS } from './derive'
 
 export const LOCAL_THEME_KEY = 'concord:theme'
 const TRANSITION_MS = 300
+const REDUCED_TRANSPARENCY_QUERY = '(prefers-reduced-transparency: reduce)'
 
 let transitionTimer: ReturnType<typeof setTimeout> | undefined
 
-/** A ponte do vidro (só na janela principal do Electron); os testes trocam. */
 export const translucencyEnv = {
-  bridge: (): TranslucencyBridge | null => (typeof window !== 'undefined' ? (window.api?.translucency ?? null) : null)
+  bridge: (): TranslucencyBridge | null => (typeof window !== 'undefined' ? (window.api?.translucency ?? null) : null),
+  reducedTransparency: (): boolean => typeof window !== 'undefined' && !!window.matchMedia?.(REDUCED_TRANSPARENCY_QUERY).matches
 }
 
-/** O vidro vale agora? Tema translúcido e sistema com o efeito. */
 export function glassActive(theme: ThemeConfig): boolean {
-  return !!theme.translucent && !!translucencyEnv.bridge()?.supported
+  return !!theme.translucent && !!translucencyEnv.bridge()?.supported && !translucencyEnv.reducedTransparency()
 }
 
-/**
- * Escreve os tokens do tema no elemento (padrão: `<html>`). `animate` liga a transição de cores.
- * `windowEffects: false` = não mexe no vidro da janela (página do overlay em jogos, que já é transparente).
- */
 export function applyTheme(
   theme: ThemeConfig,
   { root = globalThis.document?.documentElement, animate = true, windowEffects = true } = {}
 ): void {
-  if (!root) return // sem tela (testes em node): nada a aplicar
+  if (!root) return
   const glass = windowEffects && glassActive(theme)
-  if (windowEffects) translucencyEnv.bridge()?.set(glass)
   const derived = deriveTokens(theme)
+  if (windowEffects) translucencyEnv.bridge()?.set({ glass, scheme: derived.colorScheme })
   const { tokens, gradient, colorScheme } = glass ? glassTheme(derived) : derived
   if (animate) {
     root.classList.add('theme-transition')
@@ -49,16 +39,14 @@ export function applyTheme(
   else delete root.dataset.translucent
 }
 
-/** Guarda o tema na máquina (o último usado abre antes do login). Sem armazenamento: ignora. */
 export function saveLocalTheme(theme: ThemeConfig): void {
   try {
     localStorage.setItem(LOCAL_THEME_KEY, JSON.stringify(theme))
   } catch {
-    // modo privado/armazenamento cheio: só não lembra
+    return
   }
 }
 
-/** O último tema usado nesta máquina (válido), ou o padrão. */
 export function loadLocalTheme(): ThemeConfig {
   try {
     const raw = localStorage.getItem(LOCAL_THEME_KEY)
