@@ -4,8 +4,8 @@
  * Regras de quem pode o quê:
  * - cargos: exige `manageRoles` e só mexe em cargo ABAIXO do seu cargo mais alto
  *   (a dona pode tudo); ninguém dá a um cargo permissão global que não tem;
- * - membros: exige `manageMembers`; só atribui/tira cargos abaixo do seu e não
- *   mexe em quem tem cargo igual ou acima (nem na dona);
+ * - membros: exige `assignRoles` ou `manageMembers`; só atribui/tira cargos abaixo do seu e não
+ *   mexe em quem tem cargo igual ou acima, na dona nem em si mesmo;
  * - regras por canal: exige `manageChannels`.
  * Depois de cada mudança: `access:updated` para todos, `channels:visible` para
  * quem passou a ver/deixou de ver canais, e quem perdeu `connect` sai da voz.
@@ -14,6 +14,9 @@ import { randomUUID } from 'node:crypto'
 import {
   accessFor,
   can,
+  canAssignRole,
+  canChangeAnyMemberRoles,
+  canChangeMemberRoles,
   canGrantPermissions,
   CHANNEL_PERMISSIONS,
   EVERYONE_ROLE_ID,
@@ -241,7 +244,7 @@ export const permissionsModule: ServerModule = {
         const me = actor()
         if (!me) return ack(fail('Não autenticado'))
         const access = await currentAccess()
-        if (!can(access, me, 'manageMembers')) return ack(fail('Você não tem permissão para gerenciar membros'))
+        if (!canChangeAnyMemberRoles(access, me)) return ack(fail('Você não tem permissão para alterar cargos dos membros'))
         const target = typeof payload?.accountId === 'string' ? await findAccount(payload.accountId) : undefined
         if (!target) return ack(fail('Conta não encontrada'))
         const requested = Array.isArray(payload.roleIds) ? [...new Set(payload.roleIds)] : null
@@ -250,16 +253,14 @@ export const permissionsModule: ServerModule = {
           return ack(fail('Cargos inválidos'))
         }
 
-        if (!isOwner(access, me)) {
-          const mine = highestPosition(access, me)
-          if (isOwner(access, target.id) || (target.id !== me && highestPosition(access, target.id) >= mine)) {
-            return ack(fail('Você não pode alterar alguém com cargo igual ou acima do seu'))
-          }
-          const current = access.members.find((m) => m.accountId === target.id)?.roleIds ?? []
-          const changed = [...requested.filter((id) => !current.includes(id)), ...current.filter((id) => !requested.includes(id))]
-          if (changed.some((id) => (known.get(id)?.position ?? Infinity) >= mine)) {
-            return ack(fail('Você só pode dar ou tirar cargos abaixo do seu'))
-          }
+        if (!canChangeMemberRoles(access, me, target.id)) {
+          if (target.id === me) return ack(fail('Você não pode alterar os próprios cargos'))
+          return ack(fail('Você não pode alterar alguém com cargo igual ou acima do seu'))
+        }
+        const current = access.members.find((m) => m.accountId === target.id)?.roleIds ?? []
+        const changed = new Set([...requested.filter((id) => !current.includes(id)), ...current.filter((id) => !requested.includes(id))])
+        if (access.roles.some((role) => changed.has(role.id) && !canAssignRole(access, me, role))) {
+          return ack(fail('Você só pode dar ou tirar cargos abaixo do seu'))
         }
         await setMemberRoles(target.id, requested)
         await applyAccessChange(io, access)

@@ -80,7 +80,7 @@ export interface TeamsResult {
 /**
  * Leva cada time de um sorteio já postado para uma sala de voz. Só move quem já está numa sala
  * de voz da comunidade (não chamada privada) que quem pede vê. Quem pede pode mover a si mesmo;
- * os outros, só pela regra da moderação (`canModerate`: `manageMembers` e cargo acima). A pessoa
+ * os outros, pela regra de mover (`canMoveMember`: `moveMembers` ou `manageMembers` e cargo acima). A pessoa
  * também precisa poder entrar na sala do time (`view` + `connect`). Quem não dá para mover é
  * pulado e aparece em `skipped`, sem cancelar os demais.
  */

@@ -9,7 +9,7 @@
  */
 import { randomInt, randomUUID } from 'node:crypto'
 import {
-  canModerate,
+  canMoveMember,
   toolResultText,
   type ClientToServerEvents,
   type Message,
@@ -146,7 +146,7 @@ async function moveTeams(io: AppServer, socket: AppSocket, raw: unknown): Promis
   const roomOf = new Map(people.map((p) => [p.socketId, p.channelId]))
   let moved = 0
   for (const move of plan.moves) {
-    if (move.accountId !== user.accountId && !canModerate(access, user.accountId, move.accountId)) {
+    if (move.accountId !== user.accountId && !canMoveMember(access, user.accountId, move.accountId)) {
       skipped.push({ name: move.name, reason: 'not-allowed' })
       continue
     }

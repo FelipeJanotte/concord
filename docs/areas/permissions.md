@@ -8,7 +8,7 @@ cargos atribuídos; cada canal pode **liberar** ou **negar** permissões por car
 
 | Arquivo | Papel |
 |---|---|
-| `src/shared/types/permissions.ts` | Contrato: permissões, `Role`, `ChannelOverride`, `MemberRoles`, `AccessState`, eventos, e as funções puras (`can`, `channelPermissions`, `globalPermissions`, `highestPosition`, `canGrantPermissions`, `displayColor`, `accessFor`). `PERMISSION_LABELS` em pt-BR. Decisões da revisão no topo do arquivo. |
+| `src/shared/types/permissions.ts` | Contrato: permissões, `Role`, `ChannelOverride`, `MemberRoles`, `AccessState`, eventos, e as funções puras (`can`, `channelPermissions`, `globalPermissions`, `highestPosition`, `canGrantPermissions`, `canChangeAnyMemberRoles`, `canChangeMemberRoles`, `canAssignRole`, `displayColor`, `accessFor`). `PERMISSION_LABELS` em pt-BR. Decisões da revisão no topo do arquivo. |
 | `server/access.ts` | Estado de acesso **em memória** (recarregado do banco a cada mudança) + `allowed()`, `visibleChannels()`, `emitToViewers()`, `accessSnapshot()`. Único jeito de os módulos consultarem permissão. |
 | `server/modules/permissions.ts` | Eventos `access:get`, `role:create/update/delete/reorder`, `member:set-roles`, `channel:set-overrides`; validação, hierarquia e `applyAccessChange()`. É o **primeiro** módulo em `server/index.ts` (carrega o acesso no boot). |
 | `server/repo/permissions.ts` | `ensureEveryoneRole`, `loadAccess` (dona = conta mais antiga), `insertRole`, `updateRole`, `deleteRole`, `setRolePositions`, `setMemberRoles`, `setChannelOverrides`. |
@@ -17,14 +17,16 @@ cargos atribuídos; cada canal pode **liberar** ou **negar** permissões por car
 | `src/renderer/src/lib/actions/channels.ts` | App: `channels:visible` troca a lista de canais e limpa o que era dos canais que saíram (`replaceChannels`). |
 | `src/renderer/src/store/permissions.ts` | App: `access` (o `AccessState` do `hello`/`access:updated`; `null` antes de chegar). |
 | `src/renderer/src/lib/actions/permissions.ts` | App: `bindPermissionsEvents` (`access:updated`) e as ações `reloadAccess`, `createRole`, `updateRole`, `deleteRole`, `reorderRoles`, `setMemberRoles`, `setChannelOverrides` (erro do servidor vira exceção com a mensagem dele). |
-| `src/renderer/src/lib/permissions.ts` | App: `useCan`, `useCanAdminister`, `useNameColor` e helpers puros (`allows`, `isPrivateChannel`, `rolesByPosition`, `topRole`, `memberRoleIds`, `canManageRole`, `canAssignRole`, `canEditMember`) espelhando a hierarquia do servidor. |
+| `src/renderer/src/lib/permissions.ts` | App: `useCan`, `useCanAdminister`, `useNameColor` e helpers puros (`allows`, `isPrivateChannel`, `rolesByPosition`, `topRole`, `memberRoleIds`, `canManageRole`) espelhando a hierarquia do servidor. Quem altera cargos de quem vem direto de `@shared/types` (`canChangeMemberRoles`, `canAssignRole`). |
 | `src/renderer/src/components/settings/` | Tela de administração (B5): `CommunitySettingsDialog` (abas Cargos e Membros), `ChannelPermissionsDialog` (Negar/Herdar/Liberar por cargo, "Canal privado"), `RoleDot`. |
 
 ## Contrato
 
 - **Globais:** `manageChannels` (criar/apagar canal, editar regras de canal; **sempre vê** todos os canais),
   `manageRoles` (cargos abaixo do seu), `manageMembers` (atribuir cargos abaixo do seu; silenciar/expulsar da voz na
-  B6), `manageMessages` (apagar mensagem de outras pessoas, B6), `mentionEveryone` (mencionar @todos, B19: sem ela o `<@todos>` vira texto comum).
+  B6), `manageMessages` (apagar mensagem de outras pessoas, B6), `mentionEveryone` (mencionar @todos, B19: sem ela o `<@todos>` vira texto comum), `moveMembers` (mover quem
+  está abaixo para outra sala de voz, sem ganhar silenciar/expulsar; `manageMembers` também move),
+  `assignRoles` (só dar/tirar cargos abaixo do seu, sem os poderes de moderação de `manageMembers`).
 - **Por canal:** `view`, `send`, `attach`, `connect`, `speak`, `share`, `video` (câmera, B21; comunidades antigas
   ganharam `video` onde havia `share` pela migration `0010_camera_permission`).
 - **@todos:** id fixo `EVERYONE_ROLE_ID` (`00000000-…`), posição 0, sempre existe, não pode ser apagado nem
@@ -40,7 +42,7 @@ cargos atribuídos; cada canal pode **liberar** ou **negar** permissões por car
 | `role:update {id, name?, color?, permissions?}` → `RoleResult` | `manageRoles` + cargo abaixo do seu | @todos: só `permissions` (e só quem tem algum cargo) |
 | `role:delete roleId` → `OkResult` | `manageRoles` + cargo abaixo do seu | @todos nunca |
 | `role:reorder roleIds[]` → `OkResult` | `manageRoles` | a lista tem que ser **exatamente** os cargos que você pode mexer (sem @todos), do menos para o mais importante; reaproveita as mesmas posições |
-| `member:set-roles {accountId, roleIds}` → `OkResult` | `manageMembers` | só dá/tira cargos abaixo do seu; não mexe em quem tem cargo igual ou acima, nem na dona |
+| `member:set-roles {accountId, roleIds}` → `OkResult` | `assignRoles` ou `manageMembers` | `canChangeMemberRoles` no alvo (não mexe na dona, em si mesmo nem em quem tem cargo igual ou acima) e `canAssignRole` em cada cargo dado ou tirado (só abaixo do seu; @todos nunca). A dona pode tudo, inclusive em si |
 | `channel:set-overrides {channelId, overrides[]}` → `OkResult` | `manageChannels` | **substitui** todas as regras do canal; um cargo por regra; a mesma permissão não pode estar em `allow` e `deny` |
 
 Servidor → cliente: `access:updated` (para cada conexão, o estado de `accessFor`) e `channels:visible` (lista de
@@ -73,6 +75,19 @@ sem `manageChannels`, a menos que o cargo deles tenha `allow view` nesse canal.
 do seu cargo mais alto. **Ninguém dá permissão global que não tem** e **globais no @todos só a dona dá**
 (`canGrantPermissions`, a mesma função no servidor e na tela); permissões de canal podem ser dadas.
 
+**Alterar cargos de alguém** (funções puras, as mesmas no servidor e na tela):
+
+| Função | Regra |
+|---|---|
+| `canChangeAnyMemberRoles(access, conta)` | tem `assignRoles` ou `manageMembers` (a dona tem as duas). Decide a engrenagem da comunidade junto com `manageRoles`. |
+| `canChangeMemberRoles(access, quem, alvo)` | dona: sempre. Os demais: `canChangeAnyMemberRoles`, alvo não é a dona, não é a própria pessoa e o cargo mais alto do alvo é menor que o seu. |
+| `canAssignRole(access, quem, cargo)` | nunca o @todos; dona: qualquer outro; os demais: `canChangeAnyMemberRoles` e posição do cargo menor que a do seu cargo mais alto. |
+
+Mexer nos próprios cargos é recusado mesmo com cargo abaixo do seu: antes era permitido e deixava quem tinha
+`manageMembers` se dar um cargo inferior com permissão global que não tinha (ex.: `manageChannels`).
+`manageMembers` continua valendo para atribuir cargos (cargos existentes não quebram); `assignRoles` é a forma de
+dar só isso, sem silenciar/expulsar da voz.
+
 ## O que cada handler bloqueia
 
 | Handler | Regra |
@@ -87,6 +102,7 @@ do seu cargo mais alto. **Ninguém dá permissão global que não tem** e **glob
 | `voice:update` | sem `speak` continua `muted: true` (não dá para se dessilenciar) |
 | `voice:state` | cada conexão recebe só as salas que pode ver (`voiceStatesFor`) |
 | `moderation:voice-kick` / `moderation:voice-mute` | `canModerate`: `manageMembers` e cargo acima do alvo (nunca a dona nem a si mesmo); sala que não vê = "não está numa sala" (`docs/areas/moderation.md`) |
+| `moderation:voice-move` / `tools:move-teams` (mover outra pessoa) | `canMoveMember`: `moveMembers` **ou** `manageMembers`, com a mesma hierarquia do `canModerate`; a pessoa precisa de `view` + `connect` na sala de destino |
 | `message:delete` | `view` + (autor ou `manageMessages`); em DM só o autor |
 
 Para um handler novo: `await allowed(user.accountId, 'perm', channelId)` antes de agir e `emitToViewers(io,
@@ -117,13 +133,13 @@ testes antigos) nada é escondido, o servidor bloqueia de qualquer jeito.
 
 | Onde | O que aparece / some |
 |---|---|
-| Cabeçalho da barra lateral | Engrenagem "Configurações da comunidade" só com `manageRoles` ou `manageMembers` (dona sempre). |
+| Cabeçalho da barra lateral | Engrenagem "Configurações da comunidade" só com `manageRoles`, `assignRoles` ou `manageMembers` (dona sempre). |
 | Seções de canais | Botão **+** só com `manageChannels`. Em cada canal, engrenagem "Permissões do canal" e lixeira também só com `manageChannels`. Cadeado quando o @todos tem `view` negado (canal privado). |
 | Aba **Cargos** | Lista do mais para o menos importante (@todos por último). Criar (`manageRoles`; nasce "novo cargo" sem permissões, logo abaixo do seu). Setas subir/descer só nos cargos que posso mexer (manda `role:reorder` com só esses, do menos para o mais importante). Editor: nome (até 32), cor (ou "Sem cor"), permissões de administração e de canal. Cargo no meu nível ou acima fica só leitura; permissão global que não tenho fica travada (`canGrantPermissions`), mas posso desmarcar a que já está. @todos: só permissões. |
-| Aba **Membros** | Quem está **online** (uma linha por conta), com um checkbox por cargo. Travado para a dona, para quem está no meu nível ou acima e para cargos que não estão abaixo do meu. |
+| Aba **Membros** | Quem está **online** (uma linha por conta), com um checkbox por cargo (todos aparecem, para ver os cargos da pessoa). Travado quando `canChangeMemberRoles` é falso (a dona, eu mesmo, quem está no meu nível ou acima) e nos cargos em que `canAssignRole` é falso. |
 | Permissões do canal | Lista de cargos (@todos primeiro) e, para o cargo escolhido, cada permissão do tipo do canal (texto: ver/enviar/anexar; voz: ver/entrar/falar/tela) em Negar / Herdar / Liberar. "Canal privado" = negar `view` ao @todos. Salvar manda todas as regras (`channel:set-overrides`), sem as vazias. O rascunho é lido só ao abrir. |
 | Lista de membros | Agrupada pelo cargo mais alto de cada pessoa (seções na ordem dos cargos; quem não tem cargo em "Online") e nome na cor de `displayColor` (senão a cor da conta). |
-| Botão direito numa pessoa | Submenu **Cargos** com checkbox por cargo atribuível, só se `canEditMember`; erro vira toast. |
+| Botão direito numa pessoa | Submenu **Cargos** só com os cargos em que `canAssignRole`, e só se `canChangeMemberRoles`; erro vira toast. |
 | Campo de mensagem | Sem `send`: aviso "Você não tem permissão para enviar mensagens neste canal." no lugar do campo. Sem `attach`: some o clipe, colar arquivo e arrastar para o chat não fazem nada. |
 
 ## Pendências conhecidas
@@ -136,13 +152,13 @@ testes antigos) nada é escondido, o servidor bloqueia de qualquer jeito.
 
 | Arquivo | Cobre |
 |---|---|
-| `src/shared/types/permissions.test.ts` | Regra de cálculo pura: globais, canal privado, liberar vence negar, regra de cargo × @todos, dependências, `manageChannels` sempre vê, dona, hierarquia, `canGrantPermissions`, `displayColor`, `accessFor`, textos pt-BR. |
+| `src/shared/types/permissions.test.ts` | Regra de cálculo pura: globais, canal privado, liberar vence negar, regra de cargo × @todos, dependências, `manageChannels` sempre vê, dona, hierarquia, `canGrantPermissions`, alterar cargos dos membros (`canChangeMemberRoles`/`canAssignRole`), `displayColor`, `accessFor`, textos pt-BR. |
 | `server/repo/permissions.test.ts` | @todos criado no boot, dona = conta mais antiga, gravar cargos/membros/regras e cascades. |
-| `server/tests/permissions.test.ts` | Servidor real: estado de acesso, canal privado (não aparece no `hello`, não recebe `message:new`/`typing`/`voice:state`, não entra na voz), regras de enviar/anexar/entrar (inclusive no @todos), hierarquia (criar abaixo do seu, não dar permissão que não tem, reordenar só a lista exata) e validação de nome, cor, permissões e regras; saída da voz ao perder o acesso; estado no `hello` e `access:updated` filtrados por pessoa; escalada no @todos; `canSpeak`/`canShare`. |
+| `server/tests/permissions.test.ts` | Servidor real: estado de acesso, canal privado (não aparece no `hello`, não recebe `message:new`/`typing`/`voice:state`, não entra na voz), regras de enviar/anexar/entrar (inclusive no @todos), hierarquia (criar abaixo do seu, não dar permissão que não tem, reordenar só a lista exata), `assignRoles` (dá cargo abaixo a quem está abaixo; recusa sem a permissão, cargo igual/acima, alvo igual/acima, dona e a si mesmo) e `manageMembers` não se dá cargo inferior e validação de nome, cor, permissões e regras; saída da voz ao perder o acesso; estado no `hello` e `access:updated` filtrados por pessoa; escalada no @todos; `canSpeak`/`canShare`. |
 | `src/renderer/src/lib/actions/access.test.ts` | App: `channels:visible` (limpa o que saiu, sai da voz) e `voice:state` sem a própria pessoa. |
 | `src/renderer/src/lib/actions/permissions.test.ts` | App: `access:updated`/`reloadAccess` na store e o payload de cada ação (nome sem espaços, regras vazias não vão, erro vira exceção). |
-| `src/renderer/src/lib/permissions.test.ts` | Helpers da tela: `allows` (null não esconde), canal privado, ordem e cargo mais alto, `canManageRole`/`canAssignRole`/`canEditMember`. |
-| `src/renderer/src/components/settings/settings.test.tsx` | Tela (jsdom): o que some na barra lateral sem permissão, cadeado, criar/editar/reordenar cargo, @todos só permissões, travas de hierarquia, Membros, Permissões do canal (privado, Herdar remove), composer sem enviar/anexar, grupos e cores da lista de membros, submenu Cargos. |
+| `src/renderer/src/lib/permissions.test.ts` | Helpers da tela: `allows` (null não esconde), canal privado, ordem e cargo mais alto, `canManageRole`. |
+| `src/renderer/src/components/settings/settings.test.tsx` | Tela (jsdom): o que some na barra lateral sem permissão, cadeado, criar/editar/reordenar cargo, @todos só permissões, travas de hierarquia, Membros, Permissões do canal (privado, Herdar remove), composer sem enviar/anexar, grupos e cores da lista de membros, submenu Cargos, `assignRoles` (engrenagem, permissão na tela de cargos, Membros sem mexer em si, submenu só com cargos abaixo). |
 
 À mão (tela): conta A (dona) abre a engrenagem ao lado de "Concord", cria "Mod" com cor, marca "Gerenciar membros"; na engrenagem de um canal marca "Canal privado" e libera "Ver o canal" para "Mod"; dá "Mod" para B pelo botão direito → o nome de B fica colorido e o canal aparece para B.
 
@@ -157,6 +173,8 @@ sai da voz se estava na sala.
 | Ninguém consegue criar canal | Esperado na v2: exige `manageChannels`. A dona cria, ou dê a permissão a um cargo (ou ao @todos). |
 | "Você não pode dar permissões que não tem" | Quem edita o cargo não tem aquela permissão global. Só a dona ou quem já tem pode dar. |
 | "Você só pode alterar cargos abaixo do seu" | Hierarquia: reordene (`role:reorder`) ou peça para alguém acima. |
+| "Você não tem permissão para alterar cargos dos membros" | Falta `assignRoles` (ou `manageMembers`) em algum cargo da pessoa. |
+| "Você não pode alterar os próprios cargos" | Só a dona mexe nos próprios cargos; peça para alguém acima. |
 | Canal sumiu para alguém | Perdeu `view` (regra do canal ou cargo removido): veio `channels:visible`. Confira as regras do canal para o @todos e para os cargos dela. |
 | Mensagem não chega para alguém | `emitToViewers` só manda para quem tem `view` no canal. |
 | Alguém saiu da voz sozinho | Perdeu `connect` naquela sala depois de uma mudança de cargo/regra. |

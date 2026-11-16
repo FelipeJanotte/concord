@@ -20,7 +20,7 @@
 import type { Channel } from './channel'
 
 /** Permissões da comunidade inteira. */
-export const GLOBAL_PERMISSIONS = ['manageChannels', 'manageRoles', 'manageMembers', 'manageMessages', 'mentionEveryone'] as const
+export const GLOBAL_PERMISSIONS = ['manageChannels', 'manageRoles', 'manageMembers', 'manageMessages', 'mentionEveryone', 'moveMembers', 'assignRoles'] as const
 /** Permissões que cada canal pode liberar ou negar por cargo. */
 export const CHANNEL_PERMISSIONS = ['view', 'send', 'attach', 'connect', 'speak', 'share', 'video'] as const
 
@@ -35,6 +35,8 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   manageMembers: 'Gerenciar membros (atribuir cargos, silenciar e expulsar da voz)',
   manageMessages: 'Gerenciar mensagens (apagar mensagens de outras pessoas)',
   mentionEveryone: 'Mencionar @todos (avisa todo mundo que vê o canal)',
+  moveMembers: 'Mover membros (arrastar para outra sala de voz)',
+  assignRoles: 'Alterar cargos dos membros (só cargos abaixo do seu)',
   view: 'Ver o canal',
   send: 'Enviar mensagens',
   attach: 'Enviar anexos',
@@ -167,6 +169,23 @@ export function canGrantPermissions(access: AccessState, accountId: string, role
   return globals.every((p) => mine.has(p))
 }
 
+export function canChangeAnyMemberRoles(access: AccessState, accountId: string): boolean {
+  const mine = globalPermissions(access, accountId)
+  return mine.has('assignRoles') || mine.has('manageMembers')
+}
+
+export function canChangeMemberRoles(access: AccessState, actorId: string, targetId: string): boolean {
+  if (actorId === access.ownerAccountId) return true
+  if (!canChangeAnyMemberRoles(access, actorId) || targetId === access.ownerAccountId || targetId === actorId) return false
+  return highestPosition(access, targetId) < highestPosition(access, actorId)
+}
+
+export function canAssignRole(access: AccessState, actorId: string, role: Role): boolean {
+  if (role.id === EVERYONE_ROLE_ID) return false
+  if (actorId === access.ownerAccountId) return true
+  return canChangeAnyMemberRoles(access, actorId) && role.position < highestPosition(access, actorId)
+}
+
 /** Cor do nome da pessoa: a do cargo mais alto que tem cor, ou null (usar a cor da conta). */
 export function displayColor(access: AccessState, accountId: string): string | null {
   const colored = rolesOf(access, accountId).filter((r) => r.color)
@@ -213,7 +232,7 @@ export interface PermissionsClientEvents {
   'role:delete': (roleId: string, ack: (res: OkResult) => void) => void
   /** ids do menos para o mais importante (sem o @todos); só cargos abaixo do seu */
   'role:reorder': (roleIds: string[], ack: (res: OkResult) => void) => void
-  /** exige manageMembers; só atribui/tira cargos abaixo do seu */
+  /** `canChangeMemberRoles` no alvo e `canAssignRole` em cada cargo dado ou tirado */
   'member:set-roles': (payload: { accountId: string; roleIds: string[] }, ack: (res: OkResult) => void) => void
   /** exige manageChannels; substitui todas as regras do canal */
   'channel:set-overrides': (
