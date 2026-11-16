@@ -128,11 +128,11 @@ describe('tools:move-teams', () => {
     await silent
   })
 
-  it('moderador move quem está abaixo; a dona é pulada', async () => {
+  it.each<Permission>(['manageMembers', 'moveMembers'])('com %s move quem está abaixo; a dona é pulada', async (permission) => {
     const owner = await server.asOwner()
     const mod = await user('Mod')
     const ana = await user('Ana')
-    await giveRole(mod, ['manageMembers'])
+    await giveRole(mod, [permission])
     const [lobby, t1, t2, ch] = [await room(), await room(), await room(), await text()]
     await join(ana, lobby.id)
     await join(owner, lobby.id)

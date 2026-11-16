@@ -3,8 +3,6 @@ import { describe, expect, it } from 'vitest'
 import { EVERYONE_ROLE_ID, type AccessState, type Role } from '@shared/types'
 import {
   allows,
-  canAssignRole,
-  canEditMember,
   canManageRole,
   isPrivateChannel,
   memberRoleIds,
@@ -73,21 +71,5 @@ describe('hierarquia', () => {
     expect(canManageRole(access, 'ana', mod)).toBe(true)
     expect(canManageRole(access, 'ana', everyone)).toBe(true)
     expect(canManageRole(access, 'bia', vip)).toBe(false) // sem manageRoles
-  })
-
-  it('canAssignRole: manageMembers e cargo abaixo do seu; @todos nunca', () => {
-    expect(canAssignRole(access, 'bia', vip)).toBe(true)
-    expect(canAssignRole(access, 'bia', mod)).toBe(false)
-    expect(canAssignRole(access, 'caio', vip)).toBe(false)
-    expect(canAssignRole(access, 'dona', everyone)).toBe(false)
-  })
-
-  it('canEditMember: ninguém mexe na dona nem em quem está no seu nível ou acima (menos em si)', () => {
-    expect(canEditMember(access, 'bia', 'caio')).toBe(true)
-    expect(canEditMember(access, 'bia', 'ana')).toBe(false)
-    expect(canEditMember(access, 'bia', 'dona')).toBe(false)
-    expect(canEditMember(access, 'bia', 'bia')).toBe(true)
-    expect(canEditMember(access, 'caio', 'ninguem')).toBe(false)
-    expect(canEditMember(access, 'dona', 'ana')).toBe(true)
   })
 })

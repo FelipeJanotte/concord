@@ -55,7 +55,7 @@ uma migration antes, apague a sua e gere de novo) e nunca edite uma migration j�
 migrations. Volume já existente: rode o `.sql` uma vez com `psql`.
 
 **Limite de requisições:** regras em `LIMITS` (`server/middleware/rate-limit.ts`), em memória. Ações com ack
-recebem o erro ("Tente de novo em N s."); `message:send` gera `rate:limited`; HTTP responde 429 com
+recebem o erro ("Tente de novo em N s."); `message:send` responde o erro e também gera `rate:limited` (app antigo, que não espera resposta); HTTP responde 429 com
 `Retry-After`. Atrás de proxy, `TRUST_PROXY=1` para usar o `X-Forwarded-For`. Nos testes, o `TestServer` sobe com
 `RATE_LIMIT_MULTIPLIER=1000`; `server/tests/limits.test.ts` usa `1` para testar os valores reais.
 

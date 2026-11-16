@@ -57,6 +57,12 @@ describe('regras', () => {
     expect(messageNotification(msg(), st(), false)?.title).toBe('Ana')
   })
 
+  it('canal ou conversa silenciados nunca avisam', () => {
+    useApp.setState({ channels: [{ id: 'geral', name: 'geral', type: 'text', createdAt: 0 }], mutedChannels: ['geral', 'dm-ana'] })
+    expect(messageNotification(msg({ channelId: 'geral', content: '<@todos> reunião' }), st(), false)).toBeNull()
+    expect(messageNotification(msg(), st(), false)).toBeNull()
+  })
+
   it('preferência salva nesta máquina; valor estranho no armazenamento volta ao padrão', () => {
     const data = new Map<string, string>()
     vi.stubGlobal('localStorage', {

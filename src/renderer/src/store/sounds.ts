@@ -16,13 +16,10 @@ export interface SoundsState {
   soundsLoaded: boolean
   /** quem está tocando um som agora na minha sala, por conta (a mesma conta não toca dois ao mesmo tempo) */
   soundsPlaying: Record<string, PlayingSound>
-  /** janela "Efeitos sonoros" aberta */
-  soundboardOpen: boolean
 }
 
 export const soundsInitial: SoundsState = {
   sounds: [],
   soundsLoaded: false,
-  soundsPlaying: {},
-  soundboardOpen: false
+  soundsPlaying: {}
 }

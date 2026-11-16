@@ -271,12 +271,15 @@ describe('canal privado', () => {
 })
 
 describe('regras de enviar, anexar e entrar', () => {
-  it('sem "enviar": mensagem ignorada, mas continua vendo', async () => {
+  it('sem "enviar": mensagem recusada com o motivo, mas continua vendo', async () => {
     const b = await user()
     const ch = await server.createChannel('anuncios')
     await overrides(ch.id, [{ roleId: EVERYONE_ROLE_ID, deny: ['send'] }])
     const silent = expectNoEvent(owner.socket, 'message:new', (m) => m.channelId === ch.id)
-    b.socket.emit('message:send', { channelId: ch.id, content: 'posso?' })
+    expect(await b.socket.emitWithAck('message:send', { channelId: ch.id, content: 'posso?' })).toEqual({
+      ok: false,
+      error: 'Você não tem permissão para enviar mensagens neste canal'
+    })
     await silent
     const reads = waitFor(b.socket, 'message:new', (m) => m.channelId === ch.id)
     owner.socket.emit('message:send', { channelId: ch.id, content: 'aviso' })
@@ -367,6 +370,76 @@ describe('hierarquia e validação', () => {
     expect(await setRoles(c, owner.account.id, [mod.id])).toEqual({
       ok: false,
       error: 'Você não pode alterar alguém com cargo igual ou acima do seu'
+    })
+  })
+
+  it('quem tem "gerenciar membros" não dá a si mesmo um cargo abaixo com permissão que não tem', async () => {
+    const mod = await createRole(owner, 'Mod', ['manageMembers'])
+    const canais = await createRole(owner, 'Canais', ['manageChannels'])
+    await owner.socket.emitWithAck('role:reorder', [canais.id, mod.id])
+    const m = await user('Marta')
+    await setRoles(owner, m.account.id, [mod.id])
+
+    expect(await setRoles(m, m.account.id, [mod.id, canais.id])).toEqual({
+      ok: false,
+      error: 'Você não pode alterar os próprios cargos'
+    })
+    const access = await m.socket.emitWithAck('access:get')
+    expect(access.members.find((x) => x.accountId === m.account.id)?.roleIds).toEqual([mod.id])
+  })
+
+  describe('alterar cargos dos membros (assignRoles)', () => {
+    async function setup() {
+      const gerente = await createRole(owner, 'Gerente', ['assignRoles'])
+      const vip = await createRole(owner, 'VIP')
+      const acima = await createRole(owner, 'Acima')
+      await owner.socket.emitWithAck('role:reorder', [vip.id, gerente.id, acima.id])
+      const g = await user('Gil')
+      await setRoles(owner, g.account.id, [gerente.id])
+      return { gerente, vip, acima, g }
+    }
+
+    it('dá e tira cargo abaixo do seu de alguém abaixo', async () => {
+      const { vip, g } = await setup()
+      const h = await user('Hugo')
+      expect(await setRoles(g, h.account.id, [vip.id])).toEqual({ ok: true })
+      expect(await setRoles(g, h.account.id, [])).toEqual({ ok: true })
+    })
+
+    it('recusa cargo igual ou acima do seu', async () => {
+      const { gerente, acima, g } = await setup()
+      const h = await user('Hugo')
+      const error = 'Você só pode dar ou tirar cargos abaixo do seu'
+      expect(await setRoles(g, h.account.id, [gerente.id])).toEqual({ ok: false, error })
+      expect(await setRoles(g, h.account.id, [acima.id])).toEqual({ ok: false, error })
+    })
+
+    it('recusa alvo no seu nível ou acima, a dona e a si mesmo', async () => {
+      const { gerente, vip, acima, g } = await setup()
+      const igual = await user('Igor')
+      await setRoles(owner, igual.account.id, [gerente.id])
+      const alto = await user('Julia')
+      await setRoles(owner, alto.account.id, [acima.id])
+      const error = 'Você não pode alterar alguém com cargo igual ou acima do seu'
+      expect(await setRoles(g, igual.account.id, [gerente.id, vip.id])).toEqual({ ok: false, error })
+      expect(await setRoles(g, alto.account.id, [acima.id, vip.id])).toEqual({ ok: false, error })
+      expect(await setRoles(g, owner.account.id, [vip.id])).toEqual({ ok: false, error })
+      expect(await setRoles(g, g.account.id, [gerente.id, vip.id])).toEqual({
+        ok: false,
+        error: 'Você não pode alterar os próprios cargos'
+      })
+    })
+
+    it('sem a permissão é recusado, mesmo com cargo mais alto', async () => {
+      const { vip } = await setup()
+      const semPerm = await createRole(owner, 'Enfeite')
+      const k = await user('Kel')
+      await setRoles(owner, k.account.id, [semPerm.id])
+      const h = await user('Hugo')
+      expect(await setRoles(k, h.account.id, [vip.id])).toEqual({
+        ok: false,
+        error: 'Você não tem permissão para alterar cargos dos membros'
+      })
     })
   })
 

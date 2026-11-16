@@ -5,6 +5,7 @@
  */
 import { validateTheme, type Preferences, type SavedTheme, type ThemeConfig } from '@shared/types'
 import { applyTheme, saveLocalTheme } from '../theme/apply'
+import { omit } from '../utils'
 import { get, getSocket, notify, requireSocket, set, type AppSocket } from '../core'
 
 export const THEME_SAVE_DELAY_MS = 400
@@ -12,8 +13,13 @@ export const THEME_SAVE_DELAY_MS = 400
 let pendingTheme: ThemeConfig | null = null
 let saveTimer: ReturnType<typeof setTimeout> | undefined
 
+function applyMutedChannels(mutedChannels: string[]): void {
+  set((st) => ({ mutedChannels, unread: mutedChannels.reduce((unread, id) => omit(unread, id), st.unread) }))
+}
+
 function applyAccountPreferences(prefs: Preferences): void {
   set({ theme: prefs.theme, savedThemes: prefs.savedThemes, preferencesLoaded: true })
+  applyMutedChannels(prefs.mutedChannels)
   applyTheme(prefs.theme)
   saveLocalTheme(prefs.theme)
 }
@@ -21,7 +27,7 @@ function applyAccountPreferences(prefs: Preferences): void {
 export function bindPreferencesEvents(s: AppSocket): void {
   // mudou em outra janela da mesma conta
   s.on('preferences:updated', (prefs) => {
-    if (pendingTheme) return // a mudança desta janela ainda vai sair; ela vence
+    if (pendingTheme) return applyMutedChannels(prefs.mutedChannels)
     applyAccountPreferences(prefs)
   })
 }
@@ -75,6 +81,17 @@ export async function saveThemes(savedThemes: SavedTheme[]): Promise<SavedTheme[
   if (!res.ok) throw new Error(res.error)
   set({ savedThemes: res.preferences.savedThemes })
   return res.preferences.savedThemes
+}
+
+export async function setChannelMuted(channelId: string, muted: boolean): Promise<void> {
+  const before = get().mutedChannels
+  if (before.includes(channelId) === muted) return
+  const mutedChannels = muted ? [...before, channelId] : before.filter((id) => id !== channelId)
+  applyMutedChannels(mutedChannels)
+  const res = await requireSocket().emitWithAck('preferences:update', { mutedChannels })
+  if (res.ok) return
+  set({ mutedChannels: before })
+  notify(`Não foi possível ${muted ? 'silenciar' : 'reativar'} o canal: ${res.error}`)
 }
 
 /** Tema ativo agora (atalho para quem não usa a store). */

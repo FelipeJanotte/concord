@@ -102,19 +102,19 @@ Cliente → servidor (`ClientToServerEvents`):
 | `channel:create` | `{ name, type }` | `CreateChannelResult` | normaliza o nome (texto: minúsculo e com hífens, até 32 caracteres), bloqueia duplicado e mais de 100 canais; `channel:created` para todos |
 | `channel:delete` | `channelId` | — | apaga o canal e as mensagens, tira todo mundo da sala de voz; `channel:deleted` + `voice:state` |
 | `message:history` | `{ channelId, before? }` | `{ messages, hasMore }` | página de 50 (sem `before` = mais recentes) |
-| `message:send` (com anexos) | `{ channelId, content, attachmentIds? }` | — | até 10 anexos já enviados por `POST /uploads`, do próprio autor e não usados; tudo ou nada (senão a mensagem é ignorada); texto pode ser vazio se houver anexo |
+| `message:send` (com anexos) | `{ channelId, content, attachmentIds? }` | `OkResult` | até 10 anexos já enviados por `POST /uploads`, do próprio autor e não usados; tudo ou nada (senão volta "Anexos inválidos"); texto pode ser vazio se houver anexo |
 | `sound:list` | — | `Sound[]` | coleção de efeitos sonoros (links assinados para quem pede) — `docs/areas/sounds.md` |
 | `sound:play` | `{ channelId, soundId }` | `SoundResult` | exige estar na sala e `speak`; `sound:played` só para quem está nela; não toca por cima do próprio som anterior |
 | `sound:delete` | `soundId` | `SoundResult` | o autor ou `manageMessages`; `sound:deleted` para todos |
-| `preferences:get` | — | `Preferences` | tema ativo e temas salvos da conta (padrão se nada salvo) — `docs/areas/themes.md` |
-| `preferences:update` | `{ theme?, savedThemes? }` | `PreferencesResult` | valida com `validateTheme`; `preferences:updated` para as outras janelas da mesma conta |
+| `preferences:get` | — | `Preferences` | tema ativo, temas salvos e canais silenciados da conta (padrão se nada salvo) — `docs/areas/themes.md` |
+| `preferences:update` | `{ theme?, savedThemes?, mutedChannels? }` | `PreferencesResult` | valida com `validateTheme`; `mutedChannels`: até 500 uuids (silenciar canal, `docs/areas/notifications.md`); `preferences:updated` para as outras janelas da mesma conta |
 | `friend:list` / `friend:request` / `friend:accept` / `friend:decline` / `friend:remove` / `friend:block` / `friend:unblock` | `"nome#id"` ou `accountId` | `FriendEntry[]` / `FriendResult` | amizades (v3) — `docs/areas/friends.md` |
 | `dm:list` / `dm:open` | — / `accountId` | `DmEntry[]` / `DmOpenResult` | conversas privadas (v3): abrir só entre amigos ou se já existe; mensagens usam os `message:*` de sempre — `docs/areas/dms.md` |
 | `tools:teams` | `{ channelId, players, teamCount, lanes?, laneSet? }` | `ToolResult` | sorteio no servidor; posta mensagem `kind: 'tool'` (`message:new` para quem vê o canal) — `docs/areas/tools.md` |
 | `tools:dice` / `tools:coin` / `tools:pick` | `{ channelId, sides, count }` / `{ channelId, count }` / `{ channelId, options }` | `ToolResult` | dado, moeda e sortear 1 nome; mesmo fluxo e limite do `tools:teams` — `docs/areas/tools.md` |
-| `tools:move-teams` | `{ messageId, channelIds: (id \| null)[] }` | `MoveTeamsResult` (`moved`, `skipped`) | leva cada time de um sorteio postado para uma sala de voz: avisa cada conexão com `tools:moved` e o app troca de sala pelo `voice:join`; outros só com `canModerate` — `docs/areas/tools.md` |
+| `tools:move-teams` | `{ messageId, channelIds: (id \| null)[] }` | `MoveTeamsResult` (`moved`, `skipped`) | leva cada time de um sorteio postado para uma sala de voz: avisa cada conexão com `tools:moved` e o app troca de sala pelo `voice:join`; outros só com `canMoveMember` (`moveMembers` ou `manageMembers` + cargo acima) — `docs/areas/tools.md` |
 | `tools:poll` / `poll:vote` / `poll:close` / `poll:mine` | `{ channelId, question, options, multiple? }` / `{ messageId, choices }` / `messageId` / `messageIds[]` | `ToolResult` / `PollVoteResult` / `PollCloseResult` / `Record<id, number[]>` | enquete (votos anônimos; votar exige `send`; encerrar: autor ou `manageMessages`) — `docs/areas/tools.md` |
-| `message:send` | `{ channelId, content, replyToId? }` | — | valida (canal de texto, chat da sala de voz ou conversa privada `dm`, até 2000 caracteres); `message:new` só para quem vê o canal |
+| `message:send` | `{ channelId, content, replyToId? }` | `OkResult` | valida (canal de texto, chat da sala de voz ou conversa privada `dm`, até 2000 caracteres); recusa volta com o motivo e o app avisa (sem resposta em 10 s: "o servidor não respondeu"); `message:new` só para quem vê o canal |
 | `voice:join` | `{ channelId, muted, deafened }` | `JoinVoiceResult` (`url`, `token` do LiveKit, `canSpeak`/`canShare`/`canVideo`) | exige LiveKit configurado; sala de voz **ou conversa privada `dm`** (só os dois membros, sem bloqueio); sai da sala anterior (também no LiveKit), entra na nova; `voice:state` (sala de DM só para os membros) |
 | `voice:leave` | — | — | tira da sala no LiveKit (`RemoveParticipant`) + `voice:state` |
 | `voice:update` | `{ muted, deafened }` | — | `voice:state` |
@@ -122,7 +122,7 @@ Cliente → servidor (`ClientToServerEvents`):
 | `voice:preview` | `string` (JPEG em data URL) | — | miniatura da própria tela, só compartilhando; o servidor guarda a última (limite `screenPreview`) — `docs/areas/voice.md` |
 | `voice:preview-get` | `userId` | `ScreenPreviewResult` | prévia do "ao vivo" sem entrar na sala; exige `view` + `connect` na sala de quem compartilha (limite `screenPreviewGet`) — `docs/areas/voice.md` |
 | `typing` | `channelId` | — | broadcast `typing` (o cliente limita a 1 envio a cada 2,5 s) |
-| `moderation:voice-move` | `{ userId, channelId }` | `OkResult` | mesma regra do expulsar + sala de voz que quem move vê e em que a pessoa pode entrar; `moderation:moved` só para a conexão movida, que troca de sala pelo `voice:join` — `docs/areas/moderation.md` |
+| `moderation:voice-move` | `{ userId, channelId }` | `OkResult` | `canMoveMember` (`moveMembers` ou `manageMembers` + cargo acima) + sala de voz que quem move vê e em que a pessoa pode entrar; `moderation:moved` só para a conexão movida, que troca de sala pelo `voice:join` — `docs/areas/moderation.md` |
 | `moderation:voice-kick` | `{ userId }` | `OkResult` | `manageMembers` + cargo acima (`canModerate`); `moderation:kicked` para a conexão expulsa, tira da sala (também no LiveKit) + `voice:state` — `docs/areas/moderation.md` |
 | `moderation:voice-mute` | `{ accountId, muted }` | `OkResult` | silencia a conta para todos (sem microfone no LiveKit, `VoiceState.serverMuted`; guardado em `server_mutes`, sobrevive a reiniciar) + `voice:state` |
 | `call:invite` | `channelId` (conversa) | `CallResult` | membro, sem bloqueio, um por conversa e por pessoa; `call:updated` (`ringing`) para as duas contas; `missed` depois de `CALL_RING_MS` — `docs/areas/calls.md` |
@@ -166,7 +166,7 @@ vê), `typing`, `rate:limited`, `access:updated` e `channels:visible` (v2), `sou
 
 ## Layout (`App.tsx`)
 
-`UtilityRail` (72px) | `ChannelSidebar`/`HomeSidebar` (240px por padrão, redimensionável: seções texto/voz, `VoiceStatusPanel` com câmera/tela/efeitos sonoros fora da sala, `UserPanel` com `UserSettingsDialog` (Configurações: conta, voz e vídeo, aparência, notificações)/`ScreenPicker`/`Soundboard` montados) |
+`UtilityRail` (72px) | `ChannelSidebar`/`HomeSidebar` (240px por padrão, redimensionável: seções texto/voz, `VoiceStatusPanel` com câmera/tela/efeitos sonoros fora da sala, `UserPanel` com `UserSettingsDialog` (Configurações: conta, voz e vídeo, aparência, notificações)/`ScreenPicker` montados) |
 `main` (`ChatView` ou `VoiceView`, com `key` = id do canal) | `MemberList` (240px por padrão, redimensionável, aparece só a partir de `lg`). Larguras: `ResizableSide` + `lib/side-width.ts` (`docs/areas/home.md`, "Barras laterais redimensionáveis").
 
 ## Limitações conhecidas (de propósito, nesta versão)

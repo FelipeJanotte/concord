@@ -305,11 +305,12 @@ duas barras laterais), como no Discord:
   Configurações de voz e Desconectar;
 - linha de baixo: **Câmera** (só com `voiceCanVideo`), **Compartilhar a tela** (só com `voiceCanShare`) e **Efeitos
   sonoros**, verdes quando ligados (`aria-pressed`). Microfone e áudio ficam nos botões do `UserPanel`.
-- **O `ScreenPicker` e o `Soundboard` ficam montados uma vez só, no `UserPanel`** (junto das Configurações, `UserSettingsDialog`), e não
+- **O `ScreenPicker` fica montado uma vez só, no `UserPanel`** (junto das Configurações, `UserSettingsDialog`), e não
   mais dentro da `VoiceView`/`CallPanel`: antes, fora da sala o `toggleScreenShare` abria `screenPickerOpen` sem
-  nenhum seletor na tela. Não monte de novo em outra tela (abriria duas janelas).
+  nenhum seletor na tela. Não monte de novo em outra tela (abriria duas janelas). Os efeitos sonoros são um popup
+  ancorado em cada botão (`SoundboardPopover`, veja `docs/areas/sounds.md`), sem nada montado no `UserPanel`.
 - **Testes:** `components/voice-panel.test.tsx` (botões, permissões, câmera, seletor de tela e sons abrindo do painel,
-  parar de compartilhar). Testes que abrem essas janelas a partir da sala ou da chamada montam o `<Soundboard />` junto.
+  parar de compartilhar).
 
 ## Dispositivos, volume e menu de botão direito (B4)
 

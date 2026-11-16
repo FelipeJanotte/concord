@@ -36,17 +36,19 @@ const ocean: ThemeConfig = { base: 'claro', accent: '#0ea5e9', background: { sto
 
 describe('preferências', () => {
   it('sem nada salvo: tema padrão e nenhum tema salvo', async () => {
-    expect(await getPreferences(await account())).toEqual({ theme: DEFAULT_THEME, savedThemes: [] })
-    expect(await getPreferences('nao-uuid')).toEqual({ theme: DEFAULT_THEME, savedThemes: [] })
+    expect(await getPreferences(await account())).toEqual({ theme: DEFAULT_THEME, savedThemes: [], mutedChannels: [] })
+    expect(await getPreferences('nao-uuid')).toEqual({ theme: DEFAULT_THEME, savedThemes: [], mutedChannels: [] })
   })
 
   it('grava só o que mudou e mantém o resto', async () => {
     const id = await account()
     const saved = [{ id: randomUUID(), name: 'Oceano', theme: ocean }]
-    expect(await updatePreferences(id, { savedThemes: saved })).toEqual({ theme: DEFAULT_THEME, savedThemes: saved })
-    expect(await updatePreferences(id, { theme: ocean })).toEqual({ theme: ocean, savedThemes: saved })
-    expect(await getPreferences(id)).toEqual({ theme: ocean, savedThemes: saved })
-    expect(await updatePreferences(id, { savedThemes: [] })).toEqual({ theme: ocean, savedThemes: [] })
+    const muted = [randomUUID()]
+    expect(await updatePreferences(id, { savedThemes: saved })).toEqual({ theme: DEFAULT_THEME, savedThemes: saved, mutedChannels: [] })
+    expect(await updatePreferences(id, { mutedChannels: muted })).toEqual({ theme: DEFAULT_THEME, savedThemes: saved, mutedChannels: muted })
+    expect(await updatePreferences(id, { theme: ocean })).toEqual({ theme: ocean, savedThemes: saved, mutedChannels: muted })
+    expect(await getPreferences(id)).toEqual({ theme: ocean, savedThemes: saved, mutedChannels: muted })
+    expect(await updatePreferences(id, { savedThemes: [] })).toEqual({ theme: ocean, savedThemes: [], mutedChannels: muted })
   })
 
   it('cada conta tem as suas', async () => {

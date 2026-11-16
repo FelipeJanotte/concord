@@ -5,6 +5,7 @@
  */
 import {
   can,
+  canChangeAnyMemberRoles,
   displayColor,
   EVERYONE_ROLE_ID,
   highestPosition,
@@ -34,7 +35,7 @@ export function useCanAdminister(): boolean {
   return useApp((s) => {
     if (!s.access || !s.self) return false
     const me = s.self.accountId
-    return can(s.access, me, 'manageRoles') || can(s.access, me, 'manageMembers')
+    return can(s.access, me, 'manageRoles') || canChangeAnyMemberRoles(s.access, me)
   })
 }
 
@@ -66,20 +67,6 @@ export function canManageRole(access: AccessState, accountId: string, role: Role
   if (!can(access, accountId, 'manageRoles')) return false
   const mine = highestPosition(access, accountId)
   return role.id === EVERYONE_ROLE_ID ? mine > 0 : role.position < mine
-}
-
-/** Posso dar ou tirar este cargo de alguém? (exige manageMembers e cargo abaixo do meu) */
-export function canAssignRole(access: AccessState, accountId: string, role: Role): boolean {
-  if (role.id === EVERYONE_ROLE_ID) return false
-  if (accountId === access.ownerAccountId) return true
-  return can(access, accountId, 'manageMembers') && role.position < highestPosition(access, accountId)
-}
-
-/** Posso mexer nos cargos desta pessoa? (ninguém mexe na dona nem em quem está no seu nível ou acima, menos em si mesmo) */
-export function canEditMember(access: AccessState, accountId: string, targetId: string): boolean {
-  if (accountId === access.ownerAccountId) return true
-  if (!can(access, accountId, 'manageMembers') || targetId === access.ownerAccountId) return false
-  return targetId === accountId || highestPosition(access, targetId) < highestPosition(access, accountId)
 }
 
 /** Hook: cor do nome da pessoa (a do cargo mais alto com cor, ou a da conta). */

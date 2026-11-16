@@ -1,11 +1,11 @@
 /**
  * Moderação da voz (B6) no menu de botão direito sobre uma pessoa: "Mover para" (outra sala de voz),
- * "Silenciar para todos" e "Expulsar da voz". Só aparece para quem pode moderar a pessoa (`canModerate`: gerenciar membros
- * e cargo acima do dela) e enquanto ela está numa sala de voz que eu vejo.
+ * "Silenciar para todos" e "Expulsar da voz". "Mover para" exige `canMoveMember` (mover ou gerenciar membros); silenciar e
+ * expulsar exigem `canModerate` (gerenciar membros); os dois com cargo acima do dela e enquanto ela está numa sala que eu vejo.
  */
 import { ArrowRightLeft, MicOff, PhoneOff, ShieldAlert, Volume2 } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
-import { canModerate } from '@shared/types'
+import { canModerate, canMoveMember, type VoiceState } from '@shared/types'
 import {
   ContextMenuCheckboxItem,
   ContextMenuItem,
@@ -31,15 +31,24 @@ function report(err: unknown, fallback: string): void {
 }
 
 export function ModerationItems({ accountId, name }: { accountId: string; name: string }) {
-  const allowed = useApp((s) => !!s.access && !!s.self && canModerate(s.access, s.self.accountId, accountId))
+  const moderates = useApp((s) => !!s.access && !!s.self && canModerate(s.access, s.self.accountId, accountId))
+  const moves = useApp((s) => !!s.access && !!s.self && canMoveMember(s.access, s.self.accountId, accountId))
   const connections = useVoiceConnections(accountId)
-  if (!allowed || connections.length === 0) return null
-  const serverMuted = connections.some((v) => v.serverMuted)
+  if (!(moderates || moves) || connections.length === 0) return null
 
   return (
     <>
       <ContextMenuSeparator />
-      <MoveToItems accountId={accountId} connections={connections} />
+      {moves && <MoveToItems accountId={accountId} connections={connections} />}
+      {moderates && <MuteAndKickItems accountId={accountId} name={name} connections={connections} />}
+    </>
+  )
+}
+
+function MuteAndKickItems({ accountId, name, connections }: { accountId: string; name: string; connections: VoiceState[] }) {
+  const serverMuted = connections.some((v) => v.serverMuted)
+  return (
+    <>
       <ContextMenuCheckboxItem
         checked={serverMuted}
         onCheckedChange={(checked) =>

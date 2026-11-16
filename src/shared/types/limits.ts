@@ -7,7 +7,7 @@ export type LimitedAction = 'message' | 'typing'
 
 export interface LimitsServerEvents {
   /**
-   * Uma ação sem resposta (`message:send`) foi recusada por excesso.
+   * `message:send` foi recusado por excesso (o envio também responde o erro; o aviso fica para o app antigo).
    * Ações com resposta (`channel:create`, `account:update`) e as rotas HTTP
    * (status 429) devolvem o erro direto.
    */

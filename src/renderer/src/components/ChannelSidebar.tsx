@@ -1,7 +1,7 @@
 import { useState, type DragEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import { ChevronDown, HeadphoneOff, Hash, Loader2, Lock, MessageSquare, MicOff, Plus, Settings, Trash2, Volume2, VolumeX } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
-import { canModerate, type Channel, type ChannelType, type VoiceState } from '@shared/types'
+import { canMoveMember, type Channel, type ChannelType, type VoiceState } from '@shared/types'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { deleteChannel, joinVoice, moveToVoice, notify, openVoiceChat, selectTextChannel } from '@/lib/client'
@@ -12,6 +12,7 @@ import { CreateChannelDialog } from './CreateChannelDialog'
 import { ChannelPermissionsDialog } from './settings/ChannelPermissionsDialog'
 import { CommunitySettingsDialog } from './settings/CommunitySettingsDialog'
 import { UserAvatar } from './UserAvatar'
+import { MuteChannelMenu, useChannelMuted } from './MuteChannelMenu'
 import { MemberContextMenu } from './voice/MemberContextMenu'
 import { ServerMutedIcon } from './voice/ModerationMenu'
 import { LivePreview } from './voice/LivePreview'
@@ -215,22 +216,27 @@ const itemBase =
 function TextChannelItem({ channel }: { channel: Channel }) {
   const active = useApp((s) => s.view?.kind === 'text' && s.view.channelId === channel.id)
   const unread = useApp((s) => !!s.unread[channel.id])
+  const muted = useChannelMuted(channel.id)
 
   return (
-    <div
-      {...onActivate(() => selectTextChannel(channel.id))}
-      className={cn(
-        itemBase,
-        active && 'bg-accent text-accent-foreground hover:bg-accent',
-        unread && !active && 'font-semibold text-accent-foreground'
-      )}
-    >
-      {unread && !active && <span className="absolute -left-2 h-2 w-1 rounded-r-full bg-accent-foreground" />}
-      <Hash className="size-5 shrink-0 opacity-60" />
-      <span className="flex-1 truncate text-[15px]">{channel.name}</span>
-      <PrivateBadge channelId={channel.id} />
-      <ChannelActions channel={channel} />
-    </div>
+    <MuteChannelMenu channelId={channel.id} noun="canal">
+      <div
+        {...onActivate(() => selectTextChannel(channel.id))}
+        data-muted={muted}
+        className={cn(
+          itemBase,
+          active && 'bg-accent text-accent-foreground hover:bg-accent',
+          unread && !active && 'font-semibold text-accent-foreground',
+          muted && !active && 'opacity-50'
+        )}
+      >
+        {unread && !active && <span className="absolute -left-2 h-2 w-1 rounded-r-full bg-accent-foreground" />}
+        <Hash className="size-5 shrink-0 opacity-60" />
+        <span className="flex-1 truncate text-[15px]">{channel.name}</span>
+        <PrivateBadge channelId={channel.id} />
+        <ChannelActions channel={channel} />
+      </div>
+    </MuteChannelMenu>
   )
 }
 
@@ -247,6 +253,7 @@ function VoiceChannelItem({ channel }: { channel: Channel }) {
   const [dropping, setDropping] = useState(false)
   // chat de texto da sala: mensagem nova sem o painel "Chat" aberto
   const unread = useApp((s) => !!s.unread[channel.id])
+  const muted = useChannelMuted(channel.id)
 
   return (
     <div
@@ -269,26 +276,30 @@ function VoiceChannelItem({ channel }: { channel: Channel }) {
       }}
       className={cn('rounded-md', dropping && 'ring-2 ring-primary')}
     >
-      <div
-        {...onActivate(() => void joinVoice(channel.id))}
-        className={cn(
-          itemBase,
-          active && 'bg-accent text-accent-foreground hover:bg-accent',
-          connected && 'text-accent-foreground',
-          unread && 'font-semibold text-accent-foreground'
-        )}
-      >
-        {unread && <span className="absolute -left-2 h-2 w-1 rounded-r-full bg-accent-foreground" />}
-        {joining ? (
-          <Loader2 className="size-5 shrink-0 animate-spin opacity-60" />
-        ) : (
-          <Volume2 className={cn('size-5 shrink-0 opacity-60', connected && 'text-success opacity-100')} />
-        )}
-        <span className="flex-1 truncate text-[15px]">{channel.name}</span>
-        <PrivateBadge channelId={channel.id} />
-        <VoiceChatShortcut channelId={channel.id} unread={unread} />
-        <ChannelActions channel={channel} />
-      </div>
+      <MuteChannelMenu channelId={channel.id} noun="canal">
+        <div
+          {...onActivate(() => void joinVoice(channel.id))}
+          data-muted={muted}
+          className={cn(
+            itemBase,
+            active && 'bg-accent text-accent-foreground hover:bg-accent',
+            connected && 'text-accent-foreground',
+            unread && 'font-semibold text-accent-foreground',
+            muted && !active && !connected && 'opacity-50'
+          )}
+        >
+          {unread && <span className="absolute -left-2 h-2 w-1 rounded-r-full bg-accent-foreground" />}
+          {joining ? (
+            <Loader2 className="size-5 shrink-0 animate-spin opacity-60" />
+          ) : (
+            <Volume2 className={cn('size-5 shrink-0 opacity-60', connected && 'text-success opacity-100')} />
+          )}
+          <span className="flex-1 truncate text-[15px]">{channel.name}</span>
+          <PrivateBadge channelId={channel.id} />
+          <VoiceChatShortcut channelId={channel.id} unread={unread} />
+          <ChannelActions channel={channel} />
+        </div>
+      </MuteChannelMenu>
       {members.length > 0 && (
         <div className="space-y-0.5 py-1 pl-6">
           {members.map((m) => (
@@ -330,8 +341,8 @@ function VoiceMember({ state }: { state: VoiceState }) {
   const user = useApp((s) => s.users.find((u) => u.id === state.userId))
   const speaking = useApp((s) => !!s.speaking[state.userId])
   const mutedByMe = useApp((s) => !!user && !!s.userMuted[user.accountId])
-  // quem pode moderar a pessoa pode arrastá-la para outra sala (o servidor confere de novo)
-  const canMove = useApp((s) => !!user && !!s.access && !!s.self && canModerate(s.access, s.self.accountId, user.accountId))
+  // quem pode mover a pessoa (canMoveMember) pode arrastá-la para outra sala (o servidor confere de novo)
+  const canMove = useApp((s) => !!user && !!s.access && !!s.self && canMoveMember(s.access, s.self.accountId, user.accountId))
   if (!user) return null
   return (
     <MemberContextMenu userId={state.userId}>
