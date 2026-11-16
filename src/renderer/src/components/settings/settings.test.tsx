@@ -149,6 +149,15 @@ describe('Configurações da comunidade — Cargos', () => {
     })
   })
 
+  it('marcar "Mover membros" num cargo manda moveMembers', async () => {
+    login('dona')
+    render(<CommunitySettingsDialog open onOpenChange={() => {}} />)
+    await userEvent.click(within(screen.getByRole('list', { name: 'Cargos' })).getByRole('button', { name: 'Mod' }))
+    await userEvent.click(screen.getByRole('checkbox', { name: /Mover membros/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Salvar alterações' }))
+    expect(socket.sent('role:update')[0][0]).toMatchObject({ id: 'mod', permissions: ['manageMembers', 'moveMembers'] })
+  })
+
   it('@todos: sem nome nem cor, e só permissões', async () => {
     login('dona')
     render(<CommunitySettingsDialog open onOpenChange={() => {}} />)

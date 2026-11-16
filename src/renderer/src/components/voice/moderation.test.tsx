@@ -247,6 +247,28 @@ describe('mover para outra sala (botão direito e arrastar)', () => {
     expect(socket.sent('moderation:voice-move')).toHaveLength(1)
   })
 
+  it('com "Mover membros": "Mover para" aparece, mas silenciar e expulsar não', () => {
+    login(mod, ['moveMembers'], [voiceState(mod), voiceState(ana)])
+    withRooms()
+    render(<VoiceGrid members={members()} />)
+    const menu = menuOn('Ana')
+    expect(within(menu).getByRole('menuitem', { name: /Mover para/ })).toBeTruthy()
+    expect(within(menu).queryByRole('menuitemcheckbox', { name: /Silenciar para todos/ })).toBeNull()
+    expect(within(menu).queryByRole('menuitem', { name: /Expulsar da voz/ })).toBeNull()
+  })
+
+  it('com "Mover membros", a pessoa é arrastável na barra lateral', () => {
+    login(mod, ['moveMembers'], [voiceState(mod), voiceState(ana)])
+    withRooms()
+    render(
+      <TooltipProvider>
+        <ChannelSidebar />
+      </TooltipProvider>
+    )
+    const anaRow = screen.getAllByText('Ana').map((el) => el.closest('[draggable]') as HTMLElement).find(Boolean)!
+    expect(anaRow.getAttribute('draggable')).toBe('true')
+  })
+
   it('sem poder moderar, a pessoa não é arrastável', () => {
     login(mod, [], [voiceState(mod), voiceState(ana)])
     withRooms()

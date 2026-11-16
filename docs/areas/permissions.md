@@ -24,7 +24,8 @@ cargos atribuídos; cada canal pode **liberar** ou **negar** permissões por car
 
 - **Globais:** `manageChannels` (criar/apagar canal, editar regras de canal; **sempre vê** todos os canais),
   `manageRoles` (cargos abaixo do seu), `manageMembers` (atribuir cargos abaixo do seu; silenciar/expulsar da voz na
-  B6), `manageMessages` (apagar mensagem de outras pessoas, B6), `mentionEveryone` (mencionar @todos, B19: sem ela o `<@todos>` vira texto comum).
+  B6), `manageMessages` (apagar mensagem de outras pessoas, B6), `mentionEveryone` (mencionar @todos, B19: sem ela o `<@todos>` vira texto comum), `moveMembers` (mover quem
+  está abaixo para outra sala de voz, sem ganhar silenciar/expulsar; `manageMembers` também move).
 - **Por canal:** `view`, `send`, `attach`, `connect`, `speak`, `share`, `video` (câmera, B21; comunidades antigas
   ganharam `video` onde havia `share` pela migration `0010_camera_permission`).
 - **@todos:** id fixo `EVERYONE_ROLE_ID` (`00000000-…`), posição 0, sempre existe, não pode ser apagado nem
@@ -87,6 +88,7 @@ do seu cargo mais alto. **Ninguém dá permissão global que não tem** e **glob
 | `voice:update` | sem `speak` continua `muted: true` (não dá para se dessilenciar) |
 | `voice:state` | cada conexão recebe só as salas que pode ver (`voiceStatesFor`) |
 | `moderation:voice-kick` / `moderation:voice-mute` | `canModerate`: `manageMembers` e cargo acima do alvo (nunca a dona nem a si mesmo); sala que não vê = "não está numa sala" (`docs/areas/moderation.md`) |
+| `moderation:voice-move` / `tools:move-teams` (mover outra pessoa) | `canMoveMember`: `moveMembers` **ou** `manageMembers`, com a mesma hierarquia do `canModerate`; a pessoa precisa de `view` + `connect` na sala de destino |
 | `message:delete` | `view` + (autor ou `manageMessages`); em DM só o autor |
 
 Para um handler novo: `await allowed(user.accountId, 'perm', channelId)` antes de agir e `emitToViewers(io,

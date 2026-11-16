@@ -56,7 +56,7 @@ voz ou da lista de online: `TeamPlayer.accountId` → `TeamMember.accountId`), p
 `nome#tag`, sem diferenciar maiúsculas. Nome que bate com duas contas = `ambiguous` (não move ninguém errado); a
 mesma conta duas vezes no sorteio = vale a primeira. Todas as conexões da conta que estão na voz vão juntas.
 
-**Quem pode mover quem:** a si mesmo, sempre; os outros, pela regra da moderação (`canModerate`: `manageMembers`
+**Quem pode mover quem:** a si mesmo, sempre; os outros, pela regra de mover (`canMoveMember`: `moveMembers` ou `manageMembers`
 e cargo acima; a dona move todos e não é movida) → senão `not-allowed`. A pessoa precisa de `view` + `connect` na
 sala do time → senão `no-access`. Fora da voz → `not-in-voice`. Quem já está na sala do time não conta em `moved`
 nem é pulado. Um pulado não cancela os outros.
@@ -160,7 +160,7 @@ página que chegou, então as enquetes do histórico já aparecem marcadas.
 | `server/repo/polls.test.ts` | Votos, troca e retirada, múltipla, votos simultâneos, encerrar, `votesOf`, check do banco e cascade. |
 | `server/tests/polls.test.ts` | Servidor real: criar e votar (anônimo, `mine`), único × múltiplo, histórico + `poll:mine`, encerrar (autor, dona, recusas), canal privado e sem `send`. |
 | `server/tools/move.test.ts` | `validateMoveRequest` (formatos, salas repetidas, `null`) e `planMoves` (nome, `nome#tag`, conta, ambíguo, conta repetida, time sem sala). |
-| `server/tests/move-teams.test.ts` | Servidor real + LiveKit falso: a dona move pela conta e pelo nome, quem já está na sala, sem `manageMembers` só a si, moderador × dona, sem `connect` na sala do time, nome ambíguo, erros do pedido, sorteio de canal que não vejo. |
+| `server/tests/move-teams.test.ts` | Servidor real + LiveKit falso: a dona move pela conta e pelo nome, quem já está na sala, sem `manageMembers`/`moveMembers` só a si, moderador (com `manageMembers` ou `moveMembers`) × dona, sem `connect` na sala do time, nome ambíguo, erros do pedido, sorteio de canal que não vejo. |
 | `src/renderer/src/components/tools/tools.test.tsx` | Telas (jsdom): registro, importar pessoas (uma por conta), cada painel (payload, canal sugerido, canal sem `send` some, erro, resultado), sorteador (vírgulas, online com conta, lanes, lanes disponíveis e preferência apagada, nenhuma lane, limite, aviso de times menores), cartões no chat (moeda no `ChatView`, desconhecida, mover para as salas e erro, enquete: votar, vários, encerrar, encerrada). |
 | `src/renderer/src/lib/actions/polls.test.ts` | App: `poll:updated` na mensagem, criar, votar, encerrar, `loadMyPollVotes`. |
 
@@ -175,5 +175,5 @@ página que chegou, então as enquetes do histórico já aparecem marcadas.
 |---|---|
 | Pessoa em `skipped` com `not-in-voice` | Ela não está em sala, está numa chamada privada ou numa sala que você não vê; ou o nome no sorteio não bate (use `nome#tag` ou importe da sala). |
 | `ambiguous` | Duas contas na voz com o mesmo nome: sorteie com `accountId` (importar da sala) ou digite `nome#tag`. |
-| `not-allowed` | Sem `manageMembers`, ou a pessoa tem cargo igual/acima do seu, ou é a dona. |
+| `not-allowed` | Sem `moveMembers` nem `manageMembers`, ou a pessoa tem cargo igual/acima do seu, ou é a dona. |
 | Recebeu `tools:moved` mas não trocou de sala | O `voice:join` foi recusado (perdeu `connect` no meio) ou o LiveKit falhou: o aviso do `joinVoice` aparece na tela. |

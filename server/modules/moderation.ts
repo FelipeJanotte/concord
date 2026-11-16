@@ -1,10 +1,10 @@
 /**
  * Moderação (B6): expulsar da voz, mover para outra sala, silenciar pelo servidor e apagar mensagem.
- * Regras no contrato (`src/shared/types/moderation.ts`: `canModerate`, `canDeleteMessage`);
+ * Regras no contrato (`src/shared/types/moderation.ts`: `canModerate`, `canMoveMember`, `canDeleteMessage`);
  * a voz em si fica em `server/modules/voice.ts` (`kickFromVoice`, `setServerMuted`).
  * Skill `concord-moderation`.
  */
-import { canDeleteMessage, canModerate, type OkResult } from '../../src/shared/types'
+import { canDeleteMessage, canModerate, canMoveMember, type OkResult } from '../../src/shared/types'
 import { allowed, currentAccess, dmMembersOf, emitToViewers } from '../access'
 import { guard, type AppSocket, type ServerModule } from '../context'
 import { limiters, retryText } from '../middleware/rate-limit'
@@ -48,7 +48,7 @@ export const moderationModule: ServerModule = {
       })
     })
 
-    // Mover para outra sala (como no Discord): mesma regra do expulsar. Não tira ninguém à força no
+    // Mover para outra sala (como no Discord): `canMoveMember` (`moveMembers` ou `manageMembers`). Não tira ninguém à força no
     // LiveKit: avisa a conexão (`moderation:moved`) e o app troca de sala pelo `voice:join` de sempre,
     // que confere a permissão de novo e emite o token (igual ao "Mover para as salas" do sorteador).
     socket.on('moderation:voice-move', (payload, ack) => {
@@ -65,7 +65,7 @@ export const moderationModule: ServerModule = {
           return ack(fail('Essa pessoa não está numa sala de voz'))
         }
         if (dmMembersOf(state.channelId)) return ack(fail('Não dá para mover alguém de uma chamada privada'))
-        if (!canModerate(await currentAccess(), actor.accountId, target.accountId)) {
+        if (!canMoveMember(await currentAccess(), actor.accountId, target.accountId)) {
           return ack(fail('Você não pode mover essa pessoa'))
         }
         const channel = channelId ? await findChannel(channelId) : undefined

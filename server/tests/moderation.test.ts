@@ -169,6 +169,47 @@ describe('mover para outra sala', () => {
   })
 })
 
+describe('permissão "Mover membros" (moveMembers)', () => {
+  it('cargo com moveMembers move quem está abaixo, mas não expulsa nem silencia', async () => {
+    const mover = await user('Mover')
+    const ana = await user('Ana')
+    await giveRole(mover, ['moveMembers'])
+    const a = await room()
+    const b = await room()
+    await join(ana, a.id)
+    const moved = waitFor(ana.socket, 'moderation:moved')
+    expect(await mover.socket.emitWithAck('moderation:voice-move', { userId: ana.self.id, channelId: b.id })).toEqual({ ok: true })
+    expect((await moved)[0]).toEqual({ channelId: b.id, by: mover.self.name })
+    expect(await mover.socket.emitWithAck('moderation:voice-kick', { userId: ana.self.id })).toEqual({
+      ok: false,
+      error: 'Você não pode expulsar essa pessoa'
+    })
+    expect(await mover.socket.emitWithAck('moderation:voice-mute', { accountId: ana.self.accountId, muted: true })).toEqual({
+      ok: false,
+      error: 'Você não pode silenciar essa pessoa'
+    })
+  })
+
+  it('sem a permissão recusa; com ela, não move a dona nem quem tem cargo igual', async () => {
+    const owner = await server.asOwner()
+    const mover = await user('Mover')
+    const igual = await user('Igual')
+    const ana = await user('Ana')
+    const a = await room()
+    const b = await room()
+    for (const u of [owner, igual, ana]) await join(u, a.id)
+    const no = { ok: false, error: 'Você não pode mover essa pessoa' }
+    const move = (userId: string) => mover.socket.emitWithAck('moderation:voice-move', { userId, channelId: b.id })
+
+    expect(await move(ana.self.id)).toEqual(no)
+    const roleId = await giveRole(mover, ['moveMembers'])
+    await owner.socket.emitWithAck('member:set-roles', { accountId: igual.self.accountId, roleIds: [roleId] })
+    expect(await move(owner.self.id)).toEqual(no)
+    expect(await move(igual.self.id)).toEqual(no)
+    owner.socket.emit('voice:leave')
+  })
+})
+
 describe('silenciar pelo servidor', () => {
   it('silencia na hora (lista e LiveKit), não deixa se dessilenciar e vale ao voltar para a sala', async () => {
     const owner = await server.asOwner()
