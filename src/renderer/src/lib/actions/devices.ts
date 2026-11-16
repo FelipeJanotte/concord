@@ -34,6 +34,7 @@ interface SavedAudio {
   micGain: number
   /** volume de saída (0 a 1) */
   outputVolume: number
+  soundboardVolume: number
 }
 
 function readSaved(): SavedAudio {
@@ -46,7 +47,8 @@ function readSaved(): SavedAudio {
     sounds: { enabled: true, volume: 0.5 },
     noise: true,
     micGain: 1,
-    outputVolume: 1
+    outputVolume: 1,
+    soundboardVolume: 1
   }
   try {
     const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null
@@ -71,7 +73,8 @@ function readSaved(): SavedAudio {
       },
       noise: typeof data.noise === 'boolean' ? data.noise : empty.noise,
       micGain: clampMicGain(data.micGain),
-      outputVolume: clampOutputVolume(data.outputVolume)
+      outputVolume: clampOutputVolume(data.outputVolume),
+      soundboardVolume: clampOutputVolume(data.soundboardVolume)
     }
   } catch {
     return empty
@@ -79,7 +82,7 @@ function readSaved(): SavedAudio {
 }
 
 function save(): void {
-  const { audioInputId, audioOutputId, cameraId, userVolumes, userMuted, voiceSoundsEnabled, voiceSoundsVolume, noiseSuppression, micGain, outputVolume } =
+  const { audioInputId, audioOutputId, cameraId, userVolumes, userMuted, voiceSoundsEnabled, voiceSoundsVolume, noiseSuppression, micGain, outputVolume, soundboardVolume } =
     get()
   try {
     localStorage.setItem(
@@ -93,7 +96,8 @@ function save(): void {
         sounds: { enabled: voiceSoundsEnabled, volume: voiceSoundsVolume },
         noise: noiseSuppression,
         micGain,
-        outputVolume
+        outputVolume,
+        soundboardVolume
       })
     )
   } catch {
@@ -116,7 +120,8 @@ export function loadAudioPreferences(): void {
     voiceSoundsVolume: saved.sounds.volume,
     noiseSuppression: saved.noise,
     micGain: saved.micGain,
-    outputVolume: saved.outputVolume
+    outputVolume: saved.outputVolume,
+    soundboardVolume: saved.soundboardVolume
   })
   void voice.setNoiseSuppression(saved.noise)
   void voice.setMicGain(saved.micGain)
@@ -231,6 +236,11 @@ export function setOutputVolume(volume: number): void {
   set({ outputVolume: v })
   save()
   voice.setOutputVolume(v)
+}
+
+export function setSoundboardVolume(volume: number): void {
+  set({ soundboardVolume: clampOutputVolume(volume) })
+  save()
 }
 
 /** Liga/desliga e ajusta o volume dos sons de entrar/sair da sala (B16). */

@@ -12,6 +12,7 @@ import {
   setMicGain,
   setNoiseSuppression,
   setOutputVolume,
+  setSoundboardVolume,
   setUserVolume,
   setVoiceSounds
 } from './devices'
@@ -81,7 +82,7 @@ describe('escolher dispositivo', () => {
     await selectAudioInput('mic-usb')
     await selectAudioOutput('fone')
     expect(useApp.getState()).toMatchObject({ audioInputId: 'mic-usb', audioOutputId: 'fone' })
-    expect(saved()).toEqual({ input: 'mic-usb', output: 'fone', camera: null, volumes: {}, muted: [], sounds: { enabled: true, volume: 0.5 }, noise: true, micGain: 1, outputVolume: 1 })
+    expect(saved()).toEqual({ input: 'mic-usb', output: 'fone', camera: null, volumes: {}, muted: [], sounds: { enabled: true, volume: 0.5 }, noise: true, micGain: 1, outputVolume: 1, soundboardVolume: 1 })
     expect(voice.setInputDevice).toHaveBeenCalledWith('mic-usb')
     expect(voice.setOutputDevice).toHaveBeenCalledWith('fone')
 
@@ -283,6 +284,25 @@ describe('volume do microfone e de saída', () => {
     storage.setItem('concord:audio', JSON.stringify({ micGain: 'alto', outputVolume: -3 }))
     loadAudioPreferences()
     expect(useApp.getState()).toMatchObject({ micGain: 1, outputVolume: 0 })
+  })
+
+  it('volume dos efeitos sonoros: começa em 100%, salva, corrige o limite e volta igual depois de reabrir', () => {
+    loadAudioPreferences()
+    expect(useApp.getState().soundboardVolume).toBe(1)
+    setSoundboardVolume(0.3)
+    expect(useApp.getState().soundboardVolume).toBe(0.3)
+    expect(saved()).toMatchObject({ soundboardVolume: 0.3 })
+    useApp.setState({ soundboardVolume: 1 })
+    loadAudioPreferences()
+    expect(useApp.getState().soundboardVolume).toBe(0.3)
+    setSoundboardVolume(4)
+    expect(useApp.getState().soundboardVolume).toBe(1)
+    storage.setItem('concord:audio', JSON.stringify({ soundboardVolume: 'alto' }))
+    loadAudioPreferences()
+    expect(useApp.getState().soundboardVolume).toBe(1)
+    storage.setItem('concord:audio', JSON.stringify({ soundboardVolume: -2 }))
+    loadAudioPreferences()
+    expect(useApp.getState().soundboardVolume).toBe(0)
   })
 
   it('falha ao ajustar o microfone vira aviso', async () => {

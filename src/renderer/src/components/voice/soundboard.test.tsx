@@ -63,6 +63,17 @@ afterEach(() => {
 })
 
 describe('grade de sons', () => {
+  it('o controle de volume dos efeitos sonoros mostra e muda o volume (vale só nesta máquina)', () => {
+    setup({ soundboardVolume: 0.6 })
+    render(<Soundboard />)
+    const slider = screen.getByRole('slider', { name: 'Volume dos efeitos sonoros' }) as HTMLInputElement
+    expect(slider.value).toBe('60')
+    expect(screen.getByText('60%')).toBeTruthy()
+    fireEvent.change(slider, { target: { value: '25' } })
+    expect(useApp.getState().soundboardVolume).toBe(0.25)
+    expect(JSON.parse(localStorage.getItem('concord:audio') ?? '{}')).toMatchObject({ soundboardVolume: 0.25 })
+  })
+
   it('clicar toca para a minha sala', async () => {
     setup()
     socket.replyTo('sound:play', () => ({ ok: true }))

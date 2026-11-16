@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Loader2, Trash2, Volume2 } from 'lucide-react'
 import type { Sound } from '@shared/types'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { closeSoundboard, deleteSound, playSound } from '@/lib/client'
+import { closeSoundboard, deleteSound, playSound, setSoundboardVolume } from '@/lib/client'
 import { useCan } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
@@ -52,6 +52,8 @@ export function Soundboard() {
           </DialogDescription>
         </DialogHeader>
 
+        <SoundboardVolume />
+
         {uploading ? (
           <SoundUploadForm onDone={() => setUploading(false)} />
         ) : (
@@ -82,6 +84,26 @@ export function Soundboard() {
         )}
       </DialogContent>
     </Dialog>
+  )
+}
+
+function SoundboardVolume() {
+  const pct = useApp((s) => Math.round(s.soundboardVolume * 100))
+  return (
+    <div className="flex items-center gap-3">
+      <Volume2 className="size-4 shrink-0 text-muted-foreground" />
+      <input
+        type="range"
+        min={0}
+        max={100}
+        step={5}
+        value={pct}
+        aria-label="Volume dos efeitos sonoros"
+        onChange={(e) => setSoundboardVolume(Number(e.target.value) / 100)}
+        className="flex-1 accent-primary"
+      />
+      <span className="w-10 text-right text-xs text-muted-foreground tabular-nums">{pct}%</span>
+    </div>
   )
 }
 
