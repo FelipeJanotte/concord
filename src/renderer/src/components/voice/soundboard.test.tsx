@@ -1,6 +1,4 @@
 // @vitest-environment jsdom
-// Soundboard na tela (B17): grade (tocar, bloqueios, erro), apagar só para quem pode, enviar um som
-// (prévia, nome sugerido, recusa local) e o indicador "fulano tocou X".
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -10,7 +8,7 @@ import { setSocket, TOKEN_KEY } from '@/lib/core'
 import { initialState, useApp } from '@/store'
 import { FakeSocket } from '@/test/fake-socket'
 import { EMOJI_GROUPS, EmojiPicker } from './EmojiPicker'
-import { Soundboard, SoundsPlayingBar } from './Soundboard'
+import { SoundboardPopover, SoundsPlayingBar } from './Soundboard'
 
 const me: User = { id: 'sock-eu', accountId: 'acc-eu', name: 'Eu', tag: 'eu', color: '#fff', avatarUrl: null }
 const sound = (id: string, name: string, uploaderId: string | null, emoji: string | null = null): Sound => ({
@@ -23,7 +21,6 @@ const sound = (id: string, name: string, uploaderId: string | null, emoji: strin
 })
 const meu = sound('s1', 'Buzina', 'acc-eu', '📯')
 const daAna = sound('s2', 'Risada', 'acc-ana')
-/** @todos com as permissões comuns, sem manageMessages; a dona é outra conta */
 const basicAccess = {
   ownerAccountId: 'acc-dona',
   roles: [{ id: '00000000-0000-0000-0000-000000000000', name: '@todos', color: null, position: 0, permissions: ['view', 'send', 'connect', 'speak'] }],
@@ -33,6 +30,15 @@ const basicAccess = {
 
 let socket: FakeSocket
 
+async function openBoard(): Promise<void> {
+  render(
+    <SoundboardPopover>
+      <button type="button">Efeitos sonoros</button>
+    </SoundboardPopover>
+  )
+  await userEvent.click(screen.getByRole('button', { name: 'Efeitos sonoros' }))
+}
+
 function setup(over: Partial<ReturnType<typeof useApp.getState>> = {}): void {
   useApp.setState({
     ...initialState,
@@ -41,7 +47,6 @@ function setup(over: Partial<ReturnType<typeof useApp.getState>> = {}): void {
     access: basicAccess,
     sounds: [meu, daAna],
     soundsLoaded: true,
-    soundboardOpen: true,
     myVoiceChannelId: 'sala',
     ...over
   })
@@ -62,10 +67,67 @@ afterEach(() => {
   localStorage.clear()
 })
 
+describe('popup sem modal', () => {
+  it('abre ancorado no botão sem bloquear o resto do app; clicar fora fecha', async () => {
+    setup()
+    const neighbor = vi.fn()
+    render(
+      <>
+        <button type="button" onClick={neighbor}>
+          Outro botão
+        </button>
+        <SoundboardPopover>
+          <button type="button">Efeitos sonoros</button>
+        </SoundboardPopover>
+      </>
+    )
+    const trigger = screen.getByRole('button', { name: 'Efeitos sonoros' })
+    await userEvent.click(trigger)
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByRole('dialog', { name: 'Efeitos sonoros' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Outro botão' }).closest('[aria-hidden="true"]')).toBeNull()
+    expect(document.body.style.pointerEvents).not.toBe('none')
+    await userEvent.click(screen.getByRole('button', { name: 'Outro botão' }))
+    expect(neighbor).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() => expect(screen.queryByRole('dialog', { name: 'Efeitos sonoros' })).toBeNull())
+  })
+
+  it('Esc fecha', async () => {
+    setup()
+    await openBoard()
+    await userEvent.keyboard('{Escape}')
+    await vi.waitFor(() => expect(screen.queryByRole('dialog', { name: 'Efeitos sonoros' })).toBeNull())
+  })
+
+  it('clicar no botão de novo fecha', async () => {
+    setup()
+    await openBoard()
+    await userEvent.click(screen.getByRole('button', { name: 'Efeitos sonoros' }))
+    await vi.waitFor(() => expect(screen.queryByRole('dialog', { name: 'Efeitos sonoros' })).toBeNull())
+  })
+
+  it('abrir busca a coleção de novo', async () => {
+    setup()
+    await openBoard()
+    expect(socket.sent('sound:list')).toHaveLength(1)
+  })
+
+  it('fechar no meio do envio e abrir de novo volta para a grade', async () => {
+    setup()
+    await openBoard()
+    await userEvent.click(screen.getByRole('button', { name: 'Enviar um som' }))
+    expect(screen.getByLabelText(/Arquivo/)).toBeTruthy()
+    await userEvent.keyboard('{Escape}')
+    await vi.waitFor(() => expect(screen.queryByRole('dialog', { name: 'Efeitos sonoros' })).toBeNull())
+    await userEvent.click(screen.getByRole('button', { name: 'Efeitos sonoros' }))
+    expect(await screen.findByRole('list', { name: 'Sons' })).toBeTruthy()
+  })
+})
+
 describe('grade de sons', () => {
-  it('o controle de volume dos efeitos sonoros mostra e muda o volume (vale só nesta máquina)', () => {
+  it('o controle de volume dos efeitos sonoros mostra e muda o volume (vale só nesta máquina)', async () => {
     setup({ soundboardVolume: 0.6 })
-    render(<Soundboard />)
+    await openBoard()
     const slider = screen.getByRole('slider', { name: 'Volume dos efeitos sonoros' }) as HTMLInputElement
     expect(slider.value).toBe('60')
     expect(screen.getByText('60%')).toBeTruthy()
@@ -77,7 +139,7 @@ describe('grade de sons', () => {
   it('clicar toca para a minha sala', async () => {
     setup()
     socket.replyTo('sound:play', () => ({ ok: true }))
-    render(<Soundboard />)
+    await openBoard()
     const list = screen.getByRole('list', { name: 'Sons' })
     expect(within(list).getAllByRole('button', { name: /^Tocar/ }).map((b) => b.textContent)).toEqual(['📯Buzina', 'Risada'])
     await userEvent.click(screen.getByRole('button', { name: 'Tocar Risada' }))
@@ -87,33 +149,33 @@ describe('grade de sons', () => {
   it('erro do servidor aparece na janela', async () => {
     setup()
     socket.replyTo('sound:play', () => ({ ok: false, error: 'Espere o som anterior terminar' }))
-    render(<Soundboard />)
+    await openBoard()
     await userEvent.click(screen.getByRole('button', { name: 'Tocar Buzina' }))
     expect((await screen.findByRole('alert')).textContent).toBe('Espere o som anterior terminar')
   })
 
-  it('fora da sala ou sem poder falar: explica e não deixa tocar', () => {
+  it('fora da sala ou sem poder falar: explica e não deixa tocar', async () => {
     setup({ myVoiceChannelId: null })
-    render(<Soundboard />)
+    await openBoard()
     expect(screen.getByText('Entre numa sala de voz para tocar sons.')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Tocar Buzina' })).toHaveProperty('disabled', true)
     cleanup()
     setup({ voiceCanSpeak: false })
-    render(<Soundboard />)
+    await openBoard()
     expect(screen.getByText(/não pode falar nesta sala/)).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Tocar Risada' })).toHaveProperty('disabled', true)
   })
 
-  it('coleção vazia convida a enviar', () => {
+  it('coleção vazia convida a enviar', async () => {
     setup({ sounds: [] })
-    render(<Soundboard />)
+    await openBoard()
     expect(screen.getByText('Nenhum som ainda. Envie o primeiro!')).toBeTruthy()
   })
 
   it('apagar: só o meu (sem manageMessages), com confirmação', async () => {
     setup()
     socket.replyTo('sound:delete', () => ({ ok: true }))
-    render(<Soundboard />)
+    await openBoard()
     expect(screen.queryByRole('button', { name: 'Apagar Risada' })).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: 'Apagar Buzina' }))
     expect(socket.sent('sound:delete')).toHaveLength(0)
@@ -122,10 +184,10 @@ describe('grade de sons', () => {
     await vi.waitFor(() => expect(screen.queryByRole('button', { name: 'Tocar Buzina' })).toBeNull())
   })
 
-  it('quem gerencia mensagens pode apagar o de outra pessoa', () => {
+  it('quem gerencia mensagens pode apagar o de outra pessoa', async () => {
     const access = { ...basicAccess, roles: [{ ...basicAccess.roles[0], permissions: [...basicAccess.roles[0].permissions, 'manageMessages'] }] } as AccessState
     setup({ access })
-    render(<Soundboard />)
+    await openBoard()
     expect(screen.getByRole('button', { name: 'Apagar Risada' })).toBeTruthy()
   })
 })
@@ -140,7 +202,7 @@ describe('enviar um som', () => {
     localStorage.setItem(TOKEN_KEY, 'tok')
     vi.spyOn(soundTransport, 'duration').mockResolvedValue(3000)
     const send = vi.spyOn(soundTransport, 'send').mockResolvedValue(sound('s9', 'air horn', 'acc-eu', '📢'))
-    render(<Soundboard />)
+    await openBoard()
     await userEvent.click(screen.getByRole('button', { name: 'Enviar um som' }))
     pick(new File([new Uint8Array(100)], 'air_horn.ogg', { type: 'audio/ogg' }))
     expect(await screen.findByLabelText('Prévia do som')).toBeTruthy()
@@ -155,7 +217,7 @@ describe('enviar um som', () => {
   it('arquivo longo demais: avisa e não deixa enviar', async () => {
     setup()
     vi.spyOn(soundTransport, 'duration').mockResolvedValue(8000)
-    render(<Soundboard />)
+    await openBoard()
     await userEvent.click(screen.getByRole('button', { name: 'Enviar um som' }))
     pick(new File([new Uint8Array(100)], 'longo.mp3', { type: 'audio/mpeg' }))
     expect((await screen.findByRole('alert')).textContent).toBe('O som pode ter no máximo 5 segundos')
@@ -167,7 +229,7 @@ describe('enviar um som', () => {
     localStorage.setItem(TOKEN_KEY, 'tok')
     vi.spyOn(soundTransport, 'duration').mockResolvedValue(3000)
     vi.spyOn(soundTransport, 'send').mockRejectedValue(new Error('Já existe um som com esse nome'))
-    render(<Soundboard />)
+    await openBoard()
     await userEvent.click(screen.getByRole('button', { name: 'Enviar um som' }))
     pick(new File([new Uint8Array(100)], 'Buzina.wav', { type: 'audio/wav' }))
     await screen.findByLabelText('Prévia do som')
@@ -216,7 +278,7 @@ describe('seletor de emoji', () => {
     localStorage.setItem(TOKEN_KEY, 'tok')
     vi.spyOn(soundTransport, 'duration').mockResolvedValue(3000)
     const send = vi.spyOn(soundTransport, 'send').mockResolvedValue(sound('s9', 'Bip', 'acc-eu'))
-    render(<Soundboard />)
+    await openBoard()
     await userEvent.click(screen.getByRole('button', { name: 'Enviar um som' }))
     expect(screen.getByLabelText('Sem emoji')).toBeTruthy()
     fireEvent.change(screen.getByLabelText(/Arquivo/), { target: { files: [new File([new Uint8Array(10)], 'bip.ogg', { type: 'audio/ogg' })] } })

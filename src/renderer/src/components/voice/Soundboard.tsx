@@ -1,23 +1,38 @@
-// Efeitos sonoros (soundboard, B17): janela com a grade de sons (clique toca para a sala; lixeira para
-// quem pode apagar), o envio de um som novo e o indicador "fulano tocou X" na sala. Skill `concord-sounds`.
-import { useState } from 'react'
+import { useId, useState, type ReactNode } from 'react'
 import { Loader2, Trash2, Volume2 } from 'lucide-react'
 import type { Sound } from '@shared/types'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { closeSoundboard, deleteSound, playSound, setSoundboardVolume } from '@/lib/client'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { deleteSound, playSound, refreshSounds, setSoundboardVolume } from '@/lib/client'
 import { useCan } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
 import { findDm } from '@/lib/dms'
 import { SoundUploadForm } from './SoundUploadForm'
 
-export function Soundboard() {
-  const open = useApp((s) => s.soundboardOpen)
+export function SoundboardPopover({ side = 'top', children }: { side?: 'top' | 'right'; children: ReactNode }) {
+  const [open, setOpen] = useState(false)
+  const titleId = useId()
+
+  function change(next: boolean): void {
+    setOpen(next)
+    if (next) refreshSounds()
+  }
+
+  return (
+    <Popover open={open} onOpenChange={change} modal={false}>
+      <PopoverTrigger asChild>{children}</PopoverTrigger>
+      <PopoverContent side={side} sideOffset={8} aria-labelledby={titleId} className="flex max-h-(--radix-popover-content-available-height) w-96 max-w-[calc(100vw-2rem)] flex-col gap-3 overflow-y-auto">
+        <SoundboardContent titleId={titleId} />
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+function SoundboardContent({ titleId }: { titleId: string }) {
   const sounds = useApp((s) => s.sounds)
   const loaded = useApp((s) => s.soundsLoaded)
   const inRoom = useApp((s) => !!s.myVoiceChannelId)
   const canSpeak = useApp((s) => s.voiceCanSpeak)
-  // na chamada de uma conversa privada só a outra pessoa ouve
   const inCall = useApp((s) => !!s.myVoiceChannelId && !!findDm(s.dms, s.myVoiceChannelId))
   const [error, setError] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
@@ -34,56 +49,47 @@ export function Soundboard() {
   const blocked = !inRoom ? 'Entre numa sala de voz para tocar sons.' : !canSpeak ? 'Você não pode falar nesta sala, então não toca sons.' : null
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        if (!next) {
-          closeSoundboard()
-          setUploading(false)
-          setError(null)
-        }
-      }}
-    >
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Efeitos sonoros</DialogTitle>
-          <DialogDescription>
-            Clique num som para tocar para {inCall ? 'a outra pessoa da chamada' : 'todos na sala'}. Cada som tem até 5 segundos.
-          </DialogDescription>
-        </DialogHeader>
+    <>
+      <div className="space-y-1">
+        <h2 id={titleId} className="font-semibold text-accent-foreground">
+          Efeitos sonoros
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          Clique num som para tocar para {inCall ? 'a outra pessoa da chamada' : 'todos na sala'}. Cada som tem até 5 segundos.
+        </p>
+      </div>
 
-        <SoundboardVolume />
+      <SoundboardVolume />
 
-        {uploading ? (
-          <SoundUploadForm onDone={() => setUploading(false)} />
-        ) : (
-          <>
-            {blocked && <p className="text-sm text-muted-foreground">{blocked}</p>}
-            {!loaded ? (
-              <div className="flex justify-center py-6 text-muted-foreground">
-                <Loader2 className="size-6 animate-spin" aria-label="Carregando sons" />
-              </div>
-            ) : sounds.length === 0 ? (
-              <p className="py-4 text-center text-sm text-muted-foreground">Nenhum som ainda. Envie o primeiro!</p>
-            ) : (
-              <ul aria-label="Sons" className="grid max-h-80 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3">
-                {sounds.map((sound) => (
-                  <SoundTile key={sound.id} sound={sound} disabled={!!blocked} onPlay={() => void run(() => playSound(sound.id))} onError={setError} />
-                ))}
-              </ul>
-            )}
-            {error && (
-              <p role="alert" className="text-sm text-destructive">
-                {error}
-              </p>
-            )}
-            <button type="button" onClick={() => setUploading(true)} className="self-start text-sm font-medium text-primary hover:underline">
-              Enviar um som
-            </button>
-          </>
-        )}
-      </DialogContent>
-    </Dialog>
+      {uploading ? (
+        <SoundUploadForm onDone={() => setUploading(false)} />
+      ) : (
+        <>
+          {blocked && <p className="text-sm text-muted-foreground">{blocked}</p>}
+          {!loaded ? (
+            <div className="flex justify-center py-6 text-muted-foreground">
+              <Loader2 className="size-6 animate-spin" aria-label="Carregando sons" />
+            </div>
+          ) : sounds.length === 0 ? (
+            <p className="py-4 text-center text-sm text-muted-foreground">Nenhum som ainda. Envie o primeiro!</p>
+          ) : (
+            <ul aria-label="Sons" className="grid max-h-80 grid-cols-2 gap-2 overflow-y-auto">
+              {sounds.map((sound) => (
+                <SoundTile key={sound.id} sound={sound} disabled={!!blocked} onPlay={() => void run(() => playSound(sound.id))} onError={setError} />
+              ))}
+            </ul>
+          )}
+          {error && (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
+          <button type="button" onClick={() => setUploading(true)} className="self-start text-sm font-medium text-primary hover:underline">
+            Enviar um som
+          </button>
+        </>
+      )}
+    </>
   )
 }
 
@@ -161,7 +167,6 @@ function SoundTile({ sound, disabled, onPlay, onError }: { sound: Sound; disable
   )
 }
 
-/** "Ana tocou Buzina" enquanto o som toca na minha sala. */
 export function SoundsPlayingBar() {
   const playing = useApp((s) => s.soundsPlaying)
   const sounds = useApp((s) => s.sounds)

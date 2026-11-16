@@ -40,12 +40,37 @@ da Home + chamadas tocando para mim).
   desconhecido vira "sem alvo", selo inteiro de 0 a 999.
 - **Fora do Electron** (renderer aberto no navegador durante o `npm run dev`): `window.api` não existe e nada acontece.
 
+## Silenciar canal
+
+Preferência pessoal, por canal (texto, sala de voz ou conversa privada), **ligar/desligar** sem duração.
+
+- **Onde:** botão direito no canal da barra lateral → "Silenciar canal" / "Reativar canal"; na lista de conversas
+  da Home → "Silenciar conversa" / "Reativar conversa" (`components/MuteChannelMenu.tsx`, usado no
+  `ChannelSidebar` e no `DmList`; `useChannelMuted` diz se está silenciado).
+- **Guardado na conta:** `Preferences.mutedChannels` (ids, até `MUTED_CHANNELS_MAX` = 500), coluna
+  `muted_channels` de `account_preferences` (migration `0013_muted_channels`). Vai pelo `preferences:update`
+  já existente (lista inteira) e chega nas outras janelas/máquinas da conta pelo `preferences:updated`
+  (`docs/areas/themes.md`). Servidor recusa o que não é lista de uuids ou passa do limite ("Canais silenciados
+  inválidos (até 500)"); repetidos viram um. Não confere se o canal existe (é só uma preferência minha).
+- **App:** `setChannelMuted(channelId, muted)` em `lib/actions/preferences.ts` muda na hora (estado
+  `mutedChannels` em `store/preferences.ts`), envia e, se o servidor recusar, volta como estava e avisa.
+- **Efeito** (uma regra só, sem checagem espalhada na tela):
+  - `messageNotification` devolve `null` para canal silenciado (nem a conversa privada avisa) → sem notificação
+    e sem som do sistema.
+  - `message:new` não marca `unread` em canal silenciado, e silenciar (aqui ou em outra janela) tira o não lido
+    que já havia. Como o selo da Home, a bolinha da comunidade e o selo do ícone vêm do `unread`, nada conta.
+  - Item esmaecido (`opacity-50`, `data-muted`) quando não é o canal aberto/a sala em que estou.
+- Menção (@eu, @todos) em canal silenciado também não avisa (sem exceção, como "Nenhuma").
+
 ## Testes
 
 | Arquivo | Cobre |
 |---|---|
 | `src/main/notifications.test.ts` | Electron falso: validação, notificação mostrada e clique (restaura, foca, manda o alvo), selo no Windows (imagem, piscar e parar ao focar, imagem que não é PNG ignorada, descer não pisca) e no macOS. |
 | `src/renderer/src/lib/actions/notifications.test.ts` | Regras (texto, conversa × canal × minha, foco, modos de canal `all`/`mentions`/`none`, preferência salva, chamada só tocando para mim, pedido, selo) e a ligação (eventos → notificação, pedido sem repetir, selo acompanha a store e zera ao sair, clique abre a conversa/amigos). |
+| `src/renderer/src/components/mute-channel.test.tsx` | Botão direito no canal de texto, na sala de voz e na conversa: silenciar/reativar, esmaecer e enviar a lista. |
+| `src/renderer/src/lib/actions/preferences.test.ts` | `setChannelMuted` (na hora, tira o não lido, não reenvia, erro volta), canais silenciados ao carregar e vindos de outra janela. |
+| `server/tests/preferences.test.ts` | `mutedChannels` guardado sem repetir, sincronizado, mantido ao trocar o tema; recusa id inválido e lista grande. |
 | `src/renderer/src/components/settings/NotificationSettings.test.tsx` | A escolha em Configurações → "Notificações" mostra o modo atual e troca na hora. |
 
 À mão: duas contas (`docs/areas/dev-workflow.md`); minimize a janela de A; B manda mensagem na conversa, liga e
@@ -58,5 +83,6 @@ envia pedido → A vê as três notificações e o número na barra de tarefas; 
 | Nenhuma notificação no Windows | "Notificações" do Windows desligadas para o app (Configurações → Sistema → Notificações) ou modo "Não incomodar". O `AppUserModelId` (`com.concord.app`) é definido no `main`; no app empacotado o instalador cria o atalho que o Windows exige. |
 | Aparece com o app aberto | Não deveria: a regra exige a janela fora de foco. Confira `notificationEnv.isFocused`. |
 | Selo não some | Ele segue o não lido da Home e as chamadas tocando; abrir a conversa ou responder o pedido zera. Sair da conta também zera. |
+| Canal sem notificação nem bolinha | Está silenciado (item esmaecido na lista): botão direito → "Reativar canal". |
 | Mensagem de canal não notifica | "Notificar mensagens de canal" em Configurações → "Notificações" está em "Só menções" ou "Nenhuma", ou a janela estava em foco. |
-| Pendente | Escolha por canal (silenciar um canal só), desligar tudo no app (hoje só pelo Windows) e som próprio por tipo. |
+| Pendente | Silenciar por um tempo ("por 1 hora"), desligar tudo no app (hoje só pelo Windows) e som próprio por tipo. |

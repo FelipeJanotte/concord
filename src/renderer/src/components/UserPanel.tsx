@@ -1,6 +1,6 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, type ComponentProps, type ReactNode } from 'react'
 import { AudioLines, HeadphoneOff, Headphones, Mic, MicOff, MonitorOff, MonitorUp, Music, PhoneOff, Settings, Signal, Video, VideoOff } from 'lucide-react'
-import { joinVoice, leaveVoice, openDeviceSettings, openDmChat, openSettings, openSoundboard, toggleCamera, toggleDeafen, toggleMute, toggleScreenShare } from '@/lib/client'
+import { joinVoice, leaveVoice, openDeviceSettings, openDmChat, openSettings, toggleCamera, toggleDeafen, toggleMute, toggleScreenShare } from '@/lib/client'
 import { findDm } from '@/lib/dms'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
@@ -9,7 +9,7 @@ import { UserSettingsDialog } from './settings/UserSettingsDialog'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 import { UserAvatar } from './UserAvatar'
 import { ScreenPicker } from './voice/ScreenPicker'
-import { Soundboard } from './voice/Soundboard'
+import { SoundboardPopover } from './voice/Soundboard'
 
 /**
  * "Voz conectada" em cima do painel da conta, em qualquer tela (chat de texto, Home, ferramentas):
@@ -60,22 +60,24 @@ export function VoiceStatusPanel() {
             {sharing ? <MonitorOff /> : <MonitorUp />}
           </PanelButton>
         )}
-        <PanelButton label="Efeitos sonoros" onClick={openSoundboard}>
-          <Music />
-        </PanelButton>
+        <SoundboardPopover side="right">
+          <PanelButton label="Efeitos sonoros">
+            <Music />
+          </PanelButton>
+        </SoundboardPopover>
       </div>
     </div>
   )
 }
 
 /** Botão largo da linha de controles do "Voz conectada" (verde quando ligado). */
-function PanelButton({ label, active, onClick, children }: { label: string; active?: boolean; onClick: () => void; children: ReactNode }) {
+function PanelButton({ label, active, children, ...buttonProps }: ComponentProps<'button'> & { label: string; active?: boolean; children: ReactNode }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <button
           type="button"
-          onClick={onClick}
+          {...buttonProps}
           aria-label={label}
           aria-pressed={active}
           className={cn(
@@ -129,11 +131,10 @@ export function UserPanel() {
         <Settings />
       </IconButton>
       {/* Sempre montados (uma vez só, em qualquer tela): as Configurações (conta, voz e vídeo, aparência,
-          notificações; o microfone pode ser escolhido antes de entrar numa sala) e compartilhar a tela /
-          efeitos sonoros, que abrem também do chat de texto. */}
+          notificações; o microfone pode ser escolhido antes de entrar numa sala) e compartilhar a tela,
+          que abre também do chat de texto. */}
       <UserSettingsDialog />
       <ScreenPicker />
-      <Soundboard />
     </div>
   )
 }

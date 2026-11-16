@@ -135,14 +135,8 @@ export async function loadSounds(): Promise<void> {
   set({ sounds: [...sounds].sort(byName), soundsLoaded: true })
 }
 
-export function openSoundboard(): void {
-  set({ soundboardOpen: true })
-  // a coleção pode ter falhado no login, ou os links ter vencido (24 h): busca de novo ao abrir
+export function refreshSounds(): void {
   void loadSounds().catch(() => {})
-}
-
-export function closeSoundboard(): void {
-  set({ soundboardOpen: false })
 }
 
 /** Toca o som para todos na minha sala de voz. Lança `Error` com a mensagem do servidor. */

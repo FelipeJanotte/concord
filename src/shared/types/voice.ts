@@ -38,6 +38,13 @@ export interface VoicePermissions {
 
 export type JoinVoiceResult = ({ ok: true } & VoiceCredentials & VoicePermissions) | { ok: false; error: string }
 
+export type ScreenPreviewResult = { ok: true; image: string | null } | { ok: false; error: string }
+
+export const SCREEN_PREVIEW_PREFIX = 'data:image/jpeg;base64,'
+export const SCREEN_PREVIEW_MAX_CHARS = 200_000
+export const SCREEN_PREVIEW_WIDTH = 480
+export const SCREEN_PREVIEW_INTERVAL_MS = 5000
+
 // ---------- Eventos ----------
 
 export interface VoiceServerEvents {
@@ -54,4 +61,6 @@ export interface VoiceClientEvents {
   'voice:update': (payload: { muted: boolean; deafened: boolean }) => void
   /** começou/parou de compartilhar a tela (só vale para quem está numa sala) */
   'voice:sharing': (sharing: boolean) => void
+  'voice:preview': (image: string) => void
+  'voice:preview-get': (userId: string, ack: (res: ScreenPreviewResult) => void) => void
 }

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Channel, Message, User } from '@shared/types'
 import { bindAccountEvents, resolveAvatarUrl, updateProfile } from '@/lib/actions/account'
 import { bindChannelEvents, createChannel, deleteChannel, firstTextView, selectTextChannel } from '@/lib/actions/channels'
-import { bindMessageEvents, loadHistory, loadOlderMessages, notifyTyping, sendMessage } from '@/lib/actions/messages'
+import { bindMessageEvents, loadHistory, loadOlderMessages, notifyTyping, SEND_TIMEOUT_MS, sendMessage } from '@/lib/actions/messages'
 import { bindPresenceEvents } from '@/lib/actions/presence'
 import { bindVoiceEvents } from '@/lib/actions/voice'
 import { notify, requireSocket, setSocket } from '@/lib/core'
@@ -145,6 +145,12 @@ describe('mensagens', () => {
     expect(useApp.getState().unread).toEqual({ outro: true })
   })
 
+  it('canal silenciado não fica como não lido', () => {
+    useApp.setState({ mutedChannels: ['outro'] })
+    socket.receive('message:new', message('1', 'outro', user('b')))
+    expect(useApp.getState().unread).toEqual({})
+  })
+
   it('"digitando" expira e some quando a pessoa envia', () => {
     const b = user('b')
     vi.useFakeTimers()
@@ -216,6 +222,30 @@ describe('mensagens', () => {
     sendMessage('geral', '  oi  ')
     sendMessage('geral', '   ')
     expect(socket.sent('message:send')).toEqual([[{ channelId: 'geral', content: 'oi' }]])
+  })
+
+  it('sendMessage recusada pelo servidor: avisa o motivo', async () => {
+    socket.replyTo('message:send', () => ({ ok: false, error: 'Você não tem permissão para enviar mensagens neste canal' }))
+    sendMessage('voz', 'alguém joga?')
+    await vi.waitFor(() =>
+      expect(useApp.getState().notice?.text).toBe('Mensagem não enviada: Você não tem permissão para enviar mensagens neste canal')
+    )
+  })
+
+  it('sendMessage sem resposta do servidor (servidor desatualizado ignora a mensagem): avisa', async () => {
+    vi.useFakeTimers()
+    sendMessage('voz', 'alguém joga?')
+    expect(useApp.getState().notice).toBeNull()
+    await vi.advanceTimersByTimeAsync(SEND_TIMEOUT_MS)
+    expect(useApp.getState().notice?.text).toBe('Mensagem não enviada: o servidor não respondeu')
+  })
+
+  it('sendMessage aceita: sem aviso', async () => {
+    socket.replyTo('message:send', () => ({ ok: true }))
+    sendMessage('voz', 'alguém joga?')
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(useApp.getState().notice).toBeNull()
   })
 
   it('notifyTyping envia no máximo 1 vez a cada 2,5 s', () => {

@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { Channel, User } from '@shared/types'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { initialState, useApp } from '@/store'
-import { Soundboard } from './voice/Soundboard'
 import { VoiceView } from './VoiceView'
 
 const me: User = { id: 'eu', accountId: 'acc-eu', name: 'Eu', tag: 'eu', color: '#000', avatarUrl: null }
@@ -54,22 +53,19 @@ describe('VoiceView com permissões', () => {
 })
 
 describe('efeitos sonoros na sala (B17)', () => {
-  it('o botão abre a janela de sons e o indicador mostra quem tocou', async () => {
+  it('o botão abre o popup de sons e o indicador mostra quem tocou', async () => {
     useApp.setState({
       sounds: [{ id: 's1', name: 'Buzina', emoji: '📯', durationMs: 2000, uploaderId: null, url: '/sounds/s1' }],
       soundsLoaded: true,
       soundsPlaying: { 'acc-ana': { soundId: 's1', by: 'Ana', until: Date.now() + 2000 } }
     })
-    // a janela de sons fica montada uma vez só, junto do painel da conta (em qualquer tela)
     render(
       <TooltipProvider>
         <VoiceView channelId="sala" />
-        <Soundboard />
       </TooltipProvider>
     )
     expect(screen.getByText('📯 Ana tocou Buzina')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Efeitos sonoros' }))
-    expect(useApp.getState().soundboardOpen).toBe(true)
     expect(await screen.findByRole('dialog', { name: 'Efeitos sonoros' })).toBeTruthy()
   })
 

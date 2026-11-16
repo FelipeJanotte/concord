@@ -112,7 +112,7 @@ export interface MessageServerEvents {
 
 export interface MessageClientEvents {
   'message:history': (req: HistoryRequest, ack: (page: HistoryPage) => void) => void
-  'message:send': (payload: SendMessagePayload) => void
+  'message:send': (payload: SendMessagePayload, ack?: (res: OkResult) => void) => void
   /** edita a própria mensagem (A15) */
   'message:edit': (payload: EditMessagePayload, ack: (res: OkResult) => void) => void
   typing: (channelId: string) => void
