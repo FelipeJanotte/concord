@@ -53,12 +53,12 @@ function MainLayout() {
           Conexão perdida — tentando reconectar...
         </div>
       )}
-      <div className="flex min-h-0 flex-1 overflow-hidden select-none">
+      <div data-glass="stage" className="flex min-h-0 flex-1 overflow-hidden select-none">
         <UtilityRail />
         <ResizableSide panel={SIDE_PANELS.navigation} edge="right" label="Redimensionar a barra lateral">
           {section === 'home' ? <HomeSidebar /> : <ChannelSidebar />}
         </ResizableSide>
-        <main className="flex min-w-0 flex-1 flex-col bg-background">
+        <main data-glass="panel" className="flex min-w-0 flex-1 flex-col bg-background">
           {section === 'tool' ? (
             <ToolView />
           ) : section === 'home' ? (

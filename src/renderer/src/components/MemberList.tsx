@@ -37,7 +37,7 @@ export function MemberList() {
   ]
 
   return (
-    <aside className="flex min-w-0 flex-1 flex-col bg-sidebar">
+    <aside data-glass="panel" className="flex min-w-0 flex-1 flex-col bg-sidebar">
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-4 px-2 py-4">
           {groups.map((g) => (

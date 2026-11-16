@@ -30,7 +30,7 @@ export function ChannelSidebar() {
   const voiceChannels = channels.filter((c) => c.type === 'voice')
 
   return (
-    <aside className="flex min-w-0 flex-1 flex-col bg-sidebar">
+    <aside data-glass="panel" className="flex min-w-0 flex-1 flex-col bg-sidebar">
       <header className="flex h-12 shrink-0 items-center border-b border-black/25 px-4 font-semibold text-accent-foreground shadow-sm">
         <span className="flex-1">Concord</span>
         {canAdminister && (

@@ -48,7 +48,7 @@ A v5 inteira é do **Dev A** (B11 e B12 transferidas do Dev B).
 |---|---|
 | `src/renderer/src/lib/theme/color.ts` | Puras: `mix`, `average`, `luminance`, `contrast` (WCAG), `ensureContrast` (puxa o texto para o branco/preto até 4,5:1 com todas as superfícies), `readableOn`. |
 | `src/renderer/src/lib/theme/derive.ts` | `deriveTokens(theme)` → `{ tokens, gradient, gradientStops, colorScheme }`; `THEME_TOKENS` (os nomes das variáveis CSS). |
-| `src/renderer/src/lib/theme/presets.ts` | `THEME_PRESETS`: 13 temas prontos (Padrão, Aurora, Pôr do sol, Oceano, Floresta, Neon, Grafite, Lavanda, Cereja, Claro, Amanhecer e os translúcidos Vidro e Vidro claro). |
+| `src/renderer/src/lib/theme/presets.ts` | `THEME_PRESETS`: 14 temas prontos (Padrão, Aurora, Pôr do sol, Oceano, Floresta, Neon, Grafite, Lavanda, Cereja, Claro, Amanhecer e os translúcidos Vidro, Vidro aurora e Vidro claro). |
 | `src/renderer/src/lib/theme/apply.ts` | `applyTheme` (variáveis no `<html>`, `--app-gradient`, `color-scheme`, transição de 300 ms), `saveLocalTheme`/`loadLocalTheme` (`concord:theme` no `localStorage`). |
 | `src/renderer/src/lib/actions/preferences.ts` | `loadPreferences` (depois do `hello`), listener `preferences:updated`, `previewTheme`, `setTheme` (envio agrupado em 400 ms), `flushPendingTheme`, `saveThemes`. |
 | `src/renderer/src/store/preferences.ts` | `theme`, `savedThemes`, `preferencesLoaded`. |
@@ -77,14 +77,18 @@ A v5 inteira é do **Dev A** (B11 e B12 transferidas do Dev B).
 ## Tema translúcido (liquid glass)
 
 Com `translucent: true`, a janela usa o **material do sistema** por trás da página (área de trabalho desfocada) e o
-app segue a ideia do *liquid glass* (referência: liquidglassdesign.com) em **duas camadas**:
+app segue a ideia do *liquid glass* (referência: liquidglassdesign.com) em **camadas**:
 
-1. **Superfícies da janela** (barra de úteis, canais, chat, painéis): bem transparentes, deixam o material aparecer.
-2. **O que flutua** (modais, menus, popovers, cartões de perfil, dicas e o cartão de login): vidro mais opaco, com
+1. **Fundo da janela:** luz ambiente — o gradiente do tema (`--app-gradient`) e dois brilhos da cor de destaque no `body`,
+   por cima do material. O gradiente sai do chat (`.bg-background` sem imagem) e vale para a janela toda.
+2. **Painéis** (barra de úteis, canais/Home, chat, membros): cartões de vidro separados por 8 px, cantos arredondados,
+   borda clara, reflexo em cima, desfoque e sombra suave (`data-glass="panel"`; o contêiner é `data-glass="stage"`).
+   A barra de título fica transparente (`data-glass="titlebar"`), contínua com o fundo.
+3. **O que flutua** (modais, menus, popovers, cartões de perfil, dicas e o cartão de login): vidro mais opaco, com
    desfoque do que está atrás (`backdrop-filter`), reflexo na borda de cima, borda clara e sombra. Atrás de um modal
    o app só escurece um pouco e desfoca, em vez do preto 70%.
 
-Temas prontos **Vidro** (escuro) e **Vidro claro**; qualquer tema pode ligar o "Translúcido (vidro)" em Personalizar.
+Temas prontos **Vidro** (escuro), **Vidro aurora** (escuro, roxo e verde) e **Vidro claro**; qualquer tema pode ligar o "Translúcido (vidro)" em Personalizar.
 
 | Arquivo | Papel |
 |---|---|
@@ -95,6 +99,7 @@ Temas prontos **Vidro** (escuro) e **Vidro claro**; qualquer tema pode ligar o "
 | `src/renderer/src/lib/theme/apply.ts` | `translucencyEnv.bridge()` e `translucencyEnv.reducedTransparency()` (`prefers-reduced-transparency`). `glassActive(theme)`: tema translúcido **e** sistema com o efeito **e** sem "reduzir transparência". `applyTheme` manda `set({ glass, scheme })`, usa `glassTheme` e marca `<html data-translucent>`. `windowEffects: false` (overlay) não mexe na janela. |
 | `src/renderer/src/assets/globals.css` | Com `html[data-translucent]`: `body` transparente; `[data-glass='surface']` = material da camada flutuante (`--popover`, `backdrop-filter: blur(28px) saturate(180%)`, brilho em gradiente, `--glass-specular` na borda de cima, `--glass-edge`, `--glass-shadow`; valores próprios na base clara); cantos maiores nos modais e menus; `dialog-overlay` com `--glass-dim` + desfoque; barra de rolagem translúcida. |
 | `src/renderer/src/components/ui/{dialog,popover,context-menu,hover-card,tooltip}.tsx` | O conteúdo leva `data-glass="surface"` (no tema opaco não muda nada). Quem não quer o vidro passa `data-glass="none"` (ex.: `ImageLightbox`). |
+| `App.tsx`, `rail/UtilityRail.tsx`, `ChannelSidebar.tsx`, `home/HomeSidebar.tsx`, `MemberList.tsx`, `TitleBar.tsx` | Marcas do layout: `data-glass="stage"` (linha dos painéis: espaço e margem), `data-glass="panel"` (cada painel vira cartão) e `data-glass="titlebar"`. Painel novo no layout precisa de `data-glass="panel"`. |
 
 - **Onde não há o efeito** (Windows 10, Linux, navegador) o tema aparece **opaco**: uma página transparente sem o
   material mostraria preto atrás. O interruptor continua ligável (o tema acompanha a conta e vale nos outros
@@ -159,6 +164,7 @@ Seção **Aparência** das Configurações (engrenagem no painel do usuário, `U
 | `src/shared/types/theme.test.ts` | `validateTheme` (normalização e cada recusa), `cleanThemeName`, código de compartilhamento (ida e volta, recusas), vidro (`translucent` só quando `true`, `~1` no código, código antigo continua valendo). |
 | `src/main/translucency.test.ts` | `supportsTranslucency` (Windows 11 22H2+, 21H2, 10, macOS, Linux) e `applyTranslucency` (acrílico/vibrancy, cor da janela, esquema do `nativeTheme`; sem suporte só o esquema; pedido inválido não mexe). |
 | `src/main/window-controls.test.ts` | `runWindowControl` (minimizar, fechar, maximizar alterna, ação desconhecida ignorada) e `titleBarOptions` por sistema. |
+| `src/renderer/src/components/glass-panels.test.tsx` | (jsdom) barra de úteis, canais, Home e membros marcados como `data-glass="panel"`. |
 | `src/renderer/src/components/TitleBar.test.tsx` | (jsdom) some na web; botões pedem a ação; maximizada vira "Restaurar" (no início e depois); macOS sem botões. |
 | `src/renderer/src/lib/theme/surprise.test.ts` | `hslToHex`; 300 sorteios válidos, legíveis e com fundo da base; as duas bases; nunca o atual e mantém o vidro; `withAlpha`, `glassTheme` (o que fica opaco), camadas (o que flutua é mais opaco que as superfícies) e os temas prontos de vidro. |
 | `server/repo/preferences.test.ts` | Padrão sem registro, gravar só o que mudou, uma conta por vez. |

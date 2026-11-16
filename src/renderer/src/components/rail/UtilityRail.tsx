@@ -21,7 +21,7 @@ export function UtilityRail({ tools = TOOLS }: { tools?: readonly ToolDefinition
   const communityDot = useApp((s) => communityUnread(s.channels.map((c) => c.id), s.unread))
 
   return (
-    <nav aria-label="Barra de úteis" className="flex w-[72px] shrink-0 flex-col items-center gap-2 bg-rail py-3">
+    <nav aria-label="Barra de úteis" data-glass="panel" className="flex w-[72px] shrink-0 flex-col items-center gap-2 bg-rail py-3">
       <UpdateRailSlot />
       <RailButton
         label="Início"
