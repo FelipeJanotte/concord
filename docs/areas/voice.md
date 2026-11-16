@@ -475,7 +475,8 @@ de quem fala (processador da faixa do microfone no `livekit-client`); quem ouve 
 | `lib/noise/decide.ts` | `NoiseDecider` (função pura): ruído de fundo = percentil 20% do nível dos últimos 4 s (a fala é alta e intermitente; o fundo fica nos valores baixos). Fundo acima de **-50 dBFS por 2 s** liga o avançado; abaixo de **-58 dBFS por 10 s** desliga. O vão entre os dois evita ficar trocando. |
 | `lib/noise/processor.ts` | `AutoNoiseProcessor` (`TrackProcessor` do LiveKit): microfone → seco + (RNNoise → molhado) → faixa publicada, e um analisador que mede o nível a cada 250 ms. A troca de modo é um crossfade (sem estalo, sem republicar). Com o avançado ligado, desliga a supressão nativa do WebRTC (`applyConstraints`) para não processar duas vezes. |
 | `lib/noise/engine.ts` | Motor: **RNNoise** (MIT) de `@sapphi-red/web-noise-suppressor`, WASM + AudioWorklet, carregado com `import()` só quando o filtro liga. Os arquivos (`rnnoise*.wasm`, worklet) vão empacotados pelo Vite (`?url`). O WASM é baixado uma vez e o worklet é registrado uma vez por AudioContext. |
-| `lib/voice.ts` | `setNoiseSuppression(on)`, `onNoiseModeChange`. Antes de publicar o microfone: `mic.setAudioContext(ctx48k)` + `mic.setProcessor(...)` (o AudioContext a 48 kHz é criado uma vez e reaproveitado). Desligar na sala: `stopProcessor` + nativa desligada. |
+| `lib/voice.ts` | `setNoiseSuppression(on)`, `onNoiseModeChange`. Antes de publicar o microfone: `mic.setAudioContext(ctx48k)` + `mic.setProcessor(...)` (um AudioContext a 48 kHz **novo a cada entrada na sala**, fechado no `teardown`, com o vigia do relógio). Desligar na sala: `stopProcessor` + nativa desligada (o mesmo AudioContext continua). |
+| `lib/audio-clock.ts` | `AudioClockWatchdog`: a cada 2 s (`CLOCK_CHECK_MS`) compara o `currentTime` do AudioContext com o relógio real; abaixo de 0,9x (`MIN_CLOCK_RATE`) em 2 medições seguidas, `suspend()` + `resume()` e o log `[voz] áudio do microfone rodava a Nx...`. Contexto suspenso de propósito não conta. Ver "Voz robotizada" abaixo. |
 | `store/devices.ts` | `noiseSuppression` e `noiseMode` (`'light' \| 'advanced' \| 'light-fallback' \| 'off' \| null`), mostrado como frase em Configurações de voz. |
 
 - **Modos:** `light` = só a nativa do WebRTC (ambiente silencioso); `advanced` = RNNoise; `light-fallback` = o avançado
@@ -492,14 +493,23 @@ de quem fala (processador da faixa do microfone no `livekit-client`); quem ouve 
   `MIC_PUBLISH` (`forceStereo: false`) em `lib/voice.ts`, então RED e DTX continuam ligados mesmo com microfone
   estéreo cru. Testes: blocos "em mono" de `noise.test.ts` e `mic-gain.test.ts` e "microfone publicado em mono" de
   `voice.test.ts`.
+- **Voz robotizada (AudioContext preso a 2/3):** medido no Electron 37 (Chromium 138), em 3 de 7 tentativas: depois de
+  um pico de CPU (um jogo, por exemplo), o AudioContext com o worklet do RNNoise passa a andar a **~0,65x** do relógio
+  real e **não volta** quando a CPU folga. A faixa publicada entrega só ~2/3 do áudio; quem ouve recebe o resto
+  "inventado" pelo Opus (voz metálica) e o jitter buffer cresce sem parar (30 → 320 ms). O estado fica no contexto
+  (destruir e recriar o RNNoise no mesmo contexto não destrava); um contexto novo anda a 1x e `suspend()` + `resume()`
+  destrava na hora. Cadeia sem AudioWorklet (só o ganho), no mesmo pico, nunca travou. Duas defesas em `lib/voice.ts`:
+  o **vigia** (`AudioClockWatchdog`, destrava sozinho em ~4 s) e um **AudioContext novo a cada entrada** (sair e
+  entrar recomeça o áudio). Antes o contexto era criado uma vez e reaproveitado entre salas.
 - **CSP:** `script-src` ganhou `'wasm-unsafe-eval'` (necessário para compilar WebAssembly; não libera `eval` de JS).
 - **Trocar de motor:** outra função com a assinatura de `NoiseEngineLoader` (ex.: o GTCRN do mesmo pacote, ou
   DeepFilterNet3). O resto não muda.
 - **Testes:** `lib/noise/noise.test.ts` (decisor: silêncio, ventilador, fala sobre silêncio × sobre ruído, histerese,
   barulho curto; processador com Web Audio falso: crossfade, nativa liga/desliga, motor que falha, PC fraco, erro no
   worklet, destroy, `applyConstraints` recusado), `lib/voice.test.ts` (bloco B13: filtro antes de publicar, contexto
-  reaproveitado, falha → entra com a nativa, desligado = cru, ligar/desligar dentro da sala, sair), `lib/actions/devices.test.ts`
-  e `components/settings/VoiceSettings.test.tsx`. **À mão (o que os testes não medem):** a qualidade e o atraso do filtro
+  novo a cada entrada e fechado ao sair, vigia ligado e desligado, falha → entra com a nativa, desligado = cru, ligar/desligar dentro da sala, sair), `lib/actions/devices.test.ts`,
+  `lib/audio-clock.test.ts` (vigia: relógio em dia, preso a 2/3, medição lenta isolada, recomeça depois de destravar,
+  suspenso de propósito, `stop`, falha ao retomar) e `components/settings/VoiceSettings.test.tsx`. **À mão (o que os testes não medem):** a qualidade e o atraso do filtro
   e o uso de CPU; falar teclando e com ventilador e ouvir na outra janela.
 
 ## Pressione para falar (B20)
@@ -597,7 +607,9 @@ frente, segurar a tecla e conferir na outra janela que ela ouve e vê o "falando
     `[voz] não foi possível ajustar o volume do microfone` = o processador não entrou (o áudio segue a 100%).
 11. Supressão de ruído "indisponível neste computador": veja no console o log `[ruído]` (WASM bloqueado pela CSP,
     AudioWorklet sem suporte, menos de 3 núcleos). A voz continua com a supressão nativa. Som "abafado" ou robótico:
-    desligue o interruptor para comparar com o microfone cru.
+    desligue o interruptor para comparar com o microfone cru. Robótico que começa no meio da chamada, uma pessoa por
+    vez, e passa ao sair e entrar: veja no console de quem fala o log `[voz] áudio do microfone rodava a Nx` (o vigia
+    destravou o AudioContext; seção "Voz robotizada"). Para medir: `ctx.currentTime` contra `performance.now()`.
 12. Voz de alguém só num lado do fone, ou picotando: confira no `chrome://webrtc-internals` de quem fala se o
     `outbound-rtp` de áudio está com 1 canal e o SDP sem `stereo=1`. Com 2 canais, o microfone saiu do caminho
     mono (`MIC_PUBLISH` e `forceMono`, seção "Supressão de ruído automática"). Picote com 1 canal = rede: veja

@@ -41,6 +41,7 @@ import { permissionsFrom } from './voice-permissions'
 import { loadRnnoiseEngine } from './noise/engine'
 import { AutoNoiseProcessor, type NoiseMode } from './noise/processor'
 import { clampMicGain, clampOutputVolume, MicGainProcessor, type GainControl } from './mic-gain'
+import { AudioClockWatchdog } from './audio-clock'
 import { VoiceLeveler, type LevelerGains } from './leveler/leveler'
 import type { LevelerTarget } from './leveler/level'
 import { useApp } from '@/store'
@@ -70,6 +71,7 @@ export interface VoiceDeps {
   createGainProcessor: (gain: number) => MicGainProcessor
   /** AudioContext a 48 kHz (o RNNoise só trabalha nessa taxa) */
   createAudioContext: () => AudioContext
+  createClockWatchdog: (ctx: AudioContext) => { stop: () => void }
   listDevices: (kind: MediaDeviceKind) => Promise<MediaDeviceInfo[]>
   createLeveler: () => VoiceLeveler
 }
@@ -106,6 +108,16 @@ const defaultDeps: VoiceDeps = {
       gain
     ),
   createAudioContext: () => new AudioContext({ sampleRate: 48000 }),
+  createClockWatchdog: (ctx) => {
+    const watchdog = new AudioClockWatchdog(ctx, {
+      now: () => performance.now(),
+      setInterval: (fn, ms) => window.setInterval(fn, ms),
+      clearInterval: (id) => window.clearInterval(id as number),
+      onRecover: (rate) => console.warn(`[voz] áudio do microfone rodava a ${rate}x da velocidade; processamento reiniciado`)
+    })
+    watchdog.start()
+    return watchdog
+  },
   // false = não pede permissão só para listar (sem permissão, os nomes vêm vazios).
   listDevices: (kind) => Room.getLocalDevices(kind, false),
   createLeveler: () => new VoiceLeveler()
@@ -189,6 +201,7 @@ export class VoiceClient {
   onNoiseModeChange: ((mode: NoiseMode | 'off' | null) => void) | null = null
   private noiseEnabled = true
   private audioContext: AudioContext | null = null
+  private clockWatchdog: { stop: () => void } | null = null
   /** volume do microfone (0 a 2) e o processador que o aplica agora (null = microfone sem processador) */
   private micGain = 1
   private gainControl: GainControl | null = null
@@ -328,6 +341,7 @@ export class VoiceClient {
     this.remoteAudio.clear()
     this.voices.clear()
     this.mic?.stop() // o LiveKit destrói o processador junto com a faixa
+    this.closeAudioContext()
     this.gainControl = null
     this.onNoiseModeChange?.(null)
     this.mic = null
@@ -542,10 +556,25 @@ export class VoiceClient {
     else if (this.micGain !== 1) await this.attachGain(mic)
   }
 
+  private openAudioContext(): AudioContext {
+    if (!this.audioContext) {
+      this.audioContext = this.deps.createAudioContext()
+      this.clockWatchdog = this.deps.createClockWatchdog(this.audioContext)
+    }
+    return this.audioContext
+  }
+
+  private closeAudioContext(): void {
+    this.clockWatchdog?.stop()
+    this.clockWatchdog = null
+    const ctx = this.audioContext
+    this.audioContext = null
+    if (ctx) void ctx.close().catch(() => {})
+  }
+
   private async attachGain(mic: LocalAudioTrack): Promise<void> {
     try {
-      this.audioContext ??= this.deps.createAudioContext()
-      await mic.setAudioContext(this.audioContext)
+      await mic.setAudioContext(this.openAudioContext())
       const processor = this.deps.createGainProcessor(this.micGain)
       await mic.setProcessor(processor)
       this.gainControl = processor
@@ -558,8 +587,7 @@ export class VoiceClient {
   /** Põe o processador automático no microfone. Se falhar, fica a supressão nativa. */
   private async attachNoise(mic: LocalAudioTrack): Promise<void> {
     try {
-      this.audioContext ??= this.deps.createAudioContext()
-      await mic.setAudioContext(this.audioContext)
+      await mic.setAudioContext(this.openAudioContext())
       const processor = this.deps.createNoiseProcessor((mode) => this.onNoiseModeChange?.(mode), this.micGain)
       await mic.setProcessor(processor)
       this.gainControl = processor
