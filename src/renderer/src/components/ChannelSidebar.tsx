@@ -1,7 +1,7 @@
 import { useState, type DragEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import { ChevronDown, HeadphoneOff, Hash, Loader2, Lock, MessageSquare, MicOff, Plus, Settings, Trash2, Volume2, VolumeX } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
-import { canModerate, type Channel, type ChannelType, type VoiceState } from '@shared/types'
+import { canMoveMember, type Channel, type ChannelType, type VoiceState } from '@shared/types'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { deleteChannel, joinVoice, moveToVoice, notify, openVoiceChat, selectTextChannel } from '@/lib/client'
@@ -330,8 +330,8 @@ function VoiceMember({ state }: { state: VoiceState }) {
   const user = useApp((s) => s.users.find((u) => u.id === state.userId))
   const speaking = useApp((s) => !!s.speaking[state.userId])
   const mutedByMe = useApp((s) => !!user && !!s.userMuted[user.accountId])
-  // quem pode moderar a pessoa pode arrastá-la para outra sala (o servidor confere de novo)
-  const canMove = useApp((s) => !!user && !!s.access && !!s.self && canModerate(s.access, s.self.accountId, user.accountId))
+  // quem pode mover a pessoa (canMoveMember) pode arrastá-la para outra sala (o servidor confere de novo)
+  const canMove = useApp((s) => !!user && !!s.access && !!s.self && canMoveMember(s.access, s.self.accountId, user.accountId))
   if (!user) return null
   return (
     <MemberContextMenu userId={state.userId}>

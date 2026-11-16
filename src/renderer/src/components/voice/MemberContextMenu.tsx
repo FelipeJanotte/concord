@@ -1,12 +1,12 @@
 /**
  * Menu de botão direito sobre uma pessoa (tile da sala de voz e lista da barra lateral):
- * volume da voz, silenciar só para mim, cargos (B5, só para quem gerencia membros), moderação da
+ * volume da voz, silenciar só para mim, cargos (B5, só para quem pode alterar os cargos da pessoa), moderação da
  * voz (B6: silenciar para todos e expulsar, `ModerationMenu`), "Mensagem" (B7: abre a conversa privada;
  * sem amizade nem conversa, vira "Adicionar amigo") e ver o perfil.
  */
 import { useState, type ReactNode } from 'react'
 import { MessageCircle, Shield, User as UserIcon, UserPlus, Volume2, VolumeX } from 'lucide-react'
-import { EVERYONE_ROLE_ID } from '@shared/types'
+import { canAssignRole, canChangeMemberRoles } from '@shared/types'
 import {
   ContextMenu,
   ContextMenuCheckboxItem,
@@ -23,7 +23,7 @@ import { RoleDot } from '@/components/settings/RoleDot'
 import { UserProfileDialog } from '@/components/UserProfileDialog'
 import { ModerationItems } from './ModerationMenu'
 import { messageAccount, notify, sendFriendRequest, setMemberRoles, setUserMuted, setUserVolume } from '@/lib/client'
-import { canAssignRole, canEditMember, memberRoleIds, rolesByPosition } from '@/lib/permissions'
+import { memberRoleIds, rolesByPosition } from '@/lib/permissions'
 import { useApp } from '@/store'
 
 export function MemberContextMenu({ userId, children }: { userId: string; children: ReactNode }) {
@@ -107,8 +107,8 @@ function MuteItem({ accountId }: { accountId: string }) {
 function RolesSubmenu({ accountId }: { accountId: string }) {
   const access = useApp((s) => s.access)
   const me = useApp((s) => s.self?.accountId)
-  if (!access || !me || !canEditMember(access, me, accountId)) return null
-  const roles = rolesByPosition(access).filter((r) => r.id !== EVERYONE_ROLE_ID && canAssignRole(access, me, r))
+  if (!access || !me || !canChangeMemberRoles(access, me, accountId)) return null
+  const roles = rolesByPosition(access).filter((r) => canAssignRole(access, me, r))
   if (roles.length === 0) return null
   const current = memberRoleIds(access, accountId)
 

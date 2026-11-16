@@ -2,7 +2,8 @@
  * CONTRATO — v2, B6 (moderação): expulsar da voz, mover para outra sala, silenciar pelo servidor e apagar mensagem.
  *
  * Regras (o servidor confere tudo; a tela só esconde o que daria erro):
- * - mover para outra sala de voz: mesma regra do expulsar; a sala de destino tem de ser de voz, visível para
+ * - mover para outra sala de voz: mesma hierarquia do expulsar, mas basta `moveMembers` ou `manageMembers`
+ *   (`canMoveMember`); a sala de destino tem de ser de voz, visível para
  *   quem move, e a pessoa tem de poder ver e entrar nela (`connect`). Chamada privada não entra. Quem é
  *   movido recebe `moderation:moved` e o app troca de sala pelo `voice:join` de sempre;
  * - expulsar e silenciar exigem `manageMembers` e alguém **abaixo** de quem modera
@@ -13,7 +14,7 @@
  * - apagar mensagem: o próprio autor, ou quem tem `manageMessages`; nos dois casos precisa ver o canal.
  *   Os anexos da mensagem são apagados junto.
  */
-import { globalPermissions, highestPosition, type AccessState, type OkResult } from './permissions'
+import { globalPermissions, highestPosition, type AccessState, type GlobalPermission, type OkResult } from './permissions'
 
 /**
  * `actor` pode expulsar/silenciar `target`? (mesma regra no servidor e na tela)
@@ -21,9 +22,18 @@ import { globalPermissions, highestPosition, type AccessState, type OkResult } f
  * cargo mais alto que o mais alto do alvo.
  */
 export function canModerate(access: AccessState, actor: string, target: string): boolean {
+  return outranks(access, actor, target, ['manageMembers'])
+}
+
+export function canMoveMember(access: AccessState, actor: string, target: string): boolean {
+  return outranks(access, actor, target, ['moveMembers', 'manageMembers'])
+}
+
+function outranks(access: AccessState, actor: string, target: string, anyOf: GlobalPermission[]): boolean {
   if (actor === target || target === access.ownerAccountId) return false
   if (actor === access.ownerAccountId) return true
-  if (!globalPermissions(access, actor).has('manageMembers')) return false
+  const mine = globalPermissions(access, actor)
+  if (!anyOf.some((p) => mine.has(p))) return false
   return highestPosition(access, target) < highestPosition(access, actor)
 }
 
