@@ -90,6 +90,12 @@ describe('sound:played', () => {
     expect(play).toHaveBeenCalledWith(expect.any(String), { volume: 0.25, outputId: null })
   })
 
+  it('o volume dos efeitos sonoros multiplica o volume da pessoa e o de saída', () => {
+    useApp.setState({ myVoiceChannelId: 'sala', userVolumes: { 'acc-ana': 0.5 }, outputVolume: 0.5, soundboardVolume: 0.4 })
+    socket.receive('sound:played', played)
+    expect(play).toHaveBeenCalledWith(expect.any(String), { volume: 0.1, outputId: null })
+  })
+
   it('indicador de quem tocou (pelo nome, não pelo id da conexão) até o som acabar', () => {
     vi.useFakeTimers()
     useApp.setState({ myVoiceChannelId: 'sala', users: [ana] })

@@ -2,7 +2,7 @@ import { useId, useState, type ReactNode } from 'react'
 import { Loader2, Trash2, Volume2 } from 'lucide-react'
 import type { Sound } from '@shared/types'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { deleteSound, playSound, refreshSounds } from '@/lib/client'
+import { deleteSound, playSound, refreshSounds, setSoundboardVolume } from '@/lib/client'
 import { useCan } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
@@ -59,6 +59,8 @@ function SoundboardContent({ titleId }: { titleId: string }) {
         </p>
       </div>
 
+      <SoundboardVolume />
+
       {uploading ? (
         <SoundUploadForm onDone={() => setUploading(false)} />
       ) : (
@@ -88,6 +90,26 @@ function SoundboardContent({ titleId }: { titleId: string }) {
         </>
       )}
     </>
+  )
+}
+
+function SoundboardVolume() {
+  const pct = useApp((s) => Math.round(s.soundboardVolume * 100))
+  return (
+    <div className="flex items-center gap-3">
+      <Volume2 className="size-4 shrink-0 text-muted-foreground" />
+      <input
+        type="range"
+        min={0}
+        max={100}
+        step={5}
+        value={pct}
+        aria-label="Volume dos efeitos sonoros"
+        onChange={(e) => setSoundboardVolume(Number(e.target.value) / 100)}
+        className="flex-1 accent-primary"
+      />
+      <span className="w-10 text-right text-xs text-muted-foreground tabular-nums">{pct}%</span>
+    </div>
   )
 }
 
