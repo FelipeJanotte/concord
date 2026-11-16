@@ -104,6 +104,8 @@ function mergeMessages(older: Message[], newer: Message[]): Message[] {
 
 let lastTypingAt = 0
 
+export const SEND_TIMEOUT_MS = 10_000
+
 /**
  * Envia o texto e os anexos prontos do rascunho do canal. Devolve false (sem
  * enviar) se não houver nada ou se ainda houver arquivo subindo.
@@ -114,12 +116,20 @@ export function sendMessage(channelId: string, content: string): boolean {
   const attachmentIds = readyAttachmentIds(channelId)
   if (!text && attachmentIds.length === 0) return false
   const replyToId = get().replyingTo[channelId]?.id
-  requireSocket().emit('message:send', {
-    channelId,
-    content: text,
-    ...(attachmentIds.length ? { attachmentIds } : {}),
-    ...(replyToId ? { replyToId } : {})
-  })
+  requireSocket()
+    .timeout(SEND_TIMEOUT_MS)
+    .emitWithAck('message:send', {
+      channelId,
+      content: text,
+      ...(attachmentIds.length ? { attachmentIds } : {}),
+      ...(replyToId ? { replyToId } : {})
+    })
+    .then(
+      (res) => {
+        if (!res.ok) notify(`Mensagem não enviada: ${res.error}`)
+      },
+      () => notify('Mensagem não enviada: o servidor não respondeu')
+    )
   clearDraft(channelId, { cancel: false })
   if (replyToId) cancelReply(channelId)
   lastTypingAt = 0
