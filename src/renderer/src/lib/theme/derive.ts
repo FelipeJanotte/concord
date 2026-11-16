@@ -180,31 +180,25 @@ export function deriveTokens(theme: ThemeConfig): DerivedTheme {
   return { tokens: t, gradient, gradientStops, colorScheme: theme.base === 'escuro' ? 'dark' : 'light' }
 }
 
-/**
- * Tema translúcido (vidro): quanto de cada superfície continua pintado (0–1); o resto deixa ver o material
- * do sistema (área de trabalho desfocada) atrás da janela. Menus (`popover`), campos (`input`), bordas e a
- * cor de destaque ficam opacos: é onde a leitura não pode depender do que está atrás. Os valores altos
- * mantêm o contraste do texto perto do calculado para a superfície opaca (o vidro do sistema já escurece
- * ou clareia o fundo).
- */
 export const GLASS_OPACITY: Partial<Record<ThemeToken, number>> = {
-  rail: 0.55,
-  sidebar: 0.62,
-  panel: 0.7,
-  background: 0.72,
-  card: 0.8,
-  muted: 0.8,
-  composer: 0.82,
-  secondary: 0.85
+  rail: 0.32,
+  sidebar: 0.42,
+  panel: 0.5,
+  background: 0.56,
+  card: 0.6,
+  muted: 0.6,
+  composer: 0.66,
+  accent: 0.7,
+  secondary: 0.72,
+  input: 0.62,
+  popover: 0.82
 }
 
-/** `#rrggbb` + opacidade → `#rrggbbaa`. */
 export function withAlpha(hex: string, opacity: number): string {
   const a = Math.round(Math.min(1, Math.max(0, opacity)) * 255)
   return hex.slice(0, 7) + a.toString(16).padStart(2, '0')
 }
 
-/** O mesmo tema com as superfícies semitransparentes (vidro), inclusive as cores do gradiente. */
 export function glassTheme(derived: DerivedTheme): DerivedTheme {
   const tokens = { ...derived.tokens }
   for (const [token, opacity] of Object.entries(GLASS_OPACITY) as [ThemeToken, number][]) tokens[token] = withAlpha(tokens[token], opacity)

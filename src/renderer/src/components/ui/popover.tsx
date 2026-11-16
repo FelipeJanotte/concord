@@ -16,6 +16,7 @@ function PopoverContent({ className, align = 'center', sideOffset = 4, ...props 
     <PopoverPrimitive.Portal>
       <PopoverPrimitive.Content
         data-slot="popover-content"
+        data-glass="surface"
         align={align}
         sideOffset={sideOffset}
         className={cn(

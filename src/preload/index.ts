@@ -13,7 +13,8 @@ import type { ThemeConfig } from '../shared/types/theme'
 import type { PttBinding, PttConfig, PushToTalkBridge } from '../shared/push-to-talk'
 import type { NativeNotification, NotificationsBridge, NotificationTarget } from '../shared/notifications'
 import type { ScreenShareBridge, ScreenSource } from '../shared/screen'
-import { supportsTranslucency, type TranslucencyBridge } from '../shared/translucency'
+import { hasOwnWindowButtons, type WindowControlAction, type WindowControlsBridge } from '../shared/window-controls'
+import { supportsTranslucency, type TranslucencyBridge, type TranslucencyRequest } from '../shared/translucency'
 import type { UpdaterBridge, UpdateStatus } from '../shared/updater'
 
 const screen: ScreenShareBridge = {
@@ -110,7 +111,18 @@ const updater: UpdaterBridge = {
 /** Tema translúcido (vidro): se o sistema tem o efeito e liga/desliga na janela (ver src/main/translucency.ts). */
 const translucency: TranslucencyBridge = {
   supported: supportsTranslucency(process.platform, release()),
-  set: (on: boolean): void => ipcRenderer.send('window-translucency', on)
+  set: (request: TranslucencyRequest): void => ipcRenderer.send('window-translucency', request)
+}
+
+const windowControls: WindowControlsBridge = {
+  buttons: hasOwnWindowButtons(process.platform),
+  run: (action: WindowControlAction): void => ipcRenderer.send('window-control', action),
+  isMaximized: (): Promise<boolean> => ipcRenderer.invoke('window-maximized-get'),
+  onMaximizedChange: (listener) => {
+    const handler = (_e: unknown, maximized: boolean): void => listener(maximized)
+    ipcRenderer.on('window-maximized', handler)
+    return () => ipcRenderer.removeListener('window-maximized', handler)
+  }
 }
 
 const api = {
@@ -128,7 +140,8 @@ const api = {
   updater,
   /** Pressione para falar (ver src/main/push-to-talk.ts). */
   pushToTalk,
-  translucency
+  translucency,
+  windowControls
 }
 
 if (process.contextIsolated) {

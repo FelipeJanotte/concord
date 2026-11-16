@@ -16,6 +16,7 @@ function HoverCardContent({ className, align = 'center', sideOffset = 4, ...prop
     <HoverCardPrimitive.Portal data-slot="hover-card-portal">
       <HoverCardPrimitive.Content
         data-slot="hover-card-content"
+        data-glass="surface"
         align={align}
         sideOffset={sideOffset}
         className={cn(

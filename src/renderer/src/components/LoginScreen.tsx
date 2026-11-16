@@ -102,7 +102,7 @@ export function LoginScreen() {
 
   return (
     <Backdrop>
-      <form onSubmit={submit} className="w-full max-w-[460px] rounded-lg bg-background p-8 shadow-2xl">
+      <form onSubmit={submit} data-glass="surface" className="w-full max-w-[460px] rounded-lg bg-background p-8 shadow-2xl">
         <div className="mb-6 text-center">
           <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-2xl bg-primary text-2xl font-bold text-white">
             C

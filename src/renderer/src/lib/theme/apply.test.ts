@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-// Aplicar tema na tela: variáveis CSS no <html>, transição curta e o último tema guardado na máquina.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_THEME, type ThemeConfig } from '@shared/types'
 import { applyTheme, glassActive, loadLocalTheme, LOCAL_THEME_KEY, saveLocalTheme, translucencyEnv } from './apply'
@@ -65,22 +64,33 @@ describe('tema translúcido (vidro)', () => {
     const set = vi.fn()
     vi.spyOn(translucencyEnv, 'bridge').mockReturnValue({ supported: true, set })
     applyTheme(glassTheme, { animate: false })
-    expect(set).toHaveBeenLastCalledWith(true)
+    expect(set).toHaveBeenLastCalledWith({ glass: true, scheme: 'dark' })
     expect(root.dataset.translucent).toBe('true')
-    expect(root.style.getPropertyValue('--sidebar')).toHaveLength(9) // #rrggbbaa
-    expect(root.style.getPropertyValue('--popover')).toHaveLength(7) // menus opacos
-    // voltar para um tema opaco desliga
-    applyTheme(ocean, { animate: false })
-    expect(set).toHaveBeenLastCalledWith(false)
+    expect(root.style.getPropertyValue('--sidebar')).toHaveLength(9)
+    expect(root.style.getPropertyValue('--popover')).toHaveLength(9)
+    expect(root.style.getPropertyValue('--border')).toHaveLength(7)
+    applyTheme({ ...ocean, base: 'claro' }, { animate: false })
+    expect(set).toHaveBeenLastCalledWith({ glass: false, scheme: 'light' })
     expect(root.dataset.translucent).toBeUndefined()
     expect(root.style.getPropertyValue('--sidebar')).toHaveLength(7)
+  })
+
+  it('"reduzir transparência" do sistema: tema opaco mesmo com o efeito disponível', () => {
+    const set = vi.fn()
+    vi.spyOn(translucencyEnv, 'bridge').mockReturnValue({ supported: true, set })
+    vi.spyOn(translucencyEnv, 'reducedTransparency').mockReturnValue(true)
+    applyTheme(glassTheme, { animate: false })
+    expect(set).toHaveBeenLastCalledWith({ glass: false, scheme: 'dark' })
+    expect(root.dataset.translucent).toBeUndefined()
+    expect(root.style.getPropertyValue('--sidebar')).toHaveLength(7)
+    expect(glassActive(glassTheme)).toBe(false)
   })
 
   it('sistema sem o efeito (ou navegador): tema opaco, sem marcar o <html>', () => {
     const set = vi.fn()
     vi.spyOn(translucencyEnv, 'bridge').mockReturnValue({ supported: false, set })
     applyTheme(glassTheme, { animate: false })
-    expect(set).toHaveBeenLastCalledWith(false)
+    expect(set).toHaveBeenLastCalledWith({ glass: false, scheme: 'dark' })
     expect(root.dataset.translucent).toBeUndefined()
     vi.spyOn(translucencyEnv, 'bridge').mockReturnValue(null)
     expect(() => applyTheme(glassTheme, { animate: false })).not.toThrow()

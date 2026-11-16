@@ -102,10 +102,56 @@
   background-attachment: fixed;
 }
 
-/* Tema translúcido (vidro, lib/theme/apply): a página não pinta o fundo por trás de tudo, para o material
-   da janela (área de trabalho desfocada) aparecer pelas superfícies semitransparentes. */
+html[data-translucent] {
+  --glass-edge: rgb(255 255 255 / 0.14);
+  --glass-specular: rgb(255 255 255 / 0.3);
+  --glass-sheen: rgb(255 255 255 / 0.12);
+  --glass-shadow: rgb(0 0 0 / 0.5);
+  --glass-dim: rgb(0 0 0 / 0.3);
+}
+
+html[data-translucent][data-theme-base='claro'] {
+  --glass-edge: rgb(255 255 255 / 0.65);
+  --glass-specular: rgb(255 255 255 / 0.9);
+  --glass-sheen: rgb(255 255 255 / 0.45);
+  --glass-shadow: rgb(15 23 42 / 0.22);
+  --glass-dim: rgb(15 23 42 / 0.12);
+}
+
 html[data-translucent] body {
   background-color: transparent;
+}
+
+html[data-translucent] [data-glass='surface'] {
+  background-color: var(--popover);
+  background-image: linear-gradient(160deg, var(--glass-sheen), transparent 45%);
+  backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid var(--glass-edge);
+  box-shadow:
+    inset 0 1px 0 var(--glass-specular),
+    inset 0 -1px 0 var(--glass-edge),
+    0 24px 64px -16px var(--glass-shadow);
+}
+
+html[data-translucent] [data-slot='dialog-content'][data-glass='surface'],
+html[data-translucent] form[data-glass='surface'] {
+  border-radius: calc(var(--radius) + 10px);
+}
+
+html[data-translucent] [data-slot='context-menu-content'],
+html[data-translucent] [data-slot='context-menu-sub-content'],
+html[data-translucent] [data-slot='popover-content'],
+html[data-translucent] [data-slot='hover-card-content'] {
+  border-radius: calc(var(--radius) + 4px);
+}
+
+html[data-translucent] [data-slot='dialog-overlay'] {
+  background-color: var(--glass-dim);
+  backdrop-filter: blur(8px) saturate(140%);
+}
+
+html[data-translucent] ::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--foreground) 22%, transparent);
 }
 
 /* Troca de tema com transição curta (a classe fica no <html> só durante a troca). */
