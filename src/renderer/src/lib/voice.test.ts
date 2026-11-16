@@ -5,6 +5,7 @@ import type { JoinVoiceResult } from '@shared/types'
 import { initialState, useApp } from '@/store'
 import { FakeSocket } from '@/test/fake-socket'
 import { VoiceClient } from './voice'
+import type { VoiceLeveler } from './leveler/leveler'
 
 type Listener = (...args: unknown[]) => void
 
@@ -72,6 +73,7 @@ class FakeRemoteTrack {
     this.attachedElements.push(target)
     return target
   }
+  mediaStreamTrack = { id: 'faixa' }
   detachOne = vi.fn()
   setVolume = vi.fn()
   detach(el?: FakeElement): FakeElement[] {
@@ -139,7 +141,7 @@ describe('join', () => {
     expect(socket.sent('voice:join')).toEqual([[{ channelId: 'sala-1', muted: false, deafened: false }]])
     const room = lastRoom()
     expect(room.connect).toHaveBeenCalledWith('ws://livekit.test:7880', 'jwt-de-teste', { autoSubscribe: true })
-    expect(room.localParticipant.publishTrack).toHaveBeenCalledWith(mic, { source: Track.Source.Microphone })
+    expect(room.localParticipant.publishTrack).toHaveBeenCalledWith(mic, { source: Track.Source.Microphone, forceStereo: false })
     expect(room.startAudio).toHaveBeenCalled()
   })
 
@@ -854,7 +856,7 @@ describe('permissões de voz (v2): speak e share', () => {
     room.localParticipant.permissions = { canPublish: true, canPublishSources: [1, 2] }
     room.fire(RoomEvent.ParticipantPermissionsChanged, {}, room.localParticipant)
     await vi.waitFor(() => expect(changed).toHaveBeenCalledWith({ canSpeak: true, canShare: false, canVideo: true }))
-    expect(room.localParticipant.publishTrack).toHaveBeenCalledWith(mic, { source: Track.Source.Microphone })
+    expect(room.localParticipant.publishTrack).toHaveBeenCalledWith(mic, { source: Track.Source.Microphone, forceStereo: false })
     expect(mic!.mute).toHaveBeenCalled()
   })
 
@@ -1232,7 +1234,7 @@ describe('syncPermissions (fim do silêncio do moderador)', () => {
     expect(room.localParticipant.publishTrack).not.toHaveBeenCalled()
     room.localParticipant.permissions = { canPublish: true, canPublishSources: [1, 2, 3] } // o LiveKit já trocou, sem evento
     await client.syncPermissions()
-    expect(room.localParticipant.publishTrack).toHaveBeenCalledWith(mic, { source: Track.Source.Microphone })
+    expect(room.localParticipant.publishTrack).toHaveBeenCalledWith(mic, { source: Track.Source.Microphone, forceStereo: false })
     expect(changed).toHaveBeenCalledWith({ canSpeak: true, canShare: true, canVideo: true })
   })
 
@@ -1244,5 +1246,185 @@ describe('syncPermissions (fim do silêncio do moderador)', () => {
     await client.syncPermissions()
     expect(changed).not.toHaveBeenCalled()
     expect(lastRoom().localParticipant.publishTrack).toHaveBeenCalledTimes(1) // só o da entrada
+  })
+})
+
+describe('microfone publicado em mono', () => {
+  it('nunca publica em estéreo, mesmo com microfone de dois canais (mantém RED e DTX)', async () => {
+    await client.join('sala-1')
+    expect(lastRoom().localParticipant.publishTrack).toHaveBeenCalledWith(mic, expect.objectContaining({ forceStereo: false }))
+  })
+})
+
+describe('equalizador automático', () => {
+  const micOf = (accountId: string) => ({ identity: 'sock-' + accountId, attributes: { accountId } })
+
+  class FakeLeveler {
+    onGainsChange: ((gains: Record<string, number>) => void) | null = null
+    voices = new Map<object, { accountId: string; track: unknown; volume: number }>()
+    target = 'medium'
+    output: string | null = null
+    destroyed = 0
+    add(key: object, accountId: string, track: unknown, volume = 1): void {
+      this.voices.set(key, { accountId, track, volume })
+    }
+    remove(key: object): void {
+      this.voices.delete(key)
+    }
+    setVolume(key: object, volume: number): void {
+      const v = this.voices.get(key)
+      if (v) v.volume = volume
+    }
+    setTarget(target: string): void {
+      this.target = target
+    }
+    setOutput(id: string | null): void {
+      this.output = id
+    }
+    destroy(): void {
+      this.voices.clear()
+      this.destroyed++
+    }
+  }
+
+  let levelers: FakeLeveler[]
+  const leveler = (): FakeLeveler => levelers[levelers.length - 1]
+
+  function levelerClient(): VoiceClient {
+    levelers = []
+    const c = new VoiceClient({
+      createRoom: () => {
+        const room = new FakeRoom()
+        rooms.push(room)
+        return room as unknown as Room
+      },
+      createMicTrack: async () => {
+        mic = new FakeMic()
+        return mic as unknown as LocalAudioTrack
+      },
+      createLeveler: () => {
+        const l = new FakeLeveler()
+        levelers.push(l)
+        return l as unknown as VoiceLeveler
+      }
+    })
+    c.setSocket(socket.asSocket())
+    return c
+  }
+
+  const subscribe = (accountId: string, source = Track.Source.Microphone): FakeRemoteTrack => {
+    const track = new FakeRemoteTrack(Track.Kind.Audio, source)
+    lastRoom().fire(RoomEvent.TrackSubscribed, track, {}, micOf(accountId))
+    return track
+  }
+
+  it('desligado (padrão): nada passa pelo equalizador', async () => {
+    const c = levelerClient()
+    await c.join('sala-1')
+    const ana = subscribe('acc-ana')
+    expect(levelers).toHaveLength(0)
+    expect(ana.attachedElements[0].muted).toBe(false)
+    expect(ana.setVolume).toHaveBeenLastCalledWith(1)
+  })
+
+  it('ligado: o microfone de cada um vai para o equalizador com o elemento mudo e o volume combinado', async () => {
+    const c = levelerClient()
+    c.setLeveler(true)
+    c.setUserVolume('acc-ana', 0.5)
+    c.setOutputVolume(0.8)
+    await c.join('sala-1')
+    const ana = subscribe('acc-ana')
+    expect(ana.attachedElements[0].muted).toBe(true)
+    expect(ana.setVolume).not.toHaveBeenCalled()
+    expect(leveler().voices.get(ana)).toEqual({ accountId: 'acc-ana', track: ana.mediaStreamTrack, volume: 0.4 })
+    c.setUserMuted('acc-ana', true)
+    expect(leveler().voices.get(ana)!.volume).toBe(0)
+  })
+
+  it('áudio da tela não passa pelo equalizador', async () => {
+    const c = levelerClient()
+    c.setLeveler(true)
+    await c.join('sala-1')
+    const tela = subscribe('acc-ana', Track.Source.ScreenShareAudio)
+    expect(leveler()?.voices.size ?? 0).toBe(0)
+    expect(tela.attachedElements[0].muted).toBe(false)
+  })
+
+  it('ensurdecer zera pelo equalizador e o elemento continua mudo ao voltar', async () => {
+    const c = levelerClient()
+    c.setLeveler(true)
+    await c.join('sala-1')
+    const ana = subscribe('acc-ana')
+    c.setDeafened(true)
+    expect(leveler().voices.get(ana)!.volume).toBe(0)
+    c.setDeafened(false)
+    expect(leveler().voices.get(ana)!.volume).toBe(1)
+    expect(ana.attachedElements[0].muted).toBe(true)
+    c.setDeafened(true)
+    const bia = subscribe('acc-bia')
+    expect(leveler().voices.get(bia)!.volume).toBe(0)
+  })
+
+  it('ligar e desligar dentro da sala troca as faixas de caminho', async () => {
+    const c = levelerClient()
+    await c.join('sala-1')
+    const ana = subscribe('acc-ana')
+    c.setLeveler(true)
+    expect(leveler().voices.has(ana)).toBe(true)
+    expect(ana.attachedElements[0].muted).toBe(true)
+    c.setLeveler(false)
+    expect(leveler().destroyed).toBe(1)
+    expect(ana.attachedElements[0].muted).toBe(false)
+    expect(ana.setVolume).toHaveBeenLastCalledWith(1)
+  })
+
+  it('desligar ensurdecido deixa o elemento mudo', async () => {
+    const c = levelerClient()
+    c.setLeveler(true)
+    await c.join('sala-1')
+    const ana = subscribe('acc-ana')
+    c.setDeafened(true)
+    c.setLeveler(false)
+    expect(ana.attachedElements[0].muted).toBe(true)
+  })
+
+  it('quem sai deixa o equalizador; sair da sala desmonta tudo', async () => {
+    const c = levelerClient()
+    c.setLeveler(true)
+    await c.join('sala-1')
+    const ana = subscribe('acc-ana')
+    lastRoom().fire(RoomEvent.TrackUnsubscribed, ana, {}, micOf('acc-ana'))
+    expect(leveler().voices.size).toBe(0)
+    subscribe('acc-bia')
+    c.leave()
+    expect(leveler().destroyed).toBe(1)
+  })
+
+  it('alvo e saída escolhida chegam ao equalizador, antes e depois de criado', async () => {
+    const c = levelerClient()
+    c.setLevelerTarget('high')
+    await c.setOutputDevice('fone')
+    c.setLeveler(true)
+    await c.join('sala-1')
+    subscribe('acc-ana')
+    expect(leveler().target).toBe('high')
+    expect(leveler().output).toBe('fone')
+    c.setLevelerTarget('low')
+    await c.setOutputDevice(null)
+    expect(leveler().target).toBe('low')
+    expect(leveler().output).toBeNull()
+  })
+
+  it('repassa o ganho de cada conta e limpa ao desligar', async () => {
+    const c = levelerClient()
+    const seen: Record<string, number>[] = []
+    c.onLevelerGains = (g) => seen.push(g)
+    c.setLeveler(true)
+    await c.join('sala-1')
+    subscribe('acc-ana')
+    leveler().onGainsChange?.({ 'acc-ana': 1.4 })
+    expect(seen[seen.length - 1]).toEqual({ 'acc-ana': 1.4 })
+    c.setLeveler(false)
+    expect(seen[seen.length - 1]).toEqual({})
   })
 })

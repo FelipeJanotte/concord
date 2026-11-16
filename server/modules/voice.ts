@@ -11,10 +11,20 @@
  * token, ao vivo no LiveKit e se a pessoa sair e voltar). O silêncio fica no banco (`server_mutes`,
  * `server/repo/moderation.ts`), carregado no `init`: sobrevive a reiniciar o servidor.
  */
-import { can, channelPermissions, type AccessState, type VoicePermissions, type VoiceState } from '../../src/shared/types'
+import {
+  can,
+  channelPermissions,
+  SCREEN_PREVIEW_MAX_CHARS,
+  SCREEN_PREVIEW_PREFIX,
+  type AccessState,
+  type ScreenPreviewResult,
+  type VoicePermissions,
+  type VoiceState
+} from '../../src/shared/types'
 import { accessSnapshot, allowed, currentAccess, dmMembersOf } from '../access'
 import { guard, type AppServer, type AppSocket, type ServerModule } from '../context'
 import { closeRoom, createVoiceCredentials, kickFromRoom, liveKitConfig, updateVoicePermissions } from '../livekit'
+import { limiters, retryText } from '../middleware/rate-limit'
 import { findChannel } from '../repo/channels'
 import { listServerMutes, setServerMute } from '../repo/moderation'
 
@@ -30,6 +40,17 @@ const published = new Map<string, VoicePermissions>()
 const selfMuted = new Map<string, boolean>()
 /** contas silenciadas por um moderador (B6): cache do banco (`server_mutes`), carregado no `init`. */
 const serverMuted = new Set<string>()
+const screenPreviews = new Map<string, string>()
+
+const PREVIEW_UNAVAILABLE: ScreenPreviewResult = { ok: false, error: 'Prévia indisponível' }
+
+function isScreenPreview(image: unknown): image is string {
+  return typeof image === 'string' && image.startsWith(SCREEN_PREVIEW_PREFIX) && image.length <= SCREEN_PREVIEW_MAX_CHARS
+}
+
+async function canPreview(accountId: string, channelId: string): Promise<boolean> {
+  return (await allowed(accountId, 'view', channelId)) && (await allowed(accountId, 'connect', channelId))
+}
 
 export const voiceStates = (): VoiceState[] => [...voice.values()]
 
@@ -109,7 +130,10 @@ export function applyVoiceAccess(io: AppServer, access: AccessState): void {
     published.set(socket.id, next)
     // sem `speak` aparece silenciado; voltou a poder falar: volta ao que a própria pessoa escolheu
     state.muted = !next.canSpeak || (selfMuted.get(socket.id) ?? state.muted)
-    if (!next.canShare) state.sharing = false
+    if (!next.canShare) {
+      state.sharing = false
+      screenPreviews.delete(socket.id)
+    }
     if (liveKitConfig) void updateVoicePermissions(liveKitConfig, state.channelId, socket.id, next)
   }
   emitVoice(io)
@@ -121,6 +145,7 @@ function leaveVoice(io: AppServer, socket: AppSocket, { emit = true } = {}): voi
   voice.delete(socket.id)
   published.delete(socket.id)
   selfMuted.delete(socket.id)
+  screenPreviews.delete(socket.id)
   if (liveKitConfig) void kickFromRoom(liveKitConfig, state.channelId, socket.id)
   if (emit) emitVoice(io)
 }
@@ -175,6 +200,7 @@ export function clearVoiceChannel(_io: AppServer, channelId: string): void {
     voice.delete(sid)
     published.delete(sid)
     selfMuted.delete(sid)
+    screenPreviews.delete(sid)
   }
   // Sempre encerra: pode haver alguém no LiveKit que a lista não conhece (o 404 é ignorado).
   if (liveKitConfig) void closeRoom(liveKitConfig, channelId)
@@ -223,6 +249,7 @@ export const voiceModule: ServerModule = {
         })
         published.set(socket.id, permissions)
         selfMuted.set(socket.id, !!payload.muted)
+        screenPreviews.delete(socket.id)
         ack({ ok: true, ...credentials, ...permissions })
         emitVoice(io)
       })
@@ -249,7 +276,26 @@ export const voiceModule: ServerModule = {
       // sem `share` não aparece "ao vivo" (o LiveKit também não aceita a tela)
       if (sharing && published.get(socket.id)?.canShare === false) return
       state.sharing = sharing
+      if (!sharing) screenPreviews.delete(socket.id)
       emitVoice(io)
+    })
+
+    socket.on('voice:preview', (image) => {
+      if (!voice.get(socket.id)?.sharing || !isScreenPreview(image)) return
+      if (!limiters.screenPreview.take(socket.id).ok) return
+      screenPreviews.set(socket.id, image)
+    })
+
+    socket.on('voice:preview-get', (userId, ack) => {
+      if (typeof ack !== 'function') return
+      void guard('voice:preview-get', async () => {
+        const user = socket.data.user
+        const state = typeof userId === 'string' ? voice.get(userId) : undefined
+        if (!user || !state?.sharing || !(await canPreview(user.accountId, state.channelId))) return ack(PREVIEW_UNAVAILABLE)
+        const limited = limiters.screenPreviewGet.take(user.accountId)
+        if (!limited.ok) return ack({ ok: false, error: `Muitos pedidos de prévia. ${retryText(limited.retryAfterMs)}` })
+        ack({ ok: true, image: screenPreviews.get(state.userId) ?? null })
+      })
     })
 
     socket.on('disconnect', () => leaveVoice(io, socket))

@@ -239,6 +239,7 @@ export { acceptCall, cancelCall, declineCall, hangUp, startCall } from './action
 export * from './actions/permissions'
 export * from './actions/uploads'
 export * from './actions/voice'
+export { fetchScreenPreview } from './actions/screen-preview'
 export * from './actions/devices'
 export * from './actions/friends'
 export * from './actions/tools'

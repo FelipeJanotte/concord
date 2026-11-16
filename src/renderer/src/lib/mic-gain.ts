@@ -18,6 +18,17 @@ const clamp = (v: unknown, max: number, fallback: number): number =>
 export const clampMicGain = (v: unknown): number => clamp(v, MIC_GAIN_MAX, 1)
 export const clampOutputVolume = (v: unknown): number => clamp(v, OUTPUT_VOLUME_MAX, 1)
 
+export function forceMono(node: AudioNode): void {
+  node.channelCount = 1
+  node.channelCountMode = 'explicit'
+}
+
+export function createMonoDestination(ctx: AudioContext): MediaStreamAudioDestinationNode {
+  const out = ctx.createMediaStreamDestination()
+  forceMono(out)
+  return out
+}
+
 /** Algo no caminho do microfone que aceita mudar o ganho na hora. */
 export interface GainControl {
   setGain(gain: number): void
@@ -36,7 +47,7 @@ export class MicGainProcessor implements TrackProcessor<Track.Kind.Audio, AudioP
   async init({ track, audioContext }: AudioProcessorOptions): Promise<void> {
     this.ctx = audioContext
     const source = audioContext.createMediaStreamSource(new MediaStream([track]))
-    const out = audioContext.createMediaStreamDestination()
+    const out = createMonoDestination(audioContext)
     const gainNode = audioContext.createGain()
     gainNode.gain.value = this.gain
     source.connect(gainNode).connect(out)

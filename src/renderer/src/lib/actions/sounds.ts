@@ -121,7 +121,7 @@ export function bindSoundsEvents(s: AppSocket): void {
     if (st.deafened || st.userMuted[accountId]) return
     const url = resolveServerUrl(sound.url, st.serverUrl)
     if (!url) return
-    soundOutput.play(url, { volume: (st.userVolumes[accountId] ?? 1) * st.outputVolume, outputId: st.audioOutputId })
+    soundOutput.play(url, { volume: (st.userVolumes[accountId] ?? 1) * st.outputVolume * st.soundboardVolume, outputId: st.audioOutputId })
   })
 }
 
@@ -135,14 +135,8 @@ export async function loadSounds(): Promise<void> {
   set({ sounds: [...sounds].sort(byName), soundsLoaded: true })
 }
 
-export function openSoundboard(): void {
-  set({ soundboardOpen: true })
-  // a coleção pode ter falhado no login, ou os links ter vencido (24 h): busca de novo ao abrir
+export function refreshSounds(): void {
   void loadSounds().catch(() => {})
-}
-
-export function closeSoundboard(): void {
-  set({ soundboardOpen: false })
 }
 
 /** Toca o som para todos na minha sala de voz. Lança `Error` com a mensagem do servidor. */

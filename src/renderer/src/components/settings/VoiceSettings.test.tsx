@@ -214,3 +214,22 @@ describe('sobreposição em jogos (B15)', () => {
     expect(screen.queryByRole("button", { name: "Mover" })).toBeNull()
   })
 })
+
+describe('equalizador automático', () => {
+  it('começa desligado; ligar avisa a voz e libera o volume-alvo', async () => {
+    const on = vi.spyOn(voice, 'setLeveler').mockImplementation(() => {})
+    const target = vi.spyOn(voice, 'setLevelerTarget').mockImplementation(() => {})
+    await openDialog()
+    const toggle = screen.getByRole('checkbox', { name: 'Equalizador automático' }) as HTMLInputElement
+    const select = screen.getByLabelText('Volume-alvo do equalizador') as HTMLSelectElement
+    expect(toggle.checked).toBe(false)
+    expect(select.disabled).toBe(true)
+    expect([...select.options].map((o) => o.text)).toEqual(['Baixo', 'Médio', 'Alto'])
+    await userEvent.click(toggle)
+    expect(on).toHaveBeenLastCalledWith(true)
+    expect(select.disabled).toBe(false)
+    await userEvent.selectOptions(select, 'Alto')
+    expect(target).toHaveBeenLastCalledWith('high')
+    expect(useApp.getState().voiceLevelerTarget).toBe('high')
+  })
+})

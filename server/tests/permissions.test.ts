@@ -271,12 +271,15 @@ describe('canal privado', () => {
 })
 
 describe('regras de enviar, anexar e entrar', () => {
-  it('sem "enviar": mensagem ignorada, mas continua vendo', async () => {
+  it('sem "enviar": mensagem recusada com o motivo, mas continua vendo', async () => {
     const b = await user()
     const ch = await server.createChannel('anuncios')
     await overrides(ch.id, [{ roleId: EVERYONE_ROLE_ID, deny: ['send'] }])
     const silent = expectNoEvent(owner.socket, 'message:new', (m) => m.channelId === ch.id)
-    b.socket.emit('message:send', { channelId: ch.id, content: 'posso?' })
+    expect(await b.socket.emitWithAck('message:send', { channelId: ch.id, content: 'posso?' })).toEqual({
+      ok: false,
+      error: 'Você não tem permissão para enviar mensagens neste canal'
+    })
     await silent
     const reads = waitFor(b.socket, 'message:new', (m) => m.channelId === ch.id)
     owner.socket.emit('message:send', { channelId: ch.id, content: 'aviso' })

@@ -84,8 +84,18 @@ function VolumeControl({ accountId, name }: { accountId: string; name: string })
         onChange={(e) => setUserVolume(accountId, Number(e.target.value) / 100)}
         className="w-full accent-primary"
       />
+      <LevelerGain accountId={accountId} />
     </div>
   )
+}
+
+function LevelerGain({ accountId }: { accountId: string }) {
+  const enabled = useApp((s) => s.voiceLeveler)
+  const gain = useApp((s) => s.levelerGains[accountId] ?? 1)
+  if (!enabled) return null
+  const change = Math.round((gain - 1) * 100)
+  const text = change === 0 ? 'sem ajuste' : change > 0 ? `+${change}%` : `−${-change}%`
+  return <p className="mt-1 text-xs text-muted-foreground">Equalizador: {text}</p>
 }
 
 function MuteItem({ accountId }: { accountId: string }) {

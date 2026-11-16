@@ -1,0 +1,1 @@
+ALTER TABLE "account_preferences" ADD COLUMN "muted_channels" jsonb DEFAULT '[]'::jsonb NOT NULL;

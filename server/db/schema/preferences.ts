@@ -10,5 +10,6 @@ export const accountPreferences = pgTable('account_preferences', {
   /** validado com `validateTheme` antes de gravar */
   theme: jsonb('theme').$type<ThemeConfig>().notNull(),
   savedThemes: jsonb('saved_themes').$type<SavedTheme[]>().notNull().default([]),
+  mutedChannels: jsonb('muted_channels').$type<string[]>().notNull().default([]),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 })

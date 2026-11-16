@@ -1,10 +1,10 @@
 // Mensagens dos canais de texto e das conversas privadas, "digitando", editar (A15) e responder citando (B18).
 import { randomUUID } from 'node:crypto'
-import { ATTACHMENTS_PER_MESSAGE, EVERYONE_TOKEN, MESSAGE_MAX_LENGTH, type Message } from '../../src/shared/types'
+import { ATTACHMENTS_PER_MESSAGE, EVERYONE_TOKEN, MESSAGE_MAX_LENGTH, type Message, type OkResult } from '../../src/shared/types'
 import { allowed, emitToViewers } from '../access'
 import { signMessage } from '../files-signing'
 import { guard, type ServerModule } from '../context'
-import { limiters } from '../middleware/rate-limit'
+import { limiters, retryText } from '../middleware/rate-limit'
 import { findChannel } from '../repo/channels'
 import { editMessage, findEditable, findReplyTarget, insertMessage, listMessages, resolveMentions } from '../repo/messages'
 import { isUuid } from '../repo/util'
@@ -36,9 +36,13 @@ export const messagesModule: ServerModule = {
       })
     })
 
-    socket.on('message:send', (payload) => {
+    socket.on('message:send', (payload, ack) => {
+      const reply = (res: OkResult): void => {
+        if (typeof ack === 'function') ack(res)
+      }
+      const refuse = (error: string): void => reply({ ok: false, error })
       const user = socket.data.user
-      if (!user || !payload || typeof payload.channelId !== 'string') return
+      if (!user || !payload || typeof payload.channelId !== 'string') return refuse('Mensagem inválida')
       const content = typeof payload.content === 'string' ? payload.content.trim().slice(0, MESSAGE_MAX_LENGTH) : ''
       const attachmentIds = payload.attachmentIds ?? []
       if (
@@ -47,13 +51,13 @@ export const messagesModule: ServerModule = {
         !attachmentIds.every(isUuid) ||
         new Set(attachmentIds).size !== attachmentIds.length
       ) {
-        return
+        return refuse('Anexos inválidos')
       }
-      if (!content && attachmentIds.length === 0) return
+      if (!content && attachmentIds.length === 0) return refuse('Mensagem vazia')
       const limited = limiters.message.take(user.accountId)
       if (!limited.ok) {
         socket.emit('rate:limited', { action: 'message', retryAfterMs: limited.retryAfterMs })
-        return
+        return refuse(`Muitas mensagens seguidas. ${retryText(limited.retryAfterMs)}`)
       }
       const { channelId } = payload
       const replyToId = typeof payload.replyToId === 'string' ? payload.replyToId : undefined
@@ -61,10 +65,11 @@ export const messagesModule: ServerModule = {
         guard('message:send', async () => {
           // canal de texto, chat da sala de voz (como no Discord) ou conversa privada (v3)
           const channel = await findChannel(channelId)
-          if (!channel) return
-          // Sem permissão a mensagem é ignorada (a tela já esconde o campo de quem não pode enviar).
-          if (!(await allowed(user.accountId, 'send', channel.id))) return
-          if (attachmentIds.length > 0 && !(await allowed(user.accountId, 'attach', channel.id))) return
+          if (!channel || !(await allowed(user.accountId, 'view', channel.id))) return refuse('Canal não encontrado')
+          if (!(await allowed(user.accountId, 'send', channel.id))) return refuse('Você não tem permissão para enviar mensagens neste canal')
+          if (attachmentIds.length > 0 && !(await allowed(user.accountId, 'attach', channel.id))) {
+            return refuse('Você não tem permissão para anexar arquivos neste canal')
+          }
           // resposta (B18): só a uma mensagem do mesmo canal; inválida = vai sem a citação
           const replyTo = replyToId ? await findReplyTarget(replyToId, channel.id) : undefined
           // menções (B19): @todos só com permissão; numa conversa privada não há @todos
@@ -80,7 +85,9 @@ export const messagesModule: ServerModule = {
           }
           // null = algum anexo não é desta pessoa ou já foi usado: nada é gravado.
           const saved = await insertMessage(message, attachmentIds)
-          if (saved) await emitToViewers(io, channel.id, 'message:new', { ...saved, ...(await resolveMentions(text)) }, { forAccount: signMessage })
+          if (!saved) return refuse('Anexos inválidos')
+          reply({ ok: true })
+          await emitToViewers(io, channel.id, 'message:new', { ...saved, ...(await resolveMentions(text)) }, { forAccount: signMessage })
         })
       )
     })

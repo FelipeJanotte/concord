@@ -8,10 +8,12 @@ export interface PreferencesState {
   savedThemes: SavedTheme[]
   /** false até as preferências da conta chegarem */
   preferencesLoaded: boolean
+  mutedChannels: string[]
 }
 
 export const preferencesInitial: PreferencesState = {
   theme: DEFAULT_THEME,
   savedThemes: [],
-  preferencesLoaded: false
+  preferencesLoaded: false,
+  mutedChannels: []
 }

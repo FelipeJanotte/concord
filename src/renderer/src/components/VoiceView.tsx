@@ -1,16 +1,16 @@
-import type { ReactNode } from 'react'
+import type { ComponentProps, ReactNode } from 'react'
 import { AudioLines, HeadphoneOff, Video, VideoOff, Headphones, Loader2, MessageSquare, Mic, MicOff, MonitorOff, MonitorUp, Music, PhoneOff, Volume2, X } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { joinVoice, leaveVoice, openDeviceSettings, openSoundboard, setVoiceChatOpen, toggleCamera, toggleDeafen, toggleMute, toggleScreenShare } from '@/lib/client'
+import { joinVoice, leaveVoice, openDeviceSettings, setVoiceChatOpen, toggleCamera, toggleDeafen, toggleMute, toggleScreenShare } from '@/lib/client'
 import { SIDE_PANELS } from '@/lib/side-width'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
 import { ChatView } from './ChatView'
 import { ResizableSide } from './ResizableSide'
 import { PushToTalkHint } from './voice/PushToTalk'
-import { SoundsPlayingBar } from './voice/Soundboard'
+import { SoundboardPopover, SoundsPlayingBar } from './voice/Soundboard'
 import { VoiceGrid } from './voice/VoiceGrid'
 
 export function VoiceView({ channelId }: { channelId: string }) {
@@ -70,9 +70,11 @@ export function VoiceView({ channelId }: { channelId: string }) {
                   {sharing ? <MonitorOff /> : <MonitorUp />}
                 </ControlButton>
               )}
-              <ControlButton label="Efeitos sonoros" onClick={openSoundboard}>
-                <Music />
-              </ControlButton>
+              <SoundboardPopover>
+                <ControlButton label="Efeitos sonoros">
+                  <Music />
+                </ControlButton>
+              </SoundboardPopover>
               <ControlButton label="Configurações de voz" onClick={openDeviceSettings}>
                 <AudioLines />
               </ControlButton>
@@ -148,14 +150,13 @@ function VoiceChatPanel({ channelId }: { channelId: string }) {
 /** Botão redondo dos controles da sala (também usado no painel da chamada da conversa, B8). */
 export function ControlButton({
   label,
-  onClick,
   off,
   active,
   danger,
-  children
-}: {
+  children,
+  ...buttonProps
+}: ComponentProps<'button'> & {
   label: string
-  onClick: () => void
   off?: boolean
   /** ligado (ex.: compartilhando a tela, câmera ligada) */
   active?: boolean
@@ -166,7 +167,7 @@ export function ControlButton({
     <Tooltip>
       <TooltipTrigger asChild>
         <button
-          onClick={onClick}
+          {...buttonProps}
           aria-label={label}
           aria-pressed={active}
           className={cn(
