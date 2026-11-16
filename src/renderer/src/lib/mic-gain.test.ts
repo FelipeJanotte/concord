@@ -85,3 +85,13 @@ describe('MicGainProcessor', () => {
     s.proc.setGain(0.5) // depois de destruído não quebra
   })
 })
+
+describe('MicGainProcessor em mono', () => {
+  it('a faixa processada sai com um canal', async () => {
+    const s = setup()
+    await s.init()
+    const out = s.out as typeof s.out & { channelCount?: number; channelCountMode?: string }
+    expect(out.channelCount).toBe(1)
+    expect(out.channelCountMode).toBe('explicit')
+  })
+})

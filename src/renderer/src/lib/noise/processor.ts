@@ -15,7 +15,7 @@
 import { Track, type AudioProcessorOptions, type TrackProcessor } from 'livekit-client'
 import { NoiseDecider, rmsToDb, type DeciderOptions } from './decide'
 import type { NoiseEngineLoader, NoiseEngineNode } from './engine'
-import { clampMicGain, type GainControl } from '../mic-gain'
+import { clampMicGain, createMonoDestination, forceMono, type GainControl } from '../mic-gain'
 
 /** O que aparece em Configurações de voz. */
 export type NoiseMode = 'light' | 'advanced' | 'light-fallback'
@@ -70,7 +70,7 @@ export class AutoNoiseProcessor implements TrackProcessor<Track.Kind.Audio, Audi
     this.decider = new NoiseDecider(this.deps.deciderOptions)
 
     const source = ctx.createMediaStreamSource(new MediaStream([track]))
-    const out = ctx.createMediaStreamDestination()
+    const out = createMonoDestination(ctx)
     const dry = ctx.createGain()
     const wet = ctx.createGain()
     const volume = ctx.createGain()
@@ -89,6 +89,7 @@ export class AutoNoiseProcessor implements TrackProcessor<Track.Kind.Audio, Audi
       try {
         const engine = await this.deps.loadEngine(ctx)
         this.engine = engine
+        forceMono(engine.node)
         source.connect(engine.node).connect(wet).connect(volume)
         // Erro dentro do AudioWorklet (ex.: o WASM quebrou): para de usar o avançado.
         ;(engine.node as AudioWorkletNode).onprocessorerror = () => this.fallback('erro no processador de áudio')
