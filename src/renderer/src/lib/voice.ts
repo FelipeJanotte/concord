@@ -41,6 +41,8 @@ import { permissionsFrom } from './voice-permissions'
 import { loadRnnoiseEngine } from './noise/engine'
 import { AutoNoiseProcessor, type NoiseMode } from './noise/processor'
 import { clampMicGain, clampOutputVolume, MicGainProcessor, type GainControl } from './mic-gain'
+import { VoiceLeveler, type LevelerGains } from './leveler/leveler'
+import type { LevelerTarget } from './leveler/level'
 import { useApp } from '@/store'
 import type { AppSocket } from './core'
 
@@ -69,6 +71,7 @@ export interface VoiceDeps {
   /** AudioContext a 48 kHz (o RNNoise só trabalha nessa taxa) */
   createAudioContext: () => AudioContext
   listDevices: (kind: MediaDeviceKind) => Promise<MediaDeviceInfo[]>
+  createLeveler: () => VoiceLeveler
 }
 
 const defaultDeps: VoiceDeps = {
@@ -104,7 +107,8 @@ const defaultDeps: VoiceDeps = {
     ),
   createAudioContext: () => new AudioContext({ sampleRate: 48000 }),
   // false = não pede permissão só para listar (sem permissão, os nomes vêm vazios).
-  listDevices: (kind) => Room.getLocalDevices(kind, false)
+  listDevices: (kind) => Room.getLocalDevices(kind, false),
+  createLeveler: () => new VoiceLeveler()
 }
 
 /**
@@ -190,6 +194,11 @@ export class VoiceClient {
   private gainControl: GainControl | null = null
   /** volume de saída (0 a 1), multiplica o de cada pessoa */
   private outputVolume = 1
+  private levelerEnabled = false
+  private levelerTarget: LevelerTarget = 'medium'
+  private leveler: VoiceLeveler | null = null
+  private leveled = new Set<RemoteTrack>()
+  onLevelerGains: ((gains: LevelerGains) => void) | null = null
 
   private readonly deps: VoiceDeps
 
@@ -314,6 +323,7 @@ export class VoiceClient {
       room.removeAllListeners()
       void room.disconnect()
     }
+    this.destroyLeveler()
     for (const track of this.remoteAudio) track.detach().forEach((el) => el.remove())
     this.remoteAudio.clear()
     this.voices.clear()
@@ -352,7 +362,8 @@ export class VoiceClient {
 
   setDeafened(deafened: boolean): void {
     this.deafened = deafened
-    for (const track of this.remoteAudio) track.attachedElements.forEach((el) => (el.muted = deafened))
+    for (const track of this.remoteAudio) this.muteElements(track)
+    for (const track of this.leveled) this.applyVolume(track, this.voices.get(track) ?? null)
     this.publishSpeaking()
   }
 
@@ -427,6 +438,7 @@ export class VoiceClient {
   /** Troca a saída de áudio (alto-falante/fone) de tudo que toca na sala. */
   async setOutputDevice(deviceId: string | null): Promise<void> {
     this.outputDeviceId = deviceId
+    this.leveler?.setOutput(deviceId)
     if (this.room) await this.room.switchActiveDevice('audiooutput', deviceId ?? 'default')
   }
 
@@ -479,6 +491,49 @@ export class VoiceClient {
   setOutputVolume(volume: number): void {
     this.outputVolume = clampOutputVolume(volume)
     for (const track of this.remoteAudio) this.applyVolume(track, this.voices.get(track) ?? null)
+  }
+
+  setLeveler(enabled: boolean): void {
+    if (enabled === this.levelerEnabled) return
+    this.levelerEnabled = enabled
+    if (!enabled) return this.destroyLeveler()
+    for (const [track, accountId] of this.voices) this.level(track, accountId)
+  }
+
+  setLevelerTarget(target: LevelerTarget): void {
+    this.levelerTarget = target
+    this.leveler?.setTarget(target)
+  }
+
+  private level(track: RemoteTrack, accountId: string): void {
+    if (!this.leveler) {
+      const leveler = this.deps.createLeveler()
+      leveler.setTarget(this.levelerTarget)
+      leveler.setOutput(this.outputDeviceId)
+      leveler.onGainsChange = (gains) => this.onLevelerGains?.(gains)
+      this.leveler = leveler
+    }
+    this.leveled.add(track)
+    this.muteElements(track)
+    this.leveler.add(track, accountId, track.mediaStreamTrack, this.volumeOf(accountId))
+  }
+
+  private destroyLeveler(): void {
+    if (!this.leveler) return
+    this.leveler.destroy()
+    this.leveler = null
+    const tracks = [...this.leveled]
+    this.leveled.clear()
+    for (const track of tracks) {
+      this.muteElements(track)
+      this.applyVolume(track, this.voices.get(track) ?? null)
+    }
+    this.onLevelerGains?.({})
+  }
+
+  private muteElements(track: RemoteTrack): void {
+    const muted = this.deafened || this.leveled.has(track)
+    track.attachedElements.forEach((el) => (el.muted = muted))
   }
 
   /** Processador do microfone antes de publicar: o de ruído (com o volume) ou só o volume. */
@@ -536,9 +591,15 @@ export class VoiceClient {
 
   /** Volume de uma faixa: o de saída × o da pessoa (`accountId` null = áudio da tela, só o de saída). */
   private applyVolume(track: RemoteTrack, accountId: string | null): void {
+    if (this.leveled.has(track) && accountId !== null) return this.leveler?.setVolume(track, this.volumeOf(accountId))
     const personal = accountId === null ? 1 : this.mutedUsers.has(accountId) ? 0 : (this.volumes.get(accountId) ?? 1)
     const volume = personal * this.outputVolume
     ;(track as RemoteTrack & { setVolume?: (v: number) => void }).setVolume?.(volume)
+  }
+
+  private volumeOf(accountId: string): number {
+    if (this.deafened || this.mutedUsers.has(accountId)) return 0
+    return (this.volumes.get(accountId) ?? 1) * this.outputVolume
   }
 
   // ---------- tela ----------
@@ -560,6 +621,10 @@ export class VoiceClient {
     if (!track) return () => {}
     track.attach(el)
     return () => void track.detach(el)
+  }
+
+  screenMediaTrack(userId: string): MediaStreamTrack | undefined {
+    return this.screens.get(userId)?.mediaStreamTrack
   }
 
   // ---------- câmera (B21) ----------
@@ -602,7 +667,8 @@ export class VoiceClient {
         const accountId = participant?.attributes?.accountId
         if (track.source === Track.Source.Microphone && accountId) {
           this.voices.set(track, accountId)
-          this.applyVolume(track, accountId)
+          if (this.levelerEnabled) this.level(track, accountId)
+          else this.applyVolume(track, accountId)
         } else if (this.outputVolume !== 1) this.applyVolume(track, null)
       })
       .on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack, _pub: RemoteTrackPublication, participant: Participant) => {
@@ -611,6 +677,7 @@ export class VoiceClient {
           return this.removeScreen(participant.identity, track)
         }
         this.voices.delete(track)
+        if (this.leveled.delete(track)) this.leveler?.remove(track)
         if (!this.remoteAudio.delete(track)) return
         track.detach().forEach((el) => el.remove())
       })

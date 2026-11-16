@@ -12,8 +12,11 @@ import {
   setMicGain,
   setNoiseSuppression,
   setOutputVolume,
+  setSoundboardVolume,
   setUserVolume,
-  setVoiceSounds
+  setVoiceSounds,
+  setVoiceLeveler,
+  setVoiceLevelerTarget
 } from './devices'
 
 class MemoryStorage {
@@ -81,7 +84,7 @@ describe('escolher dispositivo', () => {
     await selectAudioInput('mic-usb')
     await selectAudioOutput('fone')
     expect(useApp.getState()).toMatchObject({ audioInputId: 'mic-usb', audioOutputId: 'fone' })
-    expect(saved()).toEqual({ input: 'mic-usb', output: 'fone', camera: null, volumes: {}, muted: [], sounds: { enabled: true, volume: 0.5 }, noise: true, micGain: 1, outputVolume: 1 })
+    expect(saved()).toEqual({ input: 'mic-usb', output: 'fone', camera: null, volumes: {}, muted: [], sounds: { enabled: true, volume: 0.5 }, noise: true, micGain: 1, outputVolume: 1, leveler: false, levelerTarget: 'medium', soundboardVolume: 1 })
     expect(voice.setInputDevice).toHaveBeenCalledWith('mic-usb')
     expect(voice.setOutputDevice).toHaveBeenCalledWith('fone')
 
@@ -285,9 +288,67 @@ describe('volume do microfone e de saída', () => {
     expect(useApp.getState()).toMatchObject({ micGain: 1, outputVolume: 0 })
   })
 
+  it('volume dos efeitos sonoros: começa em 100%, salva, corrige o limite e volta igual depois de reabrir', () => {
+    loadAudioPreferences()
+    expect(useApp.getState().soundboardVolume).toBe(1)
+    setSoundboardVolume(0.3)
+    expect(useApp.getState().soundboardVolume).toBe(0.3)
+    expect(saved()).toMatchObject({ soundboardVolume: 0.3 })
+    useApp.setState({ soundboardVolume: 1 })
+    loadAudioPreferences()
+    expect(useApp.getState().soundboardVolume).toBe(0.3)
+    setSoundboardVolume(4)
+    expect(useApp.getState().soundboardVolume).toBe(1)
+    storage.setItem('concord:audio', JSON.stringify({ soundboardVolume: 'alto' }))
+    loadAudioPreferences()
+    expect(useApp.getState().soundboardVolume).toBe(1)
+    storage.setItem('concord:audio', JSON.stringify({ soundboardVolume: -2 }))
+    loadAudioPreferences()
+    expect(useApp.getState().soundboardVolume).toBe(0)
+  })
+
   it('falha ao ajustar o microfone vira aviso', async () => {
     vi.spyOn(voice, 'setMicGain').mockRejectedValue(new Error('falhou'))
     await setMicGain(1.2)
     expect(useApp.getState().notice?.text).toBe('Não foi possível ajustar o volume do microfone.')
+  })
+})
+
+describe('equalizador automático', () => {
+  it('começa desligado no alvo médio e é aplicado no VoiceClient ao carregar', () => {
+    const on = vi.spyOn(voice, 'setLeveler')
+    const target = vi.spyOn(voice, 'setLevelerTarget')
+    loadAudioPreferences()
+    expect(useApp.getState()).toMatchObject({ voiceLeveler: false, voiceLevelerTarget: 'medium' })
+    expect(on).toHaveBeenLastCalledWith(false)
+    expect(target).toHaveBeenLastCalledWith('medium')
+  })
+
+  it('ligar e trocar o alvo salva, avisa o VoiceClient e volta igual depois de reabrir', () => {
+    const on = vi.spyOn(voice, 'setLeveler').mockImplementation(() => {})
+    const target = vi.spyOn(voice, 'setLevelerTarget').mockImplementation(() => {})
+    setVoiceLeveler(true)
+    setVoiceLevelerTarget('high')
+    expect(useApp.getState()).toMatchObject({ voiceLeveler: true, voiceLevelerTarget: 'high' })
+    expect(saved()).toMatchObject({ leveler: true, levelerTarget: 'high' })
+    expect(on).toHaveBeenLastCalledWith(true)
+    expect(target).toHaveBeenLastCalledWith('high')
+    useApp.setState({ voiceLeveler: false, voiceLevelerTarget: 'medium' })
+    loadAudioPreferences()
+    expect(useApp.getState()).toMatchObject({ voiceLeveler: true, voiceLevelerTarget: 'high' })
+  })
+
+  it('dados ruins voltam ao padrão', () => {
+    vi.spyOn(voice, 'setLeveler').mockImplementation(() => {})
+    storage.setItem('concord:audio', JSON.stringify({ leveler: 'sim', levelerTarget: 'altíssimo' }))
+    loadAudioPreferences()
+    expect(useApp.getState()).toMatchObject({ voiceLeveler: false, voiceLevelerTarget: 'medium' })
+  })
+
+  it('o ganho de cada conta informado pelo VoiceClient vai para a store', () => {
+    voice.onLevelerGains?.({ 'acc-ana': 1.4 })
+    expect(useApp.getState().levelerGains).toEqual({ 'acc-ana': 1.4 })
+    voice.onLevelerGains?.({})
+    expect(useApp.getState().levelerGains).toEqual({})
   })
 })

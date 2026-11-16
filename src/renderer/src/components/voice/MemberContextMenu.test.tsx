@@ -120,3 +120,23 @@ describe('na barra lateral', () => {
     expect(screen.getAllByLabelText('Silenciado por você').length).toBeGreaterThan(0)
   })
 })
+
+describe('equalizador automático no menu', () => {
+  it('ligado: mostra quanto está aumentando ou abaixando a pessoa', () => {
+    useApp.setState({ voiceLeveler: true, levelerGains: { 'acc-ana': 1.4 } })
+    render(<VoiceGrid members={members()} />)
+    const menu = openMenuOn(screen.getByText('Ana'))
+    expect(within(menu).getByText('Equalizador: +40%')).toBeTruthy()
+    act(() => useApp.setState({ levelerGains: { 'acc-ana': 0.75 } }))
+    expect(within(menu).getByText('Equalizador: −25%')).toBeTruthy()
+    act(() => useApp.setState({ levelerGains: {} }))
+    expect(within(menu).getByText('Equalizador: sem ajuste')).toBeTruthy()
+  })
+
+  it('desligado: não mostra nada', () => {
+    useApp.setState({ levelerGains: { 'acc-ana': 1.4 } })
+    render(<VoiceGrid members={members()} />)
+    const menu = openMenuOn(screen.getByText('Ana'))
+    expect(within(menu).queryByText(/Equalizador/)).toBeNull()
+  })
+})

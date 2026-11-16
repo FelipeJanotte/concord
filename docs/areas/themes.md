@@ -9,10 +9,10 @@ os tokens de cada parte da tela são **derivados** dela no app (`deriveTokens`, 
 | Arquivo | Papel |
 |---|---|
 | `src/shared/types/theme.ts` | Contrato: `ThemeConfig`, `SavedTheme`, `DEFAULT_THEME` (o visual de hoje), limites e as funções puras `validateTheme`, `cleanThemeName`, `encodeThemeCode`/`decodeThemeCode`. |
-| `src/shared/types/preferences.ts` | `Preferences { theme, savedThemes }`, `PreferencesUpdate`, eventos `preferences:*`. |
+| `src/shared/types/preferences.ts` | `Preferences { theme, savedThemes, mutedChannels }` (canais silenciados: `docs/areas/notifications.md`), `PreferencesUpdate`, eventos `preferences:*`. |
 | `server/modules/preferences.ts` | `preferences:get`, `preferences:update` (valida tudo com o contrato; avisa as outras janelas da mesma conta). |
 | `server/repo/preferences.ts` | `getPreferences` (sem registro → padrão) e `updatePreferences` (grava só o que veio; cria na primeira vez). |
-| `server/db/schema/preferences.ts` | Tabela `account_preferences` (migration `0004_preferences`): `theme` e `saved_themes` em jsonb; apagar a conta apaga junto. |
+| `server/db/schema/preferences.ts` | Tabela `account_preferences` (migration `0004_preferences`): `theme` e `saved_themes` em jsonb (`muted_channels` na `0013_muted_channels`); apagar a conta apaga junto. |
 
 ## Contrato
 
@@ -36,8 +36,8 @@ ThemeConfig = {
 
 | Evento | Payload | Resposta | Regras |
 |---|---|---|---|
-| `preferences:get` | — | `Preferences` | sem nada salvo: `DEFAULT_THEME` e `[]` |
-| `preferences:update` | `{ theme?, savedThemes? }` | `PreferencesResult` | exige `hello`; tema inválido → "Tema inválido"; lista inválida (mais de 10, id repetido/não-uuid, nome vazio, tema inválido) → erro; vazio → "Nada para mudar"; limite `LIMITS.preferences` (20 seguidas, depois 1/s, por conta) |
+| `preferences:get` | — | `Preferences` | sem nada salvo: `DEFAULT_THEME`, `[]` e `[]` |
+| `preferences:update` | `{ theme?, savedThemes?, mutedChannels? }` | `PreferencesResult` | exige `hello`; tema inválido → "Tema inválido"; lista inválida (mais de 10, id repetido/não-uuid, nome vazio, tema inválido) → erro; `mutedChannels` (lista inteira) que não é lista de uuids ou passa de 500 → "Canais silenciados inválidos (até 500)"; vazio → "Nada para mudar"; limite `LIMITS.preferences` (20 seguidas, depois 1/s, por conta) |
 | `preferences:updated` (servidor → app) | `Preferences` | — | para as **outras** conexões da mesma conta (a janela que mudou recebe pelo ack) |
 
 ## Motor no app (B11)

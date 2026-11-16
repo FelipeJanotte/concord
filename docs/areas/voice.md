@@ -216,6 +216,46 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
   "Assistir", usa "Ver grade", entra e sai da tela cheia (botão,
   duplo clique, Esc) e o "ao vivo" some ao parar.
 
+## Prévia do "ao vivo"
+
+Passar o mouse no "Ao vivo" de alguém na barra de canais mostra uma **miniatura da tela**, sem entrar na sala (nem
+no LiveKit). Por que miniatura e não vídeo: ADR `docs/decisions/0004-previa-do-ao-vivo-por-miniatura.md`.
+
+```
+quem compartilha: sharing vira true ─► 1 s depois e a cada SCREEN_PREVIEW_INTERVAL_MS (5 s)
+  snapshotScreen(faixa da própria tela) ─► JPEG de até 480 px de largura ─► emit('voice:preview', dataUrl)
+servidor: guarda só a última miniatura de cada conexão (memória)
+quem passa o mouse: LivePreview (HoverCard) ─► fetchScreenPreview(userId) ─► voice:preview-get ─► { ok, image }
+  e de novo a cada 5 s enquanto o cartão está aberto
+```
+
+- **Contrato** (`shared/types/voice.ts`): `voice:preview (image)`, `voice:preview-get (userId, ack)` →
+  `ScreenPreviewResult` = `{ ok: true, image: string | null }` (`null` = ainda não chegou) ou `{ ok: false, error }`.
+  Constantes `SCREEN_PREVIEW_PREFIX` (`data:image/jpeg;base64,`), `SCREEN_PREVIEW_MAX_CHARS` (200 000),
+  `SCREEN_PREVIEW_WIDTH` (480) e `SCREEN_PREVIEW_INTERVAL_MS` (5000).
+- **Servidor** (`server/modules/voice.ts`, mapa `screenPreviews`): `voice:preview` só vale para quem está numa sala
+  **compartilhando**, com o prefixo certo e até o tamanho máximo; o resto é ignorado em silêncio. A miniatura some ao
+  parar de compartilhar, sair, trocar ou entrar de novo na sala, perder `share` e apagar o canal.
+  `voice:preview-get` exige `view` **e** `connect` na sala de quem compartilha (numa DM: ser membro e sem bloqueio,
+  via `allowed`); qualquer recusa (conexão inexistente, sem tela, sem permissão, id inválido) responde
+  "Prévia indisponível", sem revelar o motivo.
+- **Limites** (`LIMITS`): `screenPreview` por conexão (3 seguidas, depois 1 a cada 4 s; excesso é ignorado) e
+  `screenPreviewGet` por conta (10 seguidas, depois 1/s; excesso responde "Muitos pedidos de prévia. Tente de novo em N s.").
+- **App:** `lib/actions/screen-preview.ts` liga/desliga o envio observando `store.sharing` (`useApp.subscribe`), então
+  vale para todo caminho que para a tela (botão, sistema, sair, perder `share`). A faixa vem de
+  `voice.screenMediaTrack(selfId)`; `lib/screen-snapshot.ts` desenha um quadro num `<canvas>` por um `<video>`
+  temporário (`previewSize` mantém a proporção). Imagem maior que o limite não é enviada.
+- **Tela:** `components/voice/LivePreview.tsx` troca o `LiveBadge` do `VoiceMember` na `ChannelSidebar` por um
+  `HoverCard` (abre em 250 ms, à direita) com o título "Tela de Ana", a imagem ou "Carregando prévia...",
+  "A prévia aparece em instantes." / o erro.
+- **Testes:** `server/tests/screen-preview.test.ts` (enviar e buscar de fora da sala, inválidas, limpeza ao parar e
+  sair, sem `view`/sem `connect`), `lib/actions/screen-preview.test.ts` (intervalo, parar sem timer pendente, sem
+  faixa/sem imagem, `fetchScreenPreview`), `lib/screen-snapshot.test.ts` (`previewSize`) e
+  `components/voice/LivePreview.test.tsx` (passar o mouse mostra a imagem sem `voice:join`, sem imagem, recusa).
+  À mão: duas janelas, uma compartilha numa sala, a outra fica fora e passa o mouse no "Ao vivo".
+- **Limites conhecidos:** a miniatura atrasa até 5 s; não tem áudio; o `snapshotScreen` (canvas/vídeo) não roda no
+  jsdom e não tem teste automatizado.
+
 ## Câmera na sala de voz (B21)
 
 Cada um liga a própria câmera na sala; o vídeo ocupa o quadro da pessoa na grade (no lugar da foto). A tela
@@ -265,11 +305,12 @@ duas barras laterais), como no Discord:
   Configurações de voz e Desconectar;
 - linha de baixo: **Câmera** (só com `voiceCanVideo`), **Compartilhar a tela** (só com `voiceCanShare`) e **Efeitos
   sonoros**, verdes quando ligados (`aria-pressed`). Microfone e áudio ficam nos botões do `UserPanel`.
-- **O `ScreenPicker` e o `Soundboard` ficam montados uma vez só, no `UserPanel`** (junto das Configurações, `UserSettingsDialog`), e não
+- **O `ScreenPicker` fica montado uma vez só, no `UserPanel`** (junto das Configurações, `UserSettingsDialog`), e não
   mais dentro da `VoiceView`/`CallPanel`: antes, fora da sala o `toggleScreenShare` abria `screenPickerOpen` sem
-  nenhum seletor na tela. Não monte de novo em outra tela (abriria duas janelas).
+  nenhum seletor na tela. Não monte de novo em outra tela (abriria duas janelas). Os efeitos sonoros são um popup
+  ancorado em cada botão (`SoundboardPopover`, veja `docs/areas/sounds.md`), sem nada montado no `UserPanel`.
 - **Testes:** `components/voice-panel.test.tsx` (botões, permissões, câmera, seletor de tela e sons abrindo do painel,
-  parar de compartilhar). Testes que abrem essas janelas a partir da sala ou da chamada montam o `<Soundboard />` junto.
+  parar de compartilhar).
 
 ## Dispositivos, volume e menu de botão direito (B4)
 
@@ -313,7 +354,7 @@ duas barras laterais), como no Discord:
 - **Silenciar alguém:** também por conta. O volume aplicado vira 0, mas o valor ajustado continua em `userVolumes`;
   ao tirar o silêncio, volta ao que era. Mexer no volume enquanto silenciado só guarda o valor. Não afeta os outros:
   é só no meu app (para silenciar para todos, B6 "silenciar pelo servidor").
-- **Preferências desta máquina:** `localStorage` `concord:audio` = `{ input, output, camera, volumes, muted, sounds, noise, micGain, outputVolume }`, lido ao carregar o
+- **Preferências desta máquina:** `localStorage` `concord:audio` = `{ input, output, camera, volumes, muted, sounds, noise, micGain, outputVolume, leveler, levelerTarget, soundboardVolume }`, lido ao carregar o
   app (`loadAudioPreferences`) e de novo depois do `disconnect()` (sair da conta não apaga). Dados inválidos ou
   armazenamento bloqueado: volta aos padrões sem quebrar.
 - **Lista:** `Room.getLocalDevices(kind, false)` (não pede permissão só para listar). Os apelidos do Windows
@@ -356,6 +397,50 @@ Dois controles em Configurações de voz (`VolumeSettings` em `settings/VoiceSet
   (controles, "Voltar para 100%", "Testar" com o volume de saída), `sounds.test.ts` e `voice-sounds.test.ts`.
   À mão: numa sala com outra janela, subir o microfone para 200% e baixar para 0% (o outro ouve mudar na hora, com e
   sem a supressão de ruído); baixar a saída e conferir voz, tela e efeitos sonoros.
+
+## Equalizador automático de vozes
+
+Opcional (desligado por padrão), em Configurações → Voz e vídeo. Mede a voz de cada pessoa da sala e aumenta quem
+está baixo ou abaixa quem está alto, para todos ficarem no mesmo volume. **Só cliente e só para quem ouve:** cada um
+liga e escolhe o alvo para si; nenhum evento novo; o áudio enviado não muda. Por que no ouvinte e com Web Audio
+própria: `docs/decisions/0004-equalizador-no-ouvinte.md`.
+
+| Peça | Papel |
+|---|---|
+| `lib/leveler/level.ts` | Puras: `rmsDb` (nível do bloco em dBFS), `nextGain` (próximo ganho rumo ao alvo), `LEVELER_TARGETS` (`low` -30, `medium` -24, `high` -18 dBFS), `clampLevelerTarget`, limites `LEVELER_GAIN_MIN` 0,25 e `LEVELER_GAIN_MAX` 3, piso de fala `SPEECH_FLOOR_DB` -50. |
+| `lib/leveler/leveler.ts` | `VoiceLeveler`: um `AudioContext` para todas as vozes; por voz `MediaStreamSource → Analyser → Gain → destination`; laço de 100 ms que mede e ajusta; `setVolume` (o volume pedido pelo app), `setTarget`, `setOutput` (`setSinkId`), `onGainsChange` e `destroy`. |
+| `lib/voice.ts` | `setLeveler(bool)`, `setLevelerTarget`, `onLevelerGains`. Com ele ligado, o microfone de cada pessoa (`Track.Source.Microphone` com `accountId`) vai para o `VoiceLeveler`; o áudio da tela continua no caminho normal. |
+| `lib/actions/devices.ts` + `store/devices.ts` | `voiceLeveler` (padrão `false`), `voiceLevelerTarget` (padrão `medium`), `levelerGains` (só em memória); `setVoiceLeveler`, `setVoiceLevelerTarget`; salvos em `concord:audio` como `leveler` e `levelerTarget`. |
+| `components/settings/VoiceSettings.tsx` | Seção "Equalizador automático": interruptor e "Volume-alvo" (Baixo/Médio/Alto, bloqueado com ele desligado). |
+| `components/voice/MemberContextMenu.tsx` | Com ele ligado, "Equalizador: +40%", "−25%" ou "sem ajuste" abaixo do volume da pessoa. |
+
+**Fluxo:**
+
+```
+elemento <audio> do LiveKit (mudo: só faz o Chrome entregar o áudio WebRTC)
+faixa ─► MediaStreamSource ─► Analyser (mede) ─► Gain (automático × volume pedido) ─► destination
+volume pedido = deafen ? 0 : silenciado ? 0 : volume da pessoa × volume de saída
+```
+
+- **Regras do ajuste:** só mede com fala (bloco acima de -50 dBFS); silêncio e ruído de fundo não sobem o ganho.
+  Abaixa em cerca de 1 s e sobe em cerca de 3 s (abaixar rápido evita susto; subir devagar evita "bombear" o
+  ruído). Ganho de 0,25 a 3 (−75% a +200%). Cada mudança aplicada com `setTargetAtTime` (sem estalo). O ganho é
+  medido antes do volume da pessoa: baixar alguém no botão direito continua valendo por cima do equalizador.
+- **Ligar/desligar dentro da sala** troca na hora as faixas de caminho; ao desligar, o elemento volta a tocar com
+  `setVolume` como antes. Sair da sala desmonta o `VoiceLeveler` (fecha o `AudioContext`); a próxima sala cria outro.
+- **Deafen** no caminho do equalizador zera o ganho (o elemento já está mudo). **Saída escolhida** (B4) vai para o
+  `AudioContext.setSinkId`, como no `ChimePlayer`.
+- **Aviso do ganho:** `onGainsChange` só dispara quando o ganho arredondado (passos de 5%) muda; contas em 100% não
+  aparecem no mapa.
+- **Testes:** `lib/leveler/level.test.ts` (nível, convergência, piso, limites, abaixa mais rápido do que sobe),
+  `lib/leveler/leveler.test.ts` (nós ligados, voz baixa sobe e alta desce, volume pedido, deafen, remover, saída,
+  destroy), `lib/voice.test.ts` (bloco "equalizador automático": caminhos, tela de fora, deafen, alternar na sala,
+  sair, alvo/saída, ganho repassado), `lib/actions/devices.test.ts`, `VoiceSettings.test.tsx` e
+  `MemberContextMenu.test.tsx`. À mão: 2–3 contas numa sala, uma falando baixo e outra alto; ligar o equalizador e
+  conferir o ganho no botão direito e o volume igualando; deafen silencia; trocar a saída; desligar volta ao normal.
+- **Problemas conhecidos:** quem fica muito tempo em silêncio mantém o último ganho (de propósito: não sobe ruído).
+  Microfone com muito ruído constante acima de -50 dBFS pode ser tratado como fala; a supressão de ruído de quem fala
+  (B13) resolve. Log `[equalizador] saída indisponível` = a saída escolhida não deu, tocando na padrão.
 
 ## Sons de entrar e sair da sala (B16)
 
@@ -517,3 +602,6 @@ frente, segurar a tecla e conferir na outra janela que ela ouve e vê o "falando
     `outbound-rtp` de áudio está com 1 canal e o SDP sem `stereo=1`. Com 2 canais, o microfone saiu do caminho
     mono (`MIC_PUBLISH` e `forceMono`, seção "Supressão de ruído automática"). Picote com 1 canal = rede: veja
     `packetsLost` e `jitter` no `inbound-rtp` de quem ouve.
+13. Equalizador ligado e alguém continua baixo: o ganho para em 300% (veja "Equalizador: +200%" no botão direito);
+    o microfone da pessoa está baixo demais e ela precisa subir o "Volume do microfone". "sem ajuste" o tempo todo:
+    a pessoa ainda não falou acima do piso de fala ou o equalizador não entrou (veja `[equalizador]` no console).
