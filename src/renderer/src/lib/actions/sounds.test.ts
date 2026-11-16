@@ -8,8 +8,8 @@ import {
   checkSoundFile,
   deleteSound,
   loadSounds,
-  openSoundboard,
   playSound,
+  refreshSounds,
   soundNameFromFile,
   soundOutput,
   soundTransport,
@@ -66,10 +66,9 @@ describe('coleção', () => {
     expect(useApp.getState().sounds.map((s) => s.id)).toEqual(['s2', 's3'])
   })
 
-  it('abrir a janela busca a coleção de novo (links novos)', async () => {
+  it('refreshSounds busca a coleção de novo (links novos)', async () => {
     socket.replyTo('sound:list', () => [aplausos])
-    openSoundboard()
-    expect(useApp.getState().soundboardOpen).toBe(true)
+    refreshSounds()
     await vi.waitFor(() => expect(useApp.getState().sounds).toEqual([aplausos]))
   })
 })
@@ -89,6 +88,12 @@ describe('sound:played', () => {
     useApp.setState({ myVoiceChannelId: 'sala', userVolumes: { 'acc-ana': 0.5 }, outputVolume: 0.5 })
     socket.receive('sound:played', played)
     expect(play).toHaveBeenCalledWith(expect.any(String), { volume: 0.25, outputId: null })
+  })
+
+  it('o volume dos efeitos sonoros multiplica o volume da pessoa e o de saída', () => {
+    useApp.setState({ myVoiceChannelId: 'sala', userVolumes: { 'acc-ana': 0.5 }, outputVolume: 0.5, soundboardVolume: 0.4 })
+    socket.receive('sound:played', played)
+    expect(play).toHaveBeenCalledWith(expect.any(String), { volume: 0.1, outputId: null })
   })
 
   it('indicador de quem tocou (pelo nome, não pelo id da conexão) até o som acabar', () => {

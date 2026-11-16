@@ -38,6 +38,7 @@ interface SavedAudio {
   outputVolume: number
   leveler: boolean
   levelerTarget: LevelerTarget
+  soundboardVolume: number
 }
 
 function readSaved(): SavedAudio {
@@ -52,7 +53,8 @@ function readSaved(): SavedAudio {
     micGain: 1,
     outputVolume: 1,
     leveler: false,
-    levelerTarget: 'medium'
+    levelerTarget: 'medium',
+    soundboardVolume: 1
   }
   try {
     const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null
@@ -79,7 +81,8 @@ function readSaved(): SavedAudio {
       micGain: clampMicGain(data.micGain),
       outputVolume: clampOutputVolume(data.outputVolume),
       leveler: data.leveler === true,
-      levelerTarget: clampLevelerTarget(data.levelerTarget)
+      levelerTarget: clampLevelerTarget(data.levelerTarget),
+      soundboardVolume: clampOutputVolume(data.soundboardVolume)
     }
   } catch {
     return empty
@@ -99,7 +102,8 @@ function save(): void {
     micGain,
     outputVolume,
     voiceLeveler,
-    voiceLevelerTarget
+    voiceLevelerTarget,
+    soundboardVolume
   } = get()
   try {
     localStorage.setItem(
@@ -115,7 +119,8 @@ function save(): void {
         micGain,
         outputVolume,
         leveler: voiceLeveler,
-        levelerTarget: voiceLevelerTarget
+        levelerTarget: voiceLevelerTarget,
+        soundboardVolume
       })
     )
   } catch {
@@ -140,7 +145,8 @@ export function loadAudioPreferences(): void {
     micGain: saved.micGain,
     outputVolume: saved.outputVolume,
     voiceLeveler: saved.leveler,
-    voiceLevelerTarget: saved.levelerTarget
+    voiceLevelerTarget: saved.levelerTarget,
+    soundboardVolume: saved.soundboardVolume
   })
   voice.setLevelerTarget(saved.levelerTarget)
   voice.setLeveler(saved.leveler)
@@ -257,6 +263,11 @@ export function setOutputVolume(volume: number): void {
   set({ outputVolume: v })
   save()
   voice.setOutputVolume(v)
+}
+
+export function setSoundboardVolume(volume: number): void {
+  set({ soundboardVolume: clampOutputVolume(volume) })
+  save()
 }
 
 /** Liga/desliga e ajusta o volume dos sons de entrar/sair da sala (B16). */

@@ -92,6 +92,13 @@
       "when": 1794764733026,
       "tag": "0012_server_mutes",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1794786253871,
+      "tag": "0013_muted_channels",
+      "breakpoints": true
     }
   ]
 }

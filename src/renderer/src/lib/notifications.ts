@@ -10,7 +10,7 @@ import type { AppState } from '@/store'
 import { findDm } from './dms'
 import { homeBadge } from './home'
 
-type St = Pick<AppState, 'self' | 'dms' | 'friends' | 'unread' | 'calls'> & Partial<Pick<AppState, 'channels' | 'channelNotifications'>>
+type St = Pick<AppState, 'self' | 'dms' | 'friends' | 'unread' | 'calls'> & Partial<Pick<AppState, 'channels' | 'channelNotifications' | 'mutedChannels'>>
 
 /** Texto curto da mensagem para a notificação (anexo sem texto vira "📎 1 anexo"). */
 export function messagePreview(message: Message): string {
@@ -28,7 +28,7 @@ export function messagePreview(message: Message): string {
  * @todos, B19) ou nada. O que não notifica fica só na bolinha de não lido.
  */
 export function messageNotification(message: Message, st: St, focused: boolean): NativeNotification | null {
-  if (focused || !st.self || message.author.accountId === st.self.accountId) return null
+  if (focused || !st.self || message.author.accountId === st.self.accountId || st.mutedChannels?.includes(message.channelId)) return null
   const dm = findDm(st.dms, message.channelId)
   if (dm) return { title: dm.other.name, body: messagePreview(message), target: { kind: 'dm', channelId: dm.channel.id } }
   const mode = st.channelNotifications ?? 'all'

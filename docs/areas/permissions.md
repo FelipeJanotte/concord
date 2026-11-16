@@ -99,6 +99,7 @@ dar só isso, sem silenciar/expulsar da voz.
 | `message:send` | `send`; com anexos, também `attach`; `message:new` só para quem tem `view` |
 | `typing` | `send`; vai só para quem tem `view` (menos quem digita) |
 | `voice:join` | sem `view` → "Canal de voz não encontrado" (não revela sala privada); sem `connect` → "Você não tem permissão para entrar nesta sala"; ok devolve `canSpeak`/`canShare` |
+| `voice:preview-get` | sem `view` ou sem `connect` na sala de quem compartilha → "Prévia indisponível" (mesma resposta de conexão inexistente; não revela sala privada) |
 | `voice:update` | sem `speak` continua `muted: true` (não dá para se dessilenciar) |
 | `voice:state` | cada conexão recebe só as salas que pode ver (`voiceStatesFor`) |
 | `moderation:voice-kick` / `moderation:voice-mute` | `canModerate`: `manageMembers` e cargo acima do alvo (nunca a dona nem a si mesmo); sala que não vê = "não está numa sala" (`docs/areas/moderation.md`) |

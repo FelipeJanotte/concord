@@ -8,6 +8,7 @@ import {
   loadPreferences,
   previewTheme,
   saveThemes,
+  setChannelMuted,
   setTheme,
   THEME_SAVE_DELAY_MS
 } from '@/lib/actions/preferences'
@@ -19,7 +20,7 @@ import { FakeSocket } from '@/test/fake-socket'
 const ocean: ThemeConfig = { base: 'escuro', accent: '#38bdf8', background: { stops: ['#0c2a4a', '#1fa2b8'], angle: 180 }, intensity: 70 }
 const forest: ThemeConfig = { base: 'escuro', accent: '#7bc96f', background: { stops: ['#1b3022'], angle: 90 }, intensity: 40 }
 const saved: SavedTheme = { id: '11111111-1111-4111-8111-111111111111', name: 'Meu', theme: ocean }
-const prefs = (theme: ThemeConfig, savedThemes: SavedTheme[] = []): Preferences => ({ theme, savedThemes })
+const prefs = (theme: ThemeConfig, savedThemes: SavedTheme[] = [], mutedChannels: string[] = []): Preferences => ({ theme, savedThemes, mutedChannels })
 const primary = (): string => document.documentElement.style.getPropertyValue('--primary')
 
 let socket: FakeSocket
@@ -77,8 +78,9 @@ describe('trocar o tema', () => {
     vi.useFakeTimers()
     socket.replyTo('preferences:update', () => ({ ok: true, preferences: prefs(forest) }))
     setTheme(forest)
-    socket.receive('preferences:updated', prefs(ocean))
+    socket.receive('preferences:updated', prefs(ocean, [], ['geral']))
     expect(useApp.getState().theme).toEqual(forest)
+    expect(useApp.getState().mutedChannels).toEqual(['geral'])
   })
 
   it('tema inválido: erro, nada muda', () => {
@@ -91,6 +93,45 @@ describe('trocar o tema', () => {
     setTheme(ocean)
     await flushPendingTheme()
     expect(useApp.getState().notice?.text).toContain('Muitas mudanças seguidas')
+  })
+})
+
+describe('silenciar canal', () => {
+  it('loadPreferences e preferences:updated trazem os canais silenciados', async () => {
+    socket.replyTo('preferences:get', () => prefs(DEFAULT_THEME, [], ['geral']))
+    await loadPreferences()
+    expect(useApp.getState().mutedChannels).toEqual(['geral'])
+    useApp.setState({ unread: { sala: true, outro: true } })
+    socket.receive('preferences:updated', prefs(DEFAULT_THEME, [], ['geral', 'sala']))
+    expect(useApp.getState().mutedChannels).toEqual(['geral', 'sala'])
+    expect(useApp.getState().unread).toEqual({ outro: true })
+  })
+
+  it('silenciar muda na hora, tira o não lido e envia a lista inteira; reativar tira da lista', async () => {
+    socket.replyTo('preferences:update', (u) => ({ ok: true, preferences: prefs(DEFAULT_THEME, [], (u as { mutedChannels: string[] }).mutedChannels) }))
+    useApp.setState({ mutedChannels: ['sala'], unread: { geral: true, outro: true } })
+    const done = setChannelMuted('geral', true)
+    expect(useApp.getState().mutedChannels).toEqual(['sala', 'geral'])
+    expect(useApp.getState().unread).toEqual({ outro: true })
+    await done
+    expect(socket.sent('preferences:update').map((a) => a[0])).toEqual([{ mutedChannels: ['sala', 'geral'] }])
+
+    await setChannelMuted('sala', false)
+    expect(useApp.getState().mutedChannels).toEqual(['geral'])
+    expect(socket.sent('preferences:update').at(-1)?.[0]).toEqual({ mutedChannels: ['geral'] })
+  })
+
+  it('silenciar o que já está silenciado não envia nada', async () => {
+    useApp.setState({ mutedChannels: ['geral'] })
+    await setChannelMuted('geral', true)
+    expect(socket.sent('preferences:update')).toEqual([])
+  })
+
+  it('servidor recusou: volta como estava e avisa', async () => {
+    socket.replyTo('preferences:update', () => ({ ok: false, error: 'Muitas alterações seguidas' }))
+    await setChannelMuted('geral', true)
+    expect(useApp.getState().mutedChannels).toEqual([])
+    expect(useApp.getState().notice?.text).toContain('Muitas alterações seguidas')
   })
 })
 

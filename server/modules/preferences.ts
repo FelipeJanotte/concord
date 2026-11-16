@@ -6,6 +6,7 @@
  */
 import {
   cleanThemeName,
+  MUTED_CHANNELS_MAX,
   SAVED_THEMES_MAX,
   validateTheme,
   type PreferencesUpdate,
@@ -30,6 +31,13 @@ function cleanSavedThemes(raw: unknown): SavedTheme[] | null {
     out.push({ id: entry.id, name, theme })
   }
   return out
+}
+
+function cleanMutedChannels(raw: unknown): string[] | null {
+  if (!Array.isArray(raw)) return null
+  const unique = [...new Set(raw)]
+  if (unique.length > MUTED_CHANNELS_MAX || !unique.every(isUuid)) return null
+  return unique
 }
 
 export const preferencesModule: ServerModule = {
@@ -57,7 +65,12 @@ export const preferencesModule: ServerModule = {
           if (!saved) return ack({ ok: false, error: `Temas salvos inválidos (até ${SAVED_THEMES_MAX}, cada um com nome e tema válidos)` })
           update.savedThemes = saved
         }
-        if (update.theme === undefined && update.savedThemes === undefined) return ack({ ok: false, error: 'Nada para mudar' })
+        if (payload?.mutedChannels !== undefined) {
+          const muted = cleanMutedChannels(payload.mutedChannels)
+          if (!muted) return ack({ ok: false, error: `Canais silenciados inválidos (até ${MUTED_CHANNELS_MAX})` })
+          update.mutedChannels = muted
+        }
+        if (Object.keys(update).length === 0) return ack({ ok: false, error: 'Nada para mudar' })
         const limited = limiters.preferences.take(user.accountId)
         if (!limited.ok) return ack({ ok: false, error: `Muitas alterações seguidas. ${retryText(limited.retryAfterMs)}` })
 

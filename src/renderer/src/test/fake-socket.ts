@@ -37,6 +37,17 @@ export class FakeSocket {
     return this
   }
 
+  timeout(ms: number): { emitWithAck: (event: string, ...args: unknown[]) => Promise<unknown> } {
+    return {
+      emitWithAck: (event, ...args) => {
+        const reply = this.replies.get(event)
+        if (reply) return this.emitWithAck(event, ...args)
+        this.emitted.push({ event, args })
+        return new Promise((_, reject) => setTimeout(() => reject(new Error('operation has timed out')), ms))
+      }
+    }
+  }
+
   async emitWithAck(event: string, ...args: unknown[]): Promise<unknown> {
     this.emitted.push({ event, args })
     const reply = this.replies.get(event)

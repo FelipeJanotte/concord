@@ -16,7 +16,6 @@ import {
   joinVoice,
   notify,
   openDeviceSettings,
-  openSoundboard,
   toggleDeafen,
   toggleMute,
   toggleScreenShare
@@ -26,7 +25,7 @@ import { useApp } from '@/store'
 import { UserAvatar } from '../UserAvatar'
 import { ControlButton } from '../VoiceView'
 import { PushToTalkHint } from '../voice/PushToTalk'
-import { SoundsPlayingBar } from '../voice/Soundboard'
+import { SoundboardPopover, SoundsPlayingBar } from '../voice/Soundboard'
 import { VoiceGrid } from '../voice/VoiceGrid'
 
 /**
@@ -132,9 +131,11 @@ function InCallControls({ onHangUp }: { onHangUp: () => void }) {
         </ControlButton>
       )}
       {/* efeitos sonoros da comunidade também na chamada (só a outra pessoa ouve) */}
-      <ControlButton label="Efeitos sonoros" onClick={openSoundboard}>
-        <Music />
-      </ControlButton>
+      <SoundboardPopover>
+        <ControlButton label="Efeitos sonoros">
+          <Music />
+        </ControlButton>
+      </SoundboardPopover>
       <ControlButton label="Configurações de voz" onClick={openDeviceSettings}>
         <AudioLines />
       </ControlButton>
