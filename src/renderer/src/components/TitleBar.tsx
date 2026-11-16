@@ -12,6 +12,7 @@ export function TitleBar() {
 
   return (
     <header
+      data-glass="titlebar"
       className={cn(
         'relative z-[60] flex h-8 shrink-0 items-center bg-rail select-none [-webkit-app-region:drag]',
         bridge.buttons ? 'pl-3' : 'pl-[76px]'

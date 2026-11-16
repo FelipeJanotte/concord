@@ -91,6 +91,14 @@ describe('vidro no motor', () => {
 
   it('temas prontos translúcidos existem (escuro e claro)', () => {
     const glass = THEME_PRESETS.filter((p) => p.theme.translucent)
-    expect(glass.map((p) => p.theme.base).sort()).toEqual(['claro', 'escuro'])
+    expect(new Set(glass.map((p) => p.theme.base))).toEqual(new Set(['claro', 'escuro']))
+  })
+
+  it('"Vidro aurora": translúcido escuro com gradiente de roxo e verde', () => {
+    const aurora = THEME_PRESETS.find((p) => p.id === 'vidro-aurora')!
+    expect(aurora.name).toBe('Vidro aurora')
+    expect(aurora.theme.translucent).toBe(true)
+    expect(aurora.theme.base).toBe('escuro')
+    expect(aurora.theme.background.stops.length).toBeGreaterThanOrEqual(2)
   })
 })

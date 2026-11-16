@@ -66,6 +66,11 @@ export const THEME_PRESETS: ThemePreset[] = [
     theme: { base: 'escuro', accent: '#7aa2ff', background: { stops: ['#1b2440', '#3b2f63'], angle: 150 }, intensity: 45, translucent: true }
   },
   {
+    id: 'vidro-aurora',
+    name: 'Vidro aurora',
+    theme: { base: 'escuro', accent: '#b197fc', background: { stops: ['#4c2a85', '#1f6f5c', '#6741d9'], angle: 140 }, intensity: 80, translucent: true }
+  },
+  {
     id: 'vidro-claro',
     name: 'Vidro claro',
     theme: { base: 'claro', accent: '#2f6feb', background: { stops: ['#dbeafe', '#ede9fe'], angle: 150 }, intensity: 45, translucent: true }
