@@ -19,7 +19,7 @@ function screenLabel(userId: string, selfId: string | undefined, name: string | 
   return userId === selfId ? 'Sua tela' : `Tela de ${name ?? 'Alguém'}`
 }
 
-function useScreenLabel(userId: string): string {
+export function useScreenLabel(userId: string): string {
   const name = useApp((s) => s.users.find((u) => u.id === userId)?.name)
   const selfId = useApp((s) => s.self?.id)
   return screenLabel(userId, selfId, name)

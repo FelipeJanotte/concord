@@ -90,6 +90,8 @@ export const LIMITS = {
   moderation: { capacity: 20, perSecond: 1 },
   /** ligar para alguém (B8): 5 seguidas, depois 1 a cada 10 s (cada ligação toca na tela da outra pessoa) */
   call: { capacity: 5, perSecond: 1 / 10 },
+  screenPreview: { capacity: 3, perSecond: 1 / 4 },
+  screenPreviewGet: { capacity: 10, perSecond: 1 },
   /** "digitando" por conexão (o app já manda no máximo 1 a cada 2,5 s) */
   typing: { capacity: 5, perSecond: 1 / 2 },
   /** cadastros por IP: 5 seguidos, depois 1 a cada 10 min */

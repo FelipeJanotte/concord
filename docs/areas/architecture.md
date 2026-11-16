@@ -119,6 +119,8 @@ Cliente → servidor (`ClientToServerEvents`):
 | `voice:leave` | — | — | tira da sala no LiveKit (`RemoveParticipant`) + `voice:state` |
 | `voice:update` | `{ muted, deafened }` | — | `voice:state` |
 | `voice:sharing` | `boolean` | — | liga/desliga o "ao vivo" (só para quem está numa sala); `voice:state` |
+| `voice:preview` | `string` (JPEG em data URL) | — | miniatura da própria tela, só compartilhando; o servidor guarda a última (limite `screenPreview`) — `docs/areas/voice.md` |
+| `voice:preview-get` | `userId` | `ScreenPreviewResult` | prévia do "ao vivo" sem entrar na sala; exige `view` + `connect` na sala de quem compartilha (limite `screenPreviewGet`) — `docs/areas/voice.md` |
 | `typing` | `channelId` | — | broadcast `typing` (o cliente limita a 1 envio a cada 2,5 s) |
 | `moderation:voice-move` | `{ userId, channelId }` | `OkResult` | mesma regra do expulsar + sala de voz que quem move vê e em que a pessoa pode entrar; `moderation:moved` só para a conexão movida, que troca de sala pelo `voice:join` — `docs/areas/moderation.md` |
 | `moderation:voice-kick` | `{ userId }` | `OkResult` | `manageMembers` + cargo acima (`canModerate`); `moderation:kicked` para a conexão expulsa, tira da sala (também no LiveKit) + `voice:state` — `docs/areas/moderation.md` |

@@ -216,6 +216,46 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
   "Assistir", usa "Ver grade", entra e sai da tela cheia (botão,
   duplo clique, Esc) e o "ao vivo" some ao parar.
 
+## Prévia do "ao vivo"
+
+Passar o mouse no "Ao vivo" de alguém na barra de canais mostra uma **miniatura da tela**, sem entrar na sala (nem
+no LiveKit). Por que miniatura e não vídeo: ADR `docs/decisions/0004-previa-do-ao-vivo-por-miniatura.md`.
+
+```
+quem compartilha: sharing vira true ─► 1 s depois e a cada SCREEN_PREVIEW_INTERVAL_MS (5 s)
+  snapshotScreen(faixa da própria tela) ─► JPEG de até 480 px de largura ─► emit('voice:preview', dataUrl)
+servidor: guarda só a última miniatura de cada conexão (memória)
+quem passa o mouse: LivePreview (HoverCard) ─► fetchScreenPreview(userId) ─► voice:preview-get ─► { ok, image }
+  e de novo a cada 5 s enquanto o cartão está aberto
+```
+
+- **Contrato** (`shared/types/voice.ts`): `voice:preview (image)`, `voice:preview-get (userId, ack)` →
+  `ScreenPreviewResult` = `{ ok: true, image: string | null }` (`null` = ainda não chegou) ou `{ ok: false, error }`.
+  Constantes `SCREEN_PREVIEW_PREFIX` (`data:image/jpeg;base64,`), `SCREEN_PREVIEW_MAX_CHARS` (200 000),
+  `SCREEN_PREVIEW_WIDTH` (480) e `SCREEN_PREVIEW_INTERVAL_MS` (5000).
+- **Servidor** (`server/modules/voice.ts`, mapa `screenPreviews`): `voice:preview` só vale para quem está numa sala
+  **compartilhando**, com o prefixo certo e até o tamanho máximo; o resto é ignorado em silêncio. A miniatura some ao
+  parar de compartilhar, sair, trocar ou entrar de novo na sala, perder `share` e apagar o canal.
+  `voice:preview-get` exige `view` **e** `connect` na sala de quem compartilha (numa DM: ser membro e sem bloqueio,
+  via `allowed`); qualquer recusa (conexão inexistente, sem tela, sem permissão, id inválido) responde
+  "Prévia indisponível", sem revelar o motivo.
+- **Limites** (`LIMITS`): `screenPreview` por conexão (3 seguidas, depois 1 a cada 4 s; excesso é ignorado) e
+  `screenPreviewGet` por conta (10 seguidas, depois 1/s; excesso responde "Muitos pedidos de prévia. Tente de novo em N s.").
+- **App:** `lib/actions/screen-preview.ts` liga/desliga o envio observando `store.sharing` (`useApp.subscribe`), então
+  vale para todo caminho que para a tela (botão, sistema, sair, perder `share`). A faixa vem de
+  `voice.screenMediaTrack(selfId)`; `lib/screen-snapshot.ts` desenha um quadro num `<canvas>` por um `<video>`
+  temporário (`previewSize` mantém a proporção). Imagem maior que o limite não é enviada.
+- **Tela:** `components/voice/LivePreview.tsx` troca o `LiveBadge` do `VoiceMember` na `ChannelSidebar` por um
+  `HoverCard` (abre em 250 ms, à direita) com o título "Tela de Ana", a imagem ou "Carregando prévia...",
+  "A prévia aparece em instantes." / o erro.
+- **Testes:** `server/tests/screen-preview.test.ts` (enviar e buscar de fora da sala, inválidas, limpeza ao parar e
+  sair, sem `view`/sem `connect`), `lib/actions/screen-preview.test.ts` (intervalo, parar sem timer pendente, sem
+  faixa/sem imagem, `fetchScreenPreview`), `lib/screen-snapshot.test.ts` (`previewSize`) e
+  `components/voice/LivePreview.test.tsx` (passar o mouse mostra a imagem sem `voice:join`, sem imagem, recusa).
+  À mão: duas janelas, uma compartilha numa sala, a outra fica fora e passa o mouse no "Ao vivo".
+- **Limites conhecidos:** a miniatura atrasa até 5 s; não tem áudio; o `snapshotScreen` (canvas/vídeo) não roda no
+  jsdom e não tem teste automatizado.
+
 ## Câmera na sala de voz (B21)
 
 Cada um liga a própria câmera na sala; o vídeo ocupa o quadro da pessoa na grade (no lugar da foto). A tela
