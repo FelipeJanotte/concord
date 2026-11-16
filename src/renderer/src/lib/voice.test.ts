@@ -618,13 +618,15 @@ describe('silenciar alguém só para mim', () => {
 describe('supressão de ruído automática (B13)', () => {
   let micOpts: ({ noiseSuppression: boolean } | undefined)[]
   let processors: { onMode: (m: 'light' | 'advanced' | 'light-fallback') => void }[]
-  let contexts: number
+  let contexts: { close: ReturnType<typeof vi.fn> }[]
+  let watchdogs: { ctx: unknown; stop: ReturnType<typeof vi.fn> }[]
   let modes: (string | null)[]
 
   function noiseClient(opts: { processorFails?: boolean } = {}): VoiceClient {
     micOpts = []
     processors = []
-    contexts = 0
+    contexts = []
+    watchdogs = []
     modes = []
     const c = new VoiceClient({
       createRoom: () => {
@@ -639,8 +641,14 @@ describe('supressão de ruído automática (B13)', () => {
         return mic as unknown as LocalAudioTrack
       },
       createAudioContext: () => {
-        contexts++
-        return {} as AudioContext
+        const ctx = { close: vi.fn(async () => {}) }
+        contexts.push(ctx)
+        return ctx as unknown as AudioContext
+      },
+      createClockWatchdog: (ctx) => {
+        const w = { ctx, stop: vi.fn() }
+        watchdogs.push(w)
+        return w
       },
       createNoiseProcessor: (onMode) => {
         const p = { onMode }
@@ -671,12 +679,33 @@ describe('supressão de ruído automática (B13)', () => {
     expect(modes).toContain('advanced')
   })
 
-  it('reaproveita o mesmo AudioContext entre salas', async () => {
+  it('cada entrada usa um AudioContext novo e fecha o anterior (sair e entrar recomeça o áudio)', async () => {
     const c = noiseClient()
     await c.join('sala-1')
     await c.join('sala-2')
-    expect(contexts).toBe(1)
+    expect(contexts).toHaveLength(2)
+    expect(contexts[0].close).toHaveBeenCalled()
+    expect(contexts[1].close).not.toHaveBeenCalled()
     expect(processors).toHaveLength(2)
+  })
+
+  it('o relógio do AudioContext fica vigiado enquanto está na sala', async () => {
+    const c = noiseClient()
+    await c.join('sala-1')
+    expect(watchdogs).toHaveLength(1)
+    expect(watchdogs[0].ctx).toBe(contexts[0])
+    c.leave()
+    expect(watchdogs[0].stop).toHaveBeenCalled()
+    expect(contexts[0].close).toHaveBeenCalled()
+  })
+
+  it('desligar e ligar a supressão na sala reaproveita o mesmo AudioContext e o mesmo vigia', async () => {
+    const c = noiseClient()
+    await c.join('sala-1')
+    await c.setNoiseSuppression(false)
+    await c.setNoiseSuppression(true)
+    expect(contexts).toHaveLength(1)
+    expect(watchdogs).toHaveLength(1)
   })
 
   it('se o filtro não liga, entra mesmo assim com a supressão nativa', async () => {
@@ -1078,7 +1107,8 @@ describe('volume do microfone e de saída', () => {
         mic = new FakeMic()
         return mic as unknown as LocalAudioTrack
       },
-      createAudioContext: () => ({}) as AudioContext,
+      createAudioContext: () => ({ close: vi.fn(async () => {}) }) as unknown as AudioContext,
+      createClockWatchdog: () => ({ stop: vi.fn() }),
       createNoiseProcessor: (_onMode, gain) => {
         const p = { gain, setGain: vi.fn() }
         noiseProcs.push(p)
