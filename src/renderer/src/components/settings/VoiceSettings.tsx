@@ -5,9 +5,12 @@ import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import {
+  cancelOverlayShortcutRecording,
   canChooseAudioOutput,
   listAudioDevices,
   previewVoiceSound,
+  recordOverlayShortcutKey,
+  resetOverlayShortcuts,
   selectAudioInput,
   selectAudioOutput,
   selectCamera,
@@ -21,10 +24,11 @@ import {
   setVoiceLeveler,
   setVoiceLevelerTarget,
   setVoiceSounds,
+  startOverlayShortcutRecording,
   type AudioDevice
 } from '@/lib/client'
 import type { LevelerTarget } from '@/lib/leveler/level'
-import { OVERLAY_EDIT_SHORTCUT_LABEL, OVERLAY_SHORTCUT_LABEL, type OverlayCorner, type OverlaySize } from '@shared/overlay'
+import { shortcutLabel, type OverlayCorner, type OverlayShortcutAction, type OverlaySize } from '@shared/overlay'
 import { MIC_GAIN_MAX, OUTPUT_VOLUME_MAX } from '@/lib/mic-gain'
 import { useApp } from '@/store'
 import { PushToTalkSettings } from '../voice/PushToTalk'
@@ -276,6 +280,7 @@ function GameOverlay() {
   const size = useApp((s) => s.overlaySize)
   const moved = useApp((s) => s.overlayPosition !== null)
   const editing = useApp((s) => s.overlayEditing)
+  const editLabel = useApp((s) => shortcutLabel(s.overlayShortcuts.edit))
   // o modo de mover só existe no app (precisa da janela do overlay)
   const canMove = typeof window !== 'undefined' && !!window.api?.overlay
   const selectClass = 'h-9 rounded-md border border-border bg-input px-2 text-sm text-foreground disabled:opacity-60'
@@ -315,14 +320,73 @@ function GameOverlay() {
       </div>
       {editing && (
         <p className="pl-6 text-xs text-foreground" aria-live="polite">
-          Arraste a sobreposição para onde quiser na tela. Termine com “Concluir”, Esc ou <kbd className="rounded bg-accent px-1">{OVERLAY_EDIT_SHORTCUT_LABEL}</kbd>.
+          Arraste a sobreposição para onde quiser na tela. Arraste a alça da lateral para mudar a largura. Termine com “Concluir”, Esc ou <kbd className="rounded bg-accent px-1">{editLabel}</kbd>.
         </p>
       )}
       <p className="pl-6 text-xs text-muted-foreground">
-        Mostra só quem está falando na sua sala de voz e some enquanto o Concord está em foco. Liga e desliga também pelo atalho <kbd className="rounded bg-accent px-1">{OVERLAY_SHORTCUT_LABEL}</kbd>, mesmo dentro do jogo; para mover
-        dentro do jogo, use <kbd className="rounded bg-accent px-1">{OVERLAY_EDIT_SHORTCUT_LABEL}</kbd>. Funciona com o jogo em janela ou em tela cheia sem bordas; em tela cheia exclusiva o Windows
-        não deixa nada aparecer por cima.
+        Mostra só quem está falando na sua sala de voz e some enquanto o Concord está em foco. Os atalhos funcionam mesmo dentro do jogo. Funciona com o
+        jogo em janela ou em tela cheia sem bordas; em tela cheia exclusiva o Windows não deixa nada aparecer por cima.
       </p>
+      {canMove && <OverlayShortcutSettings />}
+    </div>
+  )
+}
+
+const SHORTCUT_NAMES: Record<OverlayShortcutAction, string> = { toggle: 'para ligar e desligar', edit: 'do modo de mover' }
+const SHORTCUT_TITLES: Record<OverlayShortcutAction, string> = { toggle: 'Ligar e desligar', edit: 'Modo de mover' }
+
+function OverlayShortcutSettings() {
+  const shortcuts = useApp((s) => s.overlayShortcuts)
+  const taken = useApp((s) => s.overlayShortcutTaken)
+  const recording = useApp((s) => s.overlayRecording)
+
+  useEffect(() => {
+    if (!recording) return
+    const onKey = (e: KeyboardEvent): void => {
+      e.preventDefault()
+      e.stopPropagation()
+      recordOverlayShortcutKey(e)
+    }
+    window.addEventListener('keydown', onKey, true)
+    window.addEventListener('blur', cancelOverlayShortcutRecording)
+    return () => {
+      window.removeEventListener('keydown', onKey, true)
+      window.removeEventListener('blur', cancelOverlayShortcutRecording)
+    }
+  }, [recording])
+
+  useEffect(() => cancelOverlayShortcutRecording, [])
+
+  return (
+    <div className="space-y-2 pl-6">
+      {(['toggle', 'edit'] as const).map((action) => (
+        <div key={action} className="flex flex-wrap items-center gap-2">
+          <span className="w-32 text-sm text-muted-foreground">{SHORTCUT_TITLES[action]}:</span>
+          <kbd aria-label={`Atalho ${SHORTCUT_NAMES[action]}`} className="rounded bg-accent px-2 py-0.5 text-sm text-accent-foreground">
+            {shortcutLabel(shortcuts[action])}
+          </kbd>
+          <Button
+            variant="secondary"
+            size="sm"
+            aria-label={`Trocar atalho ${SHORTCUT_NAMES[action]}`}
+            disabled={recording !== null}
+            onClick={() => startOverlayShortcutRecording(action)}
+          >
+            {recording === action ? 'Pressione a combinação...' : 'Trocar'}
+          </Button>
+          {taken.includes(action) && (
+            <span className="text-xs text-destructive">{shortcutLabel(shortcuts[action])} já é usado por outro programa: escolha outro.</span>
+          )}
+        </div>
+      ))}
+      {recording && (
+        <p className="text-xs text-muted-foreground" aria-live="polite">
+          Pressione a nova combinação, com Ctrl, Alt ou Shift (as teclas F1 a F24 valem sozinhas). Esc desiste.
+        </p>
+      )}
+      <Button variant="ghost" size="sm" disabled={recording !== null} onClick={resetOverlayShortcuts}>
+        Restaurar padrão
+      </Button>
     </div>
   )
 }

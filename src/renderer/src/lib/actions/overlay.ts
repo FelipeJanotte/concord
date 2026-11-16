@@ -2,25 +2,33 @@
  * Sobreposição em jogos (overlay, B15), lado da janela principal: guarda a preferência desta
  * máquina (`concord:overlay`), manda a configuração para o processo principal e, a cada mudança
  * da store, quem está falando na minha sala de voz (com mute/deafen). O atalho global
- * (Shift + `) chega por `onToggled` e vira a mesma preferência. Modo de mover (Ctrl + Shift + ` ou
+ * (padrão Shift + `, escolhido nas Configurações) chega por `onToggled` e vira a mesma preferência. Modo de mover (Ctrl + Shift + ` ou
  * `setOverlayEditing`): o processo principal avisa por `onEditing` e, ao soltar, manda a posição por
  * `onMoved` (salva em `position`; escolher um canto volta para o canto). Fora do Electron, não faz nada.
  * Skill `concord-overlay`.
  */
 import {
+  cleanShortcuts,
+  cleanWidth,
   DEFAULT_OVERLAY_CONFIG,
+  DEFAULT_OVERLAY_SHORTCUTS,
   OVERLAY_CORNERS,
   OVERLAY_MAX_MEMBERS,
+  OVERLAY_SHORTCUT_ACTIONS,
   OVERLAY_SIZES,
+  shortcutFromKey,
   type OverlayBridge,
   type OverlayConfig,
   type OverlayPosition,
   type OverlayCorner,
   type OverlayRoom,
-  type OverlaySize
+  type OverlayShortcutAction,
+  type OverlayShortcuts,
+  type OverlaySize,
+  type ShortcutKeyEvent
 } from '@shared/overlay'
 import { useApp, type AppState } from '@/store'
-import { get, resolveServerUrl, set } from '../core'
+import { get, notify, resolveServerUrl, set } from '../core'
 
 export const OVERLAY_KEY = 'concord:overlay'
 
@@ -50,13 +58,18 @@ export function overlayRoom(st: St): OverlayRoom | null {
   return { members: members.slice(0, OVERLAY_MAX_MEMBERS), more: Math.max(0, members.length - OVERLAY_MAX_MEMBERS) }
 }
 
-export function overlayConfig(st: Pick<AppState, 'overlayEnabled' | 'overlayCorner' | 'overlaySize' | 'overlayPosition'>): OverlayConfig {
-  return { enabled: st.overlayEnabled, corner: st.overlayCorner, size: st.overlaySize, position: st.overlayPosition }
+export function overlayConfig(
+  st: Pick<AppState, 'overlayEnabled' | 'overlayCorner' | 'overlaySize' | 'overlayPosition' | 'overlayWidth'>
+): OverlayConfig {
+  return { enabled: st.overlayEnabled, corner: st.overlayCorner, size: st.overlaySize, position: st.overlayPosition, width: st.overlayWidth }
 }
+
+type SavedOverlay = Partial<OverlayConfig> & { shortcuts?: unknown }
 
 function save(): void {
   try {
-    localStorage.setItem(OVERLAY_KEY, JSON.stringify(overlayConfig(get())))
+    const saved: SavedOverlay = { ...overlayConfig(get()), shortcuts: get().overlayShortcuts }
+    localStorage.setItem(OVERLAY_KEY, JSON.stringify(saved))
   } catch {
     // sem armazenamento: vale só até fechar o app
   }
@@ -64,9 +77,9 @@ function save(): void {
 
 /** Lê a preferência salva (valores desconhecidos voltam ao padrão). */
 export function loadOverlayPreferences(): void {
-  let raw: Partial<OverlayConfig> = {}
+  let raw: SavedOverlay = {}
   try {
-    raw = JSON.parse(localStorage.getItem(OVERLAY_KEY) ?? '{}') as Partial<OverlayConfig>
+    raw = JSON.parse(localStorage.getItem(OVERLAY_KEY) ?? '{}') as SavedOverlay
   } catch {
     raw = {}
   }
@@ -74,7 +87,9 @@ export function loadOverlayPreferences(): void {
     overlayEnabled: raw.enabled === true,
     overlayCorner: OVERLAY_CORNERS.includes(raw.corner as OverlayCorner) ? (raw.corner as OverlayCorner) : DEFAULT_OVERLAY_CONFIG.corner,
     overlaySize: OVERLAY_SIZES.includes(raw.size as OverlaySize) ? (raw.size as OverlaySize) : DEFAULT_OVERLAY_CONFIG.size,
-    overlayPosition: validPosition(raw.position)
+    overlayPosition: validPosition(raw.position),
+    overlayWidth: cleanWidth(raw.width),
+    overlayShortcuts: cleanShortcuts(raw.shortcuts)
   })
 }
 
@@ -114,12 +129,65 @@ function overlayMoved(raw: unknown): void {
 }
 
 export function setOverlaySize(size: OverlaySize): void {
-  set({ overlaySize: size })
+  set({ overlaySize: size, overlayWidth: null })
   save()
+}
+
+function overlayResized(raw: unknown): void {
+  const width = cleanWidth(raw)
+  if (width === null) return
+  set({ overlayWidth: width })
+  save()
+}
+
+function applyOverlayShortcuts(): void {
+  void overlayEnv
+    .bridge()
+    ?.setShortcuts(get().overlayShortcuts)
+    .then((status) => set({ overlayShortcutTaken: OVERLAY_SHORTCUT_ACTIONS.filter((action) => !status[action]) }))
+}
+
+function setOverlayShortcuts(shortcuts: OverlayShortcuts): void {
+  set({ overlayShortcuts: shortcuts, overlayRecording: null })
+  save()
+  applyOverlayShortcuts()
+}
+
+const ALREADY_USED_BY: Record<OverlayShortcutAction, string> = {
+  toggle: 'Esse atalho já liga e desliga a sobreposição.',
+  edit: 'Esse atalho já é o do modo de mover.'
+}
+
+export function startOverlayShortcutRecording(action: OverlayShortcutAction): void {
+  set({ overlayRecording: action })
+  overlayEnv.bridge()?.pauseShortcuts(true)
+}
+
+export function cancelOverlayShortcutRecording(): void {
+  if (!get().overlayRecording) return
+  set({ overlayRecording: null })
+  overlayEnv.bridge()?.pauseShortcuts(false)
+}
+
+export function recordOverlayShortcutKey(event: ShortcutKeyEvent & { key: string }): void {
+  const action = get().overlayRecording
+  if (!action) return
+  if (event.key === 'Escape') return cancelOverlayShortcutRecording()
+  const accelerator = shortcutFromKey(event)
+  if (!accelerator) return
+  const other: OverlayShortcutAction = action === 'toggle' ? 'edit' : 'toggle'
+  const current = get().overlayShortcuts
+  if (accelerator === current[other]) return notify(ALREADY_USED_BY[other])
+  setOverlayShortcuts({ ...current, [action]: accelerator })
+}
+
+export function resetOverlayShortcuts(): void {
+  setOverlayShortcuts({ ...DEFAULT_OVERLAY_SHORTCUTS })
 }
 
 let lastConfig = ''
 let lastRoom = ''
+let lastTheme = ''
 let stop: (() => void) | null = null
 
 /** Manda configuração e sala para o processo principal, só quando mudam. */
@@ -139,6 +207,12 @@ export function syncOverlay(): void {
     lastRoom = roomJson
     bridge.setRoom(room)
   }
+  if (!st.preferencesLoaded) return
+  const themeJson = JSON.stringify(st.theme)
+  if (themeJson !== lastTheme) {
+    lastTheme = themeJson
+    bridge.setTheme(st.theme)
+  }
 }
 
 /** Começa a acompanhar (uma vez, na abertura do app): store → overlay e atalho → preferência. */
@@ -150,15 +224,18 @@ export function startOverlay(): () => void {
   const unToggle = bridge?.onToggled((enabled) => setOverlayEnabled(enabled)) ?? null
   const unEditing = bridge?.onEditing((editing) => set({ overlayEditing: editing === true })) ?? null
   const unMoved = bridge?.onMoved(overlayMoved) ?? null
+  const unResized = bridge?.onResized(overlayResized) ?? null
   syncOverlay()
+  applyOverlayShortcuts()
   stop = () => {
     unsubscribe()
     unToggle?.()
     unEditing?.()
     unMoved?.()
+    unResized?.()
     set({ overlayEditing: false })
     stop = null
-    lastConfig = lastRoom = ''
+    lastConfig = lastRoom = lastTheme = ''
   }
   return stop
 }

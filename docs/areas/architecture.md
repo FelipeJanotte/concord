@@ -37,7 +37,7 @@ No renderer, `lib/core.ts` guarda o socket atual, `set`/`get` e `notify`.
 O processo main não fala com o servidor do Concord. Ele só abre o navegador para o login com Google e devolve o
 código ao renderer (IPC `google-sign-in`), cuida do compartilhamento de tela (IPC `screen-*`), mostra as
 notificações nativas e o selo do ícone (IPC `notify`/`badge`/`notification-click`, `docs/areas/notifications.md`)
-a janela do overlay em jogos (IPC `overlay-*`, atalho global, segunda página do renderer; skill
+a janela do overlay em jogos (IPC `overlay-*`, atalhos globais escolhidos, tema ao vivo, segunda página do renderer; skill
 `docs/areas/overlay.md`), a atualização automática (IPC `update-*`, `docs/areas/updates.md`) e o pressione para falar
 (IPC `ptt-*`, gancho de teclado/mouse do sistema com `uiohook-napi`; `docs/areas/voice.md`) e o vidro do tema translúcido
 (IPC `window-translucency`, `docs/areas/themes.md`). Toda a rede com o servidor acontece no renderer: **HTTP** para
@@ -147,7 +147,7 @@ vê), `typing`, `rate:limited`, `access:updated` e `channels:visible` (v2), `sou
 - `view: { kind: 'text' | 'voice', channelId }`: a tela da comunidade (canal ou sala aberta).
 - `calls[channelId]` (`store/calls.ts`, B8): chamada tocando ou em andamento em cada conversa; o toque segue esse estado (`syncRinger`).
 - `section`, `homeView`, `toolId` (`store/navigation.ts`, B7): qual parte está na frente (comunidade, Home com "Amigos"
-  ou uma conversa, ou uma ferramenta). Trocar de seção não perde `view`. `docs/areas/home.md`.
+  ou uma conversa, ou uma ferramenta). Trocar de seção não perde `view`. `toolChannelId`: destino da ferramenta aberta pelo `+` do composer (null = sugestão do painel). `docs/areas/home.md`.
 - `myVoiceChannelId`, `joiningVoice`, `muted`, `deafened`, `speaking[userId]`, `sharing`, `screens`, `screenPickerOpen`.
 - `access` (`store/permissions.ts`): `AccessState` do `hello`/`access:updated`, `null` antes de chegar; a tela lê com `useCan`/`useNameColor` de `lib/permissions.ts` (`docs/areas/permissions.md`).
 - `theme`, `savedThemes`, `preferencesLoaded` (`store/preferences.ts`, v5): tema da conta, carregado depois do `hello` e aplicado como variáveis CSS (`lib/theme`, `docs/areas/themes.md`); antes do login vale o último tema da máquina.

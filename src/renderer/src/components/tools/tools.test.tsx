@@ -194,7 +194,7 @@ describe('painéis', () => {
     expect(within(list).getAllByRole('listitem').map((li) => li.textContent)).toEqual(['Caio', 'Duda', 'Eu', 'Ana', 'Bia'])
     await userEvent.click(screen.getByRole('button', { name: 'Tirar Duda' }))
     await userEvent.click(screen.getByLabelText('Sortear lanes'))
-    await userEvent.selectOptions(screen.getByLabelText('Lane preferida de Caio'), 'mid')
+    await userEvent.click(within(screen.getByRole('group', { name: 'Lanes preferidas de Caio' })).getByRole('button', { name: 'Meio' }))
     await userEvent.click(screen.getByRole('button', { name: 'Sortear times' }))
     expect(socket.sent('tools:teams')[0][0]).toEqual({
       channelId: 'jogos',
@@ -218,21 +218,48 @@ describe('painéis', () => {
     await userEvent.click(screen.getByLabelText('Sortear lanes'))
     const group = screen.getByRole('group', { name: 'Lanes disponíveis' })
     expect(within(group).getAllByRole('button').every((b) => b.getAttribute('aria-pressed') === 'true')).toBe(true)
-    await userEvent.selectOptions(screen.getByLabelText('Lane preferida de A'), 'jungle')
-    // 3v3: só Topo, Meio e Atirador
+    const prefsOfA = (): HTMLElement => screen.getByRole('group', { name: 'Lanes preferidas de A' })
+    await userEvent.click(within(prefsOfA()).getByRole('button', { name: 'Selva' }))
+    await userEvent.click(within(prefsOfA()).getByRole('button', { name: 'Meio' }))
     for (const name of ['Selva', 'Suporte']) await userEvent.click(within(group).getByRole('button', { name }))
     expect(screen.getByText('Lanes disponíveis (3/5)')).toBeTruthy()
-    expect((screen.getByLabelText('Lane preferida de A') as HTMLSelectElement).value).toBe('')
-    expect(within(screen.getByLabelText('Lane preferida de A')).getAllByRole('option').map((o) => o.textContent)).toEqual(['Qualquer lane', 'Topo', 'Meio', 'Atirador'])
+    expect(within(prefsOfA()).getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual(['Topo', 'Meio, 1ª preferência', 'Atirador'])
     // 7 pessoas em 2 times de no máximo 3
     expect(screen.getByText(/Com 3 lanes, cada time tem no máximo 3/)).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Sortear times' })).toHaveProperty('disabled', true)
     await userEvent.click(screen.getByRole('button', { name: 'Tirar G' }))
-    await userEvent.selectOptions(screen.getByLabelText('Lane preferida de B'), 'mid')
+    await userEvent.click(within(screen.getByRole('group', { name: 'Lanes preferidas de B' })).getByRole('button', { name: 'Meio' }))
     await userEvent.click(screen.getByRole('button', { name: 'Sortear times' }))
     const req = socket.sent('tools:teams')[0][0] as { laneSet: string[]; players: Array<{ name: string; lanes?: string[] }> }
     expect(req.laneSet).toEqual(['top', 'mid', 'adc'])
-    expect(req.players.slice(0, 2)).toEqual([{ name: 'A' }, { name: 'B', lanes: ['mid'] }])
+    expect(req.players.slice(0, 2)).toEqual([
+      { name: 'A', lanes: ['mid'] },
+      { name: 'B', lanes: ['mid'] }
+    ])
+  })
+
+  it('sorteador: várias lanes preferidas por pessoa, em ordem, e tirar uma renumera as outras', async () => {
+    setup()
+    socket.replyTo('tools:teams', () => ({ ok: true, message: toolMessage({ tool: 'teams', result: { lanes: true, teams: [] } }) }))
+    ui(<TeamRandomizerPanel />)
+    await userEvent.type(screen.getByLabelText(/Pessoas/), 'Ana,Bia{Enter}')
+    await userEvent.click(screen.getByLabelText('Sortear lanes'))
+    const prefs = within(screen.getByRole('group', { name: 'Lanes preferidas de Ana' }))
+    for (const name of ['Meio', 'Topo', 'Suporte']) await userEvent.click(prefs.getByRole('button', { name }))
+    expect(prefs.getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual([
+      'Topo, 2ª preferência',
+      'Selva',
+      'Meio, 1ª preferência',
+      'Atirador',
+      'Suporte, 3ª preferência'
+    ])
+    expect(prefs.getByRole('button', { name: /Suporte/ }).textContent).toContain('3ª')
+    await userEvent.click(prefs.getByRole('button', { name: /Topo/ }))
+    expect(prefs.getByRole('button', { name: /Suporte/ }).getAttribute('aria-label')).toBe('Suporte, 2ª preferência')
+    expect(prefs.getByRole('button', { name: 'Topo' }).getAttribute('aria-pressed')).toBe('false')
+    await userEvent.click(screen.getByRole('button', { name: 'Sortear times' }))
+    const req = socket.sent('tools:teams')[0][0] as { players: Array<{ name: string; lanes?: string[] }> }
+    expect(req.players).toEqual([{ name: 'Ana', lanes: ['mid', 'support'] }, { name: 'Bia' }])
   })
 
   it('sorteador: sem nenhuma lane escolhida não deixa sortear', async () => {

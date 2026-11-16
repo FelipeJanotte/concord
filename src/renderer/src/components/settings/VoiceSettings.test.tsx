@@ -172,14 +172,13 @@ describe('sobreposição em jogos (B15)', () => {
     render(<VoiceSettings />)
     const corner = screen.getByLabelText('Posição do overlay') as HTMLSelectElement
     expect(corner.disabled).toBe(true)
-    expect(screen.getByText('Shift + `')).toBeTruthy()
     expect(screen.getByText(/Mostra só quem está falando na sua sala de voz e some enquanto o Concord está em foco/)).toBeTruthy()
     await userEvent.click(screen.getByLabelText('Mostrar quem está falando por cima dos jogos'))
     expect(useApp.getState().overlayEnabled).toBe(true)
     await userEvent.selectOptions(corner, 'bottom-right')
     await userEvent.selectOptions(screen.getByLabelText('Tamanho do overlay'), 'large')
     expect(useApp.getState()).toMatchObject({ overlayCorner: 'bottom-right', overlaySize: 'large' })
-    expect(JSON.parse(localStorage.getItem('concord:overlay')!)).toEqual({ enabled: true, corner: 'bottom-right', size: 'large', position: null })
+    expect(JSON.parse(localStorage.getItem('concord:overlay')!)).toMatchObject({ enabled: true, corner: 'bottom-right', size: 'large', position: null, width: null })
   })
 
   it("Mover: só no app, com o overlay ligado; vira Concluir no modo de mover; posição arrastada aparece no seletor", async () => {
@@ -212,6 +211,60 @@ describe('sobreposição em jogos (B15)', () => {
     useApp.setState({ overlayEnabled: true })
     render(<VoiceSettings />)
     expect(screen.queryByRole("button", { name: "Mover" })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Restaurar padrão' })).toBeNull()
+  })
+
+  describe('atalhos', () => {
+    function withBridge(run: (bridge: { setShortcuts: ReturnType<typeof vi.fn>; pauseShortcuts: ReturnType<typeof vi.fn> }) => Promise<void>) {
+      const bridge = {
+        setConfig: vi.fn(),
+        setRoom: vi.fn(),
+        setEditing: vi.fn(),
+        setShortcuts: vi.fn(async () => ({ toggle: true, edit: true })),
+        pauseShortcuts: vi.fn()
+      }
+      const w = window as unknown as { api?: unknown }
+      w.api = { overlay: bridge }
+      return run(bridge).finally(() => delete w.api)
+    }
+
+    it('mostra os atalhos atuais e grava uma combinação nova', () =>
+      withBridge(async (bridge) => {
+        localStorage.clear()
+        useApp.setState({ overlayEnabled: true })
+        render(<VoiceSettings />)
+        expect(screen.getByLabelText('Atalho para ligar e desligar').textContent).toBe('Shift + `')
+        expect(screen.getByLabelText('Atalho do modo de mover').textContent).toBe('Ctrl + Shift + `')
+        await userEvent.click(screen.getByRole('button', { name: 'Trocar atalho para ligar e desligar' }))
+        expect(bridge.pauseShortcuts).toHaveBeenLastCalledWith(true)
+        expect(screen.getByText(/Pressione a nova combinação/)).toBeTruthy()
+        fireEvent.keyDown(window, { key: 'O', code: 'KeyO', ctrlKey: true, altKey: true })
+        expect(screen.getByLabelText('Atalho para ligar e desligar').textContent).toBe('Ctrl + Alt + O')
+        expect(bridge.setShortcuts).toHaveBeenLastCalledWith({ toggle: 'Ctrl+Alt+O', edit: 'CommandOrControl+Shift+`' })
+        expect(screen.queryByText(/Pressione a nova combinação/)).toBeNull()
+        await userEvent.click(screen.getByRole('button', { name: 'Restaurar padrão' }))
+        expect(screen.getByLabelText('Atalho para ligar e desligar').textContent).toBe('Shift + `')
+      }))
+
+    it('Esc desiste; fechar a tela no meio da gravação também', () =>
+      withBridge(async (bridge) => {
+        const { unmount } = render(<VoiceSettings />)
+        await userEvent.click(screen.getByRole('button', { name: 'Trocar atalho do modo de mover' }))
+        fireEvent.keyDown(window, { key: 'Escape', code: 'Escape' })
+        expect(useApp.getState().overlayRecording).toBeNull()
+        expect(bridge.pauseShortcuts).toHaveBeenLastCalledWith(false)
+        await userEvent.click(screen.getByRole('button', { name: 'Trocar atalho do modo de mover' }))
+        unmount()
+        expect(useApp.getState().overlayRecording).toBeNull()
+        expect(bridge.pauseShortcuts.mock.calls).toEqual([[true], [false], [true], [false]])
+      }))
+
+    it('avisa quando outro programa já usa o atalho', () =>
+      withBridge(async () => {
+        useApp.setState({ overlayShortcutTaken: ['edit'] })
+        render(<VoiceSettings />)
+        expect(screen.getByText('Ctrl + Shift + ` já é usado por outro programa: escolha outro.')).toBeTruthy()
+      }))
   })
 })
 

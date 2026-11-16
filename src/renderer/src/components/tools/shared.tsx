@@ -33,11 +33,11 @@ export function usePostTargets(): PostTarget[] {
   )
 }
 
-/** Canal sugerido: o chat que estava aberto antes de abrir a ferramenta (comunidade ou conversa), senão o primeiro. */
 export function useDefaultTarget(targets: PostTarget[]): string {
+  const fromComposer = useApp((s) => s.toolChannelId)
   const community = useApp((s) => (s.view?.kind === 'text' ? s.view.channelId : null))
   const dm = useApp((s) => (s.homeView.kind === 'dm' ? s.homeView.channelId : null))
-  for (const id of [community, dm]) if (id && targets.some((t) => t.id === id)) return id
+  for (const id of [fromComposer, community, dm]) if (id && targets.some((t) => t.id === id)) return id
   return targets[0]?.id ?? ''
 }
 

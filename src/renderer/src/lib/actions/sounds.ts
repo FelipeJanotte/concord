@@ -14,6 +14,7 @@ import {
   type Sound,
   type SoundUploadResult
 } from '@shared/types'
+import { clipToWav, decodedDurationMs, SOUND_CLIP_SAMPLE_RATE, type DecodedAudio } from '@shared/sound-clip'
 import { omit } from '../utils'
 import { baseUrl, get, getSocket, requireSocket, resolveServerUrl, sessionToken, set, type AppSocket } from '../core'
 
@@ -61,7 +62,20 @@ function readDuration(file: Blob): Promise<number | null> {
   })
 }
 
-export const soundTransport = { send: postSound, duration: readDuration }
+async function decodeAudio(file: Blob): Promise<DecodedAudio | null> {
+  try {
+    const context = new OfflineAudioContext(1, 1, SOUND_CLIP_SAMPLE_RATE)
+    const buffer = await context.decodeAudioData(await file.arrayBuffer())
+    return {
+      sampleRate: buffer.sampleRate,
+      channels: Array.from({ length: buffer.numberOfChannels }, (_, i) => buffer.getChannelData(i))
+    }
+  } catch {
+    return null
+  }
+}
+
+export const soundTransport = { send: postSound, duration: readDuration, decode: decodeAudio }
 
 /** Toca um endereço de áudio uma vez (volume 0–1, saída escolhida ou a padrão). */
 function playUrl(url: string, { volume, outputId }: { volume: number; outputId: string | null }): void {
@@ -171,9 +185,28 @@ export function soundNameFromFile(fileName: string): string {
 export async function checkSoundFile(file: Blob): Promise<string | null> {
   if (file.size > SOUND_MAX_BYTES) return 'O som pode ter no máximo 512 KB'
   const ms = await soundTransport.duration(file)
-  if (ms === null) return 'Não foi possível ler esse áudio. Use MP3, OGG, WAV ou WebM.'
+  if (ms === null) return UNREADABLE_AUDIO
   if (ms > SOUND_MAX_DURATION_MS + 50) return 'O som pode ter no máximo 5 segundos'
   return null
+}
+
+const UNREADABLE_AUDIO = 'Não foi possível ler esse áudio. Use MP3, OGG, WAV ou WebM.'
+
+export type SoundInspection =
+  | { kind: 'ready' }
+  | { kind: 'clip'; audio: DecodedAudio; durationMs: number }
+  | { kind: 'error'; error: string }
+
+export async function inspectSoundFile(file: Blob): Promise<SoundInspection> {
+  const ms = file.size <= SOUND_MAX_BYTES ? await soundTransport.duration(file) : null
+  if (ms !== null && ms <= SOUND_MAX_DURATION_MS + 50) return { kind: 'ready' }
+  const audio = await soundTransport.decode(file)
+  if (!audio) return { kind: 'error', error: UNREADABLE_AUDIO }
+  return { kind: 'clip', audio, durationMs: decodedDurationMs(audio) }
+}
+
+export function clipSound(audio: DecodedAudio, startMs: number): Blob {
+  return new Blob([clipToWav(audio, startMs)], { type: 'audio/wav' })
 }
 
 /** Envia um som para a coleção. Lança `Error` com a mensagem (validação local ou do servidor). */

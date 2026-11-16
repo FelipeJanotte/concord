@@ -1,6 +1,15 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { release } from 'os'
-import type { OverlayBridge, OverlayConfig, OverlayPosition, OverlayRoom, OverlayViewBridge } from '../shared/overlay'
+import type {
+  OverlayBridge,
+  OverlayConfig,
+  OverlayPosition,
+  OverlayRoom,
+  OverlayShortcuts,
+  OverlayShortcutStatus,
+  OverlayViewBridge
+} from '../shared/overlay'
+import type { ThemeConfig } from '../shared/types/theme'
 import type { PttBinding, PttConfig, PushToTalkBridge } from '../shared/push-to-talk'
 import type { NativeNotification, NotificationsBridge, NotificationTarget } from '../shared/notifications'
 import type { ScreenShareBridge, ScreenSource } from '../shared/screen'
@@ -32,7 +41,15 @@ const overlay: OverlayBridge = {
     const handler = (_e: unknown, position: OverlayPosition): void => listener(position)
     ipcRenderer.on('overlay-moved', handler)
     return () => ipcRenderer.removeListener('overlay-moved', handler)
-  }
+  },
+  onResized: (listener) => {
+    const handler = (_e: unknown, width: number): void => listener(width)
+    ipcRenderer.on('overlay-resized', handler)
+    return () => ipcRenderer.removeListener('overlay-resized', handler)
+  },
+  setShortcuts: (shortcuts: OverlayShortcuts): Promise<OverlayShortcutStatus> => ipcRenderer.invoke('overlay-shortcuts', shortcuts),
+  pauseShortcuts: (paused: boolean): void => ipcRenderer.send('overlay-shortcuts-pause', paused),
+  setTheme: (theme: ThemeConfig): void => ipcRenderer.send('overlay-theme', theme)
 }
 
 /** Overlay (B15), lado da página do overlay: recebe a sala, a configuração e o modo de mover. */
@@ -43,7 +60,13 @@ const overlayView: OverlayViewBridge = {
     ipcRenderer.on('overlay-update', handler)
     return () => ipcRenderer.removeListener('overlay-update', handler)
   },
-  finishEditing: (): void => ipcRenderer.send('overlay-edit', false)
+  finishEditing: (): void => ipcRenderer.send('overlay-edit', false),
+  resize: (width: number, done: boolean): void => ipcRenderer.send('overlay-resize', width, done),
+  onTheme: (listener) => {
+    const handler = (_e: unknown, theme: ThemeConfig): void => listener(theme)
+    ipcRenderer.on('overlay-theme', handler)
+    return () => ipcRenderer.removeListener('overlay-theme', handler)
+  }
 }
 
 /** Pressione para falar (B20): configura a escuta e recebe pressionado/solto. */

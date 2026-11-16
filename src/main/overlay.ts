@@ -6,30 +6,35 @@
  * Funciona por cima de jogos em janela e em tela cheia sem bordas; em tela cheia exclusiva uma
  * janela comum não aparece por cima (o Discord injeta código no jogo; fora de propósito).
  *
- * Modo de mover (como no Discord): pelo atalho Ctrl + Shift + ` ou pelo botão das Configurações, a
+ * Modo de mover (como no Discord): pelo atalho (padrão Ctrl + Shift + `, escolhido nas Configurações) ou pelo botão das Configurações, a
  * janela passa a receber o mouse e a ser arrastável (`-webkit-app-region: drag` na página). Ao soltar,
  * a posição vai para a janela principal, que salva. "Concluir", Esc ou o atalho travam de novo.
  *
  * `createOverlayController` tem a lógica (testável com dependências falsas); `setupOverlay` liga
- * ao Electron (IPC `overlay-config`/`overlay-room`/`overlay-edit`, atalhos globais, janela de verdade).
+ * ao Electron (IPC `overlay-config`/`overlay-room`/`overlay-edit`/`overlay-resize`/`overlay-theme`/`overlay-shortcuts`, atalhos globais, janela de verdade).
  */
 import { app, BrowserWindow, globalShortcut, ipcMain, screen } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import {
+  cleanShortcuts,
+  cleanWidth,
   DEFAULT_OVERLAY_CONFIG,
   OVERLAY_CORNERS,
-  OVERLAY_EDIT_SHORTCUT,
   OVERLAY_MAX_MEMBERS,
-  OVERLAY_METRICS,
-  OVERLAY_SHORTCUT,
+  OVERLAY_SHORTCUT_ACTIONS,
   OVERLAY_SIZES,
   overlayHeight,
+  overlayWidth,
   type OverlayConfig,
   type OverlayPosition,
   type OverlayRoom,
+  type OverlayShortcutAction,
+  type OverlayShortcuts,
+  type OverlayShortcutStatus,
   type OverlaySize
 } from '../shared/overlay'
+import { validateTheme, type ThemeConfig } from '../shared/types/theme'
 
 export interface Rect {
   x: number
@@ -47,7 +52,7 @@ const MARGIN = 16
  * modo de mover, a barra "Concluir".
  */
 export function overlayBounds(workArea: Rect, config: OverlayConfig, rows: number, editing = false): Rect {
-  const width = OVERLAY_METRICS[config.size].width
+  const width = overlayWidth(config)
   const height = overlayHeight(config.size, Math.max(1, Math.min(rows, OVERLAY_MAX_MEMBERS + 1)) + (editing ? 1 : 0))
   if (config.position) {
     const clamp = (v: number, min: number, max: number): number => Math.round(Math.min(Math.max(v, min), Math.max(min, max)))
@@ -82,7 +87,8 @@ export function cleanConfig(raw: unknown): OverlayConfig {
     enabled: c?.enabled === true,
     corner: OVERLAY_CORNERS.includes(c?.corner as never) ? (c!.corner as OverlayConfig['corner']) : DEFAULT_OVERLAY_CONFIG.corner,
     size: OVERLAY_SIZES.includes(c?.size as never) ? (c!.size as OverlaySize) : DEFAULT_OVERLAY_CONFIG.size,
-    position: cleanPosition(c?.position)
+    position: cleanPosition(c?.position),
+    width: cleanWidth(c?.width)
   }
 }
 
@@ -121,6 +127,9 @@ export interface OverlayDeps {
   notifyEditing: (editing: boolean) => void
   /** soltou num lugar novo: a janela principal salva */
   notifyMoved: (position: OverlayPosition) => void
+  notifyResized: (width: number) => void
+  registerShortcut: (accelerator: string, run: () => void) => boolean
+  unregisterShortcut: (accelerator: string) => void
 }
 
 export interface OverlayWindow {
@@ -131,6 +140,7 @@ export interface OverlayWindow {
   isDestroyed: () => boolean
   destroy: () => void
   send: (room: OverlayRoom | null, config: OverlayConfig, editing: boolean) => void
+  sendTheme: (theme: ThemeConfig) => void
   /** recebe o mouse e pode ser arrastada (modo de mover) ou deixa o clique passar para o jogo */
   setInteractive: (on: boolean) => void
 }
@@ -142,6 +152,9 @@ export function createOverlayController(deps: OverlayDeps) {
   /** modo de mover (só com o overlay ligado) */
   let editing = false
   let appFocused = false
+  let theme: ThemeConfig | null = null
+  let shortcuts: OverlayShortcuts = cleanShortcuts(null)
+  let registered: string[] = []
 
   function update(): void {
     const hasPeople = !!room && room.members.length > 0
@@ -165,6 +178,45 @@ export function createOverlayController(deps: OverlayDeps) {
     if (win && !win.isDestroyed()) win.setInteractive(editing)
   }
 
+  function toggle(): void {
+    config = { ...config, enabled: !config.enabled }
+    deps.notifyToggled(config.enabled)
+    if (!config.enabled && editing) return setEditing(false)
+    update()
+  }
+
+  function toggleEditing(): void {
+    if (!config.enabled) {
+      config = { ...config, enabled: true }
+      deps.notifyToggled(true)
+    }
+    setEditing(!editing)
+  }
+
+  const shortcutRuns: Record<OverlayShortcutAction, () => void> = { toggle, edit: toggleEditing }
+
+  function releaseShortcuts(): void {
+    for (const accelerator of registered) deps.unregisterShortcut(accelerator)
+    registered = []
+  }
+
+  function register(accelerator: string, run: () => void): boolean {
+    try {
+      if (!deps.registerShortcut(accelerator, run)) return false
+    } catch {
+      return false
+    }
+    registered.push(accelerator)
+    return true
+  }
+
+  function registerShortcuts(): OverlayShortcutStatus {
+    releaseShortcuts()
+    const status = { toggle: false, edit: false }
+    for (const action of OVERLAY_SHORTCUT_ACTIONS) status[action] = register(shortcuts[action], shortcutRuns[action])
+    return status
+  }
+
   return {
     setConfig(raw: unknown): void {
       config = cleanConfig(raw)
@@ -180,24 +232,33 @@ export function createOverlayController(deps: OverlayDeps) {
       appFocused = focused
       update()
     },
-    /** atalho global: liga/desliga e avisa a janela principal */
-    toggle(): void {
-      config = { ...config, enabled: !config.enabled }
-      deps.notifyToggled(config.enabled)
-      if (!config.enabled && editing) return setEditing(false)
-      update()
-    },
+    toggle,
     /** botão das Configurações, "Concluir"/Esc na página */
     setEditing(raw: unknown): void {
       setEditing(raw === true)
     },
-    /** atalho do modo de mover; com o overlay desligado, liga junto (para ter o que arrastar) */
-    toggleEditing(): void {
-      if (!config.enabled) {
-        config = { ...config, enabled: true }
-        deps.notifyToggled(true)
-      }
-      setEditing(!editing)
+    toggleEditing,
+    setShortcuts(raw: unknown): OverlayShortcutStatus {
+      shortcuts = cleanShortcuts(raw)
+      return registerShortcuts()
+    },
+    pauseShortcuts(paused: boolean): void {
+      if (paused) releaseShortcuts()
+      else registerShortcuts()
+    },
+    releaseShortcuts,
+    resize(raw: unknown, done: boolean): void {
+      const width = cleanWidth(raw)
+      if (!editing || width === null) return
+      config = { ...config, width }
+      update()
+      if (done) deps.notifyResized(width)
+    },
+    setTheme(raw: unknown): void {
+      const valid = validateTheme(raw)
+      if (!valid) return
+      theme = valid
+      if (win && !win.isDestroyed()) win.sendTheme(theme)
     },
     /** a janela foi solta num lugar (só conta no modo de mover: o setBounds do app não é arrasto) */
     moved(bounds: Rect): void {
@@ -208,8 +269,8 @@ export function createOverlayController(deps: OverlayDeps) {
       deps.notifyMoved(position)
     },
     /** o que a página do overlay precisa ao terminar de carregar */
-    current(): { room: OverlayRoom | null; config: OverlayConfig; editing: boolean } {
-      return { room, config, editing }
+    current(): { room: OverlayRoom | null; config: OverlayConfig; editing: boolean; theme: ThemeConfig | null } {
+      return { room, config, editing, theme }
     },
     destroy(): void {
       if (win && !win.isDestroyed()) win.destroy()
@@ -245,9 +306,13 @@ function createOverlayWindow(getController: () => OverlayController): OverlayWin
     if (!win.isDestroyed()) win.webContents.send('overlay-update', room, config, editing)
   }
   // a página acabou de carregar: manda o estado atual
+  const sendTheme = (theme: ThemeConfig): void => {
+    if (!win.isDestroyed()) win.webContents.send('overlay-theme', theme)
+  }
   win.webContents.on('did-finish-load', () => {
-    const { room, config, editing } = getController().current()
+    const { room, config, editing, theme } = getController().current()
     send(room, config, editing)
+    if (theme) sendTheme(theme)
   })
   // arrastou e soltou (no Windows, 'moved' vem uma vez, no fim do arrasto)
   win.on('moved', () => getController().moved(win.getBounds()))
@@ -261,6 +326,7 @@ function createOverlayWindow(getController: () => OverlayController): OverlayWin
     isDestroyed: () => win.isDestroyed(),
     destroy: () => win.destroy(),
     send,
+    sendTheme,
     setInteractive: (on) => {
       if (win.isDestroyed()) return
       win.setIgnoreMouseEvents(!on)
@@ -279,8 +345,12 @@ export function setupOverlay(getMainWindow: () => BrowserWindow | null): Overlay
     workArea: (point) => (point ? screen.getDisplayNearestPoint(point) : screen.getPrimaryDisplay()).workArea,
     notifyToggled: (enabled) => getMainWindow()?.webContents.send('overlay-toggled', enabled),
     notifyEditing: (editing) => getMainWindow()?.webContents.send('overlay-editing', editing),
-    notifyMoved: (position) => getMainWindow()?.webContents.send('overlay-moved', position)
+    notifyMoved: (position) => getMainWindow()?.webContents.send('overlay-moved', position),
+    notifyResized: (width) => getMainWindow()?.webContents.send('overlay-resized', width),
+    registerShortcut: (accelerator, run) => globalShortcut.register(accelerator, run),
+    unregisterShortcut: (accelerator) => globalShortcut.unregister(accelerator)
   })
+  activeController = controller
   app.on('browser-window-focus', (_event, win) => {
     if (win === getMainWindow()) controller.setAppFocused(true)
   })
@@ -291,18 +361,24 @@ export function setupOverlay(getMainWindow: () => BrowserWindow | null): Overlay
   ipcMain.on('overlay-room', (_event, raw: unknown) => controller.setRoom(raw))
   // modo de mover: botão da janela principal ou "Concluir"/Esc na página do overlay
   ipcMain.on('overlay-edit', (_event, raw: unknown) => controller.setEditing(raw))
-  // atalhos globais (funcionam com o jogo em primeiro plano); se outro programa já usa, fica o botão
-  if (!globalShortcut.register(OVERLAY_SHORTCUT, () => controller.toggle())) {
-    console.warn(`[overlay] atalho ${OVERLAY_SHORTCUT} já está em uso por outro programa`)
-  }
-  if (!globalShortcut.register(OVERLAY_EDIT_SHORTCUT, () => controller.toggleEditing())) {
-    console.warn(`[overlay] atalho ${OVERLAY_EDIT_SHORTCUT} já está em uso por outro programa`)
-  }
+  ipcMain.on('overlay-resize', (_event, width: unknown, done: unknown) => controller.resize(width, done === true))
+  ipcMain.on('overlay-theme', (_event, theme: unknown) => controller.setTheme(theme))
+  ipcMain.on('overlay-shortcuts-pause', (_event, paused: unknown) => controller.pauseShortcuts(paused === true))
+  ipcMain.handle('overlay-shortcuts', (_event, raw: unknown) => setShortcutsWithLog(controller, raw))
+  setShortcutsWithLog(controller, null)
   return controller
 }
 
-/** Solta os atalhos globais (chamado ao sair do app). */
+let activeController: OverlayController | null = null
+
+function setShortcutsWithLog(controller: OverlayController, raw: unknown): OverlayShortcutStatus {
+  const status = controller.setShortcuts(raw)
+  for (const action of OVERLAY_SHORTCUT_ACTIONS) {
+    if (!status[action]) console.warn(`[overlay] atalho de ${action} já está em uso por outro programa`)
+  }
+  return status
+}
+
 export function teardownOverlay(): void {
-  globalShortcut.unregister(OVERLAY_SHORTCUT)
-  globalShortcut.unregister(OVERLAY_EDIT_SHORTCUT)
+  activeController?.releaseShortcuts()
 }

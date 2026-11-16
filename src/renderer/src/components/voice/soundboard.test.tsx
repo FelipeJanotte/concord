@@ -214,13 +214,37 @@ describe('enviar um som', () => {
     expect(await screen.findByRole('button', { name: 'Tocar air horn' })).toBeTruthy()
   })
 
-  it('arquivo longo demais: avisa e não deixa enviar', async () => {
+  it('arquivo longo: escolhe o início do trecho de 5 s e envia o trecho cortado em WAV', async () => {
     setup()
-    vi.spyOn(soundTransport, 'duration').mockResolvedValue(8000)
+    localStorage.setItem(TOKEN_KEY, 'tok')
+    const channel = Float32Array.from({ length: 8000 }, (_, i) => i / 8000)
+    vi.spyOn(soundTransport, 'duration').mockResolvedValueOnce(8000).mockResolvedValueOnce(5000)
+    vi.spyOn(soundTransport, 'decode').mockResolvedValue({ sampleRate: 1000, channels: [channel] })
+    const send = vi.spyOn(soundTransport, 'send').mockResolvedValue(sound('s9', 'longo', 'acc-eu'))
     await openBoard()
     await userEvent.click(screen.getByRole('button', { name: 'Enviar um som' }))
     pick(new File([new Uint8Array(100)], 'longo.mp3', { type: 'audio/mpeg' }))
-    expect((await screen.findByRole('alert')).textContent).toBe('O som pode ter no máximo 5 segundos')
+    const start = await screen.findByLabelText('Início do trecho')
+    expect(screen.getByText('Trecho de 0,0 s a 5,0 s (de 8,0 s)')).toBeTruthy()
+    expect(screen.getByLabelText('Prévia do som')).toBeTruthy()
+    fireEvent.change(start, { target: { value: '2000' } })
+    expect(screen.getByText('Trecho de 2,0 s a 7,0 s (de 8,0 s)')).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: 'Enviar' }))
+    expect(await screen.findByRole('button', { name: 'Tocar longo' })).toBeTruthy()
+    const sent = send.mock.calls[0][0].file
+    expect(sent.type).toBe('audio/wav')
+    expect(sent.size).toBe(44 + 5000 * 2)
+    expect(new DataView(await sent.arrayBuffer()).getInt16(44, true)).toBe(Math.round(channel[2000] * 32767))
+  })
+
+  it('áudio que não dá para ler: avisa e não deixa enviar', async () => {
+    setup()
+    vi.spyOn(soundTransport, 'duration').mockResolvedValue(null)
+    vi.spyOn(soundTransport, 'decode').mockResolvedValue(null)
+    await openBoard()
+    await userEvent.click(screen.getByRole('button', { name: 'Enviar um som' }))
+    pick(new File([new Uint8Array(100)], 'quebrado.mp3', { type: 'audio/mpeg' }))
+    expect((await screen.findByRole('alert')).textContent).toBe('Não foi possível ler esse áudio. Use MP3, OGG, WAV ou WebM.')
     expect(screen.getByRole('button', { name: 'Enviar' })).toHaveProperty('disabled', true)
   })
 

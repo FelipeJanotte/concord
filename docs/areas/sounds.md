@@ -1,6 +1,6 @@
 # Efeitos sonoros (soundboard)
 
-Cada pessoa envia **áudios de até 5 s** para a coleção da comunidade; quem está numa sala de voz toca um deles e
+Cada pessoa envia **áudios de até 5 s** para a coleção da comunidade (arquivo mais longo: o app deixa escolher o trecho e corta antes de enviar); quem está numa sala de voz toca um deles e
 **todos na sala ouvem do começo ao fim**. Cada app toca o som **localmente** ao receber `sound:played` (pela saída
 escolhida na B4, respeitando deafen e o volume de quem tocou) — nada é misturado no microfone de ninguém.
 
@@ -13,6 +13,7 @@ escolhida na B4, respeitando deafen e o volume de quem tocou) — nada é mistur
 | `server/storage/audio.ts` | `sniffAudio` (MP3/OGG/WAV/WebM pelos bytes) e `audioDurationMs` (`music-metadata`, import dinâmico porque o pacote é só ESM). |
 | `server/repo/sounds.ts` | `insertSound` (nome repetido → `DuplicateError`), `listSounds`, `findSound`, `deleteSound`, `countSounds`. |
 | `server/db/schema/sounds.ts` | Tabela `sounds` (migration `0003_sounds`): `check` de nome, emoji, tamanho, duração e tipo; nome único sem diferenciar maiúsculas. |
+| `src/shared/sound-clip.ts` | Corte no app (puras, sem DOM): `clipWindow`/`maxClipStartMs` (trecho de até 5 s), `mixToMono`, `encodeWav` (PCM 16 bits mono), `clipToWav`, `decodedDurationMs`, `SOUND_CLIP_SAMPLE_RATE` (44,1 kHz). Fica em `shared/` para o teste provar o resultado com o `sniffAudio`/`audioDurationMs` do servidor. |
 | `server/modules/voice.ts` | `voiceChannelOf(socketId)` e `voiceSocketsIn(channelId)`, usados para validar e entregar o `sound:played`. |
 
 ## Fluxo
@@ -81,10 +82,10 @@ chamada" em vez de "para todos na sala".
 |---|---|
 | `src/renderer/src/store/devices.ts` + `lib/actions/devices.ts` | `soundboardVolume` (0–1, padrão 1) e `setSoundboardVolume`, salvos em `concord:audio`. |
 | `src/renderer/src/store/sounds.ts` | `sounds` (ordem de nome), `soundsLoaded`, `soundsPlaying` (conta → `{ soundId, by, until }`, o indicador). Aberto/fechado do popup não fica aqui (é local de cada botão). |
-| `src/renderer/src/lib/actions/sounds.ts` | `bindSoundsEvents` (`sound:created/deleted/played`), `loadSounds` (depois do `hello`), `refreshSounds` (o mesmo, sem lançar; ao abrir o popup), `playSound`, `deleteSound`, `uploadSound`, `checkSoundFile`, `soundNameFromFile`. O HTTP (`soundTransport.send`: `fetch` no `POST /sounds`; `soundTransport.duration`: duração lida por um `Audio`) e o áudio (`soundOutput.play`) são substituídos nos testes. |
+| `src/renderer/src/lib/actions/sounds.ts` | `bindSoundsEvents` (`sound:created/deleted/played`), `loadSounds` (depois do `hello`), `refreshSounds` (o mesmo, sem lançar; ao abrir o popup), `playSound`, `deleteSound`, `uploadSound`, `checkSoundFile`, `inspectSoundFile` (vai como está ou precisa de corte), `clipSound` (trecho em WAV), `soundNameFromFile`. O HTTP (`soundTransport.send`: `fetch` no `POST /sounds`; `soundTransport.duration`: duração lida por um `Audio`; `soundTransport.decode`: decodifica com `OfflineAudioContext` a 44,1 kHz) e o áudio (`soundOutput.play`) são substituídos nos testes. |
 | `src/renderer/src/components/voice/Soundboard.tsx` | `SoundboardPopover` (envolve o botão: popup sem modal com grade, bloqueios, erro, lixeira com confirmação e o envio) e `SoundsPlayingBar` ("📯 Ana tocou Buzina" acima dos controles). |
 | `src/renderer/src/components/ui/popover.tsx` | `Popover`/`PopoverTrigger`/`PopoverContent` do shadcn (`npx shadcn@latest add popover`). |
-| `src/renderer/src/components/voice/SoundUploadForm.tsx` | Enviar: arquivo (confere 512 KB e 5 s na hora), prévia (`<audio controls>`), nome sugerido pelo arquivo e o emoji escolhido no `EmojiPicker` (aparece ao lado do nome). |
+| `src/renderer/src/components/voice/SoundUploadForm.tsx` | Enviar: arquivo (`inspectSoundFile` na hora), escolha do trecho (`ClipPicker`: controle "Início do trecho", de 0,1 em 0,1 s, e "Trecho de X s a Y s (de Z s)"), prévia (`<audio controls>` com exatamente o que vai ser enviado: o arquivo ou o trecho cortado), nome sugerido pelo arquivo e o emoji escolhido no `EmojiPicker` (aparece ao lado do nome). |
 | `src/renderer/src/components/voice/EmojiPicker.tsx` | Grade de emojis por categoria (`EMOJI_GROUPS`: Sons, Rostos, Gestos, Bichos, Coisas). Clicar escolhe, clicar no escolhido tira (sem emoji). Lista fixa, sem biblioteca; todos passam no `cleanSoundEmoji` (teste garante). Para acrescentar emojis, edite `EMOJI_GROUPS`. Reusado pelas reações das mensagens (A16, `components/chat/Reactions.tsx`). |
 | `src/renderer/src/components/VoiceView.tsx`, `UserPanel.tsx`, `call/CallPanel.tsx` | O botão dentro do `SoundboardPopover` (e o indicador na sala e na chamada). `ControlButton` e `PanelButton` repassam as props do `<button>` para o gatilho do popup funcionar (`aria-expanded`, clique, ref). |
 
@@ -102,9 +103,24 @@ aparece no console como `[sons] não foi possível tocar:`.
 **Bloqueios no popup:** fora da sala → "Entre numa sala de voz para tocar sons."; sem `speak` (ou silenciado por um
 moderador, que chega como `canSpeak: false`) → "Você não pode falar nesta sala, então não toca sons." (botões desligados). Lixeira só para quem enviou ou tem `manageMessages`.
 
-**Enviar:** `checkSoundFile` antes de enviar (tamanho e duração; o tipo quem confere é o servidor, pelos bytes) e
-`uploadSound` limpa o nome (1–32) e o emoji (`cleanSoundEmoji`). O som enviado já entra na coleção (o
-`sound:created` que chega depois não duplica). Sem corte para 5 s: arquivo maior é recusado com a mensagem.
+**Enviar:** ao escolher o arquivo, `inspectSoundFile` decide:
+
+| Arquivo | O que acontece |
+|---|---|
+| Até 512 KB e até 5 s (duração lida por um `Audio`) | Vai **como está** (mantém MP3/OGG comprimido). |
+| Mais de 5 s, mais de 512 KB ou sem duração legível (ex.: WebM gravado pelo navegador) | **Corte no app:** decodifica (`soundTransport.decode`), a pessoa escolhe o início do trecho de até 5 s e o app grava o trecho em **WAV** (`clipSound` → `clipToWav`). |
+| O Chromium não decodifica | Recusado: "Não foi possível ler esse áudio. Use MP3, OGG, WAV ou WebM." |
+
+**Formato do corte: WAV PCM 16 bits, mono, 44,1 kHz** (o `OfflineAudioContext` já decodifica nessa taxa). 5 s =
+44 + 5 × 44 100 × 2 = 441 044 bytes, abaixo dos 512 KB (524 288) — por isso não há redução de taxa. Estéreo a
+44,1 kHz (882 KB) não caberia; **mono** é a média dos canais (`mixToMono`). WAV porque o navegador não tem
+codificador MP3/OGG síncrono, e o servidor já lê a duração exata do WAV. O trecho tem no máximo
+`floor(5 × taxa)` amostras: a duração lida pelo servidor dá exatamente 5000 ms. A prévia toca o próprio trecho
+cortado (o mesmo `Blob` que vai ser enviado), recalculado a cada mudança do início.
+
+Depois `uploadSound` confere de novo (`checkSoundFile`: tamanho e duração; o tipo quem confere é o servidor, pelos
+bytes), limpa o nome (1–32) e o emoji (`cleanSoundEmoji`). O servidor **não mudou**: continua recusando mais de 5 s
+ou 512 KB. O som enviado já entra na coleção (o `sound:created` que chega depois não duplica).
 
 ## Testes
 
@@ -113,8 +129,9 @@ moderador, que chega como `canSpeak: false`) → "Você não pode falar nesta sa
 | `server/storage/audio.test.ts` | Tipos pelos bytes (e o que não é áudio), duração de WAV e arquivo corrompido → null. |
 | `src/renderer/src/lib/actions/devices.test.ts` | `soundboardVolume`: padrão 100%, salvar, limite e dado ruim ao ler. |
 | `server/repo/sounds.test.ts` | Gravar/listar/apagar/contar, nome repetido e os `check` do banco. |
-| `src/renderer/src/lib/actions/sounds.test.ts` | App: coleção (ordem, criado/apagado, recarregar ao abrir), `sound:played` (link, saída, volume por pessoa × saída × efeitos sonoros, deafen, silenciado, outra sala, indicador até acabar com o nome de quem tocou, conexão que já saiu), tocar/apagar e enviar (nome sugerido, tamanho, duração, token, recusas, erro do servidor). |
-| `src/renderer/src/components/voice/soundboard.test.tsx` | Tela: popup sem modal (o resto do app continua clicável e sem `aria-hidden`; clicar fora, Esc e o botão de novo fecham; abrir recarrega a coleção; reabrir depois de fechar no envio volta para a grade), controle de volume dos efeitos sonoros (mostra, muda e salva), grade (tocar, erro, bloqueios, vazia), apagar (só o meu; `manageMessages`), enviar (prévia, nome, emoji pela grade, sem emoji, recusa local, erro), seletor de emoji (escolher/tirar, categorias, lista válida e sem repetir) e indicador. `VoiceView.test.tsx`: botão e indicador na sala. `voice-panel.test.tsx`: abre do "Voz conectada". `call/call.test.tsx`: botão no painel da chamada, texto do popup e o som indo para a sala da conversa. |
+| `src/renderer/src/lib/actions/sounds.test.ts` | App: coleção (ordem, criado/apagado, recarregar ao abrir), `sound:played` (link, saída, volume por pessoa × saída × efeitos sonoros, deafen, silenciado, outra sala, indicador até acabar com o nome de quem tocou, conexão que já saiu), tocar/apagar e enviar (nome sugerido, tamanho, duração, token, recusas, erro do servidor, `inspectSoundFile`: vai como está × corte × não decodifica, `clipSound` em WAV). |
+| `src/shared/sound-clip.test.ts` | Corte: trecho (limites, início negativo/além do fim, áudio curto), mono, cabeçalho WAV e conversão das amostras, amostras do trecho certo e o trecho de 5 s de um áudio estéreo de 12 s aceito pelo `sniffAudio`/`audioDurationMs` do servidor (≤ 512 KB, 5000 ms). |
+| `src/renderer/src/components/voice/soundboard.test.tsx` | Tela: popup sem modal (o resto do app continua clicável e sem `aria-hidden`; clicar fora, Esc e o botão de novo fecham; abrir recarrega a coleção; reabrir depois de fechar no envio volta para a grade), controle de volume dos efeitos sonoros (mostra, muda e salva), grade (tocar, erro, bloqueios, vazia), apagar (só o meu; `manageMessages`), enviar (prévia, nome, emoji pela grade, sem emoji, áudio longo: escolher o início, texto do trecho e envio do trecho em WAV; áudio ilegível recusado, erro), seletor de emoji (escolher/tirar, categorias, lista válida e sem repetir) e indicador. `VoiceView.test.tsx`: botão e indicador na sala. `voice-panel.test.tsx`: abre do "Voz conectada". `call/call.test.tsx`: botão no painel da chamada, texto do popup e o som indo para a sala da conversa. |
 | `server/tests/sounds.test.ts` | Servidor real com LiveKit falso: envio e recusas (5 s, 512 KB, não-áudio, nome, emoji, limite por conta, CORS), lista e download assinados, tocar só para a sala, na chamada de uma conversa privada (só a outra pessoa; bloqueio recusa), fora da sala, sobreposição, sem `speak`, silenciado por um moderador (e liberado ao tirar), apagar (autor, outra pessoa, `manageMessages`). |
 
 Áudios de teste são gerados na hora (`server/tests/audio-fixtures.ts`, `wav(segundos)`), sem binários no repositório.
@@ -131,4 +148,5 @@ moderador, que chega como `canSpeak: false`) → "Você não pode falar nesta sa
 | Som tocou para os outros mas não para mim | Deafen ligado, a pessoa está silenciada só para mim (botão direito), o volume dela está em 0 ou o volume dos efeitos sonoros (topo do popup) está em 0%. |
 | Botões do popup desligados | Fora da sala ou sem `speak` nela (o popup diz qual). |
 | Popup fecha sozinho ao clicar em outra coisa | De propósito: sem modal, clicar fora fecha (como o Discord). Para tocar vários sons seguidos, clique só dentro dele. |
-| Pendente | Cortar o áudio para 5 s antes de enviar (hoje o arquivo longo é recusado). |
+| "Não foi possível ler esse áudio" ao escolher | O Chromium não decodificou o arquivo (formato sem suporte ou corrompido). Converta para MP3/OGG. |
+| Som cortado sai mono | De propósito: o corte grava WAV mono 16 bits 44,1 kHz (cabe nos 512 KB; veja "Enviar"). Para estéreo, corte fora e envie um arquivo de até 5 s. |

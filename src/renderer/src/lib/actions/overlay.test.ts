@@ -1,9 +1,24 @@
 // @vitest-environment jsdom
 // Overlay em jogos no app (B15): o que vai para o overlay (minha sala), preferência salva e atalho.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { OverlayConfig, OverlayPosition, OverlayRoom } from '@shared/overlay'
-import type { Channel, DmEntry, User, VoiceState } from '@shared/types'
-import { loadOverlayPreferences, OVERLAY_KEY, overlayEnv, overlayRoom, setOverlayCorner, setOverlayEditing, setOverlayEnabled, startOverlay, syncOverlay } from '@/lib/actions/overlay'
+import { DEFAULT_OVERLAY_SHORTCUTS, type OverlayBridge, type OverlayConfig, type OverlayPosition, type OverlayRoom, type OverlayShortcuts } from '@shared/overlay'
+import type { Channel, DmEntry, ThemeConfig, User, VoiceState } from '@shared/types'
+import {
+  cancelOverlayShortcutRecording,
+  loadOverlayPreferences,
+  OVERLAY_KEY,
+  overlayEnv,
+  overlayRoom,
+  recordOverlayShortcutKey,
+  resetOverlayShortcuts,
+  setOverlayCorner,
+  setOverlayEditing,
+  setOverlayEnabled,
+  setOverlaySize,
+  startOverlay,
+  startOverlayShortcutRecording,
+  syncOverlay
+} from '@/lib/actions/overlay'
 import { initialState, useApp } from '@/store'
 
 const user = (id: string, name: string, avatarUrl: string | null = null): User => ({ id, accountId: `acc-${id}`, name, tag: id, color: '#123456', avatarUrl })
@@ -16,6 +31,19 @@ beforeEach(() => {
   useApp.setState({ ...initialState, serverUrl: 'http://srv:3001', channels: [jogos], dms: [dm] })
 })
 afterEach(() => vi.restoreAllMocks())
+
+const noopBridge = (): OverlayBridge => ({
+  setConfig: () => {},
+  setRoom: () => {},
+  onToggled: () => () => {},
+  setEditing: () => {},
+  onEditing: () => () => {},
+  onMoved: () => () => {},
+  onResized: () => () => {},
+  setShortcuts: async () => ({ toggle: true, edit: true }),
+  pauseShortcuts: () => {},
+  setTheme: () => {}
+})
 
 describe('overlayRoom', () => {
   it('fora de sala: null', () => {
@@ -54,7 +82,7 @@ describe('preferência', () => {
   it('salva e lê de volta; valores estranhos voltam ao padrão', () => {
     setOverlayEnabled(true)
     setOverlayCorner('bottom-right')
-    expect(JSON.parse(localStorage.getItem(OVERLAY_KEY)!)).toEqual({ enabled: true, corner: 'bottom-right', size: 'medium', position: null })
+    expect(JSON.parse(localStorage.getItem(OVERLAY_KEY)!)).toEqual({ enabled: true, corner: 'bottom-right', size: 'medium', position: null, width: null, shortcuts: DEFAULT_OVERLAY_SHORTCUTS })
     useApp.setState({ ...initialState })
     loadOverlayPreferences()
     expect(useApp.getState()).toMatchObject({ overlayEnabled: true, overlayCorner: 'bottom-right' })
@@ -72,6 +100,7 @@ describe('sincronia com o processo principal', () => {
     const rooms: Array<OverlayRoom | null> = []
     let toggled: ((enabled: boolean) => void) | null = null
     vi.spyOn(overlayEnv, 'bridge').mockReturnValue({
+      ...noopBridge(),
       setConfig: (c) => configs.push(c),
       setRoom: (r) => rooms.push(r),
       onToggled: (fn) => {
@@ -83,7 +112,7 @@ describe('sincronia com o processo principal', () => {
       onMoved: () => () => {}
     })
     const stop = startOverlay()
-    expect(configs).toEqual([{ enabled: false, corner: 'top-left', size: 'medium', position: null }])
+    expect(configs).toEqual([{ enabled: false, corner: 'top-left', size: 'medium', position: null, width: null }])
     expect(rooms).toEqual([null])
 
     useApp.setState({ myVoiceChannelId: 'jogos', users: [user('s1', 'Ana')], voice: [vs('s1', 'jogos')] })
@@ -120,6 +149,7 @@ describe('mover (como no Discord)', () => {
     let onEditing: ((e: boolean) => void) | null = null
     let onMoved: ((p: OverlayPosition) => void) | null = null
     vi.spyOn(overlayEnv, 'bridge').mockReturnValue({
+      ...noopBridge(),
       setConfig: (c) => calls.configs.push(c),
       setRoom: () => {},
       onToggled: () => () => {},
@@ -176,5 +206,131 @@ describe('mover (como no Discord)', () => {
     localStorage.setItem(OVERLAY_KEY, '{"enabled":true,"position":{"x":"1","y":null}}')
     loadOverlayPreferences()
     expect(useApp.getState().overlayPosition).toBeNull()
+  })
+})
+
+describe('redimensionar arrastando', () => {
+  it('a largura solta no overlay é salva e volta na configuração; escolher um tamanho volta à largura dele', () => {
+    const configs: OverlayConfig[] = []
+    let onResized: ((width: number) => void) | null = null
+    vi.spyOn(overlayEnv, 'bridge').mockReturnValue({
+      ...noopBridge(),
+      setConfig: (c) => configs.push(c),
+      onResized: (fn) => {
+        onResized = fn
+        return () => (onResized = null)
+      }
+    })
+    const stop = startOverlay()
+    onResized!(410.6)
+    expect(useApp.getState().overlayWidth).toBe(411)
+    expect(JSON.parse(localStorage.getItem(OVERLAY_KEY)!).width).toBe(411)
+    expect(configs.at(-1)?.width).toBe(411)
+    onResized!(Number.NaN)
+    expect(useApp.getState().overlayWidth).toBe(411)
+    useApp.setState({ overlayWidth: null })
+    loadOverlayPreferences()
+    expect(useApp.getState().overlayWidth).toBe(411)
+    setOverlaySize('large')
+    expect(useApp.getState().overlayWidth).toBeNull()
+    stop()
+    expect(onResized).toBeNull()
+  })
+})
+
+describe('atalhos escolhidos', () => {
+  function shortcutBridge(status = { toggle: true, edit: true }) {
+    const calls = { set: [] as OverlayShortcuts[], paused: [] as boolean[] }
+    vi.spyOn(overlayEnv, 'bridge').mockReturnValue({
+      ...noopBridge(),
+      setShortcuts: async (s) => {
+        calls.set.push(s)
+        return status
+      },
+      pauseShortcuts: (p) => calls.paused.push(p)
+    })
+    return calls
+  }
+  const key = (code: string, mods: Partial<Record<'ctrlKey' | 'shiftKey' | 'altKey' | 'metaKey', boolean>> = {}) => ({
+    key: code,
+    code,
+    ctrlKey: false,
+    shiftKey: false,
+    altKey: false,
+    metaKey: false,
+    ...mods
+  })
+
+  it('ao abrir manda os atalhos salvos; atalho ocupado por outro programa fica marcado', async () => {
+    localStorage.setItem(OVERLAY_KEY, JSON.stringify({ shortcuts: { toggle: 'Alt+1', edit: 'Alt+2' } }))
+    const calls = shortcutBridge({ toggle: false, edit: true })
+    const stop = startOverlay()
+    expect(calls.set).toEqual([{ toggle: 'Alt+1', edit: 'Alt+2' }])
+    await vi.waitFor(() => expect(useApp.getState().overlayShortcutTaken).toEqual(['toggle']))
+    stop()
+  })
+
+  it('gravar: pausa os atalhos, espera a combinação, salva e registra a nova', async () => {
+    const calls = shortcutBridge()
+    startOverlayShortcutRecording('toggle')
+    expect(useApp.getState().overlayRecording).toBe('toggle')
+    expect(calls.paused).toEqual([true])
+    recordOverlayShortcutKey(key('ShiftLeft', { shiftKey: true }))
+    expect(useApp.getState().overlayRecording).toBe('toggle')
+    recordOverlayShortcutKey(key('KeyO', { ctrlKey: true, shiftKey: true }))
+    expect(useApp.getState()).toMatchObject({ overlayRecording: null, overlayShortcuts: { toggle: 'Ctrl+Shift+O', edit: DEFAULT_OVERLAY_SHORTCUTS.edit } })
+    expect(JSON.parse(localStorage.getItem(OVERLAY_KEY)!).shortcuts.toggle).toBe('Ctrl+Shift+O')
+    expect(calls.set.at(-1)).toEqual({ toggle: 'Ctrl+Shift+O', edit: DEFAULT_OVERLAY_SHORTCUTS.edit })
+    await vi.waitFor(() => expect(useApp.getState().overlayShortcutTaken).toEqual([]))
+  })
+
+  it('Esc desiste e volta os atalhos de antes; a combinação do outro atalho é recusada', () => {
+    const calls = shortcutBridge()
+    startOverlayShortcutRecording('edit')
+    recordOverlayShortcutKey(key('Escape'))
+    expect(useApp.getState().overlayRecording).toBeNull()
+    expect(calls.paused).toEqual([true, false])
+    expect(calls.set).toEqual([])
+    startOverlayShortcutRecording('edit')
+    recordOverlayShortcutKey(key('Backquote', { shiftKey: true }))
+    expect(useApp.getState().overlayRecording).toBe('edit')
+    expect(useApp.getState().notice?.text).toBe('Esse atalho já liga e desliga a sobreposição.')
+    cancelOverlayShortcutRecording()
+    cancelOverlayShortcutRecording()
+    expect(calls.paused).toEqual([true, false, true, false])
+  })
+
+  it('restaurar padrão volta os dois e registra', () => {
+    const calls = shortcutBridge()
+    useApp.setState({ overlayShortcuts: { toggle: 'Alt+1', edit: 'Alt+2' } })
+    resetOverlayShortcuts()
+    expect(useApp.getState().overlayShortcuts).toEqual(DEFAULT_OVERLAY_SHORTCUTS)
+    expect(calls.set).toEqual([DEFAULT_OVERLAY_SHORTCUTS])
+    expect(JSON.parse(localStorage.getItem(OVERLAY_KEY)!).shortcuts).toEqual(DEFAULT_OVERLAY_SHORTCUTS)
+  })
+
+  it('atalhos salvos inválidos voltam ao padrão', () => {
+    localStorage.setItem(OVERLAY_KEY, JSON.stringify({ shortcuts: { toggle: 'O', edit: 42 } }))
+    loadOverlayPreferences()
+    expect(useApp.getState().overlayShortcuts).toEqual(DEFAULT_OVERLAY_SHORTCUTS)
+  })
+})
+
+describe('tema ao vivo', () => {
+  const claro: ThemeConfig = { base: 'claro', accent: '#ff0055', background: { stops: ['#ffffff'], angle: 180 }, intensity: 0 }
+
+  it('manda o tema da conta quando ele chega e quando muda, uma vez só', () => {
+    const themes: ThemeConfig[] = []
+    vi.spyOn(overlayEnv, 'bridge').mockReturnValue({ ...noopBridge(), setTheme: (t) => themes.push(t) })
+    const stop = startOverlay()
+    expect(themes).toEqual([])
+    useApp.setState({ theme: claro, preferencesLoaded: true })
+    expect(themes).toEqual([claro])
+    useApp.setState({ typing: {} })
+    useApp.setState({ theme: { ...claro } })
+    expect(themes).toHaveLength(1)
+    useApp.setState({ theme: { ...claro, accent: '#00aa55' } })
+    expect(themes.at(-1)?.accent).toBe('#00aa55')
+    stop()
   })
 })

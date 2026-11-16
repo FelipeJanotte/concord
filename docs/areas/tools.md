@@ -130,9 +130,32 @@ abre na área central (`ToolView`, `docs/areas/home.md`). O resultado aparece no
 | `components/tools/CardFrame.tsx` | Moldura dos cartões (`section` com `aria-label`). |
 
 **Sorteador:** digitar (vários separados por vírgula), importar da sala/online, tirar, nº de times e "Sortear lanes". Com lanes ligadas, os botões "Lanes disponíveis" escolhem quais valem (todas ligadas
-no começo; vai como `laneSet` só quando não são todas) e cada pessoa pode ter uma lane preferida entre as disponíveis
-(vira `lanes: [lane]`; desligar a lane apaga a preferência). Sem nenhuma lane ou com gente demais (`> times × lanes`),
+no começo; vai como `laneSet` só quando não são todas). Cada pessoa tem seus botões de lane (grupo "Lanes preferidas
+de <nome>", só as disponíveis): cada clique acrescenta a lane no fim da lista de preferência e o botão ganha o selo
+"1ª", "2ª"...; clicar numa marcada tira ela e as seguintes sobem. Sem nenhuma marcada, vale qualquer lane. Vai como
+`lanes: [1ª, 2ª, ...]` na ordem dos cliques; lane desligada em "Lanes disponíveis" sai da lista (as outras sobem) e
+não é enviada. Sem nenhuma lane ou com gente demais (`> times × lanes`),
 avisa e não deixa sortear; com times menores que as lanes, avisa que nem todas serão usadas em cada time. Nome repetido (ou mesma conta) não entra duas vezes (`mergePlayers`).
+
+## Atalho no `+` do composer
+
+O botão `+` (rótulo "Ferramentas") à esquerda do clipe no `Composer` abre um menu (`components/chat/ToolsMenu.tsx`,
+`Popover` do shadcn) com as ferramentas de `TOOLS`, na ordem do registro. Escolher uma chama
+`openTool(id, channelId)`: a área central vira o `ToolView` com o **mesmo painel** da barra de úteis, e o "Postar em"
+já vem no canal ou conversa do chat de onde se clicou.
+
+- **Destino:** `openTool` grava `toolChannelId` (`store/navigation.ts`); `useDefaultTarget` (`shared.tsx`) usa ele
+  antes do canal de texto aberto e da conversa da Home. Pela barra de úteis, `openTool(id)` zera `toolChannelId` e
+  volta a sugestão de antes. Sem isso, um `+` numa conversa privada sugeriria o canal da comunidade que estivesse
+  aberto em `view`. Se o canal não puder receber (sumiu, perdeu `send`), cai na sugestão normal.
+- **Onde aparece:** chat de texto e conversa privada com `send`. No chat da sala de voz não aparece (o servidor
+  recusa ferramenta em canal de voz); sem `send`, o composer inteiro já vira o aviso.
+- **Por que navegar e não abrir o painel por cima do chat:** os painéis já mostram o resultado (`PostedResult`) e o
+  "Ver no chat" volta ao canal; um popover/diálogo exigiria reacomodar painéis feitos para a área central (o
+  sorteador é longo). Navegar reusa `ToolView` sem código novo além do menu e do `toolChannelId`.
+- **Testes:** `components/chat/tools-shortcut.test.tsx` (menu com o registro, painel aberto mirando o canal, conversa
+  privada mesmo com canal aberto na comunidade, sala de voz sem o botão) e `lib/actions/navigation.test.ts`
+  (`toolChannelId` gravado e zerado).
 
 **Meus votos:** `loadHistory` e `loadOlderMessages` (`lib/actions/messages.ts`) chamam `loadMyPollVotes` com a
 página que chegou, então as enquetes do histórico já aparecem marcadas.
@@ -150,7 +173,7 @@ página que chegou, então as enquetes do histórico já aparecem marcadas.
 
 | Arquivo | Cobre |
 |---|---|
-| `server/tools/teams.test.ts` | Validação (todas as mensagens), Fisher–Yates sem viés, equilíbrio com número ímpar, time maior sorteado, lanes sem repetir e em ordem, lanes disponíveis (só as escolhidas, limite do time, validação, preferência fora descartada), preferências (1ª vence 2ª, dois "só meio" em times diferentes), `crypto.randomInt`. |
+| `server/tools/teams.test.ts` | Validação (todas as mensagens), Fisher–Yates sem viés, equilíbrio com número ímpar, time maior sorteado, lanes sem repetir e em ordem, lanes disponíveis (só as escolhidas, limite do time, validação, preferência fora descartada), preferências (ordem guardada na validação, 1ª vence 2ª, 2ª quando a 1ª já é de outro no time, dois "só meio" em times diferentes), `crypto.randomInt`. |
 | `server/tools/random.test.ts` | Validação e sorteio do dado, moeda e sortear 1 (valores sempre na faixa com o acaso de verdade). |
 | `src/shared/types/tools.test.ts` | Texto por extenso de cada ferramenta e o corte em `MESSAGE_MAX_LENGTH`. |
 | `server/tests/tools.test.ts` | Servidor real: mesma mensagem para todos + histórico (times e dado), 3v3 com `laneSet`, moeda e sortear 1, erros sem postar, canal de voz/privado/sem `send`, conversa privada, `message:send` não forja ferramenta. |
@@ -161,13 +184,8 @@ página que chegou, então as enquetes do histórico já aparecem marcadas.
 | `server/tests/polls.test.ts` | Servidor real: criar e votar (anônimo, `mine`), único × múltiplo, histórico + `poll:mine`, encerrar (autor, dona, recusas), canal privado e sem `send`. |
 | `server/tools/move.test.ts` | `validateMoveRequest` (formatos, salas repetidas, `null`) e `planMoves` (nome, `nome#tag`, conta, ambíguo, conta repetida, time sem sala). |
 | `server/tests/move-teams.test.ts` | Servidor real + LiveKit falso: a dona move pela conta e pelo nome, quem já está na sala, sem `manageMembers`/`moveMembers` só a si, moderador (com `manageMembers` ou `moveMembers`) × dona, sem `connect` na sala do time, nome ambíguo, erros do pedido, sorteio de canal que não vejo. |
-| `src/renderer/src/components/tools/tools.test.tsx` | Telas (jsdom): registro, importar pessoas (uma por conta), cada painel (payload, canal sugerido, canal sem `send` some, erro, resultado), sorteador (vírgulas, online com conta, lanes, lanes disponíveis e preferência apagada, nenhuma lane, limite, aviso de times menores), cartões no chat (moeda no `ChatView`, desconhecida, mover para as salas e erro, enquete: votar, vários, encerrar, encerrada). |
+| `src/renderer/src/components/tools/tools.test.tsx` | Telas (jsdom): registro, importar pessoas (uma por conta), cada painel (payload, canal sugerido, canal sem `send` some, erro, resultado), sorteador (vírgulas, online com conta, lanes, lanes disponíveis e preferência apagada, várias preferidas em ordem com o selo 1ª/2ª e renumeração, nenhuma lane, limite, aviso de times menores), cartões no chat (moeda no `ChatView`, desconhecida, mover para as salas e erro, enquete: votar, vários, encerrar, encerrada). |
 | `src/renderer/src/lib/actions/polls.test.ts` | App: `poll:updated` na mensagem, criar, votar, encerrar, `loadMyPollVotes`. |
-
-## Pendente
-
-- Atalho opcional no `+` do composer abrindo o mesmo painel (roadmap v4).
-- Lane: o painel deixa escolher **uma** preferida por pessoa; o contrato aceita uma lista em ordem.
 
 ## Depuração (mover times)
 
