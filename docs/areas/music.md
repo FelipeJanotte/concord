@@ -12,12 +12,12 @@ publicado no LiveKit pelo próprio servidor com `@livekit/rtc-node`. Por que ass
 |---|---|
 | `src/shared/types/music.ts` | Contrato: `MusicTrack`, `MusicState`, `MusicResult`, `MusicPlayResult` (`added`; erro com `posted: true` = o comando já foi postado), `MusicControl`/`MusicPlayRequest` (com `textChannelId?`), `MusicBotReply` (com `searching`/`failed`) + `musicBotReplyText`/`musicSearchingText`/`musicFailedText`/`musicTrackLabel` (resposta do bot no chat; vai em `ToolPayload` como `{ tool: 'music' }` em `tools.ts`), eventos `music:*`, limites `MUSIC_MAX_TRACK_MS` (15 min), `MUSIC_QUEUE_MAX` (100), `MUSIC_QUERY_MAX` (500), `MUSIC_BOT_NAME`. |
 | `server/modules/music.ts` | Handlers `music:play/skip/stop/queue`, conferência de sala e permissão, limite `LIMITS.music`, `music:state` por `emitToViewers`, saída do bot quando a sala esvazia (`onVoiceRoomsChange` de `voice.ts`) e as mensagens no chat (`commandChat` confere o canal; `postToChat` grava o comando e a resposta pelo `insertMessage` e manda `message:new` por `emitToViewers`; no `/play`, `findAndEnqueue` busca e enfileira depois do "procurando" e `replaceBotReply` troca a resposta no lugar com `updateToolMessage` + `message:edited`; `<@todos>` no comando passa pelo `mentionSafeContent` de `messages.ts`). |
-| `server/music/ports.ts` | Tipos do domínio: `MusicQuery` (o que o pedido é), `TrackMetadata` com `AudioLocator` (`youtube-search` = faixa a buscar no YouTube na hora de tocar; `audio-url` = link do vídeo, com `direct?: DirectAudio` = endereço direto do áudio que veio no `-J` + hora da leitura), `withoutDirectAudio`, `QueuedTrack` (`MusicTrack` + `audio`, só no servidor), `TrackResolver`, `AudioSource.prepare` → `PreparedAudio` (`open()` dá o `AudioStream`, PCM 48 kHz estéreo em quadros de 10 ms; `close()` encerra tudo, aberto ou não), `RoomPublisher`/`RoomOutput`, `MusicError` (mensagem pt-BR) e `PLAYLIST_READ_MAX` (200). |
+| `server/music/ports.ts` | Tipos do domínio: `MusicQuery` (o que o pedido é), `TrackMetadata` com `AudioLocator` (`youtube-search` = faixa a buscar no YouTube na hora de tocar; `audio-url` = link do vídeo), `QueuedTrack` (`MusicTrack` + `audio`, só no servidor), `TrackResolver`, `AudioSource.prepare` → `PreparedAudio` (`open()` dá o `AudioStream`, PCM 48 kHz estéreo em quadros de 10 ms; `close()` encerra tudo, aberto ou não), `RoomPublisher`/`RoomOutput`, `MusicError` (mensagem pt-BR) e `PLAYLIST_READ_MAX` (200). |
 | `server/music/query.ts` | `parseMusicQuery` (pura): texto → `MusicQuery` ou `null` (link de outro site). |
 | `server/music/catalog.ts` | `MusicCatalog.find`: roteia a consulta para o resolvedor certo e aplica as regras (ao vivo, sem duração, acima de 15 min: recusa item único, pula em playlist). |
 | `server/music/spotify.ts` | `SpotifyResolver`: faixa e álbum pela Web API (Client Credentials, token até 1 min antes de expirar, álbum paginado de 50 em 50); playlist pela página de incorporação (`parseSpotifyEmbed`). |
-| `server/music/youtube.ts` | `YouTubeResolver`: vídeo e busca lidos inteiros (`yt-dlp -J --no-playlist --ignore-no-formats-error --extractor-args youtube:skip=hls`, já com os formatos), playlist plana (`-J --flat-playlist`); `parseYtDlpVideo`/`parseYtDlpEntries` (JSON do yt-dlp → faixa; com a hora da leitura, guardam em `audio.direct` o melhor formato só de áudio, senão o último com áudio, a mesma regra do `bestaudio/best`), `SKIP_HLS` e `ytDlpRunner` (roda o programa). |
-| `server/music/audio-source.ts` | `YtDlpFfmpegSource.prepare`: com `audio.direct` de menos de `DIRECT_AUDIO_MAX_AGE_MS` (5 min) usa esse endereço sem chamar o yt-dlp; senão já roda `yt-dlp --format bestaudio/best --get-url` (`ytsearch1:<busca>` ou o link, com `SKIP_HLS`); `open()` espera o endereço e liga o `ffmpeg` nele (`-reconnect`) → PCM s16le; `PcmFramer` corta em quadros; `audioToolsFromEnv`. |
+| `server/music/youtube.ts` | `YouTubeResolver`: vídeo lido inteiro (`yt-dlp -J --no-playlist --ignore-no-formats-error --extractor-args youtube:skip=hls`), busca e playlist em lista plana (`-J --flat-playlist`, sem abrir cada vídeo); `parseYtDlpVideo`/`parseYtDlpEntries` (JSON do yt-dlp → faixa com o link do vídeo como áudio), `SKIP_HLS`, `NODE_JS_RUNTIME` (`--js-runtimes node:<Node do servidor>`, em toda chamada do yt-dlp) e `ytDlpRunner` (roda o programa). |
+| `server/music/audio-source.ts` | `YtDlpFfmpegSource.prepare` já inicia o `yt-dlp ... --format bestaudio/best -o -` (`ytDlpArgs`: `ytsearch1:<busca>` ou o link, com `NODE_JS_RUNTIME` e `SKIP_HLS`), que baixa para a saída e fica parado no pipe; `open()` inicia o `ffmpeg -i pipe:0` (`ffmpegArgs`) e liga a saída do yt-dlp na entrada dele → PCM s16le; `close()` mata os dois; sem nenhum quadro, erro `Sem áudio: <programa> (código N): <última linha do stderr>` de quem falhou; `PcmFramer` corta em quadros; `audioToolsFromEnv`. |
 | `server/music/queue.ts` | Fila pura por sala: `enqueue` (várias de uma vez; a primeira vai para "tocando agora"; entra só o que cabe e devolve `added`; recusa fila cheia) e `advance`. |
 | `server/music/player.ts` | `MusicPlayer`: uma fila e um bot por sala; entra na primeira música, toca em sequência, pula, para e sai quando a fila acaba; pré-busca (`prefetch`, seção "Pré-busca"). Avisa cada mudança (`onChange`) sem o `audio` (estado público). |
 | `server/music/livekit-publisher.ts` | `LiveKitPublisher`: token do bot (identidade `music-bot:<canal>`, nome "Música", atributo `bot: music`, só publica microfone, não assina ninguém) e a faixa `AudioSource` do `@livekit/rtc-node`. |
@@ -67,61 +67,65 @@ publicado no LiveKit pelo próprio servidor com `@livekit/rtc-node`. Por que ass
    capa, duração) antes de enfileirar.
 3. `MusicPlayer.add` (todas as faixas de uma vez, um `music:state` só): sala sem bot → `AudioSource.prepare` da
    primeira faixa **e**, em paralelo, `RoomPublisher.join` (o bot entra no LiveKit); com bot → fim da fila.
-4. Cada faixa: `PreparedAudio.open` (espera o endereço direto, liga o ffmpeg nele, cortado em duração + 5 s)
-   → quadros de 10 ms → `RoomOutput.play` (`AudioSource.captureFrame` do rtc-node, que segura o ritmo em tempo real).
-   Vídeo e busca que tocam já: o endereço é o que veio no `-J` do passo 2 (seção "Pré-busca"). Faixa do Spotify: a
-   busca `"<artistas> - <título>"` no YouTube acontece no `prepare` (busca e endereço numa chamada só do yt-dlp), que
-   para a 1ª faixa roda no próprio `/play`, em paralelo com a entrada no LiveKit.
+4. Cada faixa: `prepare` inicia `yt-dlp -o -` (abre o vídeo ou faz a busca `"<artistas> - <título>"` da faixa do
+   Spotify, resolve os desafios de JavaScript do YouTube, espera o tempo que o YouTube exige e começa a baixar para a
+   saída, que fica parada no pipe); `PreparedAudio.open` inicia `ffmpeg -i pipe:0` (cortado em duração + 5 s) e liga a
+   saída do yt-dlp na entrada dele → quadros de 10 ms → `RoomOutput.play` (`AudioSource.captureFrame` do rtc-node, que
+   segura o ritmo em tempo real; o pipe cheio segura o yt-dlp). Para a 1ª faixa o `prepare` roda no próprio `/play`,
+   em paralelo com a entrada no LiveKit.
 5. Faixa acabou → próxima; fila acabou, `/stop` ou sala vazia → o bot sai (`leave`) e `music:state` vai com `nowPlaying: null`.
 6. No app, o áudio do bot chega como o de qualquer participante e segue o volume geral de saída, o deafen e o volume/silenciar próprio do bot (chave `music-bot`, `docs/areas/voice.md`).
 
 ## Pré-busca
 
-Medido em 17/11/2026 (Windows, yt-dlp 2026.10.26 do winget, LiveKit local): quase todo o tempo até o som é o **yt-dlp**
-(só abrir o `.exe` leva ~1,7 s; achar o endereço do áudio, ~3,5 s num link e ~4,4 s numa busca); entrar no LiveKit
-leva ~0,2 s e o ffmpeg num endereço direto dá o 1º quadro em ~0,3 s. Antes cada troca de faixa esperava o yt-dlp
-inteiro (~4 s de silêncio). Agora:
+Medido em 17/11/2026 (Windows, yt-dlp 2026.10.26 do winget, Node como runtime de JS, LiveKit local): quase todo o
+tempo até o som é o **yt-dlp**. Na faixa que vai tocar ele abre o `.exe` (~1,5 s), lê a página e o player, resolve os
+desafios de JavaScript (~1,2 s), **espera ~4 s porque o YouTube exige** ("Sleeping 4.00 seconds as required by the
+site") e só então baixa. O ffmpeg dá o 1º quadro poucos ms depois do 1º byte; entrar no LiveKit leva ~0,2 s.
 
 - O `MusicPlayer` mantém preparadas (`room.prepared`, por id da faixa) **só** a faixa tocando e a **próxima** da fila.
   A próxima só é preparada quando a atual **já começou a tocar** (1º quadro): um yt-dlp por vez, para não disputar CPU
-  com a faixa que está para começar.
-- Toda mudança na fila (`add`, `skip`, fim da faixa, `stop`) chama `prefetch`: fecha o que saiu (mata o yt-dlp ou o
-  ffmpeg) e prepara o que entrou. A troca usa o que já estava preparado (sem nova chamada ao yt-dlp). Bot que sai (fila
-  acabou, `stop`, sala vazia, falha ao entrar) fecha tudo (`release`). Nenhum processo fica para trás.
-- Só a próxima, nunca a fila inteira: o endereço direto do YouTube **expira (~6 h)** e cada preparada é um processo.
-- Troca entre faixas: de ~4 s para ~0,1–0,3 s.
+  com a faixa que está para começar. Preparar = iniciar o `yt-dlp -o -`: ele faz a parte cara (abrir, extrair,
+  desafios, espera) e para quando o pipe enche, até o `open` ligar o ffmpeg.
+- Toda mudança na fila (`add`, `skip`, fim da faixa, `stop`) chama `prefetch`: fecha o que saiu (mata o yt-dlp e o
+  ffmpeg) e prepara o que entrou. A troca usa o que já estava preparado. Bot que sai (fila acabou, `stop`, sala vazia,
+  falha ao entrar) fecha tudo (`release`). Nenhum processo fica para trás (conferido com `Get-Process yt-dlp,ffmpeg`
+  depois das medições).
+- Só a próxima, nunca a fila inteira: cada preparada é um yt-dlp vivo com uma conexão aberta no YouTube. Parada no
+  pipe ela aguenta a faixa atual inteira: preparada, 4 min parada e depois aberta, entregou os 213 s da faixa completos
+  (1º quadro 0,45 s depois do `open`).
+- Spotify: o Spotify não tem áudio, então a busca no YouTube é inevitável depois dos metadados (~0,3–0,7 s). Ela roda
+  no `prepare` da 1ª faixa (playlist/álbum: só a 1ª), no mesmo instante em que o bot começa a entrar no LiveKit.
 
-**1ª música: reaproveitar o endereço do `-J`.** Vídeo do YouTube e busca por texto são lidos inteiros no enfileiramento
-(sem `--flat-playlist`), e esse JSON já traz os formatos com o endereço direto. `parseYtDlpVideo`/`parseYtDlpEntries`
-escolhem o melhor (último formato só de áudio da lista, que o yt-dlp ordena do pior ao melhor; sem nenhum, o último com
-áudio: a regra do `bestaudio/best`) e guardam em `audio.direct` com a hora da leitura.
+**Por que não o endereço direto do áudio.** O `url` do formato (`--get-url` ou o `-J`) dá **403** no ffmpeg quando o
+yt-dlp resolve os desafios de JavaScript (Deno no PATH ou `--js-runtimes`): o formato vem com `available_at` alguns
+segundos à frente e o YouTube recusa antes disso (testado: 403 na hora, áudio depois de esperar 7 s). Reproduzir essa
+regra no Concord seria copiar um detalhe interno do YouTube; o yt-dlp já cuida disso. ADR 0006, revisão do pipe.
 
-- Só a faixa que **toca já** usa: `MusicPlayer.add` numa sala sem bot mantém o `direct` só na 1ª faixa e tira
-  (`withoutDirectAudio`) de todas as outras e de tudo que entra numa sala já tocando. Essas seguem a pré-busca acima.
-- Prazo: `prepare` só usa o `direct` com menos de **5 min** (`DIRECT_AUDIO_MAX_AGE_MS`); mais velho é descartado e o
-  yt-dlp acha um novo. O endereço do YouTube vale ~6 h; 5 min cobre com folga o caminho `/play` → `prepare` (milissegundos).
-- Playlist do YouTube continua plana (lista rápida, sem formatos): a 1ª faixa dela ainda espera o yt-dlp no `prepare`.
-- Spotify: o Spotify não tem áudio, então a busca no YouTube é inevitável depois dos metadados (~0,3–0,5 s). Ela já roda
-  no `/play`: `add` chama `prepare` da 1ª faixa (playlist/álbum: só a 1ª) no mesmo instante em que o bot começa a entrar
-  no LiveKit. As outras faixas seguem a pré-busca.
+**Busca por texto em lista plana.** Sem o endereço direto, o `-J` completo da busca não serve para nada:
+`-J --flat-playlist ytsearch1:` traz título, canal, capa (`hq720`) e duração iguais e leva ~3,0 s em vez de ~5,8 s.
+Vídeo do YouTube continua com o `-J --no-playlist` (flat não muda nada num vídeo só, e ele dá o `live_status`).
 
-**Custo fixo do yt-dlp** (medido em 17/11/2026, 4–8 rodadas intercaladas): `--extractor-args youtube:skip=hls` (não pede
-o manifesto HLS, que só serve para ao vivo) ganha ~0,3 s no vídeo e ~0,6 s na busca e entra em todas as chamadas que leem
-o player (`-J` de vídeo/busca e o `--get-url`). Ao vivo sem HLS fica sem formatos; o `--ignore-no-formats-error` no `-J`
-mantém o JSON (com `is_live`), e a recusa continua "Transmissões ao vivo não podem ser tocadas". Descartados:
-`player_client=` outro que o padrão (sem JS runtime, `android_vr`/`tv_simply`/`ios`/`mweb`/`web_safari`/`tv` não dão
-formato só de áudio ou falham), `player_skip=webpage` ("Sign in to confirm you're not a bot" na busca) e `--ignore-config`
-(sem diferença). Abrir o `.exe` (~1,7 s, PyInstaller "onefile" do winget) não muda sem trocar a instalação.
+**Custo fixo do yt-dlp**: `--extractor-args youtube:skip=hls` (não pede o manifesto HLS, que só serve para ao vivo)
+entra no `-J` do vídeo e no `-o -` (no download: 1º byte ~0,5–1,2 s antes que sem ele). Ao vivo sem HLS fica sem
+formatos; o `--ignore-no-formats-error` no `-J` mantém o JSON (com `is_live`), e a recusa continua "Transmissões ao vivo
+não podem ser tocadas". Descartados: `player_client=` outro que o padrão (sem JS runtime, `android_vr`/`tv_simply`/
+`ios`/`mweb`/`web_safari`/`tv` não dão formato só de áudio ou falham), `player_skip=webpage` ("Sign in to confirm
+you're not a bot" na busca), `--ignore-config` (sem diferença) e `youtube:playback_wait=0` (a espera de ~4 s continua).
+Ainda não aplicado: `--no-js-runtimes` só no `-J` do vídeo (metadados completos, ~1,5–2,5 s mais rápido); hoje toda
+chamada leva `NODE_JS_RUNTIME`.
 
-**Latência medida** (`/play` → 1º quadro no LiveKit, 3 rodadas, mesma máquina):
+**Latência medida** (`/play` → 1º quadro no LiveKit, 2–3 rodadas, mesma máquina; troca = `/skip` → 1º quadro da próxima,
+que já estava preparada):
 
-| Pedido | Antes | Agora |
-|---|---|---|
-| Vídeo do YouTube | ~7,6 s (`-J` + `--get-url`) | ~3,4–4,1 s (só o `-J`) |
-| Busca por texto | ~7,2 s (`-J` plano + `--get-url ytsearch1`) | ~4,0–5,0 s (só o `-J` da busca) |
-| Faixa do Spotify | ~5,2 s | ~4,6–5,3 s (Spotify + `--get-url ytsearch1`) |
+| Pedido | Metadados | 1º áudio | Troca |
+|---|---|---|---|
+| Vídeo do YouTube | ~4,9–5,2 s (`-J`) | ~13,7–14,2 s (`-J` + `-o -`) | ~60 ms |
+| Faixa do Spotify | ~0,3–0,7 s | ~9,5–11,5 s (Spotify + `-o - ytsearch1:`) | ~55–80 ms |
+| Busca por texto | ~3,0–3,5 s (`-J` plano) | ~12,5–13,0 s (`-J` plano + `-o -`) | ~50–70 ms |
 
-O resto é o próprio yt-dlp (~3–4,5 s por chamada); LiveKit (~0,2 s) e ffmpeg (~0,2–0,3 s) correm em paralelo ou depois.
+A 1ª música ficou mais lenta que com o endereço direto (que hoje não toca); o grosso é o `-o -` (~8,5–10 s: extração +
+espera do YouTube). As seguintes não sentem: a troca continua em menos de 0,1 s.
 
 ## Regras e limites
 
@@ -132,10 +136,10 @@ O resto é o próprio yt-dlp (~3–4,5 s por chamada); LiveKit (~0,2 s) e ffmpeg
 | `open.spotify.com/track/<id>`, `spotify:track:<id>` (com `/intl-xx/`, `?si=`) | faixa do Spotify | Web API `GET /v1/tracks/<id>` |
 | `open.spotify.com/album/<id>`, `spotify:album:<id>` | álbum do Spotify | Web API `GET /v1/albums/<id>` + páginas de 50; capa do álbum em cada faixa |
 | `open.spotify.com/playlist/<id>`, `spotify:playlist:<id>` | playlist do Spotify | página `open.spotify.com/embed/playlist/<id>` (JSON `__NEXT_DATA__`); até 100 faixas; capa da playlist em cada faixa; episódios ignorados |
-| `youtube.com/watch?v=`, `m.`/`music.youtube.com/watch?v=`, `youtu.be/<id>`, `youtube.com/shorts/<id>` | vídeo do YouTube | `yt-dlp -J --no-playlist` no link canônico (com os formatos: endereço direto do áudio) |
+| `youtube.com/watch?v=`, `m.`/`music.youtube.com/watch?v=`, `youtu.be/<id>`, `youtube.com/shorts/<id>` | vídeo do YouTube | `yt-dlp -J --no-playlist` no link canônico |
 | `watch?v=<id>&list=<lista>` | **o vídeo** (não a playlist) | quem colou o link estava num vídeo; para a playlist inteira use o link `playlist?list=` |
 | `youtube.com/playlist?list=<id>` (também `music.youtube.com`) | playlist do YouTube | `yt-dlp -J --flat-playlist --playlist-end 200` |
-| qualquer texto que não é link | busca | `yt-dlp -J --no-playlist ytsearch1:<texto>` (espaços juntados; resultado lido inteiro, com o endereço direto do áudio) |
+| qualquer texto que não é link | busca | `yt-dlp -J --flat-playlist ytsearch1:<texto>` (espaços juntados; lista plana: título, canal, capa e duração sem abrir o vídeo) |
 | link de outro site, perfil/artista do Spotify, canal do YouTube | recusa | "Envie o nome da música ou um link do Spotify ou do YouTube" |
 
 O yt-dlp sempre recebe o link **remontado** (`https://www.youtube.com/watch?v=<id>`), nunca o texto da pessoa.
@@ -244,9 +248,9 @@ instala o ffmpeg e baixa o yt-dlp oficial na hora do build. Para atualizar o yt-
 
 - `server/music/query.test.ts` (todos os formatos de link e texto aceitos e recusados), `catalog.test.ts` (roteamento,
   ao vivo/sem duração/longa: recusa ou pula), `queue.test.ts` (várias de uma vez, `added`, fila cheia),
-  `player.test.ts` (fonte e publicador falsos em memória; pré-busca: 1ª faixa preparada antes de o bot entrar, próxima só depois que a atual toca, troca e pular usam a preparada, parar/falha/fim fecham tudo; só a faixa que toca já leva o `audio.direct`, a que espera na fila ou entra numa sala tocando vai sem ele), `spotify.test.ts` (token, faixa, álbum paginado, playlist pela
-  página de incorporação; `fetch` falso), `youtube.test.ts` (JSON do yt-dlp de vídeo/playlist/busca, melhor formato de áudio como o `bestaudio/best`, `direct` com a hora da leitura em vídeo e busca e nunca em playlist, argumentos,
-  `ytDlpRunner` com `execFile` falso), `audio-source.test.ts` (linhas de comando, `PcmFramer`, processos falsos: `prepare` só roda o yt-dlp, `open` liga o ffmpeg no endereço, fechar antes/depois do endereço não abre o ffmpeg e mata o yt-dlp; `direct` recente liga o ffmpeg sem yt-dlp, com 5 min ou mais é descartado).
+  `player.test.ts` (fonte e publicador falsos em memória; pré-busca: 1ª faixa preparada antes de o bot entrar, próxima só depois que a atual toca, troca e pular usam a preparada, parar/falha/fim fecham tudo), `spotify.test.ts` (token, faixa, álbum paginado, playlist pela
+  página de incorporação; `fetch` falso), `youtube.test.ts` (JSON do yt-dlp de vídeo/playlist/busca, busca em lista plana, áudio sempre o link do vídeo (nunca o endereço direto), argumentos,
+  `ytDlpRunner` com `execFile` falso), `audio-source.test.ts` (linhas de comando, `PcmFramer`, processos falsos: `prepare` só inicia o `yt-dlp -o -`, `open` liga a saída dele no `ffmpeg -i pipe:0` e entrega os quadros que passam pelo pipe, o que foi baixado antes de abrir chega inteiro, fechar antes/depois de abrir mata os dois, EPIPE na entrada do ffmpeg não derruba, falha sem áudio com o motivo do yt-dlp ou do ffmpeg, programa ausente).
 - `server/tests/music.test.ts` "comandos vindos do chat": as 8 mensagens na ordem (comando, resposta) para quem vê o canal e no histórico; comando e "procurando" chegam com a busca parada (o Spotify falso segura `HELD`/`HELD_2` até `spotify.release()`) e a resposta troca a mesma mensagem sem `editedAt`; busca que falha e sair da sala no meio viram "Não consegui tocar" com `posted: true`; playlist no chat da sala, erro não posta, botões/id em texto não postam, sem `send` recusa sem tocar, chat privado não vaza e quem não vê não usa.
 - `src/renderer/src/components/voice/MusicBotReply.test.tsx` ("Música" + BOT sem juntar com o comando, fila, playlist, pulou, parou, "procurando" trocado ao vivo pelo `message:edited`, erro em `text-destructive`) e `src/renderer/src/lib/commands.test.ts` (registro).
 - `server/tests/music.test.ts`: servidor de verdade, LiveKit falso, Spotify falso (API + página de incorporação), yt-dlp
@@ -265,7 +269,7 @@ Teste manual: `docker compose up -d`, preencha `SPOTIFY_*`, instale yt-dlp e ffm
 com duas janelas e mande `/play` com um link (faixa/álbum/playlist do Spotify, vídeo/playlist do YouTube) ou o nome da
 música. Só os resolvedores, sem o app: um script com `process.loadEnvFile("server/.env")` que chame
 `new MusicCatalog(spotifyFromEnv(process.env), new YouTubeResolver(ytDlpRunner(process.env.YTDLP_PATH ?? "yt-dlp"))).find(texto)`
-(rodar com `npx tsx`). Medido em 17/11/2026: Spotify ~0,3–0,5 s; YouTube (vídeo ou busca, com formatos) ~3,3–4,5 s; playlist plana ~3 s.
+(rodar com `npx tsx`). Medido em 17/11/2026: Spotify ~0,3–0,5 s; vídeo do YouTube (`-J` completo) ~4,9–5,2 s; busca e playlist planas ~3 s.
 
 ## Problemas conhecidos / depuração
 
@@ -280,9 +284,11 @@ música. Só os resolvedores, sem o app: um script com `process.loadEnvFile("ser
 | Cartão aparece e some na hora | A faixa falhou: veja `[música]` no log (yt-dlp/ffmpeg ausente ou desatualizado, busca sem resultado). |
 | "[música] o bot não conseguiu entrar na sala" | LiveKit fora do ar, `LIVEKIT_API_URL` errado ou binário do `@livekit/rtc-node` ausente (imagem Alpine/musl não serve). |
 | Música errada | Faixa do Spotify e texto livre usam o primeiro resultado do YouTube; versões ao vivo/covers podem vencer. Mande o link do vídeo. |
-| Demora para começar a 1ª música (~3,5–5 s) | Esperado: é o yt-dlp (no Windows, só abrir o `.exe` do winget leva ~1,7 s). Vídeo/busca: o `-J` do pedido já é tudo (meça com `yt-dlp -J --no-playlist --extractor-args youtube:skip=hls <link>`); Spotify e 1ª faixa de playlist do YouTube: `--get-url`. Se o vídeo/busca demorar o dobro, o `audio.direct` não veio (JSON sem formatos) ou passou de 5 min. |
+| Demora para começar a 1ª música (~9,5–14 s) | Esperado: é o yt-dlp (abrir o `.exe` ~1,5 s, desafios de JS ~1,2 s, espera exigida pelo YouTube ~4 s, além dos metadados). Meça com `yt-dlp --js-runtimes node:<node> --no-playlist --extractor-args youtube:skip=hls --format bestaudio/best -o - <link> > NUL` sem `--quiet` (mostra o "Sleeping ... as required by the site"). As seguintes já vêm preparadas. |
 | Silêncio de segundos entre músicas | A pré-busca não rodou: a próxima só é preparada depois do 1º quadro da atual; faixa muito curta (< tempo do yt-dlp) ainda espera. Veja `[música]` no log (yt-dlp falhou na preparada). |
-| Música corta no meio | O ffmpeg perdeu a conexão com o endereço direto e não reconectou (`-reconnect`), ou o endereço expirou. |
+| Música corta no meio | O yt-dlp parou de baixar (rede, ou a conexão parada no pipe caiu): veja `[música]` no log (`Sem áudio: yt-dlp (código N): ...` quando nada tocou). |
+| Bot entra e sai logo; log `Sem áudio: ... 403 Forbidden` | Alguém voltou a abrir o endereço direto do áudio no ffmpeg: com runtime de JS o YouTube recusa antes do `available_at`. O áudio tem que passar pelo `yt-dlp -o -` (seção "Pré-busca"). |
+| `Sem áudio: yt-dlp (código 1): ... Sign in to confirm` / `n challenge` / `JS runtime` | O yt-dlp não resolveu os desafios de JavaScript: confira o `--js-runtimes node:<Node do servidor>` (`NODE_JS_RUNTIME`) e atualize o yt-dlp (`yt-dlp -U`). Deno no PATH também serve, mas não é exigido. |
 | Tudo falha com "Não foi possível ler isso no YouTube" / "Áudio não encontrado" depois de atualizar o yt-dlp | O YouTube passou a entregar o áudio só por HLS: tire o `SKIP_HLS` de `youtube.ts` e meça de novo. |
 | Bot não aparece na barra lateral de quem acabou de abrir o app | O app só conhece o estado depois de um `music:state` ou de abrir a sala (`music:queue`). |
 

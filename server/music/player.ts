@@ -1,5 +1,5 @@
 import type { MusicState, MusicTrack } from '../../src/shared/types'
-import { withoutDirectAudio, type MusicPlayback, type PreparedAudio, type QueuedTrack, type RoomOutput } from './ports'
+import type { MusicPlayback, PreparedAudio, QueuedTrack, RoomOutput } from './ports'
 import { advance, EMPTY_QUEUE, enqueue, type EnqueueResult, type RoomQueue } from './queue'
 
 interface Room {
@@ -34,7 +34,7 @@ export class MusicPlayer {
   add(channelId: string, tracks: QueuedTrack[]): EnqueueResult {
     const existing = this.rooms.get(channelId)
     const room = existing ?? { queue: EMPTY_QUEUE, prepared: new Map(), playing: null }
-    const result = enqueue(room.queue, tracks.map((track, i) => (!existing && i === 0 ? track : withoutDirectAudio(track))))
+    const result = enqueue(room.queue, tracks)
     if (!result.ok) return result
     room.queue = result.queue
     this.prefetch(room)

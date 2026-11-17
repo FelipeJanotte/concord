@@ -4,12 +4,7 @@ export const PCM_SAMPLE_RATE = 48_000
 export const PCM_CHANNELS = 2
 export const PCM_FRAME_SAMPLES = PCM_SAMPLE_RATE / 100
 
-export interface DirectAudio {
-  url: string
-  fetchedAt: number
-}
-
-export type AudioLocator = { kind: 'youtube-search'; query: string } | { kind: 'audio-url'; url: string; direct?: DirectAudio }
+export type AudioLocator = { kind: 'youtube-search'; query: string } | { kind: 'audio-url'; url: string }
 
 export interface TrackMetadata {
   title: string
@@ -22,11 +17,6 @@ export interface TrackMetadata {
 }
 
 export type QueuedTrack = MusicTrack & { audio: AudioLocator }
-
-export function withoutDirectAudio(track: QueuedTrack): QueuedTrack {
-  if (track.audio.kind !== 'audio-url' || !track.audio.direct) return track
-  return { ...track, audio: { kind: 'audio-url', url: track.audio.url } }
-}
 
 export type SpotifyKind = 'track' | 'playlist' | 'album'
 

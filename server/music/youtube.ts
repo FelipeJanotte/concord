@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { MusicError, PLAYLIST_READ_MAX, type DirectAudio, type MusicQuery, type TrackMetadata, type TrackResolver } from './ports'
+import { MusicError, PLAYLIST_READ_MAX, type MusicQuery, type TrackMetadata, type TrackResolver } from './ports'
 
 export type YouTubeQuery = Extract<MusicQuery, { kind: 'youtube-video' | 'youtube-playlist' | 'search' }>
 export type YtDlpJson = (args: string[]) => Promise<unknown>
@@ -16,7 +16,9 @@ const YTDLP_TIMEOUT_MS = 60_000
 const LIVE_STATUSES = new Set(['is_live', 'is_upcoming'])
 const TOPIC_SUFFIX = / - Topic$/
 export const SKIP_HLS = ['--extractor-args', 'youtube:skip=hls']
+export const NODE_JS_RUNTIME = ['--js-runtimes', `node:${process.execPath}`]
 const PLAYER_ARGS = ['-J', '--no-playlist', '--no-warnings', '--ignore-no-formats-error', ...SKIP_HLS]
+const FLAT_LIST_ARGS = ['-J', '--flat-playlist', '--no-warnings']
 
 const watchUrl = (id: string): string => `https://www.youtube.com/watch?v=${id}`
 
@@ -31,21 +33,7 @@ function largestThumbnail(value: unknown): string | null {
   return urls.filter((u): u is string => u !== null).at(-1) ?? null
 }
 
-const hasAudio = (format: Json): boolean => typeof format.acodec === 'string' && format.acodec !== 'none'
-
-function bestAudioUrl(formats: unknown): string | null {
-  const usable = Array.isArray(formats) ? formats.filter(isObject).filter((f) => text(f.url) && hasAudio(f)) : []
-  const best = usable.filter((f) => f.vcodec === 'none').at(-1) ?? usable.at(-1)
-  return best ? text(best.url) : null
-}
-
-function directAudio(json: Json, fetchedAt: number | null): { direct?: DirectAudio } {
-  if (fetchedAt === null) return {}
-  const url = bestAudioUrl(json.formats)
-  return url ? { direct: { url, fetchedAt } } : {}
-}
-
-function trackFrom(json: Json, url: string, fetchedAt: number | null): TrackMetadata {
+function trackFrom(json: Json, url: string): TrackMetadata {
   const artist = text(json.artist) ?? text(json.channel) ?? text(json.uploader)
   const seconds = typeof json.duration === 'number' && json.duration > 0 ? json.duration : 0
   return {
@@ -55,28 +43,28 @@ function trackFrom(json: Json, url: string, fetchedAt: number | null): TrackMeta
     durationMs: Math.round(seconds * 1000),
     url,
     live: json.is_live === true || LIVE_STATUSES.has(String(json.live_status)),
-    audio: { kind: 'audio-url', url, ...directAudio(json, fetchedAt) }
+    audio: { kind: 'audio-url', url }
   }
 }
 
-export function parseYtDlpVideo(json: unknown, fetchedAt: number | null = null): TrackMetadata {
+export function parseYtDlpVideo(json: unknown): TrackMetadata {
   const id = isObject(json) ? text(json.id) : null
   if (!isObject(json) || !id) throw new MusicError(YOUTUBE_UNAVAILABLE)
-  return trackFrom(json, text(json.webpage_url) ?? watchUrl(id), fetchedAt)
+  return trackFrom(json, text(json.webpage_url) ?? watchUrl(id))
 }
 
-export function parseYtDlpEntries(json: unknown, fetchedAt: number | null = null): TrackMetadata[] {
+export function parseYtDlpEntries(json: unknown): TrackMetadata[] {
   const entries = isObject(json) && Array.isArray(json.entries) ? json.entries : []
   return entries.filter(isObject).flatMap((entry) => {
     const id = text(entry.id)
-    return id ? [trackFrom(entry, watchUrl(id), fetchedAt)] : []
+    return id ? [trackFrom(entry, watchUrl(id))] : []
   })
 }
 
 export function ytDlpRunner(ytDlp: string, exec: ExecFileLike = execFile as unknown as ExecFileLike): YtDlpJson {
   return (args) =>
     new Promise((resolve, reject) => {
-      exec(ytDlp, args, { maxBuffer: YTDLP_MAX_BUFFER, timeout: YTDLP_TIMEOUT_MS, windowsHide: true }, (err, stdout) => {
+      exec(ytDlp, [...NODE_JS_RUNTIME, ...args], { maxBuffer: YTDLP_MAX_BUFFER, timeout: YTDLP_TIMEOUT_MS, windowsHide: true }, (err, stdout) => {
         if (err?.code === 'ENOENT') return reject(new MusicError('yt-dlp não encontrado no servidor'))
         if (err) return reject(new MusicError(YOUTUBE_UNAVAILABLE))
         try {
@@ -89,24 +77,19 @@ export function ytDlpRunner(ytDlp: string, exec: ExecFileLike = execFile as unkn
 }
 
 export class YouTubeResolver implements TrackResolver<YouTubeQuery> {
-  constructor(
-    private readonly ytDlp: YtDlpJson,
-    private readonly now: () => number = Date.now
-  ) {}
+  constructor(private readonly ytDlp: YtDlpJson) {}
 
   async resolve(query: YouTubeQuery): Promise<TrackMetadata[]> {
     if (query.kind === 'youtube-video') {
-      return [parseYtDlpVideo(await this.ytDlp([...PLAYER_ARGS, watchUrl(query.id)]), this.now())]
+      return [parseYtDlpVideo(await this.ytDlp([...PLAYER_ARGS, watchUrl(query.id)]))]
     }
     if (query.kind === 'youtube-playlist') {
       const playlistUrl = `https://www.youtube.com/playlist?list=${query.id}`
-      const tracks = parseYtDlpEntries(
-        await this.ytDlp(['-J', '--flat-playlist', '--no-warnings', '--playlist-end', String(PLAYLIST_READ_MAX), playlistUrl])
-      )
+      const tracks = parseYtDlpEntries(await this.ytDlp([...FLAT_LIST_ARGS, '--playlist-end', String(PLAYLIST_READ_MAX), playlistUrl]))
       if (!tracks.length) throw new MusicError('Playlist do YouTube vazia ou privada')
       return tracks
     }
-    const [first] = parseYtDlpEntries(await this.ytDlp([...PLAYER_ARGS, `ytsearch1:${query.text}`]), this.now())
+    const [first] = parseYtDlpEntries(await this.ytDlp([...FLAT_LIST_ARGS, `ytsearch1:${query.text}`]))
     if (!first) throw new MusicError(`Nada encontrado no YouTube para "${query.text}"`)
     return [first]
   }

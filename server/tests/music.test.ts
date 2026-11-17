@@ -419,7 +419,7 @@ describe('bot de música', () => {
       const id = await roomWithAna()
       const seen = chatOf(bia, id)
       playing(await playFrom(ana, id, `https://open.spotify.com/playlist/${PLAYLIST}`, id))
-      await until(() => seen.length === 2, '2 mensagens no chat da sala')
+      await until(() => seen.length === 2 && !seen[1].content.startsWith('Procurando'), 'comando e a resposta final no chat da sala')
       expect(seen[1].content).toBe('Adicionou 2 músicas à fila, começando por Chega de Saudade — João Gilberto')
       expect(seen[1].tool).toMatchObject({ tool: 'music', result: { action: 'play', added: 2, startedNow: true } })
       await ana.socket.emitWithAck('music:stop', { channelId: id })

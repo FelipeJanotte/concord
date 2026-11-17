@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events'
 import type { ChildProcess } from 'node:child_process'
 import { PassThrough } from 'node:stream'
 import { describe, expect, it } from 'vitest'
-import { audioToolsFromEnv, DIRECT_AUDIO_MAX_AGE_MS, ffmpegArgs, PcmFramer, YtDlpFfmpegSource, ytDlpUrlArgs } from './audio-source'
+import { audioToolsFromEnv, ffmpegArgs, PcmFramer, YtDlpFfmpegSource, ytDlpArgs } from './audio-source'
 import { PCM_FRAME_SAMPLES, type QueuedTrack } from './ports'
 
 const track: QueuedTrack = {
@@ -19,23 +19,23 @@ const track: QueuedTrack = {
 const FRAME_BYTES = PCM_FRAME_SAMPLES * 2 * 2
 
 describe('linhas de comando', () => {
-  it('faixa a buscar: só o endereço direto do melhor áudio do primeiro resultado do YouTube', () => {
-    const args = ytDlpUrlArgs(track)
+  it('faixa a buscar: o yt-dlp baixa o melhor áudio do primeiro resultado do YouTube para a saída', () => {
+    const args = ytDlpArgs(track)
     expect(args.at(-1)).toBe('ytsearch1:Tom Jobim, Vinicius de Moraes - Garota de Ipanema')
-    expect(args.join(' ')).toContain('--format bestaudio/best --get-url')
+    expect(args.join(' ')).toContain('--format bestaudio/best -o -')
     expect(args).toContain('--no-playlist')
     expect(args.join(' ')).toContain('--extractor-args youtube:skip=hls')
+    expect(args.join(' ')).toContain(`--js-runtimes node:${process.execPath}`)
+    expect(args).not.toContain('--get-url')
   })
 
-  it('faixa com link de áudio: endereço direto do próprio link', () => {
+  it('faixa com link de áudio: baixa o próprio link', () => {
     const url = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
-    expect(ytDlpUrlArgs({ ...track, audio: { kind: 'audio-url', url } }).at(-1)).toBe(url)
+    expect(ytDlpArgs({ ...track, audio: { kind: 'audio-url', url } }).at(-1)).toBe(url)
   })
 
-  it('ffmpeg lê o endereço direto reconectando e converte para PCM 16 bits, 48 kHz, estéreo, cortando na duração + 5 s', () => {
-    const args = ffmpegArgs(track, 'https://audio.example/x')
-    expect(args.join(' ')).toContain('-reconnect 1 -reconnect_streamed 1')
-    expect(args.join(' ')).toContain('-i https://audio.example/x -t 326 -vn -f s16le -ar 48000 -ac 2 pipe:1')
+  it('ffmpeg lê da entrada padrão e converte para PCM 16 bits, 48 kHz, estéreo, cortando na duração + 5 s', () => {
+    expect(ffmpegArgs(track).join(' ')).toContain('-i pipe:0 -t 326 -vn -f s16le -ar 48000 -ac 2 pipe:1')
   })
 
   it('caminhos dos programas pelo ambiente, com padrão no PATH', () => {
@@ -71,19 +71,39 @@ class FakeProcess extends EventEmitter {
     return true
   }
 
-  exit(stdout: string, code: number): void {
-    this.stdout.end(stdout)
+  fail(reason: string, code: number): void {
+    this.stderr.end(`${reason}\n`)
+    this.stdout.end()
     setTimeout(() => this.emit('close', code), 0)
+  }
+
+  finish(): void {
+    this.stdout.end()
+    setTimeout(() => this.emit('close', 0), 0)
   }
 }
 
-function fakeSpawn(): { run: (cmd: string, args: string[]) => ChildProcess; started: { cmd: string; proc: FakeProcess }[] } {
-  const started: { cmd: string; proc: FakeProcess }[] = []
+interface Started {
+  cmd: string
+  args: string[]
+  proc: FakeProcess
+}
+
+function fakeSpawn(): { run: (cmd: string, args: string[]) => ChildProcess; started: Started[]; ytDlp: () => FakeProcess; ffmpeg: () => FakeProcess } {
+  const started: Started[] = []
+  const find = (cmd: string) => (): FakeProcess => {
+    const found = started.find((s) => s.cmd === cmd)
+    if (!found) throw new Error(`${cmd} não foi iniciado`)
+    return found.proc
+  }
   return {
     started,
-    run: (cmd) => {
+    ytDlp: find('yt-dlp'),
+    ffmpeg: find('ffmpeg'),
+    run: (cmd, args) => {
       const proc = new FakeProcess()
-      started.push({ cmd, proc })
+      if (cmd === 'ffmpeg') proc.stdin.pipe(proc.stdout)
+      started.push({ cmd, args, proc })
       return proc as unknown as ChildProcess
     }
   }
@@ -96,158 +116,120 @@ async function collect(stream: AsyncIterable<Int16Array>): Promise<Int16Array[]>
 }
 
 const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 5))
-const AUDIO_URL = 'https://rr1.googlevideo.com/videoplayback?id=1'
+const TOOLS = { ytDlp: 'yt-dlp', ffmpeg: 'ffmpeg' }
+const failure = (reading: Promise<unknown>): Promise<string | null> =>
+  reading.then(
+    () => null,
+    (err: Error) => err.message
+  )
 
 describe('YtDlpFfmpegSource', () => {
-  it('preparar já pede ao yt-dlp o endereço direto do áudio, sem abrir o ffmpeg', () => {
+  it('preparar já inicia o yt-dlp baixando para a saída, sem abrir o ffmpeg', () => {
     const { run, started } = fakeSpawn()
-    new YtDlpFfmpegSource({ ytDlp: 'yt-dlp', ffmpeg: 'ffmpeg' }, run).prepare(track)
+    new YtDlpFfmpegSource(TOOLS, run).prepare(track)
     expect(started.map((s) => s.cmd)).toEqual(['yt-dlp'])
+    expect(started[0].args).toEqual(ytDlpArgs(track))
   })
 
-  it('abrir espera o endereço, liga o ffmpeg nele e entrega os quadros', async () => {
-    const calls: { cmd: string; args: string[] }[] = []
-    const { run: spawnFake, started } = fakeSpawn()
-    const run = (cmd: string, args: string[]): ChildProcess => {
-      calls.push({ cmd, args })
-      return spawnFake(cmd, args)
-    }
-    const prepared = new YtDlpFfmpegSource({ ytDlp: 'yt-dlp', ffmpeg: 'ffmpeg' }, run).prepare(track)
+  it('abrir liga a saída do yt-dlp na entrada do ffmpeg e entrega os quadros que vêm por ela', async () => {
+    const { run, started, ytDlp, ffmpeg } = fakeSpawn()
+    const prepared = new YtDlpFfmpegSource(TOOLS, run).prepare(track)
     const reading = collect(prepared.open())
-    started[0].proc.exit(`${AUDIO_URL}
-`, 0)
     await settle()
-    expect(calls[1].cmd).toBe('ffmpeg')
-    expect(calls[1].args).toContain(AUDIO_URL)
-    started[1].proc.stdout.end(Buffer.alloc(FRAME_BYTES * 3))
-    expect(await reading).toHaveLength(3)
-    expect(started[1].proc.killed).toBe(true)
+    expect(started.map((s) => s.cmd)).toEqual(['yt-dlp', 'ffmpeg'])
+    expect(started[1].args).toEqual(ffmpegArgs(track))
+    const pcm = Buffer.alloc(FRAME_BYTES * 3)
+    for (let i = 0; i < pcm.length; i++) pcm[i] = i % 253
+    ytDlp().stdout.end(pcm)
+    const frames = await reading
+    expect(frames).toHaveLength(3)
+    expect(Buffer.concat(frames.map((f) => Buffer.from(f.buffer)))).toEqual(pcm)
+    expect([ytDlp().killed, ffmpeg().killed]).toEqual([true, true])
   })
 
-  it('fechar antes do endereço chegar encerra o yt-dlp e nunca abre o ffmpeg', async () => {
-    const { run, started } = fakeSpawn()
-    const prepared = new YtDlpFfmpegSource({ ytDlp: 'yt-dlp', ffmpeg: 'ffmpeg' }, run).prepare(track)
+  it('o que o yt-dlp baixou antes de abrir fica esperando no pipe e chega inteiro ao ffmpeg', async () => {
+    const { run, ytDlp } = fakeSpawn()
+    const prepared = new YtDlpFfmpegSource(TOOLS, run).prepare(track)
+    ytDlp().stdout.write(Buffer.alloc(FRAME_BYTES * 2))
+    await settle()
     const reading = collect(prepared.open())
-    prepared.close()
-    expect(await reading).toEqual([])
-    await settle()
-    expect(started.map((s) => s.cmd)).toEqual(['yt-dlp'])
-    expect(started[0].proc.killed).toBe(true)
+    ytDlp().stdout.end()
+    expect(await reading).toHaveLength(2)
   })
 
-  it('fechada depois de o endereço chegar: abrir não liga o ffmpeg', async () => {
-    const { run, started } = fakeSpawn()
-    const prepared = new YtDlpFfmpegSource({ ytDlp: 'yt-dlp', ffmpeg: 'ffmpeg' }, run).prepare(track)
-    started[0].proc.exit(AUDIO_URL, 0)
-    await settle()
+  it('fechar uma preparada que nunca foi aberta encerra o yt-dlp e abrir depois não liga o ffmpeg', async () => {
+    const { run, started, ytDlp } = fakeSpawn()
+    const prepared = new YtDlpFfmpegSource(TOOLS, run).prepare(track)
     prepared.close()
+    expect(ytDlp().killed).toBe(true)
     expect(await collect(prepared.open())).toEqual([])
     expect(started.map((s) => s.cmd)).toEqual(['yt-dlp'])
   })
 
-  it('fechar uma preparada que nunca foi aberta encerra o yt-dlp', () => {
-    const { run, started } = fakeSpawn()
-    new YtDlpFfmpegSource({ ytDlp: 'yt-dlp', ffmpeg: 'ffmpeg' }, run).prepare(track).close()
-    expect(started[0].proc.killed).toBe(true)
-  })
-
-  it('close() do áudio tocando encerra o ffmpeg e termina a leitura', async () => {
-    const { run, started } = fakeSpawn()
-    const prepared = new YtDlpFfmpegSource({ ytDlp: 'yt-dlp', ffmpeg: 'ffmpeg' }, run).prepare(track)
-    started[0].proc.exit(AUDIO_URL, 0)
-    await settle()
-    const stream = prepared.open()
+  it('close() do áudio tocando encerra o yt-dlp e o ffmpeg e termina a leitura', async () => {
+    const { run, ytDlp, ffmpeg } = fakeSpawn()
+    const stream = new YtDlpFfmpegSource(TOOLS, run).prepare(track).open()
     const reading = collect(stream)
+    ytDlp().stdout.write(Buffer.alloc(FRAME_BYTES))
     await settle()
     stream.close()
-    expect(await reading).toEqual([])
-    expect(started.map((s) => s.proc.killed)).toEqual([true, true])
+    expect(await reading).toHaveLength(1)
+    expect([ytDlp().killed, ffmpeg().killed]).toEqual([true, true])
   })
 
-  describe('endereço direto que veio com a faixa', () => {
-    const NOW = 10 * 60_000
-    const withDirect = (fetchedAt: number): QueuedTrack => ({
-      ...track,
-      audio: { kind: 'audio-url', url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', direct: { url: AUDIO_URL, fetchedAt } }
-    })
-
-    it('recente: liga o ffmpeg nele sem chamar o yt-dlp', async () => {
-      const calls: { cmd: string; args: string[] }[] = []
-      const { run: spawnFake, started } = fakeSpawn()
-      const run = (cmd: string, args: string[]): ChildProcess => {
-        calls.push({ cmd, args })
-        return spawnFake(cmd, args)
-      }
-      const prepared = new YtDlpFfmpegSource({ ytDlp: 'yt-dlp', ffmpeg: 'ffmpeg' }, run, () => NOW).prepare(withDirect(NOW - DIRECT_AUDIO_MAX_AGE_MS + 1))
-      expect(calls).toEqual([])
-      const reading = collect(prepared.open())
-      await settle()
-      expect(calls.map((c) => c.cmd)).toEqual(['ffmpeg'])
-      expect(calls[0].args).toContain(AUDIO_URL)
-      started[0].proc.stdout.end(Buffer.alloc(FRAME_BYTES))
-      expect(await reading).toHaveLength(1)
-    })
-
-    it('velho: descartado, o yt-dlp acha um endereço novo', () => {
-      const { run, started } = fakeSpawn()
-      new YtDlpFfmpegSource({ ytDlp: 'yt-dlp', ffmpeg: 'ffmpeg' }, run, () => NOW).prepare(withDirect(NOW - DIRECT_AUDIO_MAX_AGE_MS))
-      expect(started.map((s) => s.cmd)).toEqual(['yt-dlp'])
-    })
-
-    it('fechar antes de abrir não liga o ffmpeg', async () => {
-      const { run, started } = fakeSpawn()
-      const prepared = new YtDlpFfmpegSource({ ytDlp: 'yt-dlp', ffmpeg: 'ffmpeg' }, run, () => NOW).prepare(withDirect(NOW))
-      prepared.close()
-      expect(await collect(prepared.open())).toEqual([])
-      expect(started).toEqual([])
-    })
-  })
-
-  it('yt-dlp sem resultado: erro claro', async () => {
-    const { run, started } = fakeSpawn()
-    const prepared = new YtDlpFfmpegSource({ ytDlp: 'yt-dlp', ffmpeg: 'ffmpeg' }, run).prepare(track)
-    const reading = collect(prepared.open())
-    started[0].proc.exit('', 1)
-    await expect(reading).rejects.toThrow('Áudio não encontrado no YouTube')
-  })
-
-  it('programa que não existe: erro claro', async () => {
-    const { run, started } = fakeSpawn()
-    const prepared = new YtDlpFfmpegSource({ ytDlp: 'yt-dlp', ffmpeg: 'ffmpeg' }, run).prepare(track)
-    const reading = collect(prepared.open())
-    started[0].proc.emit('error', Object.assign(new Error('spawn yt-dlp ENOENT'), { code: 'ENOENT' }))
-    await expect(reading).rejects.toThrow('yt-dlp não encontrado no servidor')
-  })
-
-  it('ffmpeg que não existe: erro claro', async () => {
-    const { run, started } = fakeSpawn()
-    const prepared = new YtDlpFfmpegSource({ ytDlp: 'yt-dlp', ffmpeg: 'ffmpeg' }, run).prepare(track)
-    const reading = collect(prepared.open())
-    started[0].proc.exit(AUDIO_URL, 0)
+  it('ffmpeg que fecha a entrada antes da hora não derruba o processo (EPIPE)', async () => {
+    const { run, ytDlp, ffmpeg } = fakeSpawn()
+    const reading = collect(new YtDlpFfmpegSource(TOOLS, run).prepare(track).open())
     await settle()
-    started[1].proc.emit('error', Object.assign(new Error('spawn ffmpeg ENOENT'), { code: 'ENOENT' }))
-    await expect(reading).rejects.toThrow('ffmpeg não encontrado no servidor')
+    ffmpeg().stdin.emit('error', Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }))
+    ffmpeg().fail('pipe:0: End of file', 1)
+    ytDlp().finish()
+    expect(await failure(reading)).toContain('ffmpeg (código 1): pipe:0: End of file')
   })
 
-  it('ffmpeg que termina sem áudio: erro com o motivo dele', async () => {
-    const { run, started } = fakeSpawn()
-    const prepared = new YtDlpFfmpegSource({ ytDlp: 'yt-dlp', ffmpeg: 'ffmpeg' }, run).prepare(track)
-    const reading = collect(prepared.open())
-    started[0].proc.exit(AUDIO_URL, 0)
+  it('yt-dlp que falha sem áudio: erro com o motivo do yt-dlp', async () => {
+    const { run, ytDlp, ffmpeg } = fakeSpawn()
+    const reading = collect(new YtDlpFfmpegSource(TOOLS, run).prepare(track).open())
     await settle()
-    started[1].proc.stderr.end('Server returned 403 Forbidden (access denied)\n')
-    started[1].proc.exit('', 1)
-    await expect(reading).rejects.toThrow('ffmpeg terminou sem áudio (código 1): Server returned 403 Forbidden (access denied)')
+    ytDlp().fail('ERROR: [youtube] dQw4w9WgXcQ: Video unavailable', 1)
+    await settle()
+    ffmpeg().fail('pipe:0: Invalid data found when processing input', 1)
+    expect(await failure(reading)).toContain('yt-dlp (código 1): ERROR: [youtube] dQw4w9WgXcQ: Video unavailable')
   })
 
-  it('ffmpeg que tocou e terminou normalmente: sem erro', async () => {
-    const { run, started } = fakeSpawn()
-    const prepared = new YtDlpFfmpegSource({ ytDlp: 'yt-dlp', ffmpeg: 'ffmpeg' }, run).prepare(track)
-    const reading = collect(prepared.open())
-    started[0].proc.exit(AUDIO_URL, 0)
+  it('ffmpeg que falha sem áudio: erro com o motivo dele, sem culpar o yt-dlp que ainda baixava', async () => {
+    const { run, ytDlp, ffmpeg } = fakeSpawn()
+    const reading = collect(new YtDlpFfmpegSource(TOOLS, run).prepare(track).open())
     await settle()
-    started[1].proc.stderr.end()
-    started[1].proc.exit(Buffer.alloc(FRAME_BYTES * 2).toString('latin1'), 0)
+    ffmpeg().fail('Error opening input files: Invalid argument', 1)
+    const error = await failure(reading)
+    expect(error).toContain('ffmpeg (código 1): Error opening input files: Invalid argument')
+    expect(error).not.toContain('yt-dlp')
+    expect(ytDlp().killed).toBe(true)
+  })
+
+  it('yt-dlp que não existe: erro claro', async () => {
+    const { run, ytDlp } = fakeSpawn()
+    const reading = collect(new YtDlpFfmpegSource(TOOLS, run).prepare(track).open())
+    await settle()
+    ytDlp().emit('error', Object.assign(new Error('spawn yt-dlp ENOENT'), { code: 'ENOENT' }))
+    expect(await failure(reading)).toBe('yt-dlp não encontrado no servidor')
+  })
+
+  it('ffmpeg que não existe: erro claro e o yt-dlp é encerrado', async () => {
+    const { run, ytDlp, ffmpeg } = fakeSpawn()
+    const reading = collect(new YtDlpFfmpegSource(TOOLS, run).prepare(track).open())
+    await settle()
+    ffmpeg().emit('error', Object.assign(new Error('spawn ffmpeg ENOENT'), { code: 'ENOENT' }))
+    expect(await failure(reading)).toBe('ffmpeg não encontrado no servidor')
+    expect(ytDlp().killed).toBe(true)
+  })
+
+  it('tocou e terminou normalmente: sem erro', async () => {
+    const { run, ytDlp } = fakeSpawn()
+    const reading = collect(new YtDlpFfmpegSource(TOOLS, run).prepare(track).open())
+    await settle()
+    ytDlp().stdout.end(Buffer.alloc(FRAME_BYTES * 2))
     expect(await reading).toHaveLength(2)
   })
 })

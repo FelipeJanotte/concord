@@ -1,11 +1,10 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import type { Readable } from 'node:stream'
 import { MusicError, PCM_CHANNELS, PCM_FRAME_SAMPLES, PCM_SAMPLE_RATE, type AudioLocator, type AudioSource, type AudioStream, type PreparedAudio, type QueuedTrack } from './ports'
-import { SKIP_HLS } from './youtube'
+import { NODE_JS_RUNTIME, SKIP_HLS } from './youtube'
 
 const FRAME_BYTES = PCM_FRAME_SAMPLES * PCM_CHANNELS * 2
 const DURATION_MARGIN_S = 5
-export const DIRECT_AUDIO_MAX_AGE_MS = 5 * 60_000
 
 export interface AudioTools {
   ytDlp: string
@@ -20,24 +19,18 @@ function ytDlpInput(audio: AudioLocator): string {
   return audio.kind === 'audio-url' ? audio.url : `ytsearch1:${audio.query}`
 }
 
-export function ytDlpUrlArgs(track: QueuedTrack): string[] {
-  return ['--no-playlist', '--quiet', '--no-warnings', ...SKIP_HLS, '--format', 'bestaudio/best', '--get-url', ytDlpInput(track.audio)]
+export function ytDlpArgs(track: QueuedTrack): string[] {
+  return [...NODE_JS_RUNTIME, '--no-playlist', '--quiet', '--no-warnings', ...SKIP_HLS, '--format', 'bestaudio/best', '-o', '-', ytDlpInput(track.audio)]
 }
 
-export function ffmpegArgs(track: QueuedTrack, url: string): string[] {
+export function ffmpegArgs(track: QueuedTrack): string[] {
   const maxSeconds = Math.ceil(track.durationMs / 1000) + DURATION_MARGIN_S
   return [
     '-hide_banner',
     '-loglevel',
     'error',
-    '-reconnect',
-    '1',
-    '-reconnect_streamed',
-    '1',
-    '-reconnect_delay_max',
-    '5',
     '-i',
-    url,
+    'pipe:0',
     '-t',
     String(maxSeconds),
     '-vn',
@@ -70,41 +63,34 @@ export class PcmFramer {
 
 type Spawn = (command: string, args: string[]) => ChildProcess
 
-const spawnPiped: Spawn = (command, args) => spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
+const spawnPiped: Spawn = (command, args) => spawn(command, args, { stdio: 'pipe', windowsHide: true })
 
 const STDERR_TAIL_CHARS = 400
 
-function stderrTail(child: ChildProcess): () => string {
-  let tail = ''
-  child.stderr?.on('data', (chunk: Buffer) => (tail = (tail + chunk.toString()).slice(-STDERR_TAIL_CHARS)))
-  return () => tail.trim().split(/\r?\n/).at(-1) ?? ''
-}
+class Tool {
+  private stderr = ''
+  readonly exited: Promise<number | null>
+  readonly missing: Promise<never>
 
-function exitCode(child: ChildProcess): Promise<number | null> {
-  return new Promise((resolve) => child.once('close', (code: number | null) => resolve(code)))
+  constructor(
+    readonly name: string,
+    readonly child: ChildProcess
+  ) {
+    child.stderr?.on('data', (chunk: Buffer) => (this.stderr = (this.stderr + chunk.toString()).slice(-STDERR_TAIL_CHARS)))
+    this.exited = new Promise((resolve) => child.once('close', (code: number | null) => resolve(code)))
+    this.missing = new Promise((_, reject) => child.once('error', (err: NodeJS.ErrnoException) => reject(toolError(err, name))))
+    this.missing.catch(() => {})
+  }
+
+  async failure(): Promise<string | null> {
+    const code = await this.exited
+    if (code === null || code === 0) return null
+    return `${this.name} (código ${code}): ${this.stderr.trim().split(/\r?\n/).at(-1) || 'sem mensagem'}`
+  }
 }
 
 function toolError(err: NodeJS.ErrnoException, name: string): MusicError {
   return new MusicError(err.code === 'ENOENT' ? `${name} não encontrado no servidor` : `Falha ao iniciar o ${name}`)
-}
-
-function missingTool(child: ChildProcess, name: string): Promise<never> {
-  return new Promise((_, reject) => {
-    child.once('error', (err: NodeJS.ErrnoException) => reject(toolError(err, name)))
-  })
-}
-
-function directUrl(ytDlp: ChildProcess, reason: () => string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let output = ''
-    ytDlp.stdout?.on('data', (chunk: Buffer) => (output += chunk.toString()))
-    ytDlp.once('error', (err: NodeJS.ErrnoException) => reject(toolError(err, 'yt-dlp')))
-    ytDlp.once('close', (code: number | null) => {
-      const url = output.split(/\r?\n/).find((line) => line.startsWith('http'))
-      if (code === 0 && url) resolve(url)
-      else reject(new MusicError(`Áudio não encontrado no YouTube${reason() ? `: ${reason()}` : ''}`))
-    })
-  })
 }
 
 async function* framesOf(stdout: Readable, failures: Promise<never>): AsyncGenerator<Int16Array> {
@@ -119,24 +105,15 @@ async function* framesOf(stdout: Readable, failures: Promise<never>): AsyncGener
 
 class YtDlpFfmpegAudio implements PreparedAudio {
   private closed = false
-  private ffmpeg: ChildProcess | null = null
-  private readonly ytDlp: ChildProcess | null = null
-  private readonly url: Promise<string>
+  private ffmpeg: Tool | null = null
+  private readonly ytDlp: Tool
 
   constructor(
     private readonly tools: AudioTools,
     private readonly run: Spawn,
-    private readonly track: QueuedTrack,
-    reusable: string | null
+    private readonly track: QueuedTrack
   ) {
-    if (reusable) {
-      this.url = Promise.resolve(reusable)
-      return
-    }
-    const ytDlp = run(tools.ytDlp, ytDlpUrlArgs(track))
-    this.ytDlp = ytDlp
-    this.url = directUrl(ytDlp, stderrTail(ytDlp))
-    this.url.catch(() => {})
+    this.ytDlp = new Tool('yt-dlp', run(tools.ytDlp, ytDlpArgs(track)))
   }
 
   open(): AudioStream {
@@ -156,48 +133,38 @@ class YtDlpFfmpegAudio implements PreparedAudio {
 
   close(): void {
     this.closed = true
-    this.ytDlp?.kill()
-    this.ffmpeg?.kill()
+    this.ytDlp.child.kill()
+    this.ffmpeg?.child.kill()
   }
 
   private async *frames(): AsyncGenerator<Int16Array> {
-    const url = await this.url.catch((err: unknown) => {
-      if (this.closed) return null
-      throw err
-    })
-    if (!url || this.closed) return
-    const ffmpeg = this.run(this.tools.ffmpeg, ffmpegArgs(this.track, url))
+    if (this.closed) return
+    const ffmpeg = new Tool('ffmpeg', this.run(this.tools.ffmpeg, ffmpegArgs(this.track)))
     this.ffmpeg = ffmpeg
-    const reason = stderrTail(ffmpeg)
-    const exited = exitCode(ffmpeg)
-    const failures = missingTool(ffmpeg, 'ffmpeg')
-    failures.catch(() => {})
+    const { stdin, stdout } = ffmpeg.child
+    if (!stdin || !stdout) return
+    stdin.on('error', () => {})
+    this.ytDlp.child.stdout?.pipe(stdin)
     let played = 0
-    if (ffmpeg.stdout) {
-      for await (const frame of framesOf(ffmpeg.stdout, failures)) {
-        played++
-        yield frame
-      }
+    for await (const frame of framesOf(stdout, Promise.race([this.ytDlp.missing, ffmpeg.missing]))) {
+      played++
+      yield frame
     }
     if (played > 0 || this.closed) return
-    const code = await exited
-    if (!this.closed) throw new MusicError(`ffmpeg terminou sem áudio (código ${code}): ${reason() || 'sem mensagem'}`)
+    const ffmpegFailure = await ffmpeg.failure()
+    this.ytDlp.child.kill()
+    const reasons = [await this.ytDlp.failure(), ffmpegFailure].filter((r): r is string => r !== null)
+    if (!this.closed) throw new MusicError(`Sem áudio: ${reasons.join('; ') || 'nenhum som recebido'}`)
   }
 }
 
 export class YtDlpFfmpegSource implements AudioSource {
   constructor(
     private readonly tools: AudioTools,
-    private readonly run: Spawn = spawnPiped,
-    private readonly now: () => number = Date.now
+    private readonly run: Spawn = spawnPiped
   ) {}
 
   prepare(track: QueuedTrack): PreparedAudio {
-    return new YtDlpFfmpegAudio(this.tools, this.run, track, this.reusableUrl(track.audio))
-  }
-
-  private reusableUrl(audio: AudioLocator): string | null {
-    if (audio.kind !== 'audio-url' || !audio.direct) return null
-    return this.now() - audio.direct.fetchedAt < DIRECT_AUDIO_MAX_AGE_MS ? audio.direct.url : null
+    return new YtDlpFfmpegAudio(this.tools, this.run, track)
   }
 }

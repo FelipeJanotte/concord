@@ -55,3 +55,24 @@ Consequências: é raspagem de uma página pública (frágil; pode quebrar quand
 "Não foi possível ler essa playlist do Spotify"); lê só as 100 primeiras faixas e sem capa por faixa (usa a capa da
 playlist); em troca lê também as playlists do próprio Spotify. O parser fica isolado em `parseSpotifyEmbed`, com teste
 por fixture, e nada mais depende do formato da página.
+
+## Revisão (2026-11-17): o áudio passa pelo yt-dlp (pipe), nunca pelo endereço direto
+
+Com o yt-dlp resolvendo os desafios de JavaScript do YouTube (Deno no PATH ou `--js-runtimes node:...`), o endereço
+direto que ele devolve (`--get-url` ou o `url` do formato no `-J`) dava **403** quando o ffmpeg abria na hora, mesmo
+com os `http_headers`; o bot entrava e saía em todo pedido. Medido: o formato vem com `available_at` (~4–6 s depois da
+leitura) e o YouTube recusa o endereço antes disso; o próprio yt-dlp espera ("Sleeping 4.00 seconds as required by the
+site") antes de baixar.
+
+Decisão: `prepare` inicia `yt-dlp --format bestaudio/best -o -` e o `open` liga a saída dele no `ffmpeg -i pipe:0`. O
+yt-dlp cuida de tudo que o YouTube exige (desafios, espera, pedidos em pedaços); o ffmpeg só converte.
+
+| Opção | Por que não |
+|---|---|
+| Endereço direto (`--get-url`/`-J`) no ffmpeg, como antes | 403 com o runtime de JS (acima). |
+| Endereço direto esperando o `available_at` antes de abrir o ffmpeg | Funciona hoje (testado: 403 na hora, áudio depois de 7 s), mas copia uma regra interna do YouTube que já mudou e vai mudar de novo; o yt-dlp acompanha essas mudanças sozinho. |
+| Baixar o arquivo inteiro antes de tocar | Mais espera na 1ª música e arquivo temporário para limpar. |
+
+Consequências: um yt-dlp vivo por faixa preparada (a tocando e a próxima), parado no pipe enquanto espera; a 1ª música
+paga a espera do YouTube (~4 s) depois dos metadados; a busca por texto voltou para a lista plana (`--flat-playlist`,
+~3 s mais rápida e com os mesmos metadados), porque o `-J` completo só servia para o endereço direto.
