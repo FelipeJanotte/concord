@@ -1,3 +1,4 @@
+import type { Ref } from 'react'
 import type { ChatCommandArg } from '@/lib/commands'
 import { cn } from '@/lib/utils'
 
@@ -12,9 +13,13 @@ export function CommandHighlight({ command, rest }: { command: string; rest: str
   )
 }
 
-export function CommandBlock({ command, arg }: { command: string; arg: ChatCommandArg }) {
+export function CommandBlock({ command, arg, ref }: { command: string; arg: ChatCommandArg; ref?: Ref<HTMLDivElement> }) {
   return (
-    <div data-testid="command-block" className="flex shrink-0 items-center gap-1.5 py-1.5 text-[15px] leading-[22px]">
+    <div
+      ref={ref}
+      data-testid="command-block"
+      className="pointer-events-none absolute top-0 left-0 flex items-center gap-1.5 py-1.5 text-[15px] leading-[22px]"
+    >
       <code className="rounded bg-secondary px-1 font-[inherit] text-secondary-foreground">{command}</code>
       <span title={arg.hint} className="rounded border border-border bg-secondary px-1.5 text-sm text-muted-foreground">
         {arg.name}

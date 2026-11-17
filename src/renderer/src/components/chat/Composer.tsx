@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type RefObject } from 'react'
 import { Paperclip, SendHorizontal } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { EVERYONE_TOKEN, MENTION_EVERYONE, MESSAGE_MAX_LENGTH, mentionToken, type Channel } from '@shared/types'
@@ -68,6 +68,8 @@ export function Composer({ channel }: { channel: Channel }) {
   const [commandsDismissedFor, setCommandsDismissedFor] = useState<string | null>(null)
   const commands = commandsDismissedFor === value ? [] : commandSuggestions(value)
   const block = commandBlock(value)
+  const blockRef = useRef<HTMLDivElement>(null)
+  const blockIndent = useBlockIndent(blockRef, block?.command)
   const field = fieldOf(value)
   const head = value.slice(0, value.length - field.length)
   const draft = block ? null : commandDraft(value)
@@ -233,35 +235,34 @@ export function Composer({ channel }: { channel: Channel }) {
               e.target.value = '' // permite escolher o mesmo arquivo de novo
             }}
           />
-          <div className="flex min-w-0 flex-1 items-start gap-1.5">
-            {block && <CommandBlock command={block.command} arg={block.arg} />}
-            <div className="relative min-w-0 flex-1">
-              {draft && <CommandHighlight {...draft} />}
-              <textarea
-                ref={ref}
-                rows={1}
-                maxLength={MESSAGE_MAX_LENGTH - head.length}
-                value={field}
-                aria-label={chatPlaceholder}
-                placeholder={block ? block.arg.hint : chatPlaceholder}
-                onChange={(e) => {
-                  const next = head + e.target.value
-                  setValue(next)
-                  if (commandSuggestions(next).length > 0) setActive(0)
-                  trackMention(e.target.value, e.target.selectionStart ?? e.target.value.length)
-                  if (next) notifyTyping(channel.id)
-                }}
-                onSelect={(e) => trackMention(e.currentTarget.value, e.currentTarget.selectionStart ?? 0)}
-                onBlur={() => setMention(null)}
-                onKeyDown={onKeyDown}
-                onPaste={onPaste}
-                className={cn(
-                  COMPOSER_TEXT,
-                  'block max-h-[200px] w-full resize-none bg-transparent outline-none placeholder:text-muted-foreground',
-                  draft && 'text-transparent caret-foreground'
-                )}
-              />
-            </div>
+          <div className="relative min-w-0 flex-1">
+            {block && <CommandBlock ref={blockRef} command={block.command} arg={block.arg} />}
+            {draft && <CommandHighlight {...draft} />}
+            <textarea
+              ref={ref}
+              rows={1}
+              maxLength={MESSAGE_MAX_LENGTH - head.length}
+              value={field}
+              aria-label={chatPlaceholder}
+              placeholder={block ? block.arg.hint : chatPlaceholder}
+              onChange={(e) => {
+                const next = head + e.target.value
+                setValue(next)
+                if (commandSuggestions(next).length > 0) setActive(0)
+                trackMention(e.target.value, e.target.selectionStart ?? e.target.value.length)
+                if (next) notifyTyping(channel.id)
+              }}
+              onSelect={(e) => trackMention(e.currentTarget.value, e.currentTarget.selectionStart ?? 0)}
+              onBlur={() => setMention(null)}
+              onKeyDown={onKeyDown}
+              onPaste={onPaste}
+              className={cn(
+                COMPOSER_TEXT,
+                'block max-h-[200px] w-full resize-none bg-transparent outline-none placeholder:text-muted-foreground',
+                draft && 'text-transparent caret-foreground'
+              )}
+              style={block ? { textIndent: blockIndent } : undefined}
+            />
           </div>
           <Button
             size="icon-sm"
@@ -313,4 +314,15 @@ function TypingIndicator({ channelId }: { channelId: string }) {
       <span className="font-medium">{text}</span>
     </div>
   )
+}
+
+const BLOCK_GAP_PX = 6
+
+function useBlockIndent(blockRef: RefObject<HTMLDivElement | null>, command: string | undefined): number {
+  const [indent, setIndent] = useState(0)
+  useLayoutEffect(() => {
+    if (!command || !blockRef.current) return
+    setIndent(blockRef.current.offsetWidth + BLOCK_GAP_PX)
+  }, [blockRef, command])
+  return indent
 }

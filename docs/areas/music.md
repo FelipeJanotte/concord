@@ -208,8 +208,8 @@ instala o ffmpeg e baixa o yt-dlp oficial na hora do build. Para atualizar o yt-
   fonte do campo e `-mx-0.5 px-0.5`, para não deslocar o cursor). Vale para `/skip`, `/stop`, `/queue` e para `/play`
   ainda sem o espaço.
 - **Bloco do argumento** (`CommandBlock`, estilo Discord): comando com argumento (`/play`: `arg` do registro) seguido
-  de um espaço (`commandBlock`) mostra, à esquerda do campo e fora do `textarea`, o `/play` em código e o bloco `query`
-  (`bg-secondary` + `border-border`, a dica longa no `title`). O `textarea` guarda só o argumento, então o cursor pisca
+  de um espaço (`commandBlock`) mostra, por cima do início da 1ª linha do `textarea` (posição absoluta), o `/play` em código e o bloco `query`
+  (`bg-secondary` + `border-border`). A 1ª linha do campo recua a largura do bloco (`text-indent` medido por `useBlockIndent` no `Composer`), então em chat estreito a quebra de linha usa a largura toda em vez de uma coluna ao lado do bloco. O `textarea` guarda só o argumento, então o cursor pisca
   logo depois do bloco e o que se digita entra à direita dele, sem nada por cima do cursor (a camada espelho antiga
   desenhava a dica onde ficava o cursor). Com o argumento vazio, a dica "link do Spotify/YouTube ou nome da música" é o
   `placeholder`. O bloco **continua como rótulo** enquanto se digita (como no Discord). Backspace com o argumento vazio
