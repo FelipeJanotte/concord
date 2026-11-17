@@ -74,6 +74,14 @@ describe('editar', () => {
     expect(list[2].replyTo?.content).toBe('pergunta nova')
   })
 
+  it('message:edited de ferramenta troca o resultado e o texto sem marcar editada', () => {
+    const tool = { tool: 'dice' as const, result: { sides: 6, rolls: [5], total: 5 } }
+    socket.receive('message:edited', { channelId: 'geral', messageId: 'm4', content: '🎲 d6: 5', tool })
+    const updated = st().messages.geral[3]
+    expect(updated).toMatchObject({ content: '🎲 d6: 5', tool, kind: 'tool' })
+    expect(updated).not.toHaveProperty('editedAt')
+  })
+
   it('editMessage manda o texto limpo, aplica na hora e fecha a edição', async () => {
     socket.replyTo('message:edit', () => ({ ok: true }))
     startEdit('m2')

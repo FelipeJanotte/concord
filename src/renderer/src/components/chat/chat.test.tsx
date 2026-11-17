@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // Componentes do chat com anexos: mensagem, campo de mensagem e área de soltar arquivos.
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Attachment, Channel, Message } from '@shared/types'
@@ -109,6 +109,70 @@ describe('Composer', () => {
     await userEvent.type(box, 'oi pessoal{Enter}')
     expect(socket.sent('message:send')).toEqual([[{ channelId: 'geral', content: 'oi pessoal' }]])
     expect((box as HTMLTextAreaElement).value).toBe('')
+  })
+
+  it('comando de música (/skip) vai para o bot da minha sala com este chat e limpa o campo quando dá certo', async () => {
+    useApp.setState({ myVoiceChannelId: 'sala' })
+    socket.replyTo('music:skip', () => ({ ok: true, state: { channelId: 'sala', nowPlaying: null, queue: [] } }))
+    render(<Composer channel={channel} />)
+    const box = screen.getByPlaceholderText('Conversar em #geral')
+    await userEvent.type(box, '/skip {Enter}')
+    expect(socket.sent('music:skip')).toEqual([[{ channelId: 'sala', textChannelId: 'geral' }]])
+    expect(socket.sent('message:send')).toEqual([])
+    await waitFor(() => expect((box as HTMLTextAreaElement).value).toBe(''))
+  })
+
+  it('/play limpa o campo ao enviar, sem esperar a busca do bot', async () => {
+    useApp.setState({ myVoiceChannelId: 'sala' })
+    socket.replyTo('music:play', () => new Promise(() => {}))
+    render(<Composer channel={channel} />)
+    const box = screen.getByPlaceholderText('Conversar em #geral')
+    await userEvent.type(box, '/play lofi{Enter}')
+    expect(socket.sent('music:play')).toEqual([[{ channelId: 'sala', query: 'lofi', textChannelId: 'geral' }]])
+    expect((box as HTMLTextAreaElement).value).toBe('')
+    expect(screen.queryByTestId('command-block')).toBeNull()
+  })
+
+  it('comando de música recusado: o texto continua no campo para corrigir', async () => {
+    useApp.setState({ myVoiceChannelId: 'sala' })
+    socket.replyTo('music:play', () => ({ ok: false, error: 'Envie o nome da música ou um link do Spotify ou do YouTube' }))
+    render(<Composer channel={channel} />)
+    const box = screen.getByPlaceholderText('Conversar em #geral')
+    await userEvent.type(box, '/play https://soundcloud.com/x{Enter}')
+    await waitFor(() => expect(useApp.getState().notice?.text).toBe('Envie o nome da música ou um link do Spotify ou do YouTube'))
+    await waitFor(() => expect((box as HTMLTextAreaElement).value).toBe('https://soundcloud.com/x'))
+    expect(within(screen.getByTestId('command-block')).getByText('/play')).toBeTruthy()
+    expect(socket.sent('message:send')).toEqual([])
+  })
+
+  it('/play aparece como código; com o espaço vira o bloco "query"; no meio do texto, nada', async () => {
+    render(<Composer channel={channel} />)
+    const box = screen.getByPlaceholderText('Conversar em #geral') as HTMLTextAreaElement
+    expect(screen.queryByTestId('command-highlight')).toBeNull()
+    await userEvent.type(box, '/play')
+    expect(screen.getByTestId('command-highlight').querySelector('code')?.textContent).toBe('/play')
+    expect(screen.queryByTestId('command-block')).toBeNull()
+    await userEvent.type(box, ' lofi')
+    expect(within(screen.getByTestId('command-block')).getByText('query')).toBeTruthy()
+    expect(box.value).toBe('lofi')
+    expect(screen.queryByTestId('command-highlight')).toBeNull()
+    await userEvent.clear(box)
+    await userEvent.keyboard('{Backspace}')
+    await userEvent.clear(box)
+    await userEvent.type(box, 'oi /play')
+    expect(screen.queryByTestId('command-highlight')).toBeNull()
+    expect(screen.queryByTestId('command-block')).toBeNull()
+  })
+
+  it('/skip, /stop e /queue aparecem como código, sem a dica "query"', async () => {
+    render(<Composer channel={channel} />)
+    const box = screen.getByPlaceholderText('Conversar em #geral')
+    for (const command of ['/skip', '/stop', '/queue']) {
+      await userEvent.clear(box)
+      await userEvent.type(box, command)
+      expect(screen.getByTestId('command-highlight').querySelector('code')?.textContent).toBe(command)
+      expect(screen.queryByText('query')).toBeNull()
+    }
   })
 
   it('escolher arquivo mostra a prévia com progresso; enviar só depois de terminar', async () => {

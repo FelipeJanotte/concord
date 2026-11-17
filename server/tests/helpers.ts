@@ -48,7 +48,8 @@ export class TestServer {
   constructor(
     readonly dataDir: string,
     private readonly database: TestDatabase,
-    private readonly extraEnv: Record<string, string> = {}
+    private readonly extraEnv: Record<string, string> = {},
+    private readonly imports: string[] = []
   ) {}
 
   /**
@@ -59,11 +60,11 @@ export class TestServer {
    * para os testes criarem canais. Use false quando o teste conta cadastros ou quer ser a dona.
    */
   static async start(
-    opts: { prepare?: (dataDir: string) => void; env?: Record<string, string>; owner?: boolean } = {}
+    opts: { prepare?: (dataDir: string) => void; env?: Record<string, string>; owner?: boolean; imports?: string[] } = {}
   ): Promise<TestServer> {
     const dataDir = mkdtempSync(join(tmpdir(), 'concord-test-'))
     opts.prepare?.(dataDir)
-    const server = new TestServer(dataDir, await createTestDatabase(), opts.env)
+    const server = new TestServer(dataDir, await createTestDatabase(), opts.env, opts.imports)
     try {
       await server.boot()
       if (opts.owner ?? true) {
@@ -101,7 +102,7 @@ export class TestServer {
     const port = await freePort()
     this.url = `http://localhost:${port}`
     this.output = ''
-    const child = spawn(process.execPath, ['--import', 'tsx', 'server/index.ts'], {
+    const child = spawn(process.execPath, ['--import', 'tsx', ...this.imports.flatMap((m) => ['--import', m]), 'server/index.ts'], {
       cwd: ROOT,
       env: {
         ...process.env,

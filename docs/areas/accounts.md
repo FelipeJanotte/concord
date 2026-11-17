@@ -35,7 +35,7 @@ Constantes compartilhadas em `src/shared/types/account.ts`: `NAME_MAX`, `TAG_MAX
 | `server/index.ts` | middleware `io.use` que exige token (erro do banco vira `server_error`, que **não** apaga o token no app) |
 | `src/main/google-auth.ts` | abre o navegador e captura o código do Google (IPC `google-sign-in`) |
 | `src/preload/index.ts` | expõe `window.api.googleSignIn(clientId)` |
-| `src/renderer/src/lib/client.ts` | `register`, `login`, `loginWithGoogle`, `restoreSession`, `logout` |
+| `src/renderer/src/lib/client.ts` | `register`, `login`, `loginWithGoogle`, `restoreSession`, `cancelRestore`, `logout` |
 | `src/renderer/src/lib/actions/account.ts` | `updateProfile`, `resolveAvatarUrl`, listener `user:updated` |
 | `src/renderer/src/lib/image.ts` | `fileToAvatarDataUrl` (recorte quadrado 256×256 em WebP) e `randomTag` |
 | `components/LoginScreen.tsx` | abas Entrar / Criar conta, botão Google, troca de servidor, tela "Entrando..." |
@@ -55,13 +55,24 @@ LoginScreen ──fetch──> POST /auth/register | /auth/login | /auth/google 
 
 - **HTTP antes do socket.** Cadastro/login/Google são rotas HTTP (`accountsModule.http` em `server/modules/accounts.ts`,
   CORS `*` em `server/index.ts`, corpo JSON até 16 KB). Um socket sem token válido nem conecta (`next(new Error('unauthorized'))`).
-- **Sessão:** token aleatório de 32 bytes; o banco guarda só o `sha256` (`server/repo/sessions.ts`), validade de 30 dias.
+- **Sessão:** token aleatório de 32 bytes; o banco guarda só o `sha256` (`server/repo/sessions.ts`).
   `POST /auth/logout { token }` revoga.
+- **Validade deslizante:** 30 dias **desde o último uso**. Cada validação do token (`accountFromToken`: handshake do
+  socket, rotas que pedem `Bearer`) renova para `agora + 30 dias` (`renewSession`), mas só grava se a renovação
+  andar pelo menos 1 dia (`SESSION_RENEW_AFTER_MS`): no máximo uma escrita por sessão por dia. Quem abre o app pelo
+  menos uma vez a cada 30 dias nunca cai; sessão parada 30 dias vence e é apagada pela limpeza.
 - **Ao abrir o app:** `App` chama `restoreSession()`, que usa o token salvo. Enquanto isso `store.restoring = true`
-  e o `LoginScreen` mostra "Entrando...". O `connect()` preserva `restoring` ao chamar `disconnect()` (que volta
+  e o `LoginScreen` mostra "Entrando..." com o link "Entrar com outra conta" (`cancelRestore()`: fecha a conexão,
+  mostra o formulário e **mantém** o token). O `connect()` preserva `restoring` ao chamar `disconnect()` (que volta
   ao `initialState`).
-- **Sessão inválida:** `connect_error` com `err.message === 'unauthorized'` apaga o token. Se acontecer numa
-  reconexão, desconecta e mostra "Sua sessão expirou".
+- **Só `unauthorized` derruba a sessão:** `connect_error` com `err.message === 'unauthorized'` apaga o token
+  (`connect()` rejeita com "Sua sessão expirou"; numa reconexão, desconecta e mostra o aviso). Qualquer outro erro
+  (servidor fora, timeout, `server_error` do banco) mantém o token e o `connect()` continua tentando: falha de
+  transporte o próprio socket.io repete; recusa do middleware (`socket.active === false`) é repetida com
+  `s.connect()` a cada 3 s (`RETRY_REFUSED_CONNECTION_MS`). Por isso o `connect()` só rejeita com `unauthorized`.
+- **Origem do `localStorage`:** o token fica no `localStorage` da origem da página. No dev é
+  `http://localhost:5173`, no app instalado é `file://`: são armazenamentos diferentes, então logar no dev não loga
+  no instalado (e vice-versa). Atualizar o app instalado mantém o token (mesmo `appId`, mesma pasta de dados).
 - **Limite de tentativas:** 10 senhas erradas por e-mail em 15 min bloqueiam aquele e-mail (memória, zera ao
   reiniciar o servidor).
 
@@ -127,7 +138,9 @@ A `MemberList` deduplica por `accountId` (a mesma conta pode estar em duas janel
   conhecido; o boot importa (veja `server/tests/database.test.ts`).
 - Casos que devem continuar valendo: mesmo nome + ids diferentes = ok; id repetido (outra caixa) = erro; trocar id
   de conta travada = erro; trocar só o nome = ok; conta Google escolhe id uma vez e na segunda = erro;
-  token inválido ou revogado = `unauthorized`; imagem que não é PNG/JPEG/WebP/GIF = erro.
+  token inválido ou revogado = `unauthorized`; sessão usada é renovada (no máximo 1 vez por dia) e parada 30 dias
+  vence (`server/auth.test.ts`, "sessões"); só `unauthorized` apaga o token, servidor fora mantém e tenta de novo
+  (`src/renderer/src/lib/client-session.test.ts`, `components/login-restoring.test.tsx`); imagem que não é PNG/JPEG/WebP/GIF = erro.
 - No app (`npm run dev:all`), o renderer também abre em `http://localhost:5173` no navegador; só o botão do Google
   depende do Electron (`window.api`).
 

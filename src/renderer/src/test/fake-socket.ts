@@ -26,6 +26,13 @@ export class FakeSocket {
   }
 
   connected = true
+  active = false
+  connectCalls = 0
+
+  connect(): this {
+    this.connectCalls++
+    return this
+  }
 
   disconnect(): this {
     this.connected = false

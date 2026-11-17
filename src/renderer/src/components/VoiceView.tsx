@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
 import { ChatView } from './ChatView'
 import { ResizableSide } from './ResizableSide'
+import { MusicPlayer } from './voice/MusicPlayer'
 import { PushToTalkHint } from './voice/PushToTalk'
 import { SoundboardPopover, SoundsPlayingBar } from './voice/Soundboard'
 import { VoiceGrid } from './voice/VoiceGrid'
@@ -49,6 +50,9 @@ export function VoiceView({ channelId }: { channelId: string }) {
           )}
         </div>
 
+        <div className="shrink-0 px-4">
+          <MusicPlayer channelId={channelId} />
+        </div>
         {connected && <SoundsPlayingBar />}
         {connected && <PushToTalkHint />}
         <div className="flex shrink-0 flex-wrap items-center justify-center gap-3 px-4 pb-6">

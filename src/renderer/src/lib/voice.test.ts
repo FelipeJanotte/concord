@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { JoinVoiceResult } from '@shared/types'
 import { initialState, useApp } from '@/store'
 import { FakeSocket } from '@/test/fake-socket'
-import { VoiceClient } from './voice'
+import { MUSIC_BOT_VOLUME_ID, VoiceClient } from './voice'
 import type { VoiceLeveler } from './leveler/leveler'
 
 type Listener = (...args: unknown[]) => void
@@ -601,6 +601,19 @@ describe('silenciar alguém só para mim', () => {
     const ana = new FakeRemoteTrack(Track.Kind.Audio, Track.Source.Microphone)
     lastRoom().fire(RoomEvent.TrackSubscribed, ana, {}, micOf('acc-ana'))
     expect(ana.setVolume).toHaveBeenLastCalledWith(0)
+  })
+
+  it('bot de música: volume e silenciar valem na faixa dele como os de uma pessoa', async () => {
+    client.setUserVolume(MUSIC_BOT_VOLUME_ID, 0.3)
+    await client.join('sala-1')
+    const bot = new FakeRemoteTrack(Track.Kind.Audio, Track.Source.Microphone)
+    lastRoom().fire(RoomEvent.TrackSubscribed, bot, {}, { identity: 'music-bot:sala-1', attributes: { bot: 'music' } })
+    expect(bot.setVolume).toHaveBeenLastCalledWith(0.3)
+    client.setUserMuted(MUSIC_BOT_VOLUME_ID, true)
+    expect(bot.setVolume).toHaveBeenLastCalledWith(0)
+    client.setUserMuted(MUSIC_BOT_VOLUME_ID, false)
+    client.setUserVolume(MUSIC_BOT_VOLUME_ID, 0.7)
+    expect(bot.setVolume).toHaveBeenLastCalledWith(0.7)
   })
 
   it('silenciar uma pessoa não mexe nas outras', async () => {

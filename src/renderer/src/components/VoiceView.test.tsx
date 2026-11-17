@@ -106,3 +106,36 @@ describe('câmera (B21)', () => {
     expect(screen.getByLabelText('Sua câmera').className).toContain('-scale-x-100')
   })
 })
+
+describe('player do bot de música', () => {
+  it('fica entre os membros da chamada e os controles da sala', () => {
+    useApp.setState({
+      musicRooms: {
+        sala: {
+          channelId: 'sala',
+          nowPlaying: {
+            id: 't1',
+            title: 'Garota de Ipanema',
+            artists: ['Tom Jobim'],
+            coverUrl: null,
+            durationMs: 200_000,
+            url: 'https://open.spotify.com/track/t1',
+            requestedBy: { accountId: 'acc-eu', name: 'Eu' }
+          },
+          queue: []
+        }
+      }
+    })
+    const { container } = render(
+      <TooltipProvider>
+        <VoiceView channelId="sala" />
+      </TooltipProvider>
+    )
+    const members = container.querySelector('[data-tile-grid]') as HTMLElement
+    const player = screen.getByRole('region', { name: 'Tocando agora' })
+    const controls = screen.getByRole('button', { name: 'Silenciar' })
+    expect(members.compareDocumentPosition(player) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(player.compareDocumentPosition(controls) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(members.contains(player)).toBe(false)
+  })
+})

@@ -4,7 +4,7 @@ import { PASSWORD_MIN, TAG_MAX, TAG_PATTERN } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { getAuthConfig, login, loginWithGoogle, register, savedServerUrl, updateProfile } from '@/lib/client'
+import { cancelRestore, getAuthConfig, login, loginWithGoogle, register, savedServerUrl, updateProfile } from '@/lib/client'
 import { randomTag } from '@/lib/image'
 import { useApp } from '@/store'
 import { AvatarPicker } from './AvatarPicker'
@@ -93,6 +93,9 @@ export function LoginScreen() {
         <div className="flex flex-col items-center gap-3 text-muted-foreground">
           <Loader2 className="size-8 animate-spin" />
           Entrando...
+          <Button type="button" variant="link" onClick={cancelRestore}>
+            Entrar com outra conta
+          </Button>
         </div>
       </Backdrop>
     )

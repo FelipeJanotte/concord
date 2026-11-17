@@ -14,7 +14,7 @@ O app **não consegue** criar mensagem de ferramenta pelo `message:send`: o serv
 
 | Arquivo | Papel |
 |---|---|
-| `src/shared/types/tools.ts` | Contrato: times (`LANES`, `LANE_LABELS`, `TeamsRequest`...), dado (`DiceRequest`/`DiceResult`), moeda (`CoinRequest`/`CoinResult`), sortear 1 (`PickRequest`/`PickResult`), limites, `ToolPayload` (união por ferramenta), `ToolResult`, textos por extenso (`teamsResultText`, `diceResultText`, `coinResultText`, `pickResultText`, `toolResultText`), eventos `tools:*`. |
+| `src/shared/types/tools.ts` | Contrato: times (`LANES`, `LANE_LABELS`, `TeamsRequest`...), dado (`DiceRequest`/`DiceResult`), moeda (`CoinRequest`/`CoinResult`), sortear 1 (`PickRequest`/`PickResult`), limites, `ToolPayload` (união por ferramenta; inclui `{ tool: 'music' }`, a resposta do bot de música no chat, postada pelo `server/modules/music.ts` e não por `TOOLS`: `docs/areas/music.md`), `ToolResult`, textos por extenso (`teamsResultText`, `diceResultText`, `coinResultText`, `pickResultText`, `toolResultText`), eventos `tools:*`. |
 | `src/shared/types/message.ts` | `MessageKind`, `Message.kind?` (ausente = `text`) e `Message.tool?`. |
 | `server/tools/teams.ts` | Funções puras: `validateTeams`, `shuffle` (Fisher–Yates), `drawTeams` (acaso injetado: `Rand`). |
 | `server/tools/move.ts` | Mover times (puras): `validateMoveRequest` (formato, salas diferentes) e `planMoves` (quem do sorteio é quem na voz: pela conta ou pelo nome/`nome#tag`). |

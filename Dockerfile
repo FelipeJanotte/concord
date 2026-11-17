@@ -1,6 +1,12 @@
 # Imagem do servidor do Concord (A14). Só o servidor: o app Electron é distribuído pelo instalador.
 # Usada pelo docker-compose.prod.yml; ver deploy/README.md.
-FROM node:22-alpine
+FROM node:22-bookworm-slim
+
+# Bot de música (A11): ffmpeg (Debian, build LGPL/GPL usado como programa externo) e yt-dlp (binário oficial).
+# Debian em vez de Alpine: o @livekit/rtc-node só tem binário para glibc.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certificates && rm -rf /var/lib/apt/lists/*
+ADD https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux /usr/local/bin/yt-dlp
+RUN chmod 755 /usr/local/bin/yt-dlp
 
 WORKDIR /app
 ENV NODE_ENV=production \
@@ -25,6 +31,6 @@ EXPOSE 3001
 
 # Resposta simples em / ({"name":"concord-server",...}) serve de verificação de saúde.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-  CMD wget -qO- http://127.0.0.1:3001/ >/dev/null || exit 1
+  CMD node -e "fetch('http://127.0.0.1:3001/').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
 
 CMD ["npx", "tsx", "server/index.ts"]

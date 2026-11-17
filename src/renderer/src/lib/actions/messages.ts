@@ -1,5 +1,5 @@
 // Histórico, envio de mensagens e "digitando".
-import { replyPreviewText, type Mention, type Message } from '@shared/types'
+import { replyPreviewText, type Mention, type Message, type MessageEdited } from '@shared/types'
 import { omit } from '../utils'
 import { get, getSocket, notify, requireSocket, set, type AppSocket } from '../core'
 import { isChatOnScreen } from './navigation'
@@ -24,7 +24,7 @@ export function bindMessageEvents(s: AppSocket): void {
   )
 
   // editada (A15): troca o texto e atualiza as citações que apontam para ela (B18)
-  s.on('message:edited', ({ channelId, messageId, content, editedAt, mentions }) => applyEdit(channelId, messageId, content, editedAt, { mentions }))
+  s.on('message:edited', applyRemoteEdit)
 
   // apagada (B6): as respostas a ela passam a citar "mensagem apagada" (a lista em si é tratada em moderation.ts)
   s.on('message:deleted', ({ channelId, messageId }) =>
@@ -145,12 +145,7 @@ export function notifyTyping(channelId: string): void {
 
 // ---------- Editar (A15) e responder citando (B18) ----------
 
-/** Troca o texto da mensagem já carregada e das citações a ela no mesmo canal. */
-/**
- * `extra.mentions` (do `message:edited`, B19) troca as menções; sem `extra` (edição local, antes do
- * evento chegar) ficam as que já estavam.
- */
-function applyEdit(channelId: string, messageId: string, content: string, editedAt: number, extra?: { mentions?: Mention[] }): void {
+function applyEdit(channelId: string, messageId: string, content: string, change: (m: Message) => Message): void {
   set((st) => {
     const list = st.messages[channelId]
     if (!list) return {}
@@ -159,17 +154,23 @@ function applyEdit(channelId: string, messageId: string, content: string, edited
       messages: {
         ...st.messages,
         [channelId]: list.map((m) => {
-          if (m.id === messageId) {
-            if (!extra) return { ...m, content, editedAt }
-            const { mentions: _old, ...rest } = m
-            return extra.mentions?.length ? { ...rest, content, editedAt, mentions: extra.mentions } : { ...rest, content, editedAt }
-          }
+          if (m.id === messageId) return change(m)
           if (m.replyTo?.id === messageId && !m.replyTo.deleted) return { ...m, replyTo: { ...m.replyTo, content: preview } }
           return m
         })
       }
     }
   })
+}
+
+function withMentions({ mentions: _old, ...message }: Message, mentions: Mention[] | undefined): Message {
+  return mentions?.length ? { ...message, mentions } : message
+}
+
+function applyRemoteEdit(edit: MessageEdited): void {
+  const { channelId, messageId, content } = edit
+  if ('tool' in edit) return applyEdit(channelId, messageId, content, (m) => ({ ...m, content, tool: edit.tool }))
+  applyEdit(channelId, messageId, content, (m) => withMentions({ ...m, content, editedAt: edit.editedAt }, edit.mentions))
 }
 
 /** Começa a responder a esta mensagem: o campo do canal mostra "Respondendo a Fulano". */
@@ -220,6 +221,7 @@ export async function editMessage(message: Message, content: string): Promise<vo
   if (text === message.content) return cancelEdit()
   const res = await requireSocket().emitWithAck('message:edit', { messageId: message.id, content: text })
   if (!res.ok) throw new Error(res.error)
-  applyEdit(message.channelId, message.id, text, Date.now())
+  const editedAt = Date.now()
+  applyEdit(message.channelId, message.id, text, (m) => ({ ...m, content: text, editedAt }))
   cancelEdit()
 }

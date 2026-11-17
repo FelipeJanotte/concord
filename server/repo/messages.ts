@@ -192,6 +192,16 @@ export async function editMessage(id: string, authorId: string, content: string)
   return row ? editedAt.getTime() : null
 }
 
+export async function updateToolMessage(id: string, tool: ToolPayload, content: string): Promise<boolean> {
+  if (!isUuid(id)) return false
+  const rows = await db()
+    .update(messages)
+    .set({ tool, content })
+    .where(and(eq(messages.id, id), eq(messages.kind, 'tool')))
+    .returning({ id: messages.id })
+  return rows.length > 0
+}
+
 /** Canal e autor (conta) de uma mensagem, para conferir quem pode apagar. Id inválido = não existe. */
 export async function findMessageMeta(id: string): Promise<{ channelId: string; authorId: string | null } | undefined> {
   if (!isUuid(id)) return undefined

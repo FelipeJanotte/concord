@@ -1,6 +1,6 @@
 // Editar mensagem (A15) e responder citando (B18) no servidor real.
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
-import type { Message } from '../../src/shared/types'
+import type { Message, TextMessageEdited } from '../../src/shared/types'
 import { expectNoEvent, TestServer, waitFor, type TestUser } from './helpers'
 
 let server: TestServer
@@ -38,7 +38,7 @@ describe('editar (A15)', () => {
     const msg = await send(ana, ch.id, 'oi gnete')
     const forBia = waitFor(bia.socket, 'message:edited', (e) => e.messageId === msg.id)
     expect(await ana.socket.emitWithAck('message:edit', { messageId: msg.id, content: '  oi gente  ' })).toEqual({ ok: true })
-    const [edited] = await forBia
+    const edited = (await forBia)[0] as TextMessageEdited
     expect(edited).toMatchObject({ channelId: ch.id, messageId: msg.id, content: 'oi gente' })
     expect(edited.editedAt).toBeGreaterThanOrEqual(msg.createdAt)
     const history = await bia.socket.emitWithAck('message:history', { channelId: ch.id })

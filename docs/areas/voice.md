@@ -351,6 +351,11 @@ duas barras laterais), como no Discord:
   conexão). Aplicado com `RemoteAudioTrack.setVolume` ao receber o microfone da pessoa e na hora ao mexer no
   controle. Só o microfone; o áudio da tela não muda. Vai de 0 a 100%: passar de 100% exigiria `webAudioMix`, que
   mixa o áudio pela Web Audio e quebraria o deafen (feito com `muted` nos `<audio>`).
+- **Bot de música:** entra no mesmo caminho com a chave fixa `MUSIC_BOT_VOLUME_ID` (`'music-bot'`, em `lib/voice.ts`):
+  o participante sem `accountId` e com `attributes.bot === 'music'` (token de `server/music/livekit-publisher.ts`)
+  tem o microfone guardado em `voices` com essa chave (`volumeIdOf`). Volume e silenciar valem para o bot de qualquer
+  sala e ficam em `userVolumes`/`userMuted` como os de uma pessoa. Botão direito no bot da barra lateral:
+  `MusicBotContextMenu` (só volume e silenciar; `docs/areas/music.md`).
 - **Silenciar alguém:** também por conta. O volume aplicado vira 0, mas o valor ajustado continua em `userVolumes`;
   ao tirar o silêncio, volta ao que era. Mexer no volume enquanto silenciado só guarda o valor. Não afeta os outros:
   é só no meu app (para silenciar para todos, B6 "silenciar pelo servidor").
@@ -364,7 +369,8 @@ duas barras laterais), como no Discord:
 - **Testes:** `lib/voice.test.ts` (blocos "dispositivos e volume" e "silenciar alguém"), `lib/actions/devices.test.ts`
   (preferências, silenciar, erros, filtro da lista), `components/settings/VoiceSettings.test.tsx` (jsdom: seletores,
   desconectado, sem `setSinkId`, altura limitada com as seções na área que rola) e `components/voice/MemberContextMenu.test.tsx` (jsdom: menu no tile e na barra
-  lateral, só "Ver perfil" em si mesmo, volume, silenciar mantendo o volume e o menu aberto, cartão de perfil).
+  lateral, só "Ver perfil" em si mesmo, volume, silenciar mantendo o volume e o menu aberto, cartão de perfil, menu
+  do bot de música com só volume e silenciar).
   À mão: trocar de fone no meio da conversa e conferir que o outro continua ouvindo; botão direito numa pessoa,
   baixar o volume, silenciar, tirar o silêncio (volta ao volume ajustado) e reiniciar o app (tudo continua).
 

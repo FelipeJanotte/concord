@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Channel, User, VoiceState } from '@shared/types'
 import { ChannelSidebar } from '@/components/ChannelSidebar'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { voice } from '@/lib/voice'
+import { MUSIC_BOT_VOLUME_ID, voice } from '@/lib/voice'
 import { initialState, useApp } from '@/store'
 import { VoiceGrid } from './VoiceGrid'
 
@@ -138,5 +138,39 @@ describe('equalizador automático no menu', () => {
     render(<VoiceGrid members={members()} />)
     const menu = openMenuOn(screen.getByText('Ana'))
     expect(within(menu).queryByText(/Equalizador/)).toBeNull()
+  })
+})
+
+describe('bot de música na barra lateral', () => {
+  const playing = {
+    channelId: 'sala',
+    nowPlaying: {
+      id: 't1',
+      title: 'Garota de Ipanema',
+      artists: ['Tom Jobim'],
+      coverUrl: null,
+      durationMs: 200_000,
+      url: 'https://open.spotify.com/track/t1',
+      requestedBy: { accountId: 'acc-ana', name: 'Ana' }
+    },
+    queue: []
+  }
+
+  it('botão direito no bot: só volume e silenciar, pelo mesmo caminho do volume de uma pessoa', async () => {
+    useApp.setState({ musicRooms: { sala: playing } })
+    render(
+      <TooltipProvider>
+        <ChannelSidebar />
+      </TooltipProvider>
+    )
+    const menu = openMenuOn(screen.getByTestId('music-bot'))
+    fireEvent.change(within(menu).getByRole('slider', { name: 'Volume de Música' }), { target: { value: '30' } })
+    expect(voice.setUserVolume).toHaveBeenCalledWith(MUSIC_BOT_VOLUME_ID, 0.3)
+    expect(useApp.getState().userVolumes).toEqual({ [MUSIC_BOT_VOLUME_ID]: 0.3 })
+    await userEvent.click(within(menu).getByRole('menuitemcheckbox', { name: /Silenciar/ }))
+    expect(voice.setUserMuted).toHaveBeenCalledWith(MUSIC_BOT_VOLUME_ID, true)
+    const open = screen.getByRole('menu')
+    expect(within(open).queryByRole('menuitem')).toBeNull()
+    expect(within(open).queryByText(/Ver perfil|Mensagem|Cargos|Adicionar amigo/)).toBeNull()
   })
 })

@@ -7,6 +7,7 @@
  * desenham o cartão.
  */
 import { MESSAGE_MAX_LENGTH, type Message } from './message'
+import { musicBotReplyText, type MusicBotReply } from './music'
 
 // ---------- Sorteador de times ----------
 
@@ -196,6 +197,7 @@ export type ToolPayload =
   | { tool: 'coin'; result: CoinResult }
   | { tool: 'pick'; result: PickResult }
   | { tool: 'poll'; result: PollResult }
+  | { tool: 'music'; result: MusicBotReply }
 export type ToolName = ToolPayload['tool']
 
 export type ToolResult = { ok: true; message: Message } | { ok: false; error: string }
@@ -283,6 +285,8 @@ export function toolResultText(payload: ToolPayload): string {
       return pickResultText(payload.result)
     case 'poll':
       return pollResultText(payload.result)
+    case 'music':
+      return fitMessage(musicBotReplyText(payload.result))
   }
 }
 

@@ -1,9 +1,10 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type RefObject } from 'react'
 import { Paperclip, SendHorizontal } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { EVERYONE_TOKEN, MENTION_EVERYONE, MESSAGE_MAX_LENGTH, mentionToken, type Channel } from '@shared/types'
 import { Button } from '@/components/ui/button'
-import { addFiles, cancelReply, editLastMessage, notifyTyping, sendMessage } from '@/lib/client'
+import { addFiles, cancelReply, editLastMessage, notifyTyping, runMusicCommand, sendMessage } from '@/lib/client'
+import { commandBlock, commandDraft, commandSuggestions, type ChatCommand } from '@/lib/commands'
 import { chatLabel, findDm } from '@/lib/dms'
 import {
   activeMentionQuery,
@@ -18,11 +19,15 @@ import { allows, useCan } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
 import { AttachmentPreview } from './AttachmentPreview'
+import { CommandBlock, CommandHighlight, COMPOSER_TEXT } from './CommandHighlight'
+import { CommandMenu } from './CommandMenu'
 import { MentionMenu } from './MentionMenu'
 import { ReplyBanner } from './ReplyPreview'
 import { ToolsMenu } from './ToolsMenu'
 
 const EMPTY: never[] = []
+
+const fieldOf = (text: string): string => commandBlock(text)?.rest ?? text
 
 /**
  * Quem pode ser mencionado aqui (B19): quem está online e vê o canal (menos eu); numa conversa
@@ -60,6 +65,15 @@ export function Composer({ channel }: { channel: Channel }) {
   const [active, setActive] = useState(0)
   const chosen = useRef<MentionMap>({})
   const options = mention ? filterCandidates(candidates, mention.query) : []
+  const [commandsDismissedFor, setCommandsDismissedFor] = useState<string | null>(null)
+  const commands = commandsDismissedFor === value ? [] : commandSuggestions(value)
+  const block = commandBlock(value)
+  const blockRef = useRef<HTMLDivElement>(null)
+  const blockIndent = useBlockIndent(blockRef, block?.command)
+  const field = fieldOf(value)
+  const head = value.slice(0, value.length - field.length)
+  const draft = block ? null : commandDraft(value)
+  const chatPlaceholder = channel.type === 'dm' ? `Conversar com ${label}` : `Conversar em ${label}`
 
   function trackMention(text: string, caret: number): void {
     const next = activeMentionQuery(text, caret)
@@ -70,13 +84,19 @@ export function Composer({ channel }: { channel: Channel }) {
   function pickMention(item: MentionCandidate): void {
     const el = ref.current
     if (!el || !mention) return
-    const { text, caret } = insertMention(value, mention.start, el.selectionStart ?? value.length, item.label)
+    const { text, caret } = insertMention(field, mention.start, el.selectionStart ?? field.length, item.label)
     chosen.current[item.label] = item.id === MENTION_EVERYONE ? EVERYONE_TOKEN : mentionToken(item.id)
-    setValue(text)
+    setValue(head + text)
     setMention(null)
     // o cursor vai para depois da menção assim que o texto novo estiver no campo (useLayoutEffect
     // abaixo). Com requestAnimationFrame, o que se digitasse antes do próximo quadro saía fora de ordem.
     pendingCaret.current = caret
+  }
+
+  function pickCommand(item: ChatCommand): void {
+    const text = `/${item.name} `
+    setValue(text)
+    pendingCaret.current = fieldOf(text).length
   }
 
   const pendingCaret = useRef<number | null>(null)
@@ -108,6 +128,15 @@ export function Composer({ channel }: { channel: Channel }) {
 
   function send() {
     if (!canSend) return
+    const command = runMusicCommand(value, channel.id)
+    if (command) {
+      const sent = value
+      setValue('')
+      void command.then((done) => {
+        if (!done) setValue((current) => (current === '' ? sent : current))
+      })
+      return
+    }
     // os "@Nome" escolhidos viram o token da conta antes de ir para o servidor
     if (sendMessage(channel.id, fromEditable(value, chosen.current))) {
       setValue('')
@@ -117,25 +146,35 @@ export function Composer({ channel }: { channel: Channel }) {
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    // menu de menções aberto: setas escolhem, Enter/Tab confirmam, Esc fecha
-    if (options.length > 0) {
+    const menu =
+      options.length > 0
+        ? { size: options.length, pick: (i: number) => pickMention(options[i]), close: () => setMention(null) }
+        : commands.length > 0
+          ? { size: commands.length, pick: (i: number) => pickCommand(commands[i]), close: () => setCommandsDismissedFor(value) }
+          : null
+    if (menu) {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault()
-        setActive((i) => (i + (e.key === 'ArrowDown' ? 1 : options.length - 1)) % options.length)
+        setActive((i) => (Math.min(i, menu.size - 1) + (e.key === 'ArrowDown' ? 1 : menu.size - 1)) % menu.size)
         return
       }
       if ((e.key === 'Enter' || e.key === 'Tab') && !e.shiftKey) {
         e.preventDefault()
-        pickMention(options[Math.min(active, options.length - 1)])
+        menu.pick(Math.min(active, menu.size - 1))
         return
       }
       if (e.key === 'Escape') {
         e.preventDefault()
-        setMention(null)
+        menu.close()
         return
       }
     }
-    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+    if (e.key === 'Backspace' && block && !field) {
+      e.preventDefault()
+      const command = head.trimEnd()
+      setValue(command)
+      pendingCaret.current = command.length
+    } else if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault()
       send()
     } else if (e.key === 'Escape' && replying) {
@@ -168,6 +207,7 @@ export function Composer({ channel }: { channel: Channel }) {
   return (
     <div className="shrink-0 px-4">
       <MentionMenu items={options} active={Math.min(active, Math.max(0, options.length - 1))} onPick={pickMention} />
+      <CommandMenu items={commands} active={Math.min(active, Math.max(0, commands.length - 1))} onPick={pickCommand} />
       <ReplyBanner channelId={channel.id} />
       <div className={cn('rounded-lg bg-composer', replying && 'rounded-t-none')}>
         <AttachmentPreview channelId={channel.id} uploads={uploads} />
@@ -196,23 +236,35 @@ export function Composer({ channel }: { channel: Channel }) {
               e.target.value = '' // permite escolher o mesmo arquivo de novo
             }}
           />
-          <textarea
-            ref={ref}
-            rows={1}
-            maxLength={MESSAGE_MAX_LENGTH}
-            value={value}
-            placeholder={channel.type === 'dm' ? `Conversar com ${label}` : `Conversar em ${label}`}
-            onChange={(e) => {
-              setValue(e.target.value)
-              trackMention(e.target.value, e.target.selectionStart ?? e.target.value.length)
-              if (e.target.value) notifyTyping(channel.id)
-            }}
-            onSelect={(e) => trackMention(e.currentTarget.value, e.currentTarget.selectionStart ?? 0)}
-            onBlur={() => setMention(null)}
-            onKeyDown={onKeyDown}
-            onPaste={onPaste}
-            className="max-h-[200px] flex-1 resize-none bg-transparent py-1.5 text-[15px] leading-[22px] outline-none placeholder:text-muted-foreground"
-          />
+          <div className="relative min-w-0 flex-1">
+            {block && <CommandBlock ref={blockRef} command={block.command} arg={block.arg} />}
+            {draft && <CommandHighlight {...draft} />}
+            <textarea
+              ref={ref}
+              rows={1}
+              maxLength={MESSAGE_MAX_LENGTH - head.length}
+              value={field}
+              aria-label={chatPlaceholder}
+              placeholder={block ? block.arg.hint : chatPlaceholder}
+              onChange={(e) => {
+                const next = head + e.target.value
+                setValue(next)
+                if (commandSuggestions(next).length > 0) setActive(0)
+                trackMention(e.target.value, e.target.selectionStart ?? e.target.value.length)
+                if (next) notifyTyping(channel.id)
+              }}
+              onSelect={(e) => trackMention(e.currentTarget.value, e.currentTarget.selectionStart ?? 0)}
+              onBlur={() => setMention(null)}
+              onKeyDown={onKeyDown}
+              onPaste={onPaste}
+              className={cn(
+                COMPOSER_TEXT,
+                'block max-h-[200px] w-full resize-none bg-transparent outline-none placeholder:text-muted-foreground',
+                draft && 'text-transparent caret-foreground'
+              )}
+              style={block ? { textIndent: blockIndent } : undefined}
+            />
+          </div>
           <Button
             size="icon-sm"
             variant="ghost"
@@ -263,4 +315,15 @@ function TypingIndicator({ channelId }: { channelId: string }) {
       <span className="font-medium">{text}</span>
     </div>
   )
+}
+
+const BLOCK_GAP_PX = 6
+
+function useBlockIndent(blockRef: RefObject<HTMLDivElement | null>, command: string | undefined): number {
+  const [indent, setIndent] = useState(0)
+  useLayoutEffect(() => {
+    if (!command || !blockRef.current) return
+    setIndent(blockRef.current.offsetWidth + BLOCK_GAP_PX)
+  }, [blockRef, command])
+  return indent
 }

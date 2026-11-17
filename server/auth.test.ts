@@ -221,17 +221,45 @@ describe('sessões', () => {
     expect((await tables()).sessions).toHaveLength(1)
   })
 
-  it('expira em 30 dias e sessões vencidas são limpas no próximo login', async () => {
+  it('sem uso expira em 30 dias e sessões vencidas são limpas no próximo login', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     const r = ok(await newAccount({ email: 'exp@exemplo.test' }))
-    vi.setSystemTime(Date.now() + 29 * 24 * 60 * 60 * 1000)
-    expect(await accountFromToken(r.token)).toBeDefined()
-    vi.setSystemTime(Date.now() + 2 * 24 * 60 * 60 * 1000)
+    vi.setSystemTime(Date.now() + 31 * DAY)
     expect(await accountFromToken(r.token)).toBeUndefined()
     ok(await login({ email: 'exp@exemplo.test', password: 'senha-segura' }))
     expect((await tables()).sessions).toHaveLength(1)
   })
+
+  it('usar a sessão renova a validade para mais 30 dias: quem usa o app não cai', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const r = ok(await newAccount({ email: 'renova@exemplo.test' }))
+    for (let i = 0; i < 4; i++) {
+      vi.setSystemTime(Date.now() + 20 * DAY)
+      expect((await accountFromToken(r.token))?.id).toBe(r.account.id)
+    }
+    vi.setSystemTime(Date.now() + 29 * DAY)
+    expect(await accountFromToken(r.token)).toBeDefined()
+    vi.setSystemTime(Date.now() + 31 * DAY)
+    expect(await accountFromToken(r.token)).toBeUndefined()
+  })
+
+  it('renova no máximo uma vez por dia (não grava no banco a cada uso)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const r = ok(await newAccount({ email: 'diario@exemplo.test' }))
+    const expiry = async (): Promise<number> =>
+      (await tables()).sessions.find((s) => s.accountId === r.account.id)!.expiresAt.getTime()
+    const created = await expiry()
+    vi.setSystemTime(Date.now() + 23 * HOUR)
+    await accountFromToken(r.token)
+    expect(await expiry()).toBe(created)
+    vi.setSystemTime(Date.now() + 2 * HOUR)
+    await accountFromToken(r.token)
+    expect(await expiry()).toBe(Date.now() + 30 * DAY)
+  })
 })
+
+const HOUR = 60 * 60 * 1000
+const DAY = 24 * HOUR
 
 describe('updateProfile', () => {
   const PNG_1PX =
