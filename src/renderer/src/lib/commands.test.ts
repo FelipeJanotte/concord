@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CHAT_COMMANDS, commandDraft, commandSuggestions, parseCommand } from './commands'
+import { CHAT_COMMANDS, commandBlock, commandDraft, commandSuggestions, parseCommand } from './commands'
 
 const names = (text: string): string[] => commandSuggestions(text).map((c) => c.name)
 
@@ -58,5 +58,21 @@ describe('commandDraft', () => {
 
   it.each([[''], ['/pla'], ['/playx'], [' /play'], ['oi /play'], ['/pular'], ['/queues']])('não é comando: %j', (text) => {
     expect(commandDraft(text)).toBeNull()
+  })
+})
+
+describe('commandBlock', () => {
+  const play = CHAT_COMMANDS[0]
+  it.each([
+    ['/play ', { command: '/play', arg: play.arg, rest: '' }],
+    ['/PLAY lofi', { command: '/PLAY', arg: play.arg, rest: 'lofi' }],
+    ['/play  dois espaços', { command: '/play', arg: play.arg, rest: ' dois espaços' }],
+    ['/play a\nb', { command: '/play', arg: play.arg, rest: 'a\nb' }]
+  ])('%j', (text, expected) => {
+    expect(commandBlock(text)).toEqual(expected)
+  })
+
+  it.each([[''], ['/play'], ['/play\nx'], ['/skip '], ['/queue x'], [' /play x'], ['/playx y']])('sem bloco: %j', (text) => {
+    expect(commandBlock(text)).toBeNull()
   })
 })

@@ -129,24 +129,28 @@ describe('Composer', () => {
     const box = screen.getByPlaceholderText('Conversar em #geral')
     await userEvent.type(box, '/play https://soundcloud.com/x{Enter}')
     await waitFor(() => expect(useApp.getState().notice?.text).toBe('Envie o nome da música ou um link do Spotify ou do YouTube'))
-    expect((box as HTMLTextAreaElement).value).toBe('/play https://soundcloud.com/x')
+    expect((box as HTMLTextAreaElement).value).toBe('https://soundcloud.com/x')
+    expect(within(screen.getByTestId('command-block')).getByText('/play')).toBeTruthy()
     expect(socket.sent('message:send')).toEqual([])
   })
 
-  it('/play aparece como código e mostra a dica "query" até digitar o que tocar', async () => {
+  it('/play aparece como código; com o espaço vira o bloco "query"; no meio do texto, nada', async () => {
     render(<Composer channel={channel} />)
-    const box = screen.getByPlaceholderText('Conversar em #geral')
+    const box = screen.getByPlaceholderText('Conversar em #geral') as HTMLTextAreaElement
     expect(screen.queryByTestId('command-highlight')).toBeNull()
     await userEvent.type(box, '/play')
     expect(screen.getByTestId('command-highlight').querySelector('code')?.textContent).toBe('/play')
-    expect(within(screen.getByTestId('command-highlight')).getByText('query')).toBeTruthy()
+    expect(screen.queryByTestId('command-block')).toBeNull()
     await userEvent.type(box, ' lofi')
-    expect(screen.getByTestId('command-highlight').textContent).toBe('/play lofi')
-    expect(screen.queryByText('query')).toBeNull()
+    expect(within(screen.getByTestId('command-block')).getByText('query')).toBeTruthy()
+    expect(box.value).toBe('lofi')
+    expect(screen.queryByTestId('command-highlight')).toBeNull()
+    await userEvent.clear(box)
+    await userEvent.keyboard('{Backspace}')
     await userEvent.clear(box)
     await userEvent.type(box, 'oi /play')
     expect(screen.queryByTestId('command-highlight')).toBeNull()
-    expect(screen.queryByText('query')).toBeNull()
+    expect(screen.queryByTestId('command-block')).toBeNull()
   })
 
   it('/skip, /stop e /queue aparecem como código, sem a dica "query"', async () => {

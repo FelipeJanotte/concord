@@ -1,5 +1,5 @@
 import { overrideMusicDrivers } from '../music/drivers'
-import type { AudioStream, QueuedTrack } from '../music/ports'
+import type { AudioStream, PreparedAudio, QueuedTrack } from '../music/ports'
 import { fakeYtDlp } from './fake-youtube'
 
 export const FAKE_PLAYBACK_SPEEDUP = 100
@@ -26,10 +26,18 @@ function fakeStream(track: QueuedTrack): AudioStream {
   }
 }
 
+function fakePrepared(track: QueuedTrack): PreparedAudio {
+  let stream: AudioStream | null = null
+  return {
+    open: () => (stream = fakeStream(track)),
+    close: () => stream?.close()
+  }
+}
+
 overrideMusicDrivers({
   ytDlp: async (args) => fakeYtDlp(args),
   playback: {
-    source: { open: fakeStream },
+    source: { prepare: fakePrepared },
     publisher: {
       async join(channelId: string) {
         console.log(`[fake-music] join ${channelId}`)

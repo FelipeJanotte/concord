@@ -12,14 +12,14 @@ publicado no LiveKit pelo próprio servidor com `@livekit/rtc-node`. Por que ass
 |---|---|
 | `src/shared/types/music.ts` | Contrato: `MusicTrack`, `MusicState`, `MusicResult`, `MusicPlayResult` (`added`), `MusicControl`/`MusicPlayRequest` (com `textChannelId?`), `MusicBotReply` + `musicBotReplyText`/`musicTrackLabel` (resposta do bot no chat; vai em `ToolPayload` como `{ tool: 'music' }` em `tools.ts`), eventos `music:*`, limites `MUSIC_MAX_TRACK_MS` (15 min), `MUSIC_QUEUE_MAX` (100), `MUSIC_QUERY_MAX` (500), `MUSIC_BOT_NAME`. |
 | `server/modules/music.ts` | Handlers `music:play/skip/stop/queue`, conferência de sala e permissão, limite `LIMITS.music`, `music:state` por `emitToViewers`, saída do bot quando a sala esvazia (`onVoiceRoomsChange` de `voice.ts`) e as mensagens no chat (`commandChat` confere o canal; `postToChat` grava o comando e a resposta pelo `insertMessage` e manda `message:new` por `emitToViewers`; `<@todos>` no comando passa pelo `mentionSafeContent` de `messages.ts`). |
-| `server/music/ports.ts` | Tipos do domínio: `MusicQuery` (o que o pedido é), `TrackMetadata` com `AudioLocator` (`youtube-search` = faixa a buscar no YouTube na hora de tocar; `audio-url` = link do próprio áudio), `QueuedTrack` (`MusicTrack` + `audio`, só no servidor), `TrackResolver`, `AudioSource`/`AudioStream` (PCM 48 kHz estéreo em quadros de 10 ms), `RoomPublisher`/`RoomOutput`, `MusicError` (mensagem pt-BR) e `PLAYLIST_READ_MAX` (200). |
+| `server/music/ports.ts` | Tipos do domínio: `MusicQuery` (o que o pedido é), `TrackMetadata` com `AudioLocator` (`youtube-search` = faixa a buscar no YouTube na hora de tocar; `audio-url` = link do próprio áudio), `QueuedTrack` (`MusicTrack` + `audio`, só no servidor), `TrackResolver`, `AudioSource.prepare` → `PreparedAudio` (`open()` dá o `AudioStream`, PCM 48 kHz estéreo em quadros de 10 ms; `close()` encerra tudo, aberto ou não), `RoomPublisher`/`RoomOutput`, `MusicError` (mensagem pt-BR) e `PLAYLIST_READ_MAX` (200). |
 | `server/music/query.ts` | `parseMusicQuery` (pura): texto → `MusicQuery` ou `null` (link de outro site). |
 | `server/music/catalog.ts` | `MusicCatalog.find`: roteia a consulta para o resolvedor certo e aplica as regras (ao vivo, sem duração, acima de 15 min: recusa item único, pula em playlist). |
 | `server/music/spotify.ts` | `SpotifyResolver`: faixa e álbum pela Web API (Client Credentials, token até 1 min antes de expirar, álbum paginado de 50 em 50); playlist pela página de incorporação (`parseSpotifyEmbed`). |
 | `server/music/youtube.ts` | `YouTubeResolver`: vídeo (`yt-dlp -J --no-playlist`), playlist e busca (`-J --flat-playlist`); `parseYtDlpVideo`/`parseYtDlpEntries` (JSON do yt-dlp → faixa) e `ytDlpRunner` (roda o programa). |
-| `server/music/audio-source.ts` | `YtDlpFfmpegSource`: `yt-dlp` (`ytsearch1:<busca>` ou o link) → `ffmpeg` → PCM s16le; `PcmFramer` corta em quadros; `audioToolsFromEnv`. |
+| `server/music/audio-source.ts` | `YtDlpFfmpegSource.prepare`: já roda `yt-dlp --format bestaudio/best --get-url` (`ytsearch1:<busca>` ou o link) para achar o endereço direto do áudio; `open()` espera esse endereço e liga o `ffmpeg` nele (`-reconnect`) → PCM s16le; `PcmFramer` corta em quadros; `audioToolsFromEnv`. |
 | `server/music/queue.ts` | Fila pura por sala: `enqueue` (várias de uma vez; a primeira vai para "tocando agora"; entra só o que cabe e devolve `added`; recusa fila cheia) e `advance`. |
-| `server/music/player.ts` | `MusicPlayer`: uma fila e um bot por sala; entra na primeira música, toca em sequência, pula, para e sai quando a fila acaba. Avisa cada mudança (`onChange`) sem o `audio` (estado público). |
+| `server/music/player.ts` | `MusicPlayer`: uma fila e um bot por sala; entra na primeira música, toca em sequência, pula, para e sai quando a fila acaba; pré-busca (`prefetch`, seção "Pré-busca"). Avisa cada mudança (`onChange`) sem o `audio` (estado público). |
 | `server/music/livekit-publisher.ts` | `LiveKitPublisher`: token do bot (identidade `music-bot:<canal>`, nome "Música", atributo `bot: music`, só publica microfone, não assina ninguém) e a faixa `AudioSource` do `@livekit/rtc-node`. |
 | `server/music/drivers.ts` | Monta as peças a partir do ambiente (`musicDrivers`); `overrideMusicDrivers({ playback, ytDlp })` troca fonte/publicador e o yt-dlp (testes). |
 | `server/tests/music.test.ts`, `server/tests/fake-music-playback.ts`, `server/tests/fake-youtube.ts` | Integração com servidor de verdade, Spotify falso (HTTP local), yt-dlp falso (JSON fixo por link) e fonte/publicador falsos carregados com `--import` (`TestServer.start({ imports })`). |
@@ -31,7 +31,7 @@ publicado no LiveKit pelo próprio servidor com `@livekit/rtc-node`. Por que ass
 | `src/renderer/src/components/voice/MusicQueueDialog.tsx` | Painel "Fila de músicas" (shadcn `Dialog`, montado uma vez em `App.tsx`): música atual e fila paginada de 10 em 10. |
 | `src/renderer/src/lib/paginate.ts` | `paginate(itens, página, porPágina)` → `{ items, page, pages, start }` (pura; página fora do intervalo vai para a mais próxima). |
 | `src/renderer/src/lib/music-player.ts` | `loadPlayerHidden`/`savePlayerHidden`: player oculto ou não, guardado na máquina (`localStorage` `concord:music-player-hidden`). |
-| `src/renderer/src/components/chat/CommandHighlight.tsx` | Destaque dos comandos no Composer (do registro): camada espelho atrás do campo com o comando como código e, em comando com argumento (`/play`), a dica `query`. |
+| `src/renderer/src/components/chat/CommandHighlight.tsx` | Comandos no Composer (do registro): `CommandHighlight` (camada espelho atrás do campo com o comando como código) e `CommandBlock` (bloco `/play` + `query` à esquerda do campo, quando o comando com argumento já tem o espaço). |
 
 ## Eventos (`src/shared/types/music.ts`)
 
@@ -63,14 +63,31 @@ publicado no LiveKit pelo próprio servidor com `@livekit/rtc-node`. Por que ass
 2. O servidor confere sala, permissão, tamanho da `query` e `LIMITS.music`; `MusicCatalog.find` passa o texto pelo
    `parseMusicQuery` e chama o `SpotifyResolver` ou o `YouTubeResolver`, que devolvem os metadados (título, artistas,
    capa, duração) antes de enfileirar.
-3. `MusicPlayer.add` (todas as faixas de uma vez, um `music:state` só): sala sem bot → `RoomPublisher.join` (o bot entra
-   no LiveKit) e começa a tocar; com bot → fim da fila.
-4. Cada faixa: `AudioSource.open` (yt-dlp + ffmpeg, cortado em duração + 5 s) → quadros de 10 ms → `RoomOutput.play`
-   (faixa do Spotify: a busca `"<artistas> - <título>"` no YouTube só acontece aqui, na hora de tocar; YouTube e
-   texto livre: o próprio link do vídeo)
-   (`AudioSource.captureFrame` do rtc-node, que segura o ritmo em tempo real).
+3. `MusicPlayer.add` (todas as faixas de uma vez, um `music:state` só): sala sem bot → `AudioSource.prepare` da
+   primeira faixa **e**, em paralelo, `RoomPublisher.join` (o bot entra no LiveKit); com bot → fim da fila.
+4. Cada faixa: `PreparedAudio.open` (espera o endereço direto do yt-dlp, liga o ffmpeg nele, cortado em duração + 5 s)
+   → quadros de 10 ms → `RoomOutput.play` (`AudioSource.captureFrame` do rtc-node, que segura o ritmo em tempo real).
+   Faixa do Spotify: a busca `"<artistas> - <título>"` no YouTube só acontece no `prepare`, perto da hora de tocar
+   (busca e endereço numa chamada só do yt-dlp); YouTube e texto livre: o próprio link do vídeo.
 5. Faixa acabou → próxima; fila acabou, `/stop` ou sala vazia → o bot sai (`leave`) e `music:state` vai com `nowPlaying: null`.
 6. No app, o áudio do bot chega como o de qualquer participante e segue o volume geral de saída, o deafen e o volume/silenciar próprio do bot (chave `music-bot`, `docs/areas/voice.md`).
+
+## Pré-busca
+
+Medido em 17/11/2026 (Windows, yt-dlp 2026.10.26 do winget, LiveKit local): quase todo o tempo até o som é o **yt-dlp**
+(só abrir o `.exe` leva ~1,7 s; achar o endereço do áudio, ~3,5 s num link e ~4,4 s numa busca); entrar no LiveKit
+leva ~0,2 s e o ffmpeg num endereço direto dá o 1º quadro em ~0,3 s. Antes cada troca de faixa esperava o yt-dlp
+inteiro (~4 s de silêncio). Agora:
+
+- O `MusicPlayer` mantém preparadas (`room.prepared`, por id da faixa) **só** a faixa tocando e a **próxima** da fila.
+  A próxima só é preparada quando a atual **já começou a tocar** (1º quadro): um yt-dlp por vez, para não disputar CPU
+  com a faixa que está para começar.
+- Toda mudança na fila (`add`, `skip`, fim da faixa, `stop`) chama `prefetch`: fecha o que saiu (mata o yt-dlp ou o
+  ffmpeg) e prepara o que entrou. A troca usa o que já estava preparado (sem nova chamada ao yt-dlp). Bot que sai (fila
+  acabou, `stop`, sala vazia, falha ao entrar) fecha tudo (`release`). Nenhum processo fica para trás.
+- Só a próxima, nunca a fila inteira: o endereço direto do YouTube **expira (~6 h)** e cada preparada é um processo.
+- Resultado (mesma máquina, `scratchpad` com o player de verdade): 1º áudio ~4–5 s (igual a antes: é o yt-dlp da 1ª
+  faixa) e troca entre faixas de ~4 s para ~0,1–0,2 s.
 
 ## Regras e limites
 
@@ -156,9 +173,18 @@ instala o ffmpeg e baixa o yt-dlp oficial na hora do build. Para atualizar o yt-
   espaço, quebra de linha ou fim, `commandDraft`) liga uma camada espelho `aria-hidden` atrás do `textarea`, com as
   mesmas classes de texto (`COMPOSER_TEXT`: padding, fonte, `pre-wrap`); o `textarea` fica com o texto transparente e o
   cursor visível (`text-transparent caret-foreground`). No espelho o comando é um `<code>` com `bg-secondary` (mesma
-  fonte do campo e `-mx-0.5 px-0.5`, para não deslocar o cursor). Em comando com argumento (`/play`: `arg` do registro), enquanto não há
-  argumento, aparece a dica `query` e "link do Spotify/YouTube ou nome da música" em texto apagado. O campo continua o
-  mesmo `textarea`: menções, colar anexos, Enter, Shift+Enter e rascunho não mudam.
+  fonte do campo e `-mx-0.5 px-0.5`, para não deslocar o cursor). Vale para `/skip`, `/stop`, `/queue` e para `/play`
+  ainda sem o espaço.
+- **Bloco do argumento** (`CommandBlock`, estilo Discord): comando com argumento (`/play`: `arg` do registro) seguido
+  de um espaço (`commandBlock`) mostra, à esquerda do campo e fora do `textarea`, o `/play` em código e o bloco `query`
+  (`bg-secondary` + `border-border`, a dica longa no `title`). O `textarea` guarda só o argumento, então o cursor pisca
+  logo depois do bloco e o que se digita entra à direita dele, sem nada por cima do cursor (a camada espelho antiga
+  desenhava a dica onde ficava o cursor). Com o argumento vazio, a dica "link do Spotify/YouTube ou nome da música" é o
+  `placeholder`. O bloco **continua como rótulo** enquanto se digita (como no Discord). Backspace com o argumento vazio
+  desfaz o bloco e volta ao texto `/play` (cursor no fim, menu de comandos de novo). O estado do `Composer` continua
+  sendo o texto inteiro (`/play <argumento>`; o campo mostra `commandBlock(...).rest` e grava `cabeça + digitado`), por
+  isso envio (`runMusicCommand`, texto fica em erro), menções, colar anexos, Enter, Shift+Enter e rascunho não mudam.
+  O `aria-label` do campo é sempre "Conversar em …" (o `placeholder` muda no bloco).
 - `MusicPlayer` na `VoiceView` **entre os membros da chamada (grade/palco) e as ações da sala** (indicador de sons,
   dica do pressione para falar e a fileira de botões redondos): fora da área que rola, sempre visível. Pede
   `music:queue` ao abrir. "Ver a fila" para todos; pular, parar e o volume só para quem está na sala.
@@ -184,9 +210,9 @@ instala o ffmpeg e baixa o yt-dlp oficial na hora do build. Para atualizar o yt-
 
 - `server/music/query.test.ts` (todos os formatos de link e texto aceitos e recusados), `catalog.test.ts` (roteamento,
   ao vivo/sem duração/longa: recusa ou pula), `queue.test.ts` (várias de uma vez, `added`, fila cheia),
-  `player.test.ts` (fonte e publicador falsos em memória), `spotify.test.ts` (token, faixa, álbum paginado, playlist pela
+  `player.test.ts` (fonte e publicador falsos em memória; pré-busca: 1ª faixa preparada antes de o bot entrar, próxima só depois que a atual toca, troca e pular usam a preparada, parar/falha/fim fecham tudo), `spotify.test.ts` (token, faixa, álbum paginado, playlist pela
   página de incorporação; `fetch` falso), `youtube.test.ts` (JSON do yt-dlp de vídeo/playlist/busca, argumentos,
-  `ytDlpRunner` com `execFile` falso), `audio-source.test.ts` (linhas de comando, `PcmFramer`, processos falsos).
+  `ytDlpRunner` com `execFile` falso), `audio-source.test.ts` (linhas de comando, `PcmFramer`, processos falsos: `prepare` só roda o yt-dlp, `open` liga o ffmpeg no endereço, fechar antes/depois do endereço não abre o ffmpeg e mata o yt-dlp).
 - `server/tests/music.test.ts` "comandos vindos do chat": as 8 mensagens na ordem (comando, resposta) para quem vê o canal e no histórico, playlist no chat da sala, erro não posta, botões/id em texto não postam, sem `send` recusa sem tocar, chat privado não vaza e quem não vê não usa.
 - `src/renderer/src/components/voice/MusicBotReply.test.tsx` ("Música" + BOT sem juntar com o comando, fila, playlist, pulou, parou) e `src/renderer/src/lib/commands.test.ts` (registro).
 - `server/tests/music.test.ts`: servidor de verdade, LiveKit falso, Spotify falso (API + página de incorporação), yt-dlp
@@ -220,6 +246,9 @@ música. Só os resolvedores, sem o app: um script com `process.loadEnvFile("ser
 | Cartão aparece e some na hora | A faixa falhou: veja `[música]` no log (yt-dlp/ffmpeg ausente ou desatualizado, busca sem resultado). |
 | "[música] o bot não conseguiu entrar na sala" | LiveKit fora do ar, `LIVEKIT_API_URL` errado ou binário do `@livekit/rtc-node` ausente (imagem Alpine/musl não serve). |
 | Música errada | Faixa do Spotify e texto livre usam o primeiro resultado do YouTube; versões ao vivo/covers podem vencer. Mande o link do vídeo. |
+| Demora para começar a 1ª música (~4–5 s) | Esperado: é o yt-dlp achando o áudio (no Windows, só abrir o `.exe` do winget leva ~1,7 s). Meça com `yt-dlp --format bestaudio/best --get-url <link>`. |
+| Silêncio de segundos entre músicas | A pré-busca não rodou: a próxima só é preparada depois do 1º quadro da atual; faixa muito curta (< tempo do yt-dlp) ainda espera. Veja `[música]` no log (yt-dlp falhou na preparada). |
+| Música corta no meio | O ffmpeg perdeu a conexão com o endereço direto e não reconectou (`-reconnect`), ou o endereço expirou. |
 | Bot não aparece na barra lateral de quem acabou de abrir o app | O app só conhece o estado depois de um `music:state` ou de abrir a sala (`music:queue`). |
 
 O bot não aparece no `voice:state`; ele é uma linha à parte na lista da sala, com volume e silenciar no botão direito.

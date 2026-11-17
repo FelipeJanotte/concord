@@ -4,7 +4,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { EVERYONE_TOKEN, MENTION_EVERYONE, MESSAGE_MAX_LENGTH, mentionToken, type Channel } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { addFiles, cancelReply, editLastMessage, notifyTyping, runMusicCommand, sendMessage } from '@/lib/client'
-import { commandDraft, commandSuggestions, type ChatCommand } from '@/lib/commands'
+import { commandBlock, commandDraft, commandSuggestions, type ChatCommand } from '@/lib/commands'
 import { chatLabel, findDm } from '@/lib/dms'
 import {
   activeMentionQuery,
@@ -19,13 +19,15 @@ import { allows, useCan } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
 import { AttachmentPreview } from './AttachmentPreview'
-import { CommandHighlight, COMPOSER_TEXT } from './CommandHighlight'
+import { CommandBlock, CommandHighlight, COMPOSER_TEXT } from './CommandHighlight'
 import { CommandMenu } from './CommandMenu'
 import { MentionMenu } from './MentionMenu'
 import { ReplyBanner } from './ReplyPreview'
 import { ToolsMenu } from './ToolsMenu'
 
 const EMPTY: never[] = []
+
+const fieldOf = (text: string): string => commandBlock(text)?.rest ?? text
 
 /**
  * Quem pode ser mencionado aqui (B19): quem está online e vê o canal (menos eu); numa conversa
@@ -65,7 +67,11 @@ export function Composer({ channel }: { channel: Channel }) {
   const options = mention ? filterCandidates(candidates, mention.query) : []
   const [commandsDismissedFor, setCommandsDismissedFor] = useState<string | null>(null)
   const commands = commandsDismissedFor === value ? [] : commandSuggestions(value)
-  const draft = commandDraft(value)
+  const block = commandBlock(value)
+  const field = fieldOf(value)
+  const head = value.slice(0, value.length - field.length)
+  const draft = block ? null : commandDraft(value)
+  const chatPlaceholder = channel.type === 'dm' ? `Conversar com ${label}` : `Conversar em ${label}`
 
   function trackMention(text: string, caret: number): void {
     const next = activeMentionQuery(text, caret)
@@ -76,9 +82,9 @@ export function Composer({ channel }: { channel: Channel }) {
   function pickMention(item: MentionCandidate): void {
     const el = ref.current
     if (!el || !mention) return
-    const { text, caret } = insertMention(value, mention.start, el.selectionStart ?? value.length, item.label)
+    const { text, caret } = insertMention(field, mention.start, el.selectionStart ?? field.length, item.label)
     chosen.current[item.label] = item.id === MENTION_EVERYONE ? EVERYONE_TOKEN : mentionToken(item.id)
-    setValue(text)
+    setValue(head + text)
     setMention(null)
     // o cursor vai para depois da menção assim que o texto novo estiver no campo (useLayoutEffect
     // abaixo). Com requestAnimationFrame, o que se digitasse antes do próximo quadro saía fora de ordem.
@@ -88,7 +94,7 @@ export function Composer({ channel }: { channel: Channel }) {
   function pickCommand(item: ChatCommand): void {
     const text = `/${item.name} `
     setValue(text)
-    pendingCaret.current = text.length
+    pendingCaret.current = fieldOf(text).length
   }
 
   const pendingCaret = useRef<number | null>(null)
@@ -160,7 +166,12 @@ export function Composer({ channel }: { channel: Channel }) {
         return
       }
     }
-    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+    if (e.key === 'Backspace' && block && !field) {
+      e.preventDefault()
+      const command = head.trimEnd()
+      setValue(command)
+      pendingCaret.current = command.length
+    } else if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault()
       send()
     } else if (e.key === 'Escape' && replying) {
@@ -222,30 +233,35 @@ export function Composer({ channel }: { channel: Channel }) {
               e.target.value = '' // permite escolher o mesmo arquivo de novo
             }}
           />
-          <div className="relative min-w-0 flex-1">
-            {draft && <CommandHighlight {...draft} />}
-            <textarea
-              ref={ref}
-              rows={1}
-              maxLength={MESSAGE_MAX_LENGTH}
-              value={value}
-              placeholder={channel.type === 'dm' ? `Conversar com ${label}` : `Conversar em ${label}`}
-              onChange={(e) => {
-                setValue(e.target.value)
-                if (commandSuggestions(e.target.value).length > 0) setActive(0)
-                trackMention(e.target.value, e.target.selectionStart ?? e.target.value.length)
-                if (e.target.value) notifyTyping(channel.id)
-              }}
-              onSelect={(e) => trackMention(e.currentTarget.value, e.currentTarget.selectionStart ?? 0)}
-              onBlur={() => setMention(null)}
-              onKeyDown={onKeyDown}
-              onPaste={onPaste}
-              className={cn(
-                COMPOSER_TEXT,
-                'block max-h-[200px] w-full resize-none bg-transparent outline-none placeholder:text-muted-foreground',
-                draft && 'text-transparent caret-foreground'
-              )}
-            />
+          <div className="flex min-w-0 flex-1 items-start gap-1.5">
+            {block && <CommandBlock command={block.command} arg={block.arg} />}
+            <div className="relative min-w-0 flex-1">
+              {draft && <CommandHighlight {...draft} />}
+              <textarea
+                ref={ref}
+                rows={1}
+                maxLength={MESSAGE_MAX_LENGTH - head.length}
+                value={field}
+                aria-label={chatPlaceholder}
+                placeholder={block ? block.arg.hint : chatPlaceholder}
+                onChange={(e) => {
+                  const next = head + e.target.value
+                  setValue(next)
+                  if (commandSuggestions(next).length > 0) setActive(0)
+                  trackMention(e.target.value, e.target.selectionStart ?? e.target.value.length)
+                  if (next) notifyTyping(channel.id)
+                }}
+                onSelect={(e) => trackMention(e.currentTarget.value, e.currentTarget.selectionStart ?? 0)}
+                onBlur={() => setMention(null)}
+                onKeyDown={onKeyDown}
+                onPaste={onPaste}
+                className={cn(
+                  COMPOSER_TEXT,
+                  'block max-h-[200px] w-full resize-none bg-transparent outline-none placeholder:text-muted-foreground',
+                  draft && 'text-transparent caret-foreground'
+                )}
+              />
+            </div>
           </div>
           <Button
             size="icon-sm"

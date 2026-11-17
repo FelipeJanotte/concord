@@ -36,8 +36,13 @@ export interface AudioStream extends AsyncIterable<Int16Array> {
   close(): void
 }
 
+export interface PreparedAudio {
+  open(): AudioStream
+  close(): void
+}
+
 export interface AudioSource {
-  open(track: QueuedTrack): AudioStream
+  prepare(track: QueuedTrack): PreparedAudio
 }
 
 export interface RoomOutput {

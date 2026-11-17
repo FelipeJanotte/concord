@@ -40,3 +40,9 @@ export function commandDraft(text: string): { command: string; rest: string; arg
   const command = match && findCommand(match[1])
   return command ? { command: `/${match[1]}`, rest: match[2] ?? '', arg: command.arg } : null
 }
+
+export function commandBlock(text: string): { command: string; arg: ChatCommandArg; rest: string } | null {
+  const match = /^\/(\w+) ([\s\S]*)$/.exec(text)
+  const arg = match && findCommand(match[1])?.arg
+  return arg ? { command: `/${match[1]}`, arg, rest: match[2] } : null
+}

@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import type { Readable } from 'node:stream'
-import { MusicError, PCM_CHANNELS, PCM_FRAME_SAMPLES, PCM_SAMPLE_RATE, type AudioLocator, type AudioSource, type AudioStream, type QueuedTrack } from './ports'
+import { MusicError, PCM_CHANNELS, PCM_FRAME_SAMPLES, PCM_SAMPLE_RATE, type AudioLocator, type AudioSource, type AudioStream, type PreparedAudio, type QueuedTrack } from './ports'
 
 const FRAME_BYTES = PCM_FRAME_SAMPLES * PCM_CHANNELS * 2
 const DURATION_MARGIN_S = 5
@@ -18,20 +18,27 @@ function ytDlpInput(audio: AudioLocator): string {
   return audio.kind === 'audio-url' ? audio.url : `ytsearch1:${audio.query}`
 }
 
-export function ytDlpArgs(track: QueuedTrack): string[] {
-  return ['--no-playlist', '--quiet', '--no-warnings', '--format', 'bestaudio/best', '--output', '-', ytDlpInput(track.audio)]
+export function ytDlpUrlArgs(track: QueuedTrack): string[] {
+  return ['--no-playlist', '--quiet', '--no-warnings', '--format', 'bestaudio/best', '--get-url', ytDlpInput(track.audio)]
 }
 
-export function ffmpegArgs(track: QueuedTrack): string[] {
+export function ffmpegArgs(track: QueuedTrack, url: string): string[] {
   const maxSeconds = Math.ceil(track.durationMs / 1000) + DURATION_MARGIN_S
   return [
     '-hide_banner',
     '-loglevel',
     'error',
+    '-reconnect',
+    '1',
+    '-reconnect_streamed',
+    '1',
+    '-reconnect_delay_max',
+    '5',
     '-i',
-    'pipe:0',
+    url,
     '-t',
     String(maxSeconds),
+    '-vn',
     '-f',
     's16le',
     '-ar',
@@ -61,12 +68,27 @@ export class PcmFramer {
 
 type Spawn = (command: string, args: string[]) => ChildProcess
 
-const spawnPiped: Spawn = (command, args) => spawn(command, args, { stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true })
+const spawnPiped: Spawn = (command, args) => spawn(command, args, { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true })
+
+function toolError(err: NodeJS.ErrnoException, name: string): MusicError {
+  return new MusicError(err.code === 'ENOENT' ? `${name} não encontrado no servidor` : `Falha ao iniciar o ${name}`)
+}
 
 function missingTool(child: ChildProcess, name: string): Promise<never> {
   return new Promise((_, reject) => {
-    child.once('error', (err: NodeJS.ErrnoException) => {
-      reject(new MusicError(err.code === 'ENOENT' ? `${name} não encontrado no servidor` : `Falha ao iniciar o ${name}`))
+    child.once('error', (err: NodeJS.ErrnoException) => reject(toolError(err, name)))
+  })
+}
+
+function directUrl(ytDlp: ChildProcess): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let output = ''
+    ytDlp.stdout?.on('data', (chunk: Buffer) => (output += chunk.toString()))
+    ytDlp.once('error', (err: NodeJS.ErrnoException) => reject(toolError(err, 'yt-dlp')))
+    ytDlp.once('close', (code: number | null) => {
+      const url = output.split(/\r?\n/).find((line) => line.startsWith('http'))
+      if (code === 0 && url) resolve(url)
+      else reject(new MusicError('Áudio não encontrado no YouTube'))
     })
   })
 }
@@ -81,34 +103,64 @@ async function* framesOf(stdout: Readable, failures: Promise<never>): AsyncGener
   }
 }
 
+class YtDlpFfmpegAudio implements PreparedAudio {
+  private closed = false
+  private ffmpeg: ChildProcess | null = null
+  private readonly ytDlp: ChildProcess
+  private readonly url: Promise<string>
+
+  constructor(
+    private readonly tools: AudioTools,
+    private readonly run: Spawn,
+    private readonly track: QueuedTrack
+  ) {
+    this.ytDlp = run(tools.ytDlp, ytDlpUrlArgs(track))
+    this.url = directUrl(this.ytDlp)
+    this.url.catch(() => {})
+  }
+
+  open(): AudioStream {
+    const frames = (): AsyncGenerator<Int16Array> => this.frames()
+    const close = (): void => this.close()
+    return {
+      close,
+      async *[Symbol.asyncIterator]() {
+        try {
+          yield* frames()
+        } finally {
+          close()
+        }
+      }
+    }
+  }
+
+  close(): void {
+    this.closed = true
+    this.ytDlp.kill()
+    this.ffmpeg?.kill()
+  }
+
+  private async *frames(): AsyncGenerator<Int16Array> {
+    const url = await this.url.catch((err: unknown) => {
+      if (this.closed) return null
+      throw err
+    })
+    if (!url || this.closed) return
+    const ffmpeg = this.run(this.tools.ffmpeg, ffmpegArgs(this.track, url))
+    this.ffmpeg = ffmpeg
+    const failures = missingTool(ffmpeg, 'ffmpeg')
+    failures.catch(() => {})
+    if (ffmpeg.stdout) yield* framesOf(ffmpeg.stdout, failures)
+  }
+}
+
 export class YtDlpFfmpegSource implements AudioSource {
   constructor(
     private readonly tools: AudioTools,
     private readonly run: Spawn = spawnPiped
   ) {}
 
-  open(track: QueuedTrack): AudioStream {
-    const ytDlp = this.run(this.tools.ytDlp, ytDlpArgs(track))
-    const ffmpeg = this.run(this.tools.ffmpeg, ffmpegArgs(track))
-    const failures = Promise.race([missingTool(ytDlp, 'yt-dlp'), missingTool(ffmpeg, 'ffmpeg')])
-    failures.catch(() => {})
-    ytDlp.stdout?.on('error', () => {})
-    ffmpeg.stdin?.on('error', () => {})
-    if (ytDlp.stdout && ffmpeg.stdin) ytDlp.stdout.pipe(ffmpeg.stdin)
-    const close = (): void => {
-      ytDlp.kill()
-      ffmpeg.kill()
-    }
-    const stdout = ffmpeg.stdout
-    return {
-      close,
-      async *[Symbol.asyncIterator]() {
-        try {
-          if (stdout) yield* framesOf(stdout, failures)
-        } finally {
-          close()
-        }
-      }
-    }
+  prepare(track: QueuedTrack): PreparedAudio {
+    return new YtDlpFfmpegAudio(this.tools, this.run, track)
   }
 }
