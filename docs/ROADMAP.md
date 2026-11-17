@@ -302,6 +302,27 @@ Itens pequenos que ficaram anotados nas skills (cada um com a skill da área atu
 | Overlay: escolher outro atalho, arrastar a posição e acompanhar a troca de tema ao vivo ✅ (branch `feat/pendencias-v6`; também redimensionar a largura arrastando) | A | B15 | `concord-overlay` |
 | Silêncio pelo servidor guardado no banco ✅ (branch `v6/silencio-no-banco`; tabela `server_mutes`) | B | B6 | `concord-moderation` |
 
+## v7 — Bot de música na barra de úteis, borda de quem fala e botões na miniatura
+
+Com o bot de música na `main` (PR #99), três melhorias pedidas pelo grupo. Decisões já tomadas: playlists salvas são
+**da comunidade** (uma lista para o servidor todo, modelo dos efeitos sonoros) e a sensibilidade da borda é **medida
+no app** (se eu ouço a pessoa, a borda acende). Cada task segue as regras de sempre (contrato primeiro, testes antes,
+doc da área no mesmo PR).
+
+| Task | Dev | O que faz | Arquivos (dono) | Tamanho |
+|---|---|---|---|---|
+| **A17 Pausar para todos e playlists da comunidade (servidor)** | A | `MusicState.paused` e `music:pause`/`music:resume` (mesmo formato de `music:skip`, só quem está na sala): o player para de mandar quadros e o yt-dlp/ffmpeg ficam parados pelo pipe, sem morrer; pausa vale para a sala inteira e sobrevive ao `skip`. Bot responde "Pausou"/"Retomou" no chat quando o comando vem de lá. Playlists: tabela `saved_playlists` (nome único, link do Spotify ou YouTube, quem salvou), `playlist:list/create/delete` e avisos `playlist:created/deleted` para todos; criar = qualquer conta (com limite), apagar = autor ou `manageMessages`. Tocar uma salva é `music:play` com o link. | `server/music/player.ts`, `server/modules/music.ts`, `server/modules/playlists.ts`, `server/repo/playlists.ts`, `server/db/schema/music.ts`, `shared/types/music.ts` | médio |
+| **B22 Bot de música na barra de úteis (tela)** | B | Ícone "Música" no registro de ferramentas (`components/tools/registry.ts`) abrindo um painel com o mesmo `MusicPlayer` da sala (da sala em que estou), campo para tocar link ou nome e a lista "Playlists da comunidade" (tocar, salvar, apagar). Fora de sala, aviso e botões de tocar desligados. Botão Pausar/Retomar no player (também na sala), estado "Pausado" igual para todos, e comandos `/pause` e `/resume` no registro do chat. | `components/tools/MusicPanel.tsx`, `components/voice/MusicPlayer.tsx`, `lib/actions/{music,playlists}.ts`, `store/playlists.ts`, `lib/commands.ts` | médio |
+| **B23 Borda de quem fala: cor do tema e sensibilidade** | B | O anel de "está falando" sai do verde fixo (`ring-success`) para a cor de destaque do tema (`ring-primary`, que segue `ThemeConfig.accent`) no avatar, na grade da sala e no overlay. Quem fala passa a ser medido no app: um `AnalyserNode` por voz recebida e outro no meu microfone, com limiar e histerese (pura `nextSpeaking`), no lugar de depender só do `ActiveSpeakersChanged` do LiveKit — voz baixa que todos ouvem acende a borda. | `lib/speaking/`, `lib/voice.ts`, `components/UserAvatar.tsx`, `components/voice/VoiceGrid.tsx`, `overlay/OverlayApp.tsx` | médio |
+| **B24 Botões na miniatura da barra de tarefas (Windows)** | B | Como no Discord: em chamada, passar o mouse no ícone do Concord na barra de tarefas mostra 3 botões — silenciar/ativar microfone, desativar/ativar áudio e sair da chamada (`BrowserWindow.setThumbarButtons`). Ícones desenhados no app e enviados como imagem (como o selo das notificações), trocando conforme o estado; fora de chamada os botões somem. Clique chama `toggleMute`/`toggleDeafen`/`leaveVoice`. | `src/shared/thumbar.ts`, `src/main/thumbar.ts`, `src/preload/*`, `lib/actions/thumbar.ts` | pequeno |
+
+Ordem: A17, B23 e B24 são independentes (arquivos diferentes) e podem andar em paralelo. B22 depende do contrato de
+A17 (pausa e playlists) — começa depois do merge dela.
+
+**Riscos:** pausa longa pode derrubar a conexão do yt-dlp com o YouTube; medir com 10 min de pausa e, só se falhar,
+reabrir a faixa ao retomar. Os limiares da borda (liga perto de -50 dBFS, desliga perto de -56, segura ~300 ms) são
+ponto de partida; ajustar medindo com voz baixa real.
+
 ## Verificação (em toda task)
 
 - `npm run typecheck` e `npm test` (vitest: `can()`, sorteador, validação de upload, repos contra Postgres de teste).
@@ -322,3 +343,6 @@ Itens pequenos que ficaram anotados nas skills (cada um com a skill da área atu
 - B20: com um jogo na frente, segurar a tecla abre o microfone (a outra janela ouve) e soltar fecha.
 - B21: duas câmeras na mesma sala aparecem na grade das duas janelas; sem a permissão `video` o botão some.
 - A11/B14: `/play <link do Spotify/YouTube ou nome da música>` toca para todos na sala; `/skip` e `/stop` funcionam; `/queue` abre a fila paginada; link de Spotify acha a música; sala vazia derruba o bot; URL de domínio não permitido é recusada.
+- A17/B22: pausar numa janela mostra "Pausado" na outra e o som para para os dois; retomar continua do mesmo ponto (também depois de 10 min); `/skip` pausado continua pausado; salvar playlist do Spotify e do YouTube aparece para a outra conta e toca pelo botão; apagar só para quem salvou ou modera.
+- B23: duas contas na sala, falar baixo e a borda acende na cor do tema; trocar o tema muda a cor (inclusive no overlay); silêncio apaga sem piscar.
+- B24: no Windows, em chamada, a miniatura da barra de tarefas mostra os 3 botões; silenciar, desativar áudio e sair funcionam e o ícone troca; fora de chamada os botões somem.
