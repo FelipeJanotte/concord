@@ -82,6 +82,10 @@ class Tool {
     this.missing.catch(() => {})
   }
 
+  async succeeded(): Promise<boolean> {
+    return (await this.exited) === 0
+  }
+
   async failure(): Promise<string | null> {
     const code = await this.exited
     if (code === null || code === 0) return null
@@ -144,6 +148,8 @@ class YtDlpFfmpegAudio implements PreparedAudio {
     const { stdin, stdout } = ffmpeg.child
     if (!stdin || !stdout) return
     stdin.on('error', () => {})
+    let downloaded = false
+    this.ytDlp.child.stdout?.once('data', () => (downloaded = true))
     this.ytDlp.child.stdout?.pipe(stdin)
     let played = 0
     for await (const frame of framesOf(stdout, Promise.race([this.ytDlp.missing, ffmpeg.missing]))) {
@@ -153,8 +159,12 @@ class YtDlpFfmpegAudio implements PreparedAudio {
     if (played > 0 || this.closed) return
     const ffmpegFailure = await ffmpeg.failure()
     this.ytDlp.child.kill()
-    const reasons = [await this.ytDlp.failure(), ffmpegFailure].filter((r): r is string => r !== null)
-    if (!this.closed) throw new MusicError(`Sem áudio: ${reasons.join('; ') || 'nenhum som recebido'}`)
+    const ytDlpFailure = await this.ytDlp.failure()
+    if (this.closed) return
+    const { audio } = this.track
+    if (!downloaded && audio.kind === 'youtube-search' && (await this.ytDlp.succeeded())) throw new MusicError(`Nada encontrado no YouTube para "${audio.query}"`)
+    const reasons = [ytDlpFailure, ffmpegFailure].filter((r): r is string => r !== null)
+    throw new MusicError(`Sem áudio: ${reasons.join('; ') || 'nenhum som recebido'}`)
   }
 }
 

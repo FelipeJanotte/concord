@@ -64,8 +64,13 @@ interface Listing {
   coverUrl: string | null
 }
 
+function youtubeQuery(title: string, artists: string[]): string {
+  const lead = artists[0]?.split(', ')[0]
+  return lead ? `${lead} - ${title}` : title
+}
+
 function listed({ title, artists, durationMs, url, coverUrl }: Listing): TrackMetadata {
-  return { title, artists, coverUrl, durationMs, url, live: false, audio: { kind: 'youtube-search', query: `${artists.join(', ')} - ${title}` } }
+  return { title, artists, coverUrl, durationMs, url, live: false, audio: { kind: 'youtube-search', query: youtubeQuery(title, artists) } }
 }
 
 const trackUrl = (id: string): string => `https://open.spotify.com/track/${id}`

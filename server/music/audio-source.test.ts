@@ -181,6 +181,7 @@ describe('YtDlpFfmpegSource', () => {
     const { run, ytDlp, ffmpeg } = fakeSpawn()
     const reading = collect(new YtDlpFfmpegSource(TOOLS, run).prepare(track).open())
     await settle()
+    ytDlp().stdout.write(Buffer.alloc(64))
     ffmpeg().stdin.emit('error', Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }))
     ffmpeg().fail('pipe:0: End of file', 1)
     ytDlp().finish()
@@ -195,6 +196,16 @@ describe('YtDlpFfmpegSource', () => {
     await settle()
     ffmpeg().fail('pipe:0: Invalid data found when processing input', 1)
     expect(await failure(reading)).toContain('yt-dlp (código 1): ERROR: [youtube] dQw4w9WgXcQ: Video unavailable')
+  })
+
+  it('busca do yt-dlp sem resultado (termina com sucesso e sem bytes): "Nada encontrado no YouTube", não o erro do ffmpeg', async () => {
+    const { run, ytDlp, ffmpeg } = fakeSpawn()
+    const reading = collect(new YtDlpFfmpegSource(TOOLS, run).prepare(track).open())
+    await settle()
+    ytDlp().finish()
+    await settle()
+    ffmpeg().fail('Error opening input files: Invalid data found when processing input', 1)
+    expect(await failure(reading)).toBe('Nada encontrado no YouTube para "Tom Jobim, Vinicius de Moraes - Garota de Ipanema"')
   })
 
   it('ffmpeg que falha sem áudio: erro com o motivo dele, sem culpar o yt-dlp que ainda baixava', async () => {

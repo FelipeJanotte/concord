@@ -60,7 +60,7 @@ describe('SpotifyResolver: faixa', () => {
         durationMs: 320_000,
         url: `https://open.spotify.com/track/${ID}`,
         live: false,
-        audio: { kind: 'youtube-search', query: 'Tom Jobim, Vinicius de Moraes - Garota de Ipanema' }
+        audio: { kind: 'youtube-search', query: 'Tom Jobim - Garota de Ipanema' }
       }
     ])
     expect(calls[0].init.method).toBe('POST')
@@ -158,7 +158,7 @@ describe('SpotifyResolver: playlist (página de incorporação)', () => {
         durationMs: 212_689,
         url: 'https://open.spotify.com/track/5MINUtX7hvYaaWwNRrp1hl',
         live: false,
-        audio: { kind: 'youtube-search', query: 'Bossa Nova Covers, Mats & My - Dancing In the Moonlight' }
+        audio: { kind: 'youtube-search', query: 'Bossa Nova Covers - Dancing In the Moonlight' }
       },
       expect.objectContaining({ title: 'Chega de Saudade', url: 'https://open.spotify.com/track/3h5T5JypYU7huFiVYhv1dr' })
     ])
