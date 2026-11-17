@@ -57,15 +57,15 @@ describe('MusicPlayer', () => {
     expect(container.innerHTML).toBe('')
   })
 
-  it('pular e parar mandam o comando para a sala', async () => {
+  it('pular e parar mandam o comando para a sala, sem canal de texto (não postam no chat)', async () => {
     socket.replyTo('music:skip', () => ({ ok: true, state: playing({ nowPlaying: aguas, queue: [] }) }))
     socket.replyTo('music:stop', () => ({ ok: true, state: playing({ nowPlaying: null, queue: [] }) }))
     render(<MusicPlayer channelId="sala" />)
     await userEvent.click(await screen.findByRole('button', { name: 'Pular música' }))
-    expect(socket.sent('music:skip')).toEqual([['sala']])
+    expect(socket.sent('music:skip')).toEqual([[{ channelId: 'sala' }]])
     await screen.findByText('Águas de Março')
     await userEvent.click(screen.getByRole('button', { name: 'Parar a música' }))
-    expect(socket.sent('music:stop')).toEqual([['sala']])
+    expect(socket.sent('music:stop')).toEqual([[{ channelId: 'sala' }]])
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Tocando agora' })).toBeNull())
   })
 

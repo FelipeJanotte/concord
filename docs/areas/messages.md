@@ -3,6 +3,8 @@
 Mensagens dos canais de texto, do **chat de texto das salas de voz** e das conversas privadas (`dm`). Anexos têm doc próprio (`docs/areas/attachments.md`),
 apagar fica na moderação (`docs/areas/moderation.md`) e mensagens de ferramenta na `docs/areas/tools.md`.
 
+Tipos (`Message.kind`): `text` (escrita por alguém) e `tool` (postada pelo servidor com `tool` tipado: ferramentas do grupo e, com `tool.tool === 'music'`, a **resposta do bot de música** — autor gravado = quem pediu, mas a tela mostra "Música" com o selo "BOT"; `docs/areas/music.md`).
+
 ## Arquivos
 
 | Arquivo | Papel |
@@ -17,7 +19,8 @@ apagar fica na moderação (`docs/areas/moderation.md`) e mensagens de ferrament
 | `components/chat/MessageEditor.tsx` | Edição no lugar: Enter salva, Shift+Enter quebra linha, Esc cancela; erro embaixo. |
 | `components/chat/ReplyPreview.tsx` | `ReplyQuote` (citação clicável, "Mensagem apagada"), `ReplyBanner` ("Respondendo a Fulano" + X), `scrollToMessage` (rola e pisca com `data-highlight`), `messageElementId`. |
 | `components/ChatView.tsx` | `MessageBody` troca o texto pelo editor e mostra "(editada)" (hora no título); `MessageItem` põe o id `msg-<id>`, a citação em cima do nome e nunca deixa uma resposta compacta. |
-| `components/chat/Composer.tsx` | Faixa de resposta, Esc cancela a resposta, seta para cima no campo vazio edita a minha última mensagem. Botão `+` "Ferramentas" (`ToolsMenu.tsx`, fora do chat da sala de voz): abre o painel da ferramenta mirando este chat (`docs/areas/tools.md`). Texto começando com `/play`, `/skip`, `/stop` ou `/queue`: o comando aparece como código; só no `/play`, a dica `query` até digitar o que tocar (`CommandHighlight.tsx`, `docs/areas/music.md`). |
+| `components/chat/Composer.tsx` | Faixa de resposta, Esc cancela a resposta, seta para cima no campo vazio edita a minha última mensagem. Botão `+` "Ferramentas" (`ToolsMenu.tsx`, fora do chat da sala de voz): abre o painel da ferramenta mirando este chat (`docs/areas/tools.md`). Texto começando com um comando do registro (`lib/commands.ts`: hoje `/play`, `/skip`, `/stop`, `/queue`): o comando aparece como código; com argumento (`/play`), a dica `query` até digitá-lo (`CommandHighlight.tsx`, `docs/areas/music.md`). Comando de música manda o chat junto (`textChannelId`) e só limpa o campo quando dá certo (erro: toast e o texto fica). |
+| `components/chat/CommandMenu.tsx`, `SuggestionList.tsx` | **Menu de comandos**: `/` no começo do texto abre a lista acima do campo (`commandSuggestions`: filtra pelo começo do nome, `/sk` → só `/skip`), cada item com `/nome` em código, o argumento apagado e a descrição curta. Setas navegam, Enter/Tab ou clique completam para `/nome ` (com espaço; a dica `query` continua), Esc fecha (reabre ao digitar de novo). Com o menu aberto o Enter completa em vez de enviar; com o comando completo (já tem espaço) o menu some e o Enter envia. Some quando o texto não começa com `/` ou nada combina. `SuggestionList` é a lista genérica (listbox, `mousedown` para não tirar o foco) usada também pelo `MentionMenu`; o teclado dos dois menus é o mesmo no `Composer` (nunca abrem juntos). |
 
 ## Eventos
 
@@ -143,6 +146,7 @@ atalho da barra lateral).
 | `server/tests/edit-reply.test.ts` | Servidor real: editar (todos recebem, histórico, sem `editedAt` quando nunca editada, mesmo texto), recusas (outra pessoa/dona, vazia, longa, inexistente, ferramenta, canal que não vê sem vazar), responder (resumo, histórico, editar/apagar a original, outro canal/inexistente/inválido vão sem citação). |
 | `src/renderer/src/lib/actions/edit-reply.test.ts` | App: resposta no envio e limpa, cancelar, apagada, `message:edited` com citações, editar (limpa, aplica, mesmo texto, erro), seta para cima. |
 | `src/renderer/src/components/chat/edit-reply.test.tsx` | Tela: barra de ações por quem, editar no lugar (Enter, Esc, erro, seta para cima, "(editada)"), faixa de resposta (foco, envio, X, Esc), citação rola e pisca, "Mensagem apagada". |
+| `src/renderer/src/lib/commands.test.ts`, `components/chat/command-menu.test.tsx` | Menu de comandos: filtro, parser e rascunho do registro; na tela aparece com "/", filtra, setas+Enter, Tab, clique, Esc, não aparece no meio do texto e não atrapalha as menções. |
 
 ## Problemas conhecidos / depuração
 

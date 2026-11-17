@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // Componentes do chat com anexos: mensagem, campo de mensagem e área de soltar arquivos.
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Attachment, Channel, Message } from '@shared/types'
@@ -111,15 +111,26 @@ describe('Composer', () => {
     expect((box as HTMLTextAreaElement).value).toBe('')
   })
 
-  it('comando de música (/skip) vai para o bot da minha sala, não vira mensagem', async () => {
+  it('comando de música (/skip) vai para o bot da minha sala com este chat e limpa o campo quando dá certo', async () => {
     useApp.setState({ myVoiceChannelId: 'sala' })
     socket.replyTo('music:skip', () => ({ ok: true, state: { channelId: 'sala', nowPlaying: null, queue: [] } }))
     render(<Composer channel={channel} />)
     const box = screen.getByPlaceholderText('Conversar em #geral')
-    await userEvent.type(box, '/skip{Enter}')
-    expect(socket.sent('music:skip')).toEqual([['sala']])
+    await userEvent.type(box, '/skip {Enter}')
+    expect(socket.sent('music:skip')).toEqual([[{ channelId: 'sala', textChannelId: 'geral' }]])
     expect(socket.sent('message:send')).toEqual([])
-    expect((box as HTMLTextAreaElement).value).toBe('')
+    await waitFor(() => expect((box as HTMLTextAreaElement).value).toBe(''))
+  })
+
+  it('comando de música recusado: o texto continua no campo para corrigir', async () => {
+    useApp.setState({ myVoiceChannelId: 'sala' })
+    socket.replyTo('music:play', () => ({ ok: false, error: 'Envie o nome da música ou um link do Spotify ou do YouTube' }))
+    render(<Composer channel={channel} />)
+    const box = screen.getByPlaceholderText('Conversar em #geral')
+    await userEvent.type(box, '/play https://soundcloud.com/x{Enter}')
+    await waitFor(() => expect(useApp.getState().notice?.text).toBe('Envie o nome da música ou um link do Spotify ou do YouTube'))
+    expect((box as HTMLTextAreaElement).value).toBe('/play https://soundcloud.com/x')
+    expect(socket.sent('message:send')).toEqual([])
   })
 
   it('/play aparece como código e mostra a dica "query" até digitar o que tocar', async () => {
@@ -128,7 +139,7 @@ describe('Composer', () => {
     expect(screen.queryByTestId('command-highlight')).toBeNull()
     await userEvent.type(box, '/play')
     expect(screen.getByTestId('command-highlight').querySelector('code')?.textContent).toBe('/play')
-    expect(screen.getByText('query')).toBeTruthy()
+    expect(within(screen.getByTestId('command-highlight')).getByText('query')).toBeTruthy()
     await userEvent.type(box, ' lofi')
     expect(screen.getByTestId('command-highlight').textContent).toBe('/play lofi')
     expect(screen.queryByText('query')).toBeNull()

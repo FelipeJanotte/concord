@@ -10,8 +10,8 @@ publicado no LiveKit pelo próprio servidor com `@livekit/rtc-node`. Por que ass
 
 | Caminho | O que é |
 |---|---|
-| `src/shared/types/music.ts` | Contrato: `MusicTrack`, `MusicState`, `MusicResult`, `MusicPlayResult` (`added`), eventos `music:*`, limites `MUSIC_MAX_TRACK_MS` (15 min), `MUSIC_QUEUE_MAX` (100), `MUSIC_QUERY_MAX` (500), `MUSIC_BOT_NAME`. |
-| `server/modules/music.ts` | Handlers `music:play/skip/stop/queue`, conferência de sala e permissão, limite `LIMITS.music`, `music:state` por `emitToViewers` e saída do bot quando a sala esvazia (`onVoiceRoomsChange` de `voice.ts`). |
+| `src/shared/types/music.ts` | Contrato: `MusicTrack`, `MusicState`, `MusicResult`, `MusicPlayResult` (`added`), `MusicControl`/`MusicPlayRequest` (com `textChannelId?`), `MusicBotReply` + `musicBotReplyText`/`musicTrackLabel` (resposta do bot no chat; vai em `ToolPayload` como `{ tool: 'music' }` em `tools.ts`), eventos `music:*`, limites `MUSIC_MAX_TRACK_MS` (15 min), `MUSIC_QUEUE_MAX` (100), `MUSIC_QUERY_MAX` (500), `MUSIC_BOT_NAME`. |
+| `server/modules/music.ts` | Handlers `music:play/skip/stop/queue`, conferência de sala e permissão, limite `LIMITS.music`, `music:state` por `emitToViewers`, saída do bot quando a sala esvazia (`onVoiceRoomsChange` de `voice.ts`) e as mensagens no chat (`commandChat` confere o canal; `postToChat` grava o comando e a resposta pelo `insertMessage` e manda `message:new` por `emitToViewers`; `<@todos>` no comando passa pelo `mentionSafeContent` de `messages.ts`). |
 | `server/music/ports.ts` | Tipos do domínio: `MusicQuery` (o que o pedido é), `TrackMetadata` com `AudioLocator` (`youtube-search` = faixa a buscar no YouTube na hora de tocar; `audio-url` = link do próprio áudio), `QueuedTrack` (`MusicTrack` + `audio`, só no servidor), `TrackResolver`, `AudioSource`/`AudioStream` (PCM 48 kHz estéreo em quadros de 10 ms), `RoomPublisher`/`RoomOutput`, `MusicError` (mensagem pt-BR) e `PLAYLIST_READ_MAX` (200). |
 | `server/music/query.ts` | `parseMusicQuery` (pura): texto → `MusicQuery` ou `null` (link de outro site). |
 | `server/music/catalog.ts` | `MusicCatalog.find`: roteia a consulta para o resolvedor certo e aplica as regras (ao vivo, sem duração, acima de 15 min: recusa item único, pula em playlist). |
@@ -23,25 +23,39 @@ publicado no LiveKit pelo próprio servidor com `@livekit/rtc-node`. Por que ass
 | `server/music/livekit-publisher.ts` | `LiveKitPublisher`: token do bot (identidade `music-bot:<canal>`, nome "Música", atributo `bot: music`, só publica microfone, não assina ninguém) e a faixa `AudioSource` do `@livekit/rtc-node`. |
 | `server/music/drivers.ts` | Monta as peças a partir do ambiente (`musicDrivers`); `overrideMusicDrivers({ playback, ytDlp })` troca fonte/publicador e o yt-dlp (testes). |
 | `server/tests/music.test.ts`, `server/tests/fake-music-playback.ts`, `server/tests/fake-youtube.ts` | Integração com servidor de verdade, Spotify falso (HTTP local), yt-dlp falso (JSON fixo por link) e fonte/publicador falsos carregados com `--import` (`TestServer.start({ imports })`). |
-| `src/renderer/src/lib/actions/music.ts` | `playMusic`, `skipMusic`, `stopMusic`, `loadMusicQueue`, `parseMusicCommand`/`runMusicCommand` (comandos do Composer), `musicCommandDraft` (o comando sendo digitado, para o destaque), `openMusicQueue`/`closeMusicQueue` (painel da fila), `trackLabel`, `trackDuration`. |
+| `src/renderer/src/lib/actions/music.ts` | `playMusic`, `skipMusic`, `stopMusic` (com o `textChannelId` opcional), `loadMusicQueue`, `parseMusicCommand` (lê o registro por `parseCommand`)/`runMusicCommand(texto, chat)` (comandos do Composer; `null` = não é comando, senão `Promise<boolean>` = deu certo), `openMusicQueue`/`closeMusicQueue` (painel da fila), `trackDuration`. |
+| `src/renderer/src/lib/commands.ts` | **Registro dos comandos de chat** (`CHAT_COMMANDS`: nome, argumento opcional com dica e descrição curta) e as puras que leem dele: `commandSuggestions` (menu do `/`), `parseCommand`, `commandDraft` (destaque). Comando novo = uma entrada aqui (+ quem o executa). Menu: `docs/areas/messages.md`. |
+| `src/renderer/src/components/voice/MusicBotReply.tsx` | Resposta do bot no chat: `MusicReplyCard` (capa pequena, "Tocando agora"/"Adicionou à fila"/"Adicionou N músicas à fila, começando por"/"Pulou" + "Tocando agora: …"/"Parou a música e limpou a fila", "Pedido por"), `MusicBotAvatar`, `MusicBotName` ("Música" + selo BOT) e `isMusicBotMessage`. |
 | `src/renderer/src/store/music.ts` | `musicRooms` (estado de cada sala com música tocando) e `musicQueueChannelId` (sala cujo painel da fila está aberto; `null` = fechado). |
 | `src/renderer/src/components/voice/MusicPlayer.tsx` | Cartão "Tocando agora" (capa, título, artistas, quem pediu, duração, "Ver a fila", pular/parar, volume do bot, ocultar), a barra fina "Tocando: título" quando oculto, `TrackCover` e `MusicBotMember` (bot com selo "BOT" na lista da sala na barra lateral, com o `MusicBotContextMenu` de `MemberContextMenu.tsx` no botão direito). |
 | `src/renderer/src/components/voice/MusicQueueDialog.tsx` | Painel "Fila de músicas" (shadcn `Dialog`, montado uma vez em `App.tsx`): música atual e fila paginada de 10 em 10. |
 | `src/renderer/src/lib/paginate.ts` | `paginate(itens, página, porPágina)` → `{ items, page, pages, start }` (pura; página fora do intervalo vai para a mais próxima). |
 | `src/renderer/src/lib/music-player.ts` | `loadPlayerHidden`/`savePlayerHidden`: player oculto ou não, guardado na máquina (`localStorage` `concord:music-player-hidden`). |
-| `src/renderer/src/components/chat/CommandHighlight.tsx` | Destaque dos comandos de música no Composer: camada espelho atrás do campo com o comando como código e, só no `/play`, a dica `query`. |
+| `src/renderer/src/components/chat/CommandHighlight.tsx` | Destaque dos comandos no Composer (do registro): camada espelho atrás do campo com o comando como código e, em comando com argumento (`/play`), a dica `query`. |
 
 ## Eventos (`src/shared/types/music.ts`)
 
 | Evento | Payload | Ack | Regra |
 |---|---|---|---|
-| `music:play` | `{ channelId, query }` | `MusicPlayResult` (`added`: quantas entraram) | estar na sala `channelId` (`voice:join`) com `view` + `connect`; `query` de 1 a 500 caracteres (link ou texto); até 15 min por faixa |
-| `music:skip` | `channelId` | `MusicResult` | mesma regra de sala; "Nenhuma música tocando" se nada toca |
-| `music:stop` | `channelId` | `MusicResult` | mesma regra; esvazia a fila e tira o bot |
+| `music:play` | `{ channelId, query, textChannelId? }` | `MusicPlayResult` (`added`: quantas entraram) | estar na sala `channelId` (`voice:join`) com `view` + `connect`; `query` de 1 a 500 caracteres (link ou texto); até 15 min por faixa; `textChannelId`: ver "Comando e resposta no chat" |
+| `music:skip` | `{ channelId, textChannelId? }` | `MusicResult` | mesma regra de sala; "Nenhuma música tocando" se nada toca |
+| `music:stop` | `{ channelId, textChannelId? }` | `MusicResult` | mesma regra; esvazia a fila e tira o bot |
 | `music:queue` | `channelId` | `MusicResult` | só `view` (quem olha a sala sem entrar vê o cartão) |
 | `music:state` (servidor → app) | `MusicState` | — | a cada mudança, para quem vê a sala (`emitToViewers`); `nowPlaying: null` = bot saiu |
 
-`MusicTrack.requestedBy` guarda conta e nome de quem pediu no momento do pedido.
+`MusicTrack.requestedBy` guarda conta e nome de quem pediu no momento do pedido. `music:skip`/`music:stop` ainda aceitam só o id em texto (app 0.1.16), sem chat.
+
+## Comando e resposta no chat
+
+`/play`, `/skip` e `/stop` digitados num chat (canal de texto, chat da sala de voz ou conversa privada) aparecem no chat e o bot responde logo embaixo, para todos que veem esse chat.
+
+- O app manda `textChannelId` = o chat do Composer. O servidor confere **antes** de tocar: o canal existe e a pessoa vê (senão "Canal não encontrado") e tem `send` (senão "Você não tem permissão para enviar mensagens neste canal"); recusado, nada toca.
+- **Só no sucesso**, no mesmo handler e em ordem (antes do ack): 1) mensagem comum da pessoa com o comando remontado pelo servidor (`/play <query sem as pontas>`, `/skip`, `/stop`; `<@todos>` sem permissão vira texto); 2) a resposta do bot, `kind: 'tool'` com `tool: { tool: 'music', result: MusicBotReply }` e `content` = `musicBotReplyText`. As duas vão por `message:new` via `emitToViewers` e ficam no histórico.
+- `MusicBotReply`: `play` (`added`, `startedNow` = a sala estava sem música, `first` = título/artistas/capa da primeira que entrou), `skip` (`skipped` e `next`, ou `null`), `stop`. Textos: "Tocando agora: T — A", "Adicionou à fila: T — A", "Adicionou N músicas à fila, começando por T — A", "Pulou: T — A. Tocando agora: …", "Parou a música e limpou a fila".
+- **Por que `kind: 'tool'` e não um `kind` novo:** a resposta é uma mensagem postada pelo servidor com payload tipado, igual às ferramentas; reaproveita a coluna `tool` (jsonb), a regra do banco (`tool` presente ⇔ `kind = 'tool'`), o histórico, reações, apagar e o "não edita" sem migration. O autor gravado é **quem pediu** (como nas ferramentas: quem pediu pode apagar); a tela troca nome e avatar por "Música" + BOT.
+- Erro (link inválido, fora da sala, fila cheia, não configurado, sem permissão): nada vai para o chat; toast e o texto fica no Composer.
+- `/queue` não posta nada (só abre o painel). Os botões do player (pular/parar) não mandam `textChannelId` e não postam nada.
+- Dois pedidos ao mesmo tempo no mesmo chat podem intercalar os pares (comando A, comando B, resposta A...): a ordem é garantida por pedido, não entre pedidos.
 
 ## Fluxo
 
@@ -132,16 +146,17 @@ instala o ffmpeg e baixa o yt-dlp oficial na hora do build. Para atualizar o yt-
 ## Na tela (B14)
 
 - Comandos no Composer: `/play <link ou nome>`, `/skip`, `/stop`, `/queue` (busca a fila da sala e abre o painel
-  "Fila de músicas", o mesmo do botão "Ver a fila"). Não viram
-  mensagem no chat. Fora de uma sala de voz: "Entre numa sala de voz para usar os comandos de música". `/play` sem nada:
+  "Fila de músicas", o mesmo do botão "Ver a fila"). Nomes, argumento e descrição vêm do registro `lib/commands.ts`
+  (também o menu que abre ao digitar `/`, `docs/areas/messages.md`). `/play`, `/skip` e `/stop` com sucesso viram
+  mensagem + resposta do bot (seção acima); o campo só limpa quando dá certo. Fora de uma sala de voz: "Entre numa sala de voz para usar os comandos de música". `/play` sem nada:
   "Use /play <link ou nome da música>". O texto vai inteiro em `query` (o servidor decide se é link ou busca).
-- Avisos do `/play`: `added > 1` (playlist) → "N músicas adicionadas à fila"; uma música entrando atrás de outra →
-  "Na fila: título — artistas"; tocando na hora, nada.
-- **Destaque no Composer** (`CommandHighlight`): texto começando com `/play`, `/skip`, `/stop` ou `/queue` (seguido de
-  espaço, quebra de linha ou fim, `musicCommandDraft`) liga uma camada espelho `aria-hidden` atrás do `textarea`, com as
+- Sem toast no sucesso: a resposta do bot no chat (`MusicReplyCard`, com "Música" + BOT no lugar do nome; não se junta à
+  mensagem anterior da pessoa) diz o que entrou ou pulou.
+- **Destaque no Composer** (`CommandHighlight`): texto começando com um comando do registro (seguido de
+  espaço, quebra de linha ou fim, `commandDraft`) liga uma camada espelho `aria-hidden` atrás do `textarea`, com as
   mesmas classes de texto (`COMPOSER_TEXT`: padding, fonte, `pre-wrap`); o `textarea` fica com o texto transparente e o
   cursor visível (`text-transparent caret-foreground`). No espelho o comando é um `<code>` com `bg-secondary` (mesma
-  fonte do campo e `-mx-0.5 px-0.5`, para não deslocar o cursor). Só no `/play` (`takesQuery`), enquanto não há
+  fonte do campo e `-mx-0.5 px-0.5`, para não deslocar o cursor). Em comando com argumento (`/play`: `arg` do registro), enquanto não há
   argumento, aparece a dica `query` e "link do Spotify/YouTube ou nome da música" em texto apagado. O campo continua o
   mesmo `textarea`: menções, colar anexos, Enter, Shift+Enter e rascunho não mudam.
 - `MusicPlayer` na `VoiceView` **entre os membros da chamada (grade/palco) e as ações da sala** (indicador de sons,
@@ -172,12 +187,14 @@ instala o ffmpeg e baixa o yt-dlp oficial na hora do build. Para atualizar o yt-
   `player.test.ts` (fonte e publicador falsos em memória), `spotify.test.ts` (token, faixa, álbum paginado, playlist pela
   página de incorporação; `fetch` falso), `youtube.test.ts` (JSON do yt-dlp de vídeo/playlist/busca, argumentos,
   `ytDlpRunner` com `execFile` falso), `audio-source.test.ts` (linhas de comando, `PcmFramer`, processos falsos).
+- `server/tests/music.test.ts` "comandos vindos do chat": as 8 mensagens na ordem (comando, resposta) para quem vê o canal e no histórico, playlist no chat da sala, erro não posta, botões/id em texto não postam, sem `send` recusa sem tocar, chat privado não vaza e quem não vê não usa.
+- `src/renderer/src/components/voice/MusicBotReply.test.tsx` ("Música" + BOT sem juntar com o comando, fila, playlist, pulou, parou) e `src/renderer/src/lib/commands.test.ts` (registro).
 - `server/tests/music.test.ts`: servidor de verdade, LiveKit falso, Spotify falso (API + página de incorporação), yt-dlp
   falso (`fake-youtube.ts`) e a fonte falsa (`fake-music-playback.ts`: toca 100x mais rápido que a duração e escreve
   `[fake-music] join/leave` no log). Cobre playlist do Spotify e do YouTube (`added`), vídeo, ao vivo, busca e playlist
   maior que a fila.
-- `src/renderer/src/lib/actions/music.test.ts` (socket falso: `/play`, `/skip`, `/stop`, `/queue` abrindo o painel,
-  aviso de playlist, `musicCommandDraft`), `lib/paginate.test.ts`, `components/voice/MusicPlayer.test.tsx` (volume do
+- `src/renderer/src/lib/actions/music.test.ts` (socket falso: `/play`, `/skip`, `/stop` com o chat, `/queue` abrindo o painel
+  sem chat, sucesso/falha devolvidos ao Composer), `lib/paginate.test.ts`, `components/voice/MusicPlayer.test.tsx` (volume do
   player ↔ menu do bot, ocultar/mostrar guardado, "Ver a fila"), `components/voice/MusicQueueDialog.test.tsx`
   (itens, paginação, vazio, fechar), a posição do player em `components/VoiceView.test.tsx`, os comandos e o destaque
   (dica `query` só no `/play`) no `components/chat/chat.test.tsx`, o volume do bot em `lib/voice.test.ts` ("bot de

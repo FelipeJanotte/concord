@@ -1,7 +1,7 @@
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { EVERYONE_ROLE_ID, MUSIC_QUEUE_MAX, type MusicPlayResult, type MusicResult, type MusicState } from '../../src/shared/types'
+import { EVERYONE_ROLE_ID, MUSIC_QUEUE_MAX, type Message, type MusicPlayResult, type MusicResult, type MusicState, type ChannelPermission } from '../../src/shared/types'
 import { FakeLiveKit, liveKitEnv } from './fake-livekit'
 import { FAKE_YOUTUBE } from './fake-youtube'
 import { expectNoEvent, sleep, TestServer, waitFor, type TestUser } from './helpers'
@@ -59,6 +59,23 @@ function startFakeSpotify(): Promise<{ url: string; server: Server }> {
 function playing(res: MusicResult | MusicPlayResult): MusicState {
   if (!res.ok) throw new Error(res.error)
   return res.state
+}
+
+async function until(check: () => boolean, what: string): Promise<void> {
+  const deadline = Date.now() + 3000
+  while (Date.now() < deadline) {
+    if (check()) return
+    await sleep(25)
+  }
+  throw new Error(`não aconteceu: ${what}`)
+}
+
+function chatOf(user: TestUser, channelId: string): Message[] {
+  const seen: Message[] = []
+  user.socket.on('message:new', (m) => {
+    if (m.channelId === channelId) seen.push(m)
+  })
+  return seen
 }
 
 async function waitLog(server: TestServer, text: string, times = 1): Promise<void> {
@@ -162,16 +179,16 @@ describe('bot de música', () => {
     const second = playing(await play(ana, id, `spotify:track:${LONG_2}`))
     expect(second.queue.map((t) => t.title)).toEqual(['Outra longa'])
 
-    const skipped = playing(await ana.socket.emitWithAck('music:skip', id))
+    const skipped = playing(await ana.socket.emitWithAck('music:skip', { channelId: id }))
     expect(skipped.nowPlaying?.title).toBe('Outra longa')
     expect(skipped.queue).toEqual([])
 
-    expect(await bia.socket.emitWithAck('music:skip', id)).toEqual({ ok: false, error: 'Entre na sala de voz para controlar a música' })
+    expect(await bia.socket.emitWithAck('music:skip', { channelId: id })).toEqual({ ok: false, error: 'Entre na sala de voz para controlar a música' })
 
-    const stopped = playing(await ana.socket.emitWithAck('music:stop', id))
+    const stopped = playing(await ana.socket.emitWithAck('music:stop', { channelId: id }))
     expect(stopped).toEqual({ channelId: id, nowPlaying: null, queue: [] })
     await waitLog(server, `[fake-music] leave ${id}`)
-    expect(await ana.socket.emitWithAck('music:skip', id)).toEqual({ ok: false, error: 'Nenhuma música tocando' })
+    expect(await ana.socket.emitWithAck('music:skip', { channelId: id })).toEqual({ ok: false, error: 'Nenhuma música tocando' })
   })
 
   it('playlist do Spotify: enfileira as faixas (sem episódios) e diz quantas entraram', async () => {
@@ -181,7 +198,7 @@ describe('bot de música', () => {
     const state = playing(res)
     expect([state.nowPlaying?.title, ...state.queue.map((t) => t.title)]).toEqual(['Chega de Saudade', 'Desafinado'])
     expect(state.nowPlaying).toMatchObject({ artists: ['João Gilberto'], coverUrl: 'https://image-cdn.spotifycdn.com/capa-playlist' })
-    await ana.socket.emitWithAck('music:stop', id)
+    await ana.socket.emitWithAck('music:stop', { channelId: id })
   })
 
   it('vídeo do YouTube: toca o próprio vídeo; ao vivo e longo demais são recusados', async () => {
@@ -195,7 +212,7 @@ describe('bot de música', () => {
       durationMs: 180_000,
       url: `https://www.youtube.com/watch?v=${FAKE_YOUTUBE.video}`
     })
-    await ana.socket.emitWithAck('music:stop', id)
+    await ana.socket.emitWithAck('music:stop', { channelId: id })
   })
 
   it('playlist do YouTube: pula vídeo privado e longo demais', async () => {
@@ -204,7 +221,7 @@ describe('bot de música', () => {
     expect(res.ok && res.added).toBe(3)
     const state = playing(res)
     expect([state.nowPlaying?.title, ...state.queue.map((t) => t.title)]).toEqual(['Primeira', 'Segunda', 'Terceira'])
-    await ana.socket.emitWithAck('music:stop', id)
+    await ana.socket.emitWithAck('music:stop', { channelId: id })
   })
 
   it('texto livre: busca no YouTube e mostra o que achou antes de tocar', async () => {
@@ -212,7 +229,7 @@ describe('bot de música', () => {
     const res = await play(ana, id, `  ${FAKE_YOUTUBE.search}  `)
     expect(playing(res).nowPlaying).toMatchObject({ title: 'Garota de Ipanema (ao vivo no estúdio)', durationMs: 240_000 })
     expect(await play(ana, id, FAKE_YOUTUBE.nothing)).toEqual({ ok: false, error: `Nada encontrado no YouTube para "${FAKE_YOUTUBE.nothing}"` })
-    await ana.socket.emitWithAck('music:stop', id)
+    await ana.socket.emitWithAck('music:stop', { channelId: id })
   })
 
   it('a fila acaba: o bot sai sozinho', async () => {
@@ -242,7 +259,7 @@ describe('bot de música', () => {
     const full = { ok: false, error: `A fila está cheia (máximo de ${MUSIC_QUEUE_MAX} músicas)` }
     expect(await play(ana, id, link(LONG))).toEqual(full)
     expect(await play(ana, id, youtubePlaylist(FAKE_YOUTUBE.bigPlaylist))).toEqual(full)
-    await ana.socket.emitWithAck('music:stop', id)
+    await ana.socket.emitWithAck('music:stop', { channelId: id })
   })
 
   it('sala privada: quem não vê o canal não recebe o estado', async () => {
@@ -258,6 +275,106 @@ describe('bot de música', () => {
     playing(await play(owner, id, link(LONG)))
     await hidden
     expect(await bia.socket.emitWithAck('music:queue', id)).toEqual({ ok: false, error: 'Canal de voz não encontrado' })
-    await owner.socket.emitWithAck('music:stop', id)
+    await owner.socket.emitWithAck('music:stop', { channelId: id })
+  })
+
+  describe('comandos vindos do chat', () => {
+    const FAIXA = { title: 'Faixa longa', artists: ['Banda Teste'], coverUrl: 'https://i.scdn.co/capa.jpg' }
+    const OUTRA = { title: 'Outra longa', artists: ['Banda Teste'], coverUrl: 'https://i.scdn.co/capa.jpg' }
+    const textChannel = async (): Promise<string> => (await server.createChannel(`chat-${Math.random().toString(36).slice(2, 7)}`)).id
+    const playFrom = (u: TestUser, channelId: string, query: string, textChannelId: string): Promise<MusicPlayResult> =>
+      u.socket.emitWithAck('music:play', { channelId, query, textChannelId })
+    const denyOn = async (channelId: string, deny: ChannelPermission[]): Promise<void> => {
+      const owner = await server.asOwner()
+      const res = await owner.socket.emitWithAck('channel:set-overrides', { channelId, overrides: [{ roleId: EVERYONE_ROLE_ID, allow: [], deny }] })
+      if (!res.ok) throw new Error(res.error)
+    }
+    const summary = (m: Message): [string, string, string] => [m.author.accountId, m.kind ?? 'text', m.content]
+
+    it('sucesso: o comando da pessoa e a resposta do bot, nessa ordem, para quem vê o canal (e no histórico)', async () => {
+      const id = await roomWithAna()
+      const chat = await textChannel()
+      const seen = chatOf(bia, chat)
+      playing(await playFrom(ana, id, link(LONG), chat))
+      playing(await playFrom(ana, id, `  spotify:track:${LONG_2}  `, chat))
+      playing(await ana.socket.emitWithAck('music:skip', { channelId: id, textChannelId: chat }))
+      playing(await ana.socket.emitWithAck('music:stop', { channelId: id, textChannelId: chat }))
+      await until(() => seen.length === 8, '8 mensagens no chat')
+      const anaId = ana.self.accountId
+      expect(seen.map(summary)).toEqual([
+        [anaId, 'text', `/play ${link(LONG)}`],
+        [anaId, 'tool', 'Tocando agora: Faixa longa — Banda Teste'],
+        [anaId, 'text', `/play spotify:track:${LONG_2}`],
+        [anaId, 'tool', 'Adicionou à fila: Outra longa — Banda Teste'],
+        [anaId, 'text', '/skip'],
+        [anaId, 'tool', 'Pulou: Faixa longa — Banda Teste. Tocando agora: Outra longa — Banda Teste'],
+        [anaId, 'text', '/stop'],
+        [anaId, 'tool', 'Parou a música e limpou a fila']
+      ])
+      expect(seen[1].tool).toEqual({ tool: 'music', result: { action: 'play', added: 1, startedNow: true, first: FAIXA } })
+      expect(seen[3].tool).toEqual({ tool: 'music', result: { action: 'play', added: 1, startedNow: false, first: OUTRA } })
+      expect(seen[5].tool).toEqual({ tool: 'music', result: { action: 'skip', skipped: FAIXA, next: OUTRA } })
+      expect(seen[7].tool).toEqual({ tool: 'music', result: { action: 'stop' } })
+      const history = await bia.socket.emitWithAck('message:history', { channelId: chat })
+      expect(history.messages.map(summary)).toEqual(seen.map(summary))
+      expect(history.messages[5].tool).toEqual(seen[5].tool)
+    })
+
+    it('playlist pedida no chat da própria sala: "Adicionou N músicas à fila"', async () => {
+      const id = await roomWithAna()
+      const seen = chatOf(bia, id)
+      playing(await playFrom(ana, id, `https://open.spotify.com/playlist/${PLAYLIST}`, id))
+      await until(() => seen.length === 2, '2 mensagens no chat da sala')
+      expect(seen[1].content).toBe('Adicionou 2 músicas à fila, começando por Chega de Saudade — João Gilberto')
+      expect(seen[1].tool).toMatchObject({ tool: 'music', result: { action: 'play', added: 2, startedNow: true } })
+      await ana.socket.emitWithAck('music:stop', { channelId: id })
+    })
+
+    it('erro não posta nada: link inválido, nada tocando, fora da sala', async () => {
+      const id = await roomWithAna()
+      const chat = await textChannel()
+      const silent = expectNoEvent(ana.socket, 'message:new', (m) => m.channelId === chat)
+      expect(await playFrom(ana, id, 'https://soundcloud.com/artista/musica', chat)).toEqual({ ok: false, error: INVALID })
+      expect(await ana.socket.emitWithAck('music:skip', { channelId: id, textChannelId: chat })).toEqual({ ok: false, error: 'Nenhuma música tocando' })
+      expect(await playFrom(bia, id, link(LONG), chat)).toEqual({ ok: false, error: 'Entre na sala de voz para controlar a música' })
+      await silent
+    })
+
+    it('botões do player (sem canal de texto) não postam nada; o id em texto do app antigo ainda vale', async () => {
+      const id = await roomWithAna()
+      const silent = expectNoEvent(ana.socket, 'message:new', (m) => m.channelId === id)
+      playing(await play(ana, id, link(LONG)))
+      playing(await play(ana, id, link(LONG_2)))
+      playing(await ana.socket.emitWithAck('music:skip', { channelId: id }))
+      expect(playing(await ana.socket.emitWithAck('music:stop', id as never)).nowPlaying).toBeNull()
+      await silent
+    })
+
+    it('sem `send` no canal do chat: recusa sem tocar nem postar', async () => {
+      const id = await roomWithAna()
+      const chat = await textChannel()
+      await denyOn(chat, ['send'])
+      const silent = expectNoEvent(bia.socket, 'message:new', (m) => m.channelId === chat)
+      expect(await playFrom(ana, id, link(LONG), chat)).toEqual({ ok: false, error: 'Você não tem permissão para enviar mensagens neste canal' })
+      expect(playing(await ana.socket.emitWithAck('music:queue', id)).nowPlaying).toBeNull()
+      await silent
+    })
+
+    it('canal do chat privado: quem não vê não recebe; quem não vê não usa como chat', async () => {
+      const owner = await server.asOwner()
+      const id = await room()
+      await join(owner, id)
+      const chat = await textChannel()
+      await denyOn(chat, ['view'])
+      const hidden = expectNoEvent(bia.socket, 'message:new', (m) => m.channelId === chat)
+      const mine = chatOf(owner, chat)
+      playing(await playFrom(owner, id, link(LONG), chat))
+      await until(() => mine.length === 2, '2 mensagens para a dona')
+      await hidden
+      const other = await roomWithAna()
+      expect(await playFrom(ana, other, link(LONG), chat)).toEqual({ ok: false, error: 'Canal não encontrado' })
+      expect(await playFrom(ana, other, link(LONG), 'nao-existe')).toEqual({ ok: false, error: 'Canal não encontrado' })
+      await owner.socket.emitWithAck('music:stop', { channelId: id })
+    })
   })
 })

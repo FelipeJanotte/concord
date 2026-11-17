@@ -4,7 +4,6 @@ import {
   bindMusicEvents,
   closeMusicQueue,
   loadMusicQueue,
-  musicCommandDraft,
   openMusicQueue,
   parseMusicCommand,
   playMusic,
@@ -32,7 +31,6 @@ const state = (over: Partial<MusicState> = {}): MusicState => ({ channelId: 'sal
 const LINK = 'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC'
 
 let socket: FakeSocket
-const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0))
 
 beforeEach(() => {
   socket = new FakeSocket()
@@ -102,87 +100,60 @@ describe('ações', () => {
     await stopMusic('sala')
     expect(useApp.getState().musicRooms).toEqual({})
     await loadMusicQueue('sala')
-    expect(socket.sent('music:stop')[0][0]).toBe('sala')
+    expect(socket.sent('music:stop')[0][0]).toEqual({ channelId: 'sala' })
     expect(useApp.getState().musicRooms.sala.queue).toEqual([aguas])
-  })
-})
-
-describe('musicCommandDraft', () => {
-  it.each([
-    ['/play', { command: '/play', rest: '', takesQuery: true }],
-    ['/play ', { command: '/play', rest: ' ', takesQuery: true }],
-    ['/PLAY lofi', { command: '/PLAY', rest: ' lofi', takesQuery: true }],
-    ['/play\nlinha', { command: '/play', rest: '\nlinha', takesQuery: true }],
-    ['/skip', { command: '/skip', rest: '', takesQuery: false }],
-    ['/stop', { command: '/stop', rest: '', takesQuery: false }],
-    ['/Queue ', { command: '/Queue', rest: ' ', takesQuery: false }]
-  ])('%j', (text, expected) => {
-    expect(musicCommandDraft(text)).toEqual(expected)
-  })
-
-  it.each([[''], ['/pla'], ['/playx'], [' /play'], ['oi /play'], ['/pular'], ['/queues']])('não é comando: %j', (text) => {
-    expect(musicCommandDraft(text)).toBeNull()
   })
 })
 
 describe('runMusicCommand', () => {
   it('texto comum não é tratado', () => {
-    expect(runMusicCommand('bom dia')).toBe(false)
+    expect(runMusicCommand('bom dia', 'geral')).toBeNull()
     expect(socket.emitted).toEqual([])
   })
 
-  it('fora de uma sala de voz: avisa e não manda nada', () => {
+  it('fora de uma sala de voz: avisa, não manda nada e falha', async () => {
     useApp.setState({ myVoiceChannelId: null })
-    expect(runMusicCommand('/skip')).toBe(true)
+    expect(await runMusicCommand('/skip', 'geral')).toBe(false)
     expect(useApp.getState().notice?.text).toBe('Entre numa sala de voz para usar os comandos de música')
     expect(socket.emitted).toEqual([])
   })
 
-  it('/play pede na sala em que estou; entrando na fila, avisa', async () => {
+  it('/play pede na sala em que estou, leva o chat de onde veio e não avisa (o bot responde no chat)', async () => {
     socket.replyTo('music:play', () => ({ ok: true, state: state({ queue: [aguas] }), added: 1 }))
-    expect(runMusicCommand(`/play ${LINK}`)).toBe(true)
-    await flush()
-    expect(socket.sent('music:play')[0][0]).toEqual({ channelId: 'sala', query: LINK })
-    expect(useApp.getState().notice).toMatchObject({ text: 'Na fila: Águas de Março — Tom Jobim, Vinicius', kind: 'info' })
+    expect(await runMusicCommand(`/play ${LINK}`, 'geral')).toBe(true)
+    expect(socket.sent('music:play')[0][0]).toEqual({ channelId: 'sala', query: LINK, textChannelId: 'geral' })
+    expect(useApp.getState().musicRooms.sala.queue).toEqual([aguas])
+    expect(useApp.getState().notice).toBeNull()
   })
 
-  it('/play de playlist: avisa quantas músicas entraram na fila', async () => {
-    socket.replyTo('music:play', () => ({ ok: true, state: state({ queue: [aguas] }), added: 12 }))
-    runMusicCommand('/play https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M')
-    await flush()
-    expect(useApp.getState().notice).toMatchObject({ text: '12 músicas adicionadas à fila', kind: 'info' })
-  })
-
-  it('/play recusado: mostra o erro do servidor', async () => {
+  it('/play recusado: mostra o erro do servidor e falha', async () => {
     socket.replyTo('music:play', () => ({ ok: false, error: 'Nada encontrado para essa busca' }))
-    runMusicCommand('/play música que não existe')
-    await flush()
+    expect(await runMusicCommand('/play música que não existe', 'geral')).toBe(false)
     expect(useApp.getState().notice).toMatchObject({ text: 'Nada encontrado para essa busca', kind: 'error' })
   })
 
-  it('/queue busca a fila da sala e abre o painel da fila', async () => {
+  it('/queue busca a fila da sala e abre o painel da fila, sem levar o chat', async () => {
     socket.replyTo('music:queue', () => ({ ok: true, state: state({ queue: [aguas] }) }))
-    runMusicCommand('/queue')
-    await flush()
+    expect(await runMusicCommand('/queue', 'geral')).toBe(true)
     expect(socket.sent('music:queue')).toEqual([['sala']])
     expect(useApp.getState().musicRooms.sala.queue).toEqual([aguas])
     expect(useApp.getState().musicQueueChannelId).toBe('sala')
     expect(useApp.getState().notice).toBeNull()
   })
 
-  it('/skip e /stop', async () => {
+  it('/skip e /stop levam o chat de onde vieram', async () => {
     socket.replyTo('music:skip', () => ({ ok: true, state: state({ nowPlaying: aguas }) }))
     socket.replyTo('music:stop', () => ({ ok: true, state: state({ nowPlaying: null }) }))
-    runMusicCommand('/skip')
-    await flush()
+    expect(await runMusicCommand('/skip', 'geral')).toBe(true)
+    expect(socket.sent('music:skip')).toEqual([[{ channelId: 'sala', textChannelId: 'geral' }]])
     expect(useApp.getState().musicRooms.sala.nowPlaying?.id).toBe('t2')
-    runMusicCommand('/stop')
-    await flush()
+    expect(await runMusicCommand('/stop', 'geral')).toBe(true)
+    expect(socket.sent('music:stop')).toEqual([[{ channelId: 'sala', textChannelId: 'geral' }]])
     expect(useApp.getState().musicRooms).toEqual({})
   })
 
-  it('/play sem nada: mostra como usar', () => {
-    runMusicCommand('/play')
+  it('/play sem nada: mostra como usar e falha', async () => {
+    expect(await runMusicCommand('/play', 'geral')).toBe(false)
     expect(useApp.getState().notice?.text).toBe('Use /play <link ou nome da música>')
     expect(socket.emitted).toEqual([])
   })

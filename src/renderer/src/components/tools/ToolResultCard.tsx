@@ -3,6 +3,7 @@
 import { Coins, Dices, Target } from 'lucide-react'
 import type { CoinResult, DiceResult, Message, PickResult } from '@shared/types'
 import { cn } from '@/lib/utils'
+import { MusicReplyCard } from '../voice/MusicBotReply'
 import { CardFrame } from './CardFrame'
 import { PollCard } from './PollCard'
 import { TeamResultCard } from './TeamResultCard'
@@ -20,6 +21,8 @@ export function ToolResultCard({ message }: { message: Message }) {
       return <PickCard result={tool.result} />
     case 'poll':
       return <PollCard message={message} result={tool.result} />
+    case 'music':
+      return <MusicReplyCard message={message} reply={tool.result} />
     default:
       return <p className="text-[15px] leading-[22px] break-words whitespace-pre-wrap">{message.content}</p>
   }

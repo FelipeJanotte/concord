@@ -14,7 +14,7 @@ export function BotBadge() {
   return <span className="rounded bg-primary px-1 text-[10px] leading-4 font-semibold text-primary-foreground">BOT</span>
 }
 
-export function TrackCover({ track, className }: { track: MusicTrack; className: string }) {
+export function TrackCover({ track, className }: { track: Pick<MusicTrack, 'title' | 'coverUrl'>; className: string }) {
   if (track.coverUrl) return <img src={track.coverUrl} alt={`Capa de ${track.title}`} className={cn('shrink-0 rounded-md object-cover', className)} />
   return (
     <div className={cn('flex shrink-0 items-center justify-center rounded-md bg-secondary text-muted-foreground', className)}>

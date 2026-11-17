@@ -16,9 +16,12 @@ import { MessageText } from './chat/MessageText'
 import { Reactions } from './chat/Reactions'
 import { messageElementId, ReplyQuote } from './chat/ReplyPreview'
 import { ToolResultCard } from './tools/ToolResultCard'
+import { isMusicBotMessage, MusicBotAvatar, MusicBotName } from './voice/MusicBotReply'
 import { UserAvatar } from './UserAvatar'
 
 const GROUP_WINDOW_MS = 5 * 60 * 1000
+
+const senderOf = (message: Message): string => (isMusicBotMessage(message) ? 'music-bot' : message.author.accountId)
 
 /** A esta distância do topo (px), começa a buscar mensagens mais antigas. */
 const LOAD_OLDER_THRESHOLD = 200
@@ -148,7 +151,7 @@ export function ChatView({ channelId, embedded = false }: { channelId: string; e
                 const compact =
                   !newDay &&
                   !!prev &&
-                  prev.author.accountId === m.author.accountId &&
+                  senderOf(prev) === senderOf(m) &&
                   m.createdAt - prev.createdAt < GROUP_WINDOW_MS
                 return (
                   <Fragment key={m.id}>
@@ -254,8 +257,9 @@ function MessageBody({ message }: { message: Message }) {
 }
 
 function MessageItem({ message, compact }: { message: Message; compact: boolean }) {
+  const bot = isMusicBotMessage(message)
   // Se o autor estiver online, mostra o nome/foto atuais.
-  const live = useApp((s) => (compact ? undefined : s.users.find((u) => u.accountId === message.author.accountId)))
+  const live = useApp((s) => (compact || bot ? undefined : s.users.find((u) => u.accountId === message.author.accountId)))
   const author = live ?? message.author
   // mencionou a mim (ou @todos): a mensagem fica destacada (B19)
   const mentioned = useApp((s) => message.author.accountId !== s.self?.accountId && mentionsAccount(message.content, s.self?.accountId))
@@ -279,17 +283,21 @@ function MessageItem({ message, compact }: { message: Message; compact: boolean 
   return (
     <div id={messageElementId(message.id)} className={cn('group relative mt-4 flex gap-4 px-4 py-0.5 transition-colors hover:bg-black/[0.06] data-[highlight=true]:bg-primary/15', highlight)}>
       <MessageActions message={message} />
-      <UserAvatar user={author} size="lg" className={message.replyTo ? 'mt-5' : 'mt-0.5'} />
+      {bot ? <MusicBotAvatar className="mt-0.5" /> : <UserAvatar user={author} size="lg" className={message.replyTo ? 'mt-5' : 'mt-0.5'} />}
       <div className="min-w-0 flex-1">
         {message.replyTo && <ReplyQuote reply={message.replyTo} />}
         <div className="flex items-baseline gap-2">
-          <span
-            className="font-medium"
-            style={{ color: author.color }}
-            title={author.tag ? `${author.name}#${author.tag}` : author.name}
-          >
-            {author.name}
-          </span>
+          {bot ? (
+            <MusicBotName />
+          ) : (
+            <span
+              className="font-medium"
+              style={{ color: author.color }}
+              title={author.tag ? `${author.name}#${author.tag}` : author.name}
+            >
+              {author.name}
+            </span>
+          )}
           <span className="text-xs text-muted-foreground">{formatTimestamp(message.createdAt)}</span>
         </div>
         <MessageBody message={message} />

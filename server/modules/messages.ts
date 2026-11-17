@@ -1,6 +1,6 @@
 // Mensagens dos canais de texto e das conversas privadas, "digitando", editar (A15) e responder citando (B18).
 import { randomUUID } from 'node:crypto'
-import { ATTACHMENTS_PER_MESSAGE, EVERYONE_TOKEN, MESSAGE_MAX_LENGTH, type Message, type OkResult } from '../../src/shared/types'
+import { ATTACHMENTS_PER_MESSAGE, EVERYONE_TOKEN, MESSAGE_MAX_LENGTH, type ChannelKind, type Message, type OkResult } from '../../src/shared/types'
 import { allowed, emitToViewers } from '../access'
 import { signMessage } from '../files-signing'
 import { guard, type ServerModule } from '../context'
@@ -14,6 +14,10 @@ async function checkEveryone(accountId: string, content: string): Promise<string
   if (!content.toLowerCase().includes(EVERYONE_TOKEN)) return content
   if (await allowed(accountId, 'mentionEveryone')) return content
   return content.replace(/<@todos>/gi, '@todos')
+}
+
+export async function mentionSafeContent(accountId: string, channelType: ChannelKind, content: string): Promise<string> {
+  return channelType === 'dm' ? content.replace(/<@todos>/gi, '@todos') : checkEveryone(accountId, content)
 }
 
 export const messagesModule: ServerModule = {
@@ -73,7 +77,7 @@ export const messagesModule: ServerModule = {
           // resposta (B18): só a uma mensagem do mesmo canal; inválida = vai sem a citação
           const replyTo = replyToId ? await findReplyTarget(replyToId, channel.id) : undefined
           // menções (B19): @todos só com permissão; numa conversa privada não há @todos
-          const text = channel.type === 'dm' ? content.replace(/<@todos>/gi, '@todos') : await checkEveryone(user.accountId, content)
+          const text = await mentionSafeContent(user.accountId, channel.type, content)
           const message: Message = {
             id: randomUUID(),
             channelId: channel.id,
