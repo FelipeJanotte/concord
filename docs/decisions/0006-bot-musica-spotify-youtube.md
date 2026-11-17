@@ -34,3 +34,24 @@ sala do LiveKit como um participante "Música" com `@livekit/rtc-node` (Apache-2
 - A busca pode achar a versão errada (ao vivo, cover). Aceitar links diretos do YouTube é o próximo passo natural:
   basta outro `TrackResolver`; a fonte de áudio e o publicador não mudam.
 - O áudio passa pelo servidor (CPU do ffmpeg e banda de upload de uma faixa por sala com música).
+
+## Revisão (2026-11-17): playlists, álbuns, YouTube direto e busca por texto
+
+O `music:play` passou a receber `query` (link ou texto). Faixa e álbum do Spotify continuam pela Web API; vídeo,
+playlist do YouTube e texto livre são lidos pelo próprio `yt-dlp -J` (sem chave de API) e tocados pelo link do vídeo.
+
+**Playlist do Spotify pela página de incorporação** (`open.spotify.com/embed/playlist/<id>`, JSON `__NEXT_DATA__`), não
+pela Web API. Testado com as credenciais do servidor: `GET /v1/playlists/<id>/tracks` → 403, `/items` → 401 (exige
+login de usuário) e `GET /v1/playlists/<id>` volta sem as faixas; playlists do próprio Spotify dão 404 desde nov/2024.
+
+| Opção para ler playlist do Spotify | Por que não |
+|---|---|
+| Web API com Client Credentials | Não entrega mais o conteúdo de playlist para app em modo de desenvolvimento (acima). |
+| Login do dono do servidor no Spotify (Authorization Code + PKCE) | Fluxo de login e token guardado no servidor só para isso; em modo de desenvolvimento a API só lista playlists do próprio usuário ou colaborativas, então playlists de outras pessoas continuariam fora. |
+| Pedir cota estendida ao Spotify | Exige empresa e base grande de usuários; inviável para um servidor de amigos. |
+| Recusar playlists do Spotify | Era a alternativa segura, mas a playlist é o principal pedido do grupo. |
+
+Consequências: é raspagem de uma página pública (frágil; pode quebrar quando o Spotify mudar o HTML e então responde
+"Não foi possível ler essa playlist do Spotify"); lê só as 100 primeiras faixas e sem capa por faixa (usa a capa da
+playlist); em troca lê também as playlists do próprio Spotify. O parser fica isolado em `parseSpotifyEmbed`, com teste
+por fixture, e nada mais depende do formato da página.

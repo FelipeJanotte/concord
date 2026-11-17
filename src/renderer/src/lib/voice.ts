@@ -58,6 +58,11 @@ const CAMERA_CAPTURE = { resolution: { width: 640, height: 360, frameRate: 24 } 
 const CAMERA_PUBLISH = { simulcast: false, videoEncoding: { maxBitrate: 350_000, maxFramerate: 24 } }
 const MIC_PUBLISH = { source: Track.Source.Microphone, forceStereo: false }
 
+export const MUSIC_BOT_VOLUME_ID = 'music-bot'
+
+const volumeIdOf = (participant: Participant | undefined): string | undefined =>
+  participant?.attributes?.accountId ?? (participant?.attributes?.bot === 'music' ? MUSIC_BOT_VOLUME_ID : undefined)
+
 const SCREEN_CAPTURE = { resolution: { width: 1920, height: 1080, frameRate: 15 }, contentHint: 'detail' as const }
 
 /** O que o VoiceClient usa de fora; os testes trocam por versões falsas. */
@@ -692,7 +697,7 @@ export class VoiceClient {
         const el = track.attach()
         el.muted = this.deafened
         this.remoteAudio.add(track)
-        const accountId = participant?.attributes?.accountId
+        const accountId = volumeIdOf(participant)
         if (track.source === Track.Source.Microphone && accountId) {
           this.voices.set(track, accountId)
           if (this.levelerEnabled) this.level(track, accountId)

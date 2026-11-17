@@ -1,15 +1,16 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { MusicState, MusicTrack } from '../../src/shared/types'
+import type { MusicState } from '../../src/shared/types'
 import { MusicPlayer } from './player'
-import type { AudioSource, AudioStream, RoomOutput, RoomPublisher, TrackMetadata } from './ports'
+import type { AudioSource, AudioStream, QueuedTrack, RoomOutput, RoomPublisher } from './ports'
 
-const track = (id: string): MusicTrack => ({
+const track = (id: string): QueuedTrack => ({
   id,
   title: `Música ${id}`,
   artists: ['Banda'],
   coverUrl: null,
   durationMs: 180_000,
   url: `https://open.spotify.com/track/${id}`,
+  audio: { kind: 'youtube-search', query: `Banda - Música ${id}` },
   requestedBy: { accountId: 'acc', name: 'Ana' }
 })
 
@@ -47,7 +48,7 @@ class ControlledStream implements AudioStream {
 
 class FakeSource implements AudioSource {
   opened: ControlledStream[] = []
-  open(t: TrackMetadata): AudioStream {
+  open(t: QueuedTrack): AudioStream {
     const stream = new ControlledStream(t.title)
     this.opened.push(stream)
     return stream
@@ -85,7 +86,7 @@ const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 0))
 describe('MusicPlayer', () => {
   it('a primeira música faz o bot entrar na sala e tocar os quadros da fonte', async () => {
     const { player, source, publisher, states } = setup()
-    player.add('sala', track('a'))
+    player.add('sala', [track('a')])
     expect(titles(states.at(-1)!)).toEqual(['Música a'])
     await settle()
     expect(publisher.log).toEqual(['join sala'])
@@ -95,10 +96,30 @@ describe('MusicPlayer', () => {
     expect(publisher.frames).toEqual([frame])
   })
 
+  it('várias músicas de uma vez: um aviso só, com quantas entraram', async () => {
+    const { player, states } = setup()
+    expect(player.add('sala', [track('a'), track('b'), track('c')])).toMatchObject({ ok: true, added: 3 })
+    expect(states).toHaveLength(1)
+    expect(titles(states[0])).toEqual(['Música a', 'Música b', 'Música c'])
+    player.stop('sala')
+    await settle()
+  })
+
+  it('o estado público não leva de onde vem o áudio', async () => {
+    const { player, states } = setup()
+    player.add('sala', [track('a'), track('b')])
+    const state = player.state('sala')
+    expect(state.nowPlaying).not.toHaveProperty('audio')
+    expect(state.queue[0]).not.toHaveProperty('audio')
+    expect(states[0].nowPlaying).not.toHaveProperty('audio')
+    player.stop('sala')
+    await settle()
+  })
+
   it('quando a faixa acaba, toca a próxima; quando a fila acaba, o bot sai', async () => {
     const { player, source, publisher, states } = setup()
-    player.add('sala', track('a'))
-    player.add('sala', track('b'))
+    player.add('sala', [track('a')])
+    player.add('sala', [track('b')])
     await settle()
     source.last().end()
     await settle()
@@ -114,9 +135,9 @@ describe('MusicPlayer', () => {
 
   it('pular fecha a fonte atual e passa para a próxima', async () => {
     const { player, source } = setup()
-    player.add('sala', track('a'))
-    player.add('sala', track('b'))
-    player.add('sala', track('c'))
+    player.add('sala', [track('a')])
+    player.add('sala', [track('b')])
+    player.add('sala', [track('c')])
     await settle()
     const first = source.last()
     expect(player.skip('sala')).toBe(true)
@@ -128,8 +149,8 @@ describe('MusicPlayer', () => {
 
   it('parar esvazia a fila e tira o bot da sala', async () => {
     const { player, source, publisher, states } = setup()
-    player.add('sala', track('a'))
-    player.add('sala', track('b'))
+    player.add('sala', [track('a')])
+    player.add('sala', [track('b')])
     await settle()
     expect(player.stop('sala')).toBe(true)
     await settle()
@@ -142,7 +163,7 @@ describe('MusicPlayer', () => {
 
   it('parar antes de o bot terminar de entrar: ele entra e sai sem tocar', async () => {
     const { player, source, publisher } = setup()
-    player.add('sala', track('a'))
+    player.add('sala', [track('a')])
     player.stop('sala')
     await settle()
     expect(source.opened).toEqual([])
@@ -151,8 +172,8 @@ describe('MusicPlayer', () => {
 
   it('cada sala tem a sua fila e o seu bot', async () => {
     const { player, publisher } = setup()
-    player.add('sala-1', track('a'))
-    player.add('sala-2', track('b'))
+    player.add('sala-1', [track('a')])
+    player.add('sala-2', [track('b')])
     await settle()
     expect(publisher.log.sort()).toEqual(['join sala-1', 'join sala-2'])
     expect(titles(player.state('sala-1'))).toEqual(['Música a'])
@@ -176,8 +197,8 @@ describe('MusicPlayer', () => {
       }
     }
     const p = new MusicPlayer({ source: broken, publisher }, () => {})
-    p.add('sala', track('a'))
-    p.add('sala', track('b'))
+    p.add('sala', [track('a')])
+    p.add('sala', [track('b')])
     await settle()
     await settle()
     expect(titles(p.state('sala'))).toEqual(['Música b'])
@@ -189,7 +210,7 @@ describe('MusicPlayer', () => {
     const { player, publisher, states } = setup()
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     publisher.fail = true
-    player.add('sala', track('a'))
+    player.add('sala', [track('a')])
     await settle()
     expect(player.activeRooms()).toEqual([])
     expect(states.at(-1)?.nowPlaying).toBeNull()

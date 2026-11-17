@@ -6,7 +6,7 @@
  */
 import { useState, type ReactNode } from 'react'
 import { MessageCircle, Shield, User as UserIcon, UserPlus, Volume2, VolumeX } from 'lucide-react'
-import { canAssignRole, canChangeMemberRoles } from '@shared/types'
+import { canAssignRole, canChangeMemberRoles, MUSIC_BOT_NAME } from '@shared/types'
 import {
   ContextMenu,
   ContextMenuCheckboxItem,
@@ -24,6 +24,7 @@ import { UserProfileDialog } from '@/components/UserProfileDialog'
 import { ModerationItems } from './ModerationMenu'
 import { messageAccount, notify, sendFriendRequest, setMemberRoles, setUserMuted, setUserVolume } from '@/lib/client'
 import { memberRoleIds, rolesByPosition } from '@/lib/permissions'
+import { MUSIC_BOT_VOLUME_ID } from '@/lib/voice'
 import { useApp } from '@/store'
 
 export function MemberContextMenu({ userId, children }: { userId: string; children: ReactNode }) {
@@ -61,6 +62,20 @@ export function MemberContextMenu({ userId, children }: { userId: string; childr
       </ContextMenu>
       <UserProfileDialog userId={userId} open={profileOpen} onOpenChange={setProfileOpen} />
     </>
+  )
+}
+
+export function MusicBotContextMenu({ children }: { children: ReactNode }) {
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
+      <ContextMenuContent className="w-60" aria-label={`Opções de ${MUSIC_BOT_NAME}`}>
+        <ContextMenuLabel className="truncate">{MUSIC_BOT_NAME}</ContextMenuLabel>
+        <ContextMenuSeparator />
+        <VolumeControl accountId={MUSIC_BOT_VOLUME_ID} name={MUSIC_BOT_NAME} />
+        <MuteItem accountId={MUSIC_BOT_VOLUME_ID} />
+      </ContextMenuContent>
+    </ContextMenu>
   )
 }
 

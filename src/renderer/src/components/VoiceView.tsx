@@ -40,7 +40,6 @@ export function VoiceView({ channelId }: { channelId: string }) {
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
-          <MusicPlayer channelId={channelId} />
           {members.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
               <h2 className="text-2xl font-bold text-accent-foreground">{channel.name}</h2>
@@ -51,6 +50,9 @@ export function VoiceView({ channelId }: { channelId: string }) {
           )}
         </div>
 
+        <div className="shrink-0 px-4">
+          <MusicPlayer channelId={channelId} />
+        </div>
         {connected && <SoundsPlayingBar />}
         {connected && <PushToTalkHint />}
         <div className="flex shrink-0 flex-wrap items-center justify-center gap-3 px-4 pb-6">

@@ -1,5 +1,5 @@
 import type { MusicState, MusicTrack } from '../../src/shared/types'
-import type { AudioStream, MusicPlayback, RoomOutput } from './ports'
+import type { AudioStream, MusicPlayback, QueuedTrack, RoomOutput } from './ports'
 import { advance, EMPTY_QUEUE, enqueue, type EnqueueResult, type RoomQueue } from './queue'
 
 interface Room {
@@ -8,6 +8,10 @@ interface Room {
 }
 
 export type MusicListener = (state: MusicState) => void
+
+function publicTrack({ id, title, artists, coverUrl, durationMs, url, requestedBy }: QueuedTrack): MusicTrack {
+  return { id, title, artists, coverUrl, durationMs, url, requestedBy }
+}
 
 export class MusicPlayer {
   private rooms = new Map<string, Room>()
@@ -19,17 +23,17 @@ export class MusicPlayer {
 
   state(channelId: string): MusicState {
     const queue = this.rooms.get(channelId)?.queue ?? EMPTY_QUEUE
-    return { channelId, nowPlaying: queue.nowPlaying, queue: queue.upcoming }
+    return { channelId, nowPlaying: queue.nowPlaying && publicTrack(queue.nowPlaying), queue: queue.upcoming.map(publicTrack) }
   }
 
   activeRooms(): string[] {
     return [...this.rooms.keys()]
   }
 
-  add(channelId: string, track: MusicTrack): EnqueueResult {
+  add(channelId: string, tracks: QueuedTrack[]): EnqueueResult {
     const existing = this.rooms.get(channelId)
     const room = existing ?? { queue: EMPTY_QUEUE, stream: null }
-    const result = enqueue(room.queue, track)
+    const result = enqueue(room.queue, tracks)
     if (!result.ok) return result
     room.queue = result.queue
     if (!existing) {
@@ -86,7 +90,7 @@ export class MusicPlayer {
     }
   }
 
-  private async playTrack(room: Room, track: MusicTrack, output: RoomOutput): Promise<void> {
+  private async playTrack(room: Room, track: QueuedTrack, output: RoomOutput): Promise<void> {
     const stream = this.playback.source.open(track)
     room.stream = stream
     try {

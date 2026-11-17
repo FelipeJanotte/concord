@@ -111,15 +111,42 @@ describe('Composer', () => {
     expect((box as HTMLTextAreaElement).value).toBe('')
   })
 
-  it('comando de música (/pular) vai para o bot da minha sala, não vira mensagem', async () => {
+  it('comando de música (/skip) vai para o bot da minha sala, não vira mensagem', async () => {
     useApp.setState({ myVoiceChannelId: 'sala' })
     socket.replyTo('music:skip', () => ({ ok: true, state: { channelId: 'sala', nowPlaying: null, queue: [] } }))
     render(<Composer channel={channel} />)
     const box = screen.getByPlaceholderText('Conversar em #geral')
-    await userEvent.type(box, '/pular{Enter}')
+    await userEvent.type(box, '/skip{Enter}')
     expect(socket.sent('music:skip')).toEqual([['sala']])
     expect(socket.sent('message:send')).toEqual([])
     expect((box as HTMLTextAreaElement).value).toBe('')
+  })
+
+  it('/play aparece como código e mostra a dica "query" até digitar o que tocar', async () => {
+    render(<Composer channel={channel} />)
+    const box = screen.getByPlaceholderText('Conversar em #geral')
+    expect(screen.queryByTestId('command-highlight')).toBeNull()
+    await userEvent.type(box, '/play')
+    expect(screen.getByTestId('command-highlight').querySelector('code')?.textContent).toBe('/play')
+    expect(screen.getByText('query')).toBeTruthy()
+    await userEvent.type(box, ' lofi')
+    expect(screen.getByTestId('command-highlight').textContent).toBe('/play lofi')
+    expect(screen.queryByText('query')).toBeNull()
+    await userEvent.clear(box)
+    await userEvent.type(box, 'oi /play')
+    expect(screen.queryByTestId('command-highlight')).toBeNull()
+    expect(screen.queryByText('query')).toBeNull()
+  })
+
+  it('/skip, /stop e /queue aparecem como código, sem a dica "query"', async () => {
+    render(<Composer channel={channel} />)
+    const box = screen.getByPlaceholderText('Conversar em #geral')
+    for (const command of ['/skip', '/stop', '/queue']) {
+      await userEvent.clear(box)
+      await userEvent.type(box, command)
+      expect(screen.getByTestId('command-highlight').querySelector('code')?.textContent).toBe(command)
+      expect(screen.queryByText('query')).toBeNull()
+    }
   })
 
   it('escolher arquivo mostra a prévia com progresso; enviar só depois de terminar', async () => {

@@ -1,6 +1,10 @@
+import type { MusicTrack } from '../../src/shared/types'
+
 export const PCM_SAMPLE_RATE = 48_000
 export const PCM_CHANNELS = 2
 export const PCM_FRAME_SAMPLES = PCM_SAMPLE_RATE / 100
+
+export type AudioLocator = { kind: 'youtube-search'; query: string } | { kind: 'audio-url'; url: string }
 
 export interface TrackMetadata {
   title: string
@@ -8,12 +12,24 @@ export interface TrackMetadata {
   coverUrl: string | null
   durationMs: number
   url: string
+  live: boolean
+  audio: AudioLocator
 }
+
+export type QueuedTrack = MusicTrack & { audio: AudioLocator }
+
+export type SpotifyKind = 'track' | 'playlist' | 'album'
+
+export type MusicQuery =
+  | { kind: 'spotify'; type: SpotifyKind; id: string }
+  | { kind: 'youtube-video'; id: string }
+  | { kind: 'youtube-playlist'; id: string }
+  | { kind: 'search'; text: string }
 
 export class MusicError extends Error {}
 
-export interface TrackResolver {
-  resolve(url: string): Promise<TrackMetadata>
+export interface TrackResolver<Q extends MusicQuery = MusicQuery> {
+  resolve(query: Q): Promise<TrackMetadata[]>
 }
 
 export interface AudioStream extends AsyncIterable<Int16Array> {
@@ -21,7 +37,7 @@ export interface AudioStream extends AsyncIterable<Int16Array> {
 }
 
 export interface AudioSource {
-  open(track: TrackMetadata): AudioStream
+  open(track: QueuedTrack): AudioStream
 }
 
 export interface RoomOutput {
@@ -37,3 +53,5 @@ export interface MusicPlayback {
   source: AudioSource
   publisher: RoomPublisher
 }
+
+export const PLAYLIST_READ_MAX = 200

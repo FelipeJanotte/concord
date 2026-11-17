@@ -106,7 +106,7 @@ Cliente → servidor (`ClientToServerEvents`):
 | `sound:list` | — | `Sound[]` | coleção de efeitos sonoros (links assinados para quem pede) — `docs/areas/sounds.md` |
 | `sound:play` | `{ channelId, soundId }` | `SoundResult` | exige estar na sala e `speak`; `sound:played` só para quem está nela; não toca por cima do próprio som anterior |
 | `sound:delete` | `soundId` | `SoundResult` | o autor ou `manageMessages`; `sound:deleted` para todos |
-| `music:play` | `{ channelId, url }` | `MusicResult` | bot de música (A11): só link de faixa do Spotify, quem está na sala com `view`+`connect`, até 15 min por faixa e 20 na fila (`LIMITS.music`); `music:state` para quem vê a sala — `docs/areas/music.md` |
+| `music:play` | `{ channelId, query }` | `MusicPlayResult` (`added`) | bot de música (A11): `query` é link (faixa/álbum/playlist do Spotify, vídeo/playlist do YouTube) ou texto (busca no YouTube); quem está na sala com `view`+`connect`, até 15 min por faixa e 100 na fila (playlist entra até encher) (`LIMITS.music`); `music:state` para quem vê a sala — `docs/areas/music.md` |
 | `music:skip` / `music:stop` | `channelId` | `MusicResult` | pular a faixa / esvaziar a fila e tirar o bot (mesmas regras do `music:play`) |
 | `music:queue` | `channelId` | `MusicResult` | estado da sala (tocando agora e fila); só `view` |
 | `preferences:get` | — | `Preferences` | tema ativo, temas salvos e canais silenciados da conta (padrão se nada salvo) — `docs/areas/themes.md` |

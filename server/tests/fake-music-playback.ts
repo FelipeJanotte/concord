@@ -1,10 +1,11 @@
-import { replaceMusicPlayback } from '../music/drivers'
-import type { AudioStream, TrackMetadata } from '../music/ports'
+import { overrideMusicDrivers } from '../music/drivers'
+import type { AudioStream, QueuedTrack } from '../music/ports'
+import { fakeYtDlp } from './fake-youtube'
 
 export const FAKE_PLAYBACK_SPEEDUP = 100
 const FRAME_INTERVAL_MS = 20
 
-function fakeStream(track: TrackMetadata): AudioStream {
+function fakeStream(track: QueuedTrack): AudioStream {
   let closed = false
   let wake: (() => void) | null = null
   return {
@@ -25,14 +26,17 @@ function fakeStream(track: TrackMetadata): AudioStream {
   }
 }
 
-replaceMusicPlayback({
-  source: { open: fakeStream },
-  publisher: {
-    async join(channelId) {
-      console.log(`[fake-music] join ${channelId}`)
-      return {
-        play: async () => {},
-        leave: async () => void console.log(`[fake-music] leave ${channelId}`)
+overrideMusicDrivers({
+  ytDlp: async (args) => fakeYtDlp(args),
+  playback: {
+    source: { open: fakeStream },
+    publisher: {
+      async join(channelId: string) {
+        console.log(`[fake-music] join ${channelId}`)
+        return {
+          play: async () => {},
+          leave: async () => void console.log(`[fake-music] leave ${channelId}`)
+        }
       }
     }
   }

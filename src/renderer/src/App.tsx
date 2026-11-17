@@ -16,6 +16,7 @@ import { Toast } from '@/components/Toast'
 import { ToolView } from '@/components/tools/ToolView'
 import { UpdateBanner } from '@/components/UpdateBanner'
 import { VoiceView } from '@/components/VoiceView'
+import { MusicQueueDialog } from '@/components/voice/MusicQueueDialog'
 import { SIDE_PANELS } from '@/lib/side-width'
 import { useApp } from '@/store'
 
@@ -33,6 +34,7 @@ export default function App() {
         <div className="min-h-0 flex-1">{self ? <MainLayout /> : <LoginScreen />}</div>
       </div>
       {self && <IncomingCall />}
+      {self && <MusicQueueDialog />}
       <Toast />
     </TooltipProvider>
   )

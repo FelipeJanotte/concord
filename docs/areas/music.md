@@ -1,35 +1,41 @@
 # Bot de música (A11 servidor / B14 tela)
 
-Quem está numa sala de voz manda `/tocar <link do Spotify>` no chat e um participante **"Música"** entra na sala
-tocando a faixa para todos. O link do Spotify dá só os **metadados** (título, artistas, capa, duração); o **áudio**
-vem do YouTube por busca (`yt-dlp` + `ffmpeg`) e é publicado no LiveKit pelo próprio servidor com
-`@livekit/rtc-node`. Por que assim e o que foi descartado: `docs/decisions/0006-bot-musica-spotify-youtube.md`.
-
-Nesta entrega só **links de faixa do Spotify** são aceitos. Links diretos do YouTube, playlists e álbuns ficam para depois.
+Quem está numa sala de voz manda `/play <link ou nome da música>` no chat e um participante **"Música"** entra na sala
+tocando a faixa para todos. Aceita faixa, álbum e playlist do Spotify, vídeo e playlist do YouTube e texto livre
+(busca no YouTube). Do Spotify vêm só os **metadados**; o **áudio** sempre vem do YouTube (`yt-dlp` + `ffmpeg`) e é
+publicado no LiveKit pelo próprio servidor com `@livekit/rtc-node`. Por que assim e o que foi descartado:
+`docs/decisions/0006-bot-musica-spotify-youtube.md`.
 
 ## Arquivos
 
 | Caminho | O que é |
 |---|---|
-| `src/shared/types/music.ts` | Contrato: `MusicTrack`, `MusicState`, `MusicResult`, eventos `music:*`, limites `MUSIC_MAX_TRACK_MS` (15 min), `MUSIC_QUEUE_MAX` (20), `MUSIC_URL_MAX` (500), `MUSIC_BOT_NAME`. |
+| `src/shared/types/music.ts` | Contrato: `MusicTrack`, `MusicState`, `MusicResult`, `MusicPlayResult` (`added`), eventos `music:*`, limites `MUSIC_MAX_TRACK_MS` (15 min), `MUSIC_QUEUE_MAX` (100), `MUSIC_QUERY_MAX` (500), `MUSIC_BOT_NAME`. |
 | `server/modules/music.ts` | Handlers `music:play/skip/stop/queue`, conferência de sala e permissão, limite `LIMITS.music`, `music:state` por `emitToViewers` e saída do bot quando a sala esvazia (`onVoiceRoomsChange` de `voice.ts`). |
-| `server/music/ports.ts` | Interfaces trocáveis: `TrackResolver` (metadados), `AudioSource`/`AudioStream` (PCM 48 kHz estéreo em quadros de 10 ms), `RoomPublisher`/`RoomOutput` (bot na sala) e `MusicError` (mensagem pt-BR para a pessoa). |
-| `server/music/queue.ts` | Fila pura por sala: `enqueue` (primeira vai direto para "tocando agora"; recusa fila cheia) e `advance`. |
-| `server/music/player.ts` | `MusicPlayer`: uma fila e um bot por sala; entra na primeira música, toca em sequência, pula, para e sai quando a fila acaba. Avisa cada mudança (`onChange`). |
-| `server/music/spotify.ts` | `spotifyTrackId` (validação do link) e `SpotifyResolver` (Web API com Client Credentials, token guardado até 1 min antes de expirar). |
-| `server/music/youtube.ts` | `YtDlpFfmpegSource`: `yt-dlp ytsearch1:"<artistas> - <título>"` → `ffmpeg` → PCM s16le; `PcmFramer` corta em quadros; `audioToolsFromEnv`. |
+| `server/music/ports.ts` | Tipos do domínio: `MusicQuery` (o que o pedido é), `TrackMetadata` com `AudioLocator` (`youtube-search` = faixa a buscar no YouTube na hora de tocar; `audio-url` = link do próprio áudio), `QueuedTrack` (`MusicTrack` + `audio`, só no servidor), `TrackResolver`, `AudioSource`/`AudioStream` (PCM 48 kHz estéreo em quadros de 10 ms), `RoomPublisher`/`RoomOutput`, `MusicError` (mensagem pt-BR) e `PLAYLIST_READ_MAX` (200). |
+| `server/music/query.ts` | `parseMusicQuery` (pura): texto → `MusicQuery` ou `null` (link de outro site). |
+| `server/music/catalog.ts` | `MusicCatalog.find`: roteia a consulta para o resolvedor certo e aplica as regras (ao vivo, sem duração, acima de 15 min: recusa item único, pula em playlist). |
+| `server/music/spotify.ts` | `SpotifyResolver`: faixa e álbum pela Web API (Client Credentials, token até 1 min antes de expirar, álbum paginado de 50 em 50); playlist pela página de incorporação (`parseSpotifyEmbed`). |
+| `server/music/youtube.ts` | `YouTubeResolver`: vídeo (`yt-dlp -J --no-playlist`), playlist e busca (`-J --flat-playlist`); `parseYtDlpVideo`/`parseYtDlpEntries` (JSON do yt-dlp → faixa) e `ytDlpRunner` (roda o programa). |
+| `server/music/audio-source.ts` | `YtDlpFfmpegSource`: `yt-dlp` (`ytsearch1:<busca>` ou o link) → `ffmpeg` → PCM s16le; `PcmFramer` corta em quadros; `audioToolsFromEnv`. |
+| `server/music/queue.ts` | Fila pura por sala: `enqueue` (várias de uma vez; a primeira vai para "tocando agora"; entra só o que cabe e devolve `added`; recusa fila cheia) e `advance`. |
+| `server/music/player.ts` | `MusicPlayer`: uma fila e um bot por sala; entra na primeira música, toca em sequência, pula, para e sai quando a fila acaba. Avisa cada mudança (`onChange`) sem o `audio` (estado público). |
 | `server/music/livekit-publisher.ts` | `LiveKitPublisher`: token do bot (identidade `music-bot:<canal>`, nome "Música", atributo `bot: music`, só publica microfone, não assina ninguém) e a faixa `AudioSource` do `@livekit/rtc-node`. |
-| `server/music/drivers.ts` | Monta as peças a partir do ambiente (`musicDrivers`); `replaceMusicPlayback` troca fonte e publicador (testes). |
-| `server/tests/music.test.ts`, `server/tests/fake-music-playback.ts` | Integração com servidor de verdade, Spotify falso (HTTP local) e fonte/publicador falsos carregados com `--import` (`TestServer.start({ imports })`). |
-| `src/renderer/src/lib/actions/music.ts` | `playMusic`, `skipMusic`, `stopMusic`, `loadMusicQueue`, `parseMusicCommand`/`runMusicCommand` (comandos do Composer), `describeQueue`. |
-| `src/renderer/src/store/music.ts` | `musicRooms`: estado de cada sala com música tocando. |
-| `src/renderer/src/components/voice/MusicPlayer.tsx` | Cartão "Tocando agora" (capa, título, artistas, quem pediu, duração, fila, pular/parar) e `MusicBotMember` (bot com selo "BOT" na lista da sala na barra lateral). |
+| `server/music/drivers.ts` | Monta as peças a partir do ambiente (`musicDrivers`); `overrideMusicDrivers({ playback, ytDlp })` troca fonte/publicador e o yt-dlp (testes). |
+| `server/tests/music.test.ts`, `server/tests/fake-music-playback.ts`, `server/tests/fake-youtube.ts` | Integração com servidor de verdade, Spotify falso (HTTP local), yt-dlp falso (JSON fixo por link) e fonte/publicador falsos carregados com `--import` (`TestServer.start({ imports })`). |
+| `src/renderer/src/lib/actions/music.ts` | `playMusic`, `skipMusic`, `stopMusic`, `loadMusicQueue`, `parseMusicCommand`/`runMusicCommand` (comandos do Composer), `musicCommandDraft` (o comando sendo digitado, para o destaque), `openMusicQueue`/`closeMusicQueue` (painel da fila), `trackLabel`, `trackDuration`. |
+| `src/renderer/src/store/music.ts` | `musicRooms` (estado de cada sala com música tocando) e `musicQueueChannelId` (sala cujo painel da fila está aberto; `null` = fechado). |
+| `src/renderer/src/components/voice/MusicPlayer.tsx` | Cartão "Tocando agora" (capa, título, artistas, quem pediu, duração, "Ver a fila", pular/parar, volume do bot, ocultar), a barra fina "Tocando: título" quando oculto, `TrackCover` e `MusicBotMember` (bot com selo "BOT" na lista da sala na barra lateral, com o `MusicBotContextMenu` de `MemberContextMenu.tsx` no botão direito). |
+| `src/renderer/src/components/voice/MusicQueueDialog.tsx` | Painel "Fila de músicas" (shadcn `Dialog`, montado uma vez em `App.tsx`): música atual e fila paginada de 10 em 10. |
+| `src/renderer/src/lib/paginate.ts` | `paginate(itens, página, porPágina)` → `{ items, page, pages, start }` (pura; página fora do intervalo vai para a mais próxima). |
+| `src/renderer/src/lib/music-player.ts` | `loadPlayerHidden`/`savePlayerHidden`: player oculto ou não, guardado na máquina (`localStorage` `concord:music-player-hidden`). |
+| `src/renderer/src/components/chat/CommandHighlight.tsx` | Destaque dos comandos de música no Composer: camada espelho atrás do campo com o comando como código e, só no `/play`, a dica `query`. |
 
 ## Eventos (`src/shared/types/music.ts`)
 
 | Evento | Payload | Ack | Regra |
 |---|---|---|---|
-| `music:play` | `{ channelId, url }` | `MusicResult` | estar na sala `channelId` (`voice:join`) com `view` + `connect`; link de faixa do Spotify; até 15 min |
+| `music:play` | `{ channelId, query }` | `MusicPlayResult` (`added`: quantas entraram) | estar na sala `channelId` (`voice:join`) com `view` + `connect`; `query` de 1 a 500 caracteres (link ou texto); até 15 min por faixa |
 | `music:skip` | `channelId` | `MusicResult` | mesma regra de sala; "Nenhuma música tocando" se nada toca |
 | `music:stop` | `channelId` | `MusicResult` | mesma regra; esvazia a fila e tira o bot |
 | `music:queue` | `channelId` | `MusicResult` | só `view` (quem olha a sala sem entrar vê o cartão) |
@@ -39,19 +45,55 @@ Nesta entrega só **links de faixa do Spotify** são aceitos. Links diretos do Y
 
 ## Fluxo
 
-1. `/tocar <link>` no Composer (qualquer chat) → `runMusicCommand` usa a sala em que **eu** estou (`myVoiceChannelId`).
-2. O servidor confere sala, permissão, tamanho do link e `LIMITS.music`; o `SpotifyResolver` valida o link e busca os metadados.
-3. `MusicPlayer.add`: sala sem bot → `RoomPublisher.join` (o bot entra no LiveKit) e começa a tocar; com bot → fim da fila.
+1. `/play <link ou nome>` no Composer (qualquer chat) → `runMusicCommand` usa a sala em que **eu** estou (`myVoiceChannelId`).
+2. O servidor confere sala, permissão, tamanho da `query` e `LIMITS.music`; `MusicCatalog.find` passa o texto pelo
+   `parseMusicQuery` e chama o `SpotifyResolver` ou o `YouTubeResolver`, que devolvem os metadados (título, artistas,
+   capa, duração) antes de enfileirar.
+3. `MusicPlayer.add` (todas as faixas de uma vez, um `music:state` só): sala sem bot → `RoomPublisher.join` (o bot entra
+   no LiveKit) e começa a tocar; com bot → fim da fila.
 4. Cada faixa: `AudioSource.open` (yt-dlp + ffmpeg, cortado em duração + 5 s) → quadros de 10 ms → `RoomOutput.play`
+   (faixa do Spotify: a busca `"<artistas> - <título>"` no YouTube só acontece aqui, na hora de tocar; YouTube e
+   texto livre: o próprio link do vídeo)
    (`AudioSource.captureFrame` do rtc-node, que segura o ritmo em tempo real).
-5. Faixa acabou → próxima; fila acabou, `/parar` ou sala vazia → o bot sai (`leave`) e `music:state` vai com `nowPlaying: null`.
-6. No app, o áudio do bot chega como o de qualquer participante (sem `accountId`: segue o volume geral de saída e o deafen).
+5. Faixa acabou → próxima; fila acabou, `/stop` ou sala vazia → o bot sai (`leave`) e `music:state` vai com `nowPlaying: null`.
+6. No app, o áudio do bot chega como o de qualquer participante e segue o volume geral de saída, o deafen e o volume/silenciar próprio do bot (chave `music-bot`, `docs/areas/voice.md`).
 
 ## Regras e limites
 
-- Só links `https://open.spotify.com/track/<id>` (com ou sem `/intl-xx/`, com `?si=`) e `spotify:track:<id>`; id de 22
-  caracteres. Outro domínio, álbum, playlist, porta ou usuário na URL → "Envie um link de música do Spotify (open.spotify.com/track/...)".
-- Faixa acima de 15 min → "Música longa demais (máximo de 15 min)". Fila: 20 esperando além da que toca.
+**O que o `parseMusicQuery` aceita** (com ou sem `https://`; `http` também; porta ou usuário na URL → recusa):
+
+| Entrada | Vira | Como é lido |
+|---|---|---|
+| `open.spotify.com/track/<id>`, `spotify:track:<id>` (com `/intl-xx/`, `?si=`) | faixa do Spotify | Web API `GET /v1/tracks/<id>` |
+| `open.spotify.com/album/<id>`, `spotify:album:<id>` | álbum do Spotify | Web API `GET /v1/albums/<id>` + páginas de 50; capa do álbum em cada faixa |
+| `open.spotify.com/playlist/<id>`, `spotify:playlist:<id>` | playlist do Spotify | página `open.spotify.com/embed/playlist/<id>` (JSON `__NEXT_DATA__`); até 100 faixas; capa da playlist em cada faixa; episódios ignorados |
+| `youtube.com/watch?v=`, `m.`/`music.youtube.com/watch?v=`, `youtu.be/<id>`, `youtube.com/shorts/<id>` | vídeo do YouTube | `yt-dlp -J --no-playlist` no link canônico |
+| `watch?v=<id>&list=<lista>` | **o vídeo** (não a playlist) | quem colou o link estava num vídeo; para a playlist inteira use o link `playlist?list=` |
+| `youtube.com/playlist?list=<id>` (também `music.youtube.com`) | playlist do YouTube | `yt-dlp -J --flat-playlist --playlist-end 200` |
+| qualquer texto que não é link | busca | `yt-dlp -J --flat-playlist ytsearch1:<texto>` (espaços juntados) |
+| link de outro site, perfil/artista do Spotify, canal do YouTube | recusa | "Envie o nome da música ou um link do Spotify ou do YouTube" |
+
+O yt-dlp sempre recebe o link **remontado** (`https://www.youtube.com/watch?v=<id>`), nunca o texto da pessoa.
+
+**Por que a playlist do Spotify não usa a Web API:** desde 2026 a Web API não entrega o conteúdo de playlist para app
+em modo de desenvolvimento com Client Credentials (testado em 17/11/2026: `GET /v1/playlists/<id>/tracks` → 403,
+`/items` → 401 "Valid user authentication required" e `GET /v1/playlists/<id>` volta sem `tracks`); as playlists do
+próprio Spotify (`37i9dQZF...`) dão 404 desde nov/2024. A página de incorporação pública lê as duas (de usuário e do
+Spotify), sem token, mas só as **100 primeiras** faixas e sem capa por faixa. É raspagem: se o Spotify mudar a página,
+a resposta é "Não foi possível ler essa playlist do Spotify" (ADR 0006).
+
+- Item único ao vivo → "Transmissões ao vivo não podem ser tocadas"; sem duração → "Não foi possível saber a duração
+  dessa música"; acima de 15 min → "Música longa demais (máximo de 15 min)". Em playlist/álbum essas faixas são
+  **puladas**; nenhuma sobrou → "Nenhuma música da lista pode ser tocada (...)".
+- Playlist/álbum: lê no máximo 200 itens (`PLAYLIST_READ_MAX`; Spotify playlist: 100). Fila: 100 esperando além da que
+  toca (`MUSIC_QUEUE_MAX`); entra o que couber e o ack diz quantas (`added`); fila já cheia → "A fila está cheia (máximo
+  de 100 músicas)".
+- Sem `SPOTIFY_CLIENT_ID`/`SECRET`: links do Spotify → "Links do Spotify não estão configurados neste servidor";
+  YouTube e busca continuam.
+- Erros: faixa/álbum inexistente → "Música/Álbum não encontrado no Spotify"; playlist inexistente ou privada →
+  "Playlist não encontrada no Spotify (ou é privada)"; vídeo indisponível → "Não foi possível ler isso no YouTube
+  (vídeo indisponível ou privado?)"; busca vazia → `Nada encontrado no YouTube para "<texto>"`; playlist do YouTube
+  vazia → "Playlist do YouTube vazia ou privada".
 - `LIMITS.music`: 5 comandos seguidos (`play`/`skip`/`stop`), depois 1 a cada 5 s, por conta.
 - Qualquer um na sala pula ou para (não há "dono" da fila).
 - Faixa que falha (yt-dlp/ffmpeg ausente, busca sem resultado) é pulada; o motivo vai para o log `[música]`.
@@ -63,12 +105,13 @@ Variáveis do servidor (`server/.env`; produção: `.env` do `docker-compose.pro
 
 | Variável | Padrão | Para quê |
 |---|---|---|
-| `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET` | — | Metadados. Sem as duas: "Bot de música não configurado neste servidor". |
-| `YTDLP_PATH` | `yt-dlp` (PATH) | Caminho do yt-dlp. |
+| `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET` | — | Links do Spotify. Sem as duas: só YouTube e busca. |
+| `YTDLP_PATH` | `yt-dlp` (PATH) | Caminho do yt-dlp (metadados do YouTube e áudio). |
 | `FFMPEG_PATH` | `ffmpeg` (PATH) | Caminho do ffmpeg. |
-| `SPOTIFY_ACCOUNTS_URL`, `SPOTIFY_API_URL` | APIs oficiais | Só para os testes apontarem para o Spotify falso. |
+| `SPOTIFY_ACCOUNTS_URL`, `SPOTIFY_API_URL`, `SPOTIFY_EMBED_URL` | endereços oficiais | Só para os testes apontarem para o Spotify falso. |
 
-Precisa também do LiveKit configurado (`LIVEKIT_*`); o bot conecta em `LIVEKIT_API_URL` trocando `http` por `ws`.
+O bot só liga com o LiveKit configurado (`LIVEKIT_*`); sem ele: "Bot de música não configurado neste servidor". O bot
+conecta em `LIVEKIT_API_URL` trocando `http` por `ws`.
 
 **App no Spotify (gratuito, sem Premium):**
 1. Entre em <https://developer.spotify.com/dashboard> com qualquer conta Spotify e clique em **Create app**.
@@ -88,33 +131,78 @@ instala o ffmpeg e baixa o yt-dlp oficial na hora do build. Para atualizar o yt-
 
 ## Na tela (B14)
 
-- Comandos no Composer: `/tocar <link>`, `/pular`, `/parar`, `/fila` (mostra o que toca e a fila num aviso). Não viram
-  mensagem no chat. Fora de uma sala de voz: "Entre numa sala de voz para usar os comandos de música".
-- `MusicPlayer` no topo da sala (`VoiceView`): pede `music:queue` ao abrir; botões de pular/parar só para quem está na sala.
-- `MusicBotMember` na lista da sala (`ChannelSidebar`): "Música" com o selo "BOT" enquanto toca.
+- Comandos no Composer: `/play <link ou nome>`, `/skip`, `/stop`, `/queue` (busca a fila da sala e abre o painel
+  "Fila de músicas", o mesmo do botão "Ver a fila"). Não viram
+  mensagem no chat. Fora de uma sala de voz: "Entre numa sala de voz para usar os comandos de música". `/play` sem nada:
+  "Use /play <link ou nome da música>". O texto vai inteiro em `query` (o servidor decide se é link ou busca).
+- Avisos do `/play`: `added > 1` (playlist) → "N músicas adicionadas à fila"; uma música entrando atrás de outra →
+  "Na fila: título — artistas"; tocando na hora, nada.
+- **Destaque no Composer** (`CommandHighlight`): texto começando com `/play`, `/skip`, `/stop` ou `/queue` (seguido de
+  espaço, quebra de linha ou fim, `musicCommandDraft`) liga uma camada espelho `aria-hidden` atrás do `textarea`, com as
+  mesmas classes de texto (`COMPOSER_TEXT`: padding, fonte, `pre-wrap`); o `textarea` fica com o texto transparente e o
+  cursor visível (`text-transparent caret-foreground`). No espelho o comando é um `<code>` com `bg-secondary` (mesma
+  fonte do campo e `-mx-0.5 px-0.5`, para não deslocar o cursor). Só no `/play` (`takesQuery`), enquanto não há
+  argumento, aparece a dica `query` e "link do Spotify/YouTube ou nome da música" em texto apagado. O campo continua o
+  mesmo `textarea`: menções, colar anexos, Enter, Shift+Enter e rascunho não mudam.
+- `MusicPlayer` na `VoiceView` **entre os membros da chamada (grade/palco) e as ações da sala** (indicador de sons,
+  dica do pressione para falar e a fileira de botões redondos): fora da área que rola, sempre visível. Pede
+  `music:queue` ao abrir. "Ver a fila" para todos; pular, parar e o volume só para quem está na sala.
+- **Volume no player:** slider compacto "Volume da música" que chama o mesmo `setUserVolume(MUSIC_BOT_VOLUME_ID, …)` e lê
+  o mesmo `userVolumes[MUSIC_BOT_VOLUME_ID]` do botão direito no bot; mudar num reflete no outro e fica salvo em
+  `concord:audio`. Silenciado pelo menu mostra o alto-falante cortado (o slider não silencia).
+- **Ocultar:** botão "Ocultar o player" troca o cartão por uma barra fina "Tocando: título" com "Mostrar o player".
+  Escolha guardada na máquina (`concord:music-player-hidden`, vale para todas as salas). Só manual: compartilhar a tela
+  não oculta sozinho.
+- **Painel da fila** (`MusicQueueDialog`): aberto por "Ver a fila" ou `/queue` (`musicQueueChannelId`). "Tocando agora" no
+  topo e a fila numerada em páginas de 10 (`paginate`), com "Anterior"/"Próxima" e "Página X de Y"; cada item com capa
+  pequena, título, artistas, duração e "Pedido por". Fila vazia: "Fila vazia." (sem paginação); nada tocando:
+  "Nenhuma música tocando.". Atualiza ao vivo com o `music:state`; se a fila encolher, a página vai para a última que
+  existe. Reabrir volta à página 1.
+- `MusicBotMember` na lista da sala (`ChannelSidebar`): "Música" com o selo "BOT" enquanto toca. Botão direito:
+  `MusicBotContextMenu` com o mesmo volume e "Silenciar" do menu de uma pessoa (sem mensagem, amigo, cargos, moderação
+  ou perfil); silenciado mostra o alto-falante cortado. O bot não entra na grade da sala (não está no `voice:state`).
+- **Volume do bot:** chave fixa `MUSIC_BOT_VOLUME_ID` (`'music-bot'`) no mesmo `setUserVolume`/`setUserMuted` das
+  pessoas; o `VoiceClient` reconhece a faixa do bot por `attributes.bot === 'music'`. Vale para o bot de todas as salas e
+  fica salvo em `concord:audio` (`docs/areas/voice.md`).
 
 ## Testes
 
-- `server/music/queue.test.ts`, `player.test.ts` (fonte e publicador falsos em memória), `spotify.test.ts` (links
-  válidos e inválidos, token, erros; `fetch` falso), `youtube.test.ts` (linhas de comando, `PcmFramer`, processos falsos).
-- `server/tests/music.test.ts`: servidor de verdade, LiveKit falso, Spotify falso e a fonte falsa
-  (`fake-music-playback.ts`: toca 100x mais rápido que a duração e escreve `[fake-music] join/leave` no log).
-- `src/renderer/src/lib/actions/music.test.ts` (socket falso), `components/voice/MusicPlayer.test.tsx` e o comando
-  no `components/chat/chat.test.tsx`.
+- `server/music/query.test.ts` (todos os formatos de link e texto aceitos e recusados), `catalog.test.ts` (roteamento,
+  ao vivo/sem duração/longa: recusa ou pula), `queue.test.ts` (várias de uma vez, `added`, fila cheia),
+  `player.test.ts` (fonte e publicador falsos em memória), `spotify.test.ts` (token, faixa, álbum paginado, playlist pela
+  página de incorporação; `fetch` falso), `youtube.test.ts` (JSON do yt-dlp de vídeo/playlist/busca, argumentos,
+  `ytDlpRunner` com `execFile` falso), `audio-source.test.ts` (linhas de comando, `PcmFramer`, processos falsos).
+- `server/tests/music.test.ts`: servidor de verdade, LiveKit falso, Spotify falso (API + página de incorporação), yt-dlp
+  falso (`fake-youtube.ts`) e a fonte falsa (`fake-music-playback.ts`: toca 100x mais rápido que a duração e escreve
+  `[fake-music] join/leave` no log). Cobre playlist do Spotify e do YouTube (`added`), vídeo, ao vivo, busca e playlist
+  maior que a fila.
+- `src/renderer/src/lib/actions/music.test.ts` (socket falso: `/play`, `/skip`, `/stop`, `/queue` abrindo o painel,
+  aviso de playlist, `musicCommandDraft`), `lib/paginate.test.ts`, `components/voice/MusicPlayer.test.tsx` (volume do
+  player ↔ menu do bot, ocultar/mostrar guardado, "Ver a fila"), `components/voice/MusicQueueDialog.test.tsx`
+  (itens, paginação, vazio, fechar), a posição do player em `components/VoiceView.test.tsx`, os comandos e o destaque
+  (dica `query` só no `/play`) no `components/chat/chat.test.tsx`, o volume do bot em `lib/voice.test.ts` ("bot de
+  música") e o menu do bot em `components/voice/MemberContextMenu.test.tsx`.
 - Nenhum teste chama a rede, o yt-dlp, o ffmpeg ou um LiveKit de verdade.
 
 Teste manual: `docker compose up -d`, preencha `SPOTIFY_*`, instale yt-dlp e ffmpeg, `npm run dev:all`, entre numa sala
-com duas janelas e mande `/tocar https://open.spotify.com/track/...`.
+com duas janelas e mande `/play` com um link (faixa/álbum/playlist do Spotify, vídeo/playlist do YouTube) ou o nome da
+música. Só os resolvedores, sem o app: um script com `process.loadEnvFile("server/.env")` que chame
+`new MusicCatalog(spotifyFromEnv(process.env), new YouTubeResolver(ytDlpRunner(process.env.YTDLP_PATH ?? "yt-dlp"))).find(texto)`
+(rodar com `npx tsx`). Medido em 17/11/2026: Spotify ~0,3–0,5 s; YouTube (vídeo, playlist ou busca) ~3–4 s por pedido.
 
 ## Problemas conhecidos / depuração
 
 | Sintoma | Causa provável |
 |---|---|
-| "Bot de música não configurado neste servidor" | Falta `SPOTIFY_CLIENT_ID`/`SECRET` ou `LIVEKIT_*`. |
+| "Bot de música não configurado neste servidor" | Falta `LIVEKIT_*`. |
+| "Links do Spotify não estão configurados neste servidor" | Falta `SPOTIFY_CLIENT_ID`/`SECRET` (YouTube e busca funcionam). |
+| "Não foi possível ler essa playlist do Spotify" | A página de incorporação mudou de formato: ajuste `parseSpotifyEmbed` com uma página nova como fixture. |
+| Playlist do Spotify entra com só 100 músicas | Limite da página de incorporação (a Web API não lê playlists com Client Credentials). |
+| "Não foi possível ler isso no YouTube" | Vídeo privado/removido/com restrição de idade, ou yt-dlp desatualizado (`yt-dlp -U`). |
 | "Não foi possível consultar o Spotify" | Credenciais erradas ou sem internet no servidor. |
 | Cartão aparece e some na hora | A faixa falhou: veja `[música]` no log (yt-dlp/ffmpeg ausente ou desatualizado, busca sem resultado). |
 | "[música] o bot não conseguiu entrar na sala" | LiveKit fora do ar, `LIVEKIT_API_URL` errado ou binário do `@livekit/rtc-node` ausente (imagem Alpine/musl não serve). |
-| Música errada | A busca usa o primeiro resultado do YouTube para "artistas - título"; versões ao vivo/covers podem vencer. |
+| Música errada | Faixa do Spotify e texto livre usam o primeiro resultado do YouTube; versões ao vivo/covers podem vencer. Mande o link do vídeo. |
 | Bot não aparece na barra lateral de quem acabou de abrir o app | O app só conhece o estado depois de um `music:state` ou de abrir a sala (`music:queue`). |
 
-O bot não tem o volume do botão direito (B4) nem aparece no `voice:state`; ele é uma linha à parte na lista da sala.
+O bot não aparece no `voice:state`; ele é uma linha à parte na lista da sala, com volume e silenciar no botão direito.

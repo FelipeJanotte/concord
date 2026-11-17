@@ -2,13 +2,16 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { MusicState, MusicTrack } from '@shared/types'
 import {
   bindMusicEvents,
-  describeQueue,
+  closeMusicQueue,
   loadMusicQueue,
+  musicCommandDraft,
+  openMusicQueue,
   parseMusicCommand,
   playMusic,
   runMusicCommand,
   skipMusic,
-  stopMusic
+  stopMusic,
+  trackDuration
 } from '@/lib/actions/music'
 import { setSocket } from '@/lib/core'
 import { initialState, useApp } from '@/store'
@@ -42,17 +45,18 @@ afterEach(() => setSocket(null))
 
 describe('parseMusicCommand', () => {
   it.each([
-    [`/tocar ${LINK}`, { kind: 'play', url: LINK }],
-    [`  /TOCAR   ${LINK}  `, { kind: 'play', url: LINK }],
-    ['/tocar', { kind: 'usage', text: 'Use /tocar <link do Spotify>' }],
-    ['/pular', { kind: 'skip' }],
-    ['/parar', { kind: 'stop' }],
-    ['/fila', { kind: 'queue' }]
+    [`/play ${LINK}`, { kind: 'play', query: LINK }],
+    [`  /PLAY   ${LINK}  `, { kind: 'play', query: LINK }],
+    ['/play garota de ipanema', { kind: 'play', query: 'garota de ipanema' }],
+    ['/play', { kind: 'usage', text: 'Use /play <link ou nome da música>' }],
+    ['/skip', { kind: 'skip' }],
+    ['/STOP', { kind: 'stop' }],
+    ['/queue', { kind: 'queue' }]
   ])('%s', (text, expected) => {
     expect(parseMusicCommand(text)).toEqual(expected)
   })
 
-  it.each([['oi /tocar x'], ['/tocarx'], ['/pularam'], ['tocar x'], ['']])('não é comando: %s', (text) => {
+  it.each([['oi /play x'], ['/playx'], ['/tocar x'], ['/pular'], ['/parar'], ['/fila'], ['/skipped'], ['play x'], ['']])('não é comando: %s', (text) => {
     expect(parseMusicCommand(text)).toBeNull()
   })
 })
@@ -65,20 +69,24 @@ describe('estado da sala', () => {
     expect(useApp.getState().musicRooms).toEqual({})
   })
 
-  it('describeQueue resume o que toca e a fila', () => {
-    expect(describeQueue(state({ nowPlaying: null }))).toBe('Nenhuma música tocando.')
-    expect(describeQueue(state())).toBe('Tocando agora: Garota de Ipanema — Tom Jobim, Vinicius. Fila vazia.')
-    expect(describeQueue(state({ queue: [aguas] }))).toBe(
-      'Tocando agora: Garota de Ipanema — Tom Jobim, Vinicius. Na fila: 1. Águas de Março — Tom Jobim, Vinicius'
-    )
+  it('openMusicQueue e closeMusicQueue abrem e fecham o painel da fila da sala', () => {
+    openMusicQueue('sala')
+    expect(useApp.getState().musicQueueChannelId).toBe('sala')
+    closeMusicQueue()
+    expect(useApp.getState().musicQueueChannelId).toBeNull()
+  })
+
+  it('trackDuration mostra minutos e segundos', () => {
+    expect(trackDuration(185_000)).toBe('3:05')
+    expect(trackDuration(59_400)).toBe('0:59')
   })
 })
 
 describe('ações', () => {
   it('playMusic manda o pedido e aplica o estado da resposta', async () => {
-    socket.replyTo('music:play', () => ({ ok: true, state: state() }))
+    socket.replyTo('music:play', () => ({ ok: true, state: state(), added: 1 }))
     await playMusic('sala', LINK)
-    expect(socket.sent('music:play')[0][0]).toEqual({ channelId: 'sala', url: LINK })
+    expect(socket.sent('music:play')[0][0]).toEqual({ channelId: 'sala', query: LINK })
     expect(useApp.getState().musicRooms.sala.nowPlaying?.id).toBe('t1')
   })
 
@@ -99,6 +107,24 @@ describe('ações', () => {
   })
 })
 
+describe('musicCommandDraft', () => {
+  it.each([
+    ['/play', { command: '/play', rest: '', takesQuery: true }],
+    ['/play ', { command: '/play', rest: ' ', takesQuery: true }],
+    ['/PLAY lofi', { command: '/PLAY', rest: ' lofi', takesQuery: true }],
+    ['/play\nlinha', { command: '/play', rest: '\nlinha', takesQuery: true }],
+    ['/skip', { command: '/skip', rest: '', takesQuery: false }],
+    ['/stop', { command: '/stop', rest: '', takesQuery: false }],
+    ['/Queue ', { command: '/Queue', rest: ' ', takesQuery: false }]
+  ])('%j', (text, expected) => {
+    expect(musicCommandDraft(text)).toEqual(expected)
+  })
+
+  it.each([[''], ['/pla'], ['/playx'], [' /play'], ['oi /play'], ['/pular'], ['/queues']])('não é comando: %j', (text) => {
+    expect(musicCommandDraft(text)).toBeNull()
+  })
+})
+
 describe('runMusicCommand', () => {
   it('texto comum não é tratado', () => {
     expect(runMusicCommand('bom dia')).toBe(false)
@@ -107,47 +133,57 @@ describe('runMusicCommand', () => {
 
   it('fora de uma sala de voz: avisa e não manda nada', () => {
     useApp.setState({ myVoiceChannelId: null })
-    expect(runMusicCommand('/pular')).toBe(true)
+    expect(runMusicCommand('/skip')).toBe(true)
     expect(useApp.getState().notice?.text).toBe('Entre numa sala de voz para usar os comandos de música')
     expect(socket.emitted).toEqual([])
   })
 
-  it('/tocar pede na sala em que estou; entrando na fila, avisa', async () => {
-    socket.replyTo('music:play', () => ({ ok: true, state: state({ queue: [aguas] }) }))
-    expect(runMusicCommand(`/tocar ${LINK}`)).toBe(true)
+  it('/play pede na sala em que estou; entrando na fila, avisa', async () => {
+    socket.replyTo('music:play', () => ({ ok: true, state: state({ queue: [aguas] }), added: 1 }))
+    expect(runMusicCommand(`/play ${LINK}`)).toBe(true)
     await flush()
-    expect(socket.sent('music:play')[0][0]).toEqual({ channelId: 'sala', url: LINK })
+    expect(socket.sent('music:play')[0][0]).toEqual({ channelId: 'sala', query: LINK })
     expect(useApp.getState().notice).toMatchObject({ text: 'Na fila: Águas de Março — Tom Jobim, Vinicius', kind: 'info' })
   })
 
-  it('/tocar recusado: mostra o erro do servidor', async () => {
-    socket.replyTo('music:play', () => ({ ok: false, error: 'Envie um link de música do Spotify (open.spotify.com/track/...)' }))
-    runMusicCommand('/tocar https://youtu.be/x')
+  it('/play de playlist: avisa quantas músicas entraram na fila', async () => {
+    socket.replyTo('music:play', () => ({ ok: true, state: state({ queue: [aguas] }), added: 12 }))
+    runMusicCommand('/play https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M')
     await flush()
-    expect(useApp.getState().notice).toMatchObject({ text: 'Envie um link de música do Spotify (open.spotify.com/track/...)', kind: 'error' })
+    expect(useApp.getState().notice).toMatchObject({ text: '12 músicas adicionadas à fila', kind: 'info' })
   })
 
-  it('/fila mostra a fila', async () => {
-    socket.replyTo('music:queue', () => ({ ok: true, state: state() }))
-    runMusicCommand('/fila')
+  it('/play recusado: mostra o erro do servidor', async () => {
+    socket.replyTo('music:play', () => ({ ok: false, error: 'Nada encontrado para essa busca' }))
+    runMusicCommand('/play música que não existe')
     await flush()
-    expect(useApp.getState().notice).toMatchObject({ text: 'Tocando agora: Garota de Ipanema — Tom Jobim, Vinicius. Fila vazia.', kind: 'info' })
+    expect(useApp.getState().notice).toMatchObject({ text: 'Nada encontrado para essa busca', kind: 'error' })
   })
 
-  it('/pular e /parar', async () => {
+  it('/queue busca a fila da sala e abre o painel da fila', async () => {
+    socket.replyTo('music:queue', () => ({ ok: true, state: state({ queue: [aguas] }) }))
+    runMusicCommand('/queue')
+    await flush()
+    expect(socket.sent('music:queue')).toEqual([['sala']])
+    expect(useApp.getState().musicRooms.sala.queue).toEqual([aguas])
+    expect(useApp.getState().musicQueueChannelId).toBe('sala')
+    expect(useApp.getState().notice).toBeNull()
+  })
+
+  it('/skip e /stop', async () => {
     socket.replyTo('music:skip', () => ({ ok: true, state: state({ nowPlaying: aguas }) }))
     socket.replyTo('music:stop', () => ({ ok: true, state: state({ nowPlaying: null }) }))
-    runMusicCommand('/pular')
+    runMusicCommand('/skip')
     await flush()
     expect(useApp.getState().musicRooms.sala.nowPlaying?.id).toBe('t2')
-    runMusicCommand('/parar')
+    runMusicCommand('/stop')
     await flush()
     expect(useApp.getState().musicRooms).toEqual({})
   })
 
-  it('/tocar sem link: mostra como usar', () => {
-    runMusicCommand('/tocar')
-    expect(useApp.getState().notice?.text).toBe('Use /tocar <link do Spotify>')
+  it('/play sem nada: mostra como usar', () => {
+    runMusicCommand('/play')
+    expect(useApp.getState().notice?.text).toBe('Use /play <link ou nome da música>')
     expect(socket.emitted).toEqual([])
   })
 })

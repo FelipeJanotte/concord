@@ -1,21 +1,21 @@
 import { randomUUID } from 'node:crypto'
-import { MUSIC_MAX_TRACK_MS, MUSIC_URL_MAX, type MusicResult, type MusicState } from '../../src/shared/types'
+import { MUSIC_QUERY_MAX, type MusicResult, type MusicState } from '../../src/shared/types'
 import { allowed, emitToViewers } from '../access'
 import { guard, type AppServer, type AppSocket, type ServerModule } from '../context'
 import { limiters, retryText } from '../middleware/rate-limit'
+import { INVALID_QUERY } from '../music/catalog'
 import { musicDrivers, type MusicDrivers } from '../music/drivers'
 import { MusicPlayer } from '../music/player'
-import { MusicError, type TrackMetadata } from '../music/ports'
+import type { QueuedTrack, TrackMetadata } from '../music/ports'
 import { onVoiceRoomsChange, voiceChannelOf, voiceSocketsIn } from './voice'
 
 const NOT_CONFIGURED = 'Bot de música não configurado neste servidor'
 const NOT_IN_ROOM = 'Entre na sala de voz para controlar a música'
-const MAX_MINUTES = MUSIC_MAX_TRACK_MS / 60_000
 
 let drivers: MusicDrivers | null = null
 let player: MusicPlayer | null = null
 
-const fail = (error: string): MusicResult => ({ ok: false, error })
+const fail = (error: string): { ok: false; error: string } => ({ ok: false, error })
 const ok = (state: MusicState): MusicResult => ({ ok: true, state })
 
 function leaveEmptyRooms(): void {
@@ -31,14 +31,11 @@ async function roomInControl(socket: AppSocket, channelId: unknown): Promise<str
   return access ? channelId : null
 }
 
-async function lookUp(resolver: MusicDrivers['resolver'], url: string): Promise<TrackMetadata | string> {
-  try {
-    return await resolver.resolve(url)
-  } catch (err) {
-    if (err instanceof MusicError) return err.message
-    console.warn('[música] falha ao consultar o Spotify:', err)
-    return 'Não foi possível consultar o Spotify. Tente de novo.'
-  }
+const validQuery = (query: unknown): query is string => typeof query === 'string' && query.trim().length > 0 && query.length <= MUSIC_QUERY_MAX
+
+function queued(track: TrackMetadata, requestedBy: QueuedTrack['requestedBy']): QueuedTrack {
+  const { title, artists, coverUrl, durationMs, url, audio } = track
+  return { id: randomUUID(), title, artists, coverUrl, durationMs, url, audio, requestedBy }
 }
 
 function rateLimited(accountId: string): string | null {
@@ -63,16 +60,16 @@ export const musicModule: ServerModule = {
         if (!drivers || !player) return ack(fail(NOT_CONFIGURED))
         const channelId = await roomInControl(socket, payload?.channelId)
         if (!channelId) return ack(fail(NOT_IN_ROOM))
-        const url = payload.url
-        if (typeof url !== 'string' || !url.trim() || url.length > MUSIC_URL_MAX) return ack(fail('Envie um link de música do Spotify'))
+        const query = payload.query
+        if (!validQuery(query)) return ack(fail(INVALID_QUERY))
         const limited = rateLimited(user.accountId)
         if (limited) return ack(fail(limited))
-        const found = await lookUp(drivers.resolver, url)
-        if (typeof found === 'string') return ack(fail(found))
-        if (found.durationMs > MUSIC_MAX_TRACK_MS) return ack(fail(`Música longa demais (máximo de ${MAX_MINUTES} min)`))
+        const found = await drivers.catalog.find(query)
+        if (!found.ok) return ack(found)
         if (voiceChannelOf(socket.id) !== channelId) return ack(fail(NOT_IN_ROOM))
-        const added = player.add(channelId, { ...found, id: randomUUID(), requestedBy: { accountId: user.accountId, name: user.name } })
-        ack(added.ok ? ok(player.state(channelId)) : fail(added.error))
+        const requestedBy = { accountId: user.accountId, name: user.name }
+        const added = player.add(channelId, found.tracks.map((track) => queued(track, requestedBy)))
+        ack(added.ok ? { ok: true, state: player.state(channelId), added: added.added } : fail(added.error))
       })
     })
 

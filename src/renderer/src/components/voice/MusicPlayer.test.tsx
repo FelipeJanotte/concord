@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MusicState, MusicTrack } from '@shared/types'
 import { setSocket } from '@/lib/core'
+import { MUSIC_BOT_VOLUME_ID, voice } from '@/lib/voice'
 import { initialState, useApp } from '@/store'
 import { FakeSocket } from '@/test/fake-socket'
 import { MusicBotMember, MusicPlayer } from './MusicPlayer'
@@ -28,11 +29,14 @@ beforeEach(() => {
   setSocket(socket.asSocket())
   socket.replyTo('music:queue', () => ({ ok: true, state: playing() }))
   useApp.setState({ ...initialState, myVoiceChannelId: 'sala' })
+  localStorage.clear()
+  vi.spyOn(voice, 'setUserVolume').mockImplementation(() => {})
 })
 
 afterEach(() => {
   cleanup()
   setSocket(null)
+  vi.restoreAllMocks()
 })
 
 describe('MusicPlayer', () => {
@@ -77,6 +81,53 @@ describe('MusicPlayer', () => {
     render(<MusicPlayer channelId="sala" />)
     await screen.findByRole('region', { name: 'Tocando agora' })
     expect(screen.queryByRole('button', { name: 'Pular música' })).toBeNull()
+  })
+
+  it('o volume do player é o mesmo do botão direito no bot: mudar num reflete no outro e fica salvo', async () => {
+    useApp.setState({ musicRooms: { sala: playing() } })
+    render(
+      <>
+        <MusicPlayer channelId="sala" />
+        <MusicBotMember channelId="sala" />
+      </>
+    )
+    const playerSlider = screen.getByRole('slider', { name: 'Volume da música' }) as HTMLInputElement
+    expect(playerSlider.value).toBe('100')
+    fireEvent.change(playerSlider, { target: { value: '30' } })
+    expect(voice.setUserVolume).toHaveBeenLastCalledWith(MUSIC_BOT_VOLUME_ID, 0.3)
+    expect(JSON.parse(localStorage.getItem('concord:audio') ?? '{}').volumes).toEqual({ [MUSIC_BOT_VOLUME_ID]: 0.3 })
+
+    fireEvent.contextMenu(screen.getByTestId('music-bot'))
+    const menuSlider = within(screen.getByRole('menu')).getByRole('slider', { name: 'Volume de Música' }) as HTMLInputElement
+    expect(menuSlider.value).toBe('30')
+    fireEvent.change(menuSlider, { target: { value: '70' } })
+    expect(playerSlider.value).toBe('70')
+  })
+
+  it('quem só olha a sala não vê o volume (não está ouvindo)', async () => {
+    useApp.setState({ myVoiceChannelId: null })
+    render(<MusicPlayer channelId="sala" />)
+    await screen.findByRole('region', { name: 'Tocando agora' })
+    expect(screen.queryByRole('slider', { name: 'Volume da música' })).toBeNull()
+  })
+
+  it('ocultar recolhe para uma barra fina com o título; mostrar volta; a escolha fica guardada na máquina', async () => {
+    const { unmount } = render(<MusicPlayer channelId="sala" />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Ocultar o player' }))
+    expect(screen.queryByRole('region', { name: 'Tocando agora' })).toBeNull()
+    expect(screen.getByRole('region', { name: 'Música (oculto)' }).textContent).toContain('Tocando: Garota de Ipanema')
+    unmount()
+
+    render(<MusicPlayer channelId="sala" />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Mostrar o player' }))
+    expect(screen.getByRole('region', { name: 'Tocando agora' })).toBeTruthy()
+    expect(screen.queryByRole('region', { name: 'Música (oculto)' })).toBeNull()
+  })
+
+  it('o botão Fila abre o painel da fila desta sala', async () => {
+    render(<MusicPlayer channelId="sala" />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Ver a fila' }))
+    expect(useApp.getState().musicQueueChannelId).toBe('sala')
   })
 
   it('sem capa: mostra um ícone no lugar', async () => {

@@ -3,7 +3,7 @@ import { Paperclip, SendHorizontal } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { EVERYONE_TOKEN, MENTION_EVERYONE, MESSAGE_MAX_LENGTH, mentionToken, type Channel } from '@shared/types'
 import { Button } from '@/components/ui/button'
-import { addFiles, cancelReply, editLastMessage, notifyTyping, runMusicCommand, sendMessage } from '@/lib/client'
+import { addFiles, cancelReply, editLastMessage, musicCommandDraft, notifyTyping, runMusicCommand, sendMessage } from '@/lib/client'
 import { chatLabel, findDm } from '@/lib/dms'
 import {
   activeMentionQuery,
@@ -18,6 +18,7 @@ import { allows, useCan } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
 import { AttachmentPreview } from './AttachmentPreview'
+import { CommandHighlight, COMPOSER_TEXT } from './CommandHighlight'
 import { MentionMenu } from './MentionMenu'
 import { ReplyBanner } from './ReplyPreview'
 import { ToolsMenu } from './ToolsMenu'
@@ -60,6 +61,7 @@ export function Composer({ channel }: { channel: Channel }) {
   const [active, setActive] = useState(0)
   const chosen = useRef<MentionMap>({})
   const options = mention ? filterCandidates(candidates, mention.query) : []
+  const commandDraft = musicCommandDraft(value)
 
   function trackMention(text: string, caret: number): void {
     const next = activeMentionQuery(text, caret)
@@ -202,23 +204,30 @@ export function Composer({ channel }: { channel: Channel }) {
               e.target.value = '' // permite escolher o mesmo arquivo de novo
             }}
           />
-          <textarea
-            ref={ref}
-            rows={1}
-            maxLength={MESSAGE_MAX_LENGTH}
-            value={value}
-            placeholder={channel.type === 'dm' ? `Conversar com ${label}` : `Conversar em ${label}`}
-            onChange={(e) => {
-              setValue(e.target.value)
-              trackMention(e.target.value, e.target.selectionStart ?? e.target.value.length)
-              if (e.target.value) notifyTyping(channel.id)
-            }}
-            onSelect={(e) => trackMention(e.currentTarget.value, e.currentTarget.selectionStart ?? 0)}
-            onBlur={() => setMention(null)}
-            onKeyDown={onKeyDown}
-            onPaste={onPaste}
-            className="max-h-[200px] flex-1 resize-none bg-transparent py-1.5 text-[15px] leading-[22px] outline-none placeholder:text-muted-foreground"
-          />
+          <div className="relative min-w-0 flex-1">
+            {commandDraft && <CommandHighlight {...commandDraft} />}
+            <textarea
+              ref={ref}
+              rows={1}
+              maxLength={MESSAGE_MAX_LENGTH}
+              value={value}
+              placeholder={channel.type === 'dm' ? `Conversar com ${label}` : `Conversar em ${label}`}
+              onChange={(e) => {
+                setValue(e.target.value)
+                trackMention(e.target.value, e.target.selectionStart ?? e.target.value.length)
+                if (e.target.value) notifyTyping(channel.id)
+              }}
+              onSelect={(e) => trackMention(e.currentTarget.value, e.currentTarget.selectionStart ?? 0)}
+              onBlur={() => setMention(null)}
+              onKeyDown={onKeyDown}
+              onPaste={onPaste}
+              className={cn(
+                COMPOSER_TEXT,
+                'block max-h-[200px] w-full resize-none bg-transparent outline-none placeholder:text-muted-foreground',
+                commandDraft && 'text-transparent caret-foreground'
+              )}
+            />
+          </div>
           <Button
             size="icon-sm"
             variant="ghost"

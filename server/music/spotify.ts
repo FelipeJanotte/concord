@@ -1,30 +1,12 @@
-import { MusicError, type TrackMetadata, type TrackResolver } from './ports'
+import { MusicError, PLAYLIST_READ_MAX, type MusicQuery, type TrackMetadata, type TrackResolver } from './ports'
 
-const TRACK_ID = /^[A-Za-z0-9]{22}$/
-const LOCALE_SEGMENT = /^intl-[a-z]{2}(-[a-z]{2})?$/i
+export type SpotifyQuery = Extract<MusicQuery, { kind: 'spotify' }>
+
 const TOKEN_MARGIN_MS = 60_000
-
-export const NOT_A_SPOTIFY_TRACK = 'Envie um link de música do Spotify (open.spotify.com/track/...)'
+const ALBUM_PAGE = 50
+const EMBED_DATA = /<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/
+const TRACK_URI = /^spotify:track:([A-Za-z0-9]{22})$/
 const SPOTIFY_UNAVAILABLE = 'Não foi possível consultar o Spotify. Tente de novo.'
-const TRACK_NOT_FOUND = 'Música não encontrada no Spotify'
-
-export function spotifyTrackId(input: string): string | null {
-  const text = input.trim()
-  const uri = /^spotify:track:([A-Za-z0-9]+)$/.exec(text)
-  if (uri) return TRACK_ID.test(uri[1]) ? uri[1] : null
-  let url: URL
-  try {
-    url = new URL(text)
-  } catch {
-    return null
-  }
-  if (url.protocol !== 'https:' && url.protocol !== 'http:') return null
-  if (url.hostname !== 'open.spotify.com' || url.username || url.password || url.port) return null
-  const segments = url.pathname.split('/').filter(Boolean)
-  if (segments.length === 3 && LOCALE_SEGMENT.test(segments[0])) segments.shift()
-  if (segments.length !== 2 || segments[0] !== 'track') return null
-  return TRACK_ID.test(segments[1]) ? segments[1] : null
-}
 
 export interface SpotifyCredentials {
   clientId: string
@@ -34,22 +16,97 @@ export interface SpotifyCredentials {
 export interface SpotifyEndpoints {
   accounts: string
   api: string
+  embed: string
 }
 
 export const SPOTIFY_ENDPOINTS: SpotifyEndpoints = {
   accounts: 'https://accounts.spotify.com',
-  api: 'https://api.spotify.com'
+  api: 'https://api.spotify.com',
+  embed: 'https://open.spotify.com'
+}
+
+interface SpotifyImage {
+  url: string
 }
 
 interface SpotifyTrack {
+  id?: string
   name: string
   duration_ms: number
   artists: { name: string }[]
-  album?: { images?: { url: string }[] }
+  album?: { images?: SpotifyImage[] }
   external_urls?: { spotify?: string }
 }
 
-export class SpotifyResolver implements TrackResolver {
+interface TrackPage {
+  items: SpotifyTrack[]
+  total: number
+}
+
+interface SpotifyAlbum {
+  images?: SpotifyImage[]
+  tracks: TrackPage
+}
+
+interface EmbedTrack {
+  uri?: unknown
+  title?: unknown
+  subtitle?: unknown
+  duration?: unknown
+  entityType?: unknown
+}
+
+interface Listing {
+  title: string
+  artists: string[]
+  durationMs: number
+  url: string
+  coverUrl: string | null
+}
+
+function listed({ title, artists, durationMs, url, coverUrl }: Listing): TrackMetadata {
+  return { title, artists, coverUrl, durationMs, url, live: false, audio: { kind: 'youtube-search', query: `${artists.join(', ')} - ${title}` } }
+}
+
+const trackUrl = (id: string): string => `https://open.spotify.com/track/${id}`
+
+function fromApi(track: SpotifyTrack, coverUrl: string | null): TrackMetadata {
+  return listed({
+    title: track.name,
+    artists: track.artists.map((a) => a.name),
+    durationMs: track.duration_ms,
+    url: track.external_urls?.spotify ?? (track.id ? trackUrl(track.id) : ''),
+    coverUrl
+  })
+}
+
+function fromEmbed(item: EmbedTrack, coverUrl: string | null): TrackMetadata | null {
+  const id = typeof item.uri === 'string' ? TRACK_URI.exec(item.uri)?.[1] : undefined
+  if (item.entityType !== 'track' || !id || typeof item.title !== 'string') return null
+  return listed({
+    title: item.title,
+    artists: typeof item.subtitle === 'string' && item.subtitle ? [item.subtitle] : [],
+    durationMs: typeof item.duration === 'number' ? item.duration : 0,
+    url: trackUrl(id),
+    coverUrl
+  })
+}
+
+export function parseSpotifyEmbed(html: string): TrackMetadata[] | null {
+  const data = EMBED_DATA.exec(html)?.[1]
+  if (!data) return null
+  let entity: { trackList?: unknown; coverArt?: { sources?: SpotifyImage[] } } | undefined
+  try {
+    entity = JSON.parse(data)?.props?.pageProps?.state?.data?.entity
+  } catch {
+    return null
+  }
+  if (!entity || !Array.isArray(entity.trackList)) return null
+  const coverUrl = entity.coverArt?.sources?.[0]?.url ?? null
+  return (entity.trackList as EmbedTrack[]).flatMap((item) => fromEmbed(item, coverUrl) ?? [])
+}
+
+export class SpotifyResolver implements TrackResolver<SpotifyQuery> {
   private token: { value: string; expiresAt: number } | null = null
 
   constructor(
@@ -59,22 +116,45 @@ export class SpotifyResolver implements TrackResolver {
     private readonly now: () => number = Date.now
   ) {}
 
-  async resolve(url: string): Promise<TrackMetadata> {
-    const id = spotifyTrackId(url)
-    if (!id) throw new MusicError(NOT_A_SPOTIFY_TRACK)
-    const res = await this.request(`${this.endpoints.api}/v1/tracks/${id}`, {
-      headers: { authorization: `Bearer ${await this.accessToken()}` }
-    })
-    if (res.status === 404 || res.status === 400) throw new MusicError(TRACK_NOT_FOUND)
-    if (!res.ok) throw new MusicError(SPOTIFY_UNAVAILABLE)
-    const track = (await res.json()) as SpotifyTrack
-    return {
-      title: track.name,
-      artists: track.artists.map((a) => a.name),
-      coverUrl: track.album?.images?.[0]?.url ?? null,
-      durationMs: track.duration_ms,
-      url: track.external_urls?.spotify ?? `https://open.spotify.com/track/${id}`
+  async resolve(query: SpotifyQuery): Promise<TrackMetadata[]> {
+    if (query.type === 'track') return [await this.track(query.id)]
+    if (query.type === 'album') return this.album(query.id)
+    return this.playlist(query.id)
+  }
+
+  private async track(id: string): Promise<TrackMetadata> {
+    const track = await this.api<SpotifyTrack>(`/v1/tracks/${id}`, 'Música não encontrada no Spotify')
+    return fromApi(track, track.album?.images?.[0]?.url ?? null)
+  }
+
+  private async album(id: string): Promise<TrackMetadata[]> {
+    const notFound = 'Álbum não encontrado no Spotify'
+    const album = await this.api<SpotifyAlbum>(`/v1/albums/${id}`, notFound)
+    const items = [...album.tracks.items]
+    const total = Math.min(album.tracks.total, PLAYLIST_READ_MAX)
+    while (items.length < total) {
+      const page = await this.api<TrackPage>(`/v1/albums/${id}/tracks?offset=${items.length}&limit=${ALBUM_PAGE}`, notFound)
+      if (!page.items.length) break
+      items.push(...page.items)
     }
+    const coverUrl = album.images?.[0]?.url ?? null
+    return items.slice(0, PLAYLIST_READ_MAX).map((track) => fromApi(track, coverUrl))
+  }
+
+  private async playlist(id: string): Promise<TrackMetadata[]> {
+    const res = await this.request(`${this.endpoints.embed}/embed/playlist/${id}`, { headers: { 'user-agent': 'Mozilla/5.0' } })
+    if (res.status === 404 || res.status === 400) throw new MusicError('Playlist não encontrada no Spotify (ou é privada)')
+    if (!res.ok) throw new MusicError(SPOTIFY_UNAVAILABLE)
+    const tracks = parseSpotifyEmbed(await res.text())
+    if (!tracks) throw new MusicError('Não foi possível ler essa playlist do Spotify')
+    return tracks.slice(0, PLAYLIST_READ_MAX)
+  }
+
+  private async api<T>(path: string, notFound: string): Promise<T> {
+    const res = await this.request(`${this.endpoints.api}${path}`, { headers: { authorization: `Bearer ${await this.accessToken()}` } })
+    if (res.status === 404 || res.status === 400) throw new MusicError(notFound)
+    if (!res.ok) throw new MusicError(SPOTIFY_UNAVAILABLE)
+    return (await res.json()) as T
   }
 
   private async accessToken(): Promise<string> {
@@ -108,7 +188,8 @@ export function spotifyFromEnv(env: NodeJS.ProcessEnv): SpotifyResolver | null {
     { clientId, clientSecret },
     {
       accounts: env.SPOTIFY_ACCOUNTS_URL?.trim() || SPOTIFY_ENDPOINTS.accounts,
-      api: env.SPOTIFY_API_URL?.trim() || SPOTIFY_ENDPOINTS.api
+      api: env.SPOTIFY_API_URL?.trim() || SPOTIFY_ENDPOINTS.api,
+      embed: env.SPOTIFY_EMBED_URL?.trim() || SPOTIFY_ENDPOINTS.embed
     }
   )
 }
