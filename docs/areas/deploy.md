@@ -7,13 +7,13 @@ uma VPS com Docker e um domínio bastam para o grupo usar de qualquer lugar.
 
 | Arquivo | Papel |
 |---|---|
-| `Dockerfile` | Imagem só do servidor: `node:22-alpine`, `npm ci` (com dev: o servidor roda com `tsx`), copia `server/` e `src/shared/`, usuário `node`, volume `/data`, healthcheck em `/`, `CMD npx tsx server/index.ts`. |
+| `Dockerfile` | Imagem só do servidor: `node:22-bookworm-slim` (Debian: o `@livekit/rtc-node` do bot de música só tem binário glibc) com ffmpeg e yt-dlp, `npm ci` (com dev: o servidor roda com `tsx`), copia `server/` e `src/shared/`, usuário `node`, volume `/data`, healthcheck em `/` (com `node`, sem wget), `CMD npx tsx server/index.ts`. |
 | `.dockerignore` | Fora: `node_modules`, `server/.env`, `server/data`, testes, `src/renderer`/`main`/`preload`, `.git`... |
 | `docker-compose.prod.yml` | `server` (atrás do Caddy, `TRUST_PROXY=1`, `DATABASE_URL` = `concord_app`, `DATABASE_MIGRATE_URL` = dono, `LIVEKIT_URL=wss://LIVEKIT_DOMAIN`, `LIVEKIT_API_URL=http://livekit:7880`), `postgres` (não exposto), `pg-backup` (diário, 7 no volume `pg-backups`), `livekit` (`LIVEKIT_KEYS` do `.env`, portas 7881/tcp, 7882/udp, 3478/udp) e `caddy` (80/443). Variáveis obrigatórias com `${X:?defina X no .env}`. |
 | `deploy/livekit.yaml` | LiveKit de produção: `use_external_ip: true` (IP público), TCP 7881 + UDP 7882, **TURN** em 3478/udp; sem chave no arquivo (vem do `LIVEKIT_KEYS`). Mesma versão do LiveKit do `docker-compose.yml` de dev. |
 | `deploy/Caddyfile` | HTTPS automático: `CONCORD_DOMAIN` → `server:3001` (HTTP + WebSocket), `LIVEKIT_DOMAIN` → `livekit:7880`. |
 | `deploy/postgres/02-app-role.sh` | Cria `concord_app` com a senha de `APP_DB_PASSWORD` (privilégio mínimo; o `docker/postgres/init/02-app-role.sql` de dev tem senha fixa). |
-| `deploy/.env.example` | Domínios, senhas, `FILES_SIGNING_SECRET`, chave/segredo do LiveKit (≥ 32 caracteres), Google opcional. Vai em `.env` na raiz (ignorado pelo git). |
+| `deploy/.env.example` | Domínios, senhas, `FILES_SIGNING_SECRET`, chave/segredo do LiveKit (≥ 32 caracteres), Google e Spotify (bot de música, `docs/areas/music.md`) opcionais. Vai em `.env` na raiz (ignorado pelo git). |
 | `deploy/README.md` | Guia passo a passo para quem vai hospedar, dia a dia (logs, atualizar, backup/restaurar) e problemas comuns. |
 
 ## Regras

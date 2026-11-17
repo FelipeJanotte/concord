@@ -13,6 +13,7 @@ import type { FriendsClientEvents, FriendsServerEvents } from './friends'
 import type { LimitsServerEvents } from './limits'
 import type { MessageClientEvents, MessageServerEvents } from './message'
 import type { ModerationClientEvents, ModerationServerEvents } from './moderation'
+import type { MusicClientEvents, MusicServerEvents } from './music'
 import type { PermissionsClientEvents, PermissionsServerEvents } from './permissions'
 import type { PreferencesClientEvents, PreferencesServerEvents } from './preferences'
 import type { PresenceClientEvents, PresenceServerEvents } from './presence'
@@ -31,6 +32,7 @@ export * from './limits'
 export * from './mentions'
 export * from './message'
 export * from './moderation'
+export * from './music'
 export * from './permissions'
 export * from './preferences'
 export * from './presence'
@@ -49,6 +51,7 @@ export interface ServerToClientEvents
     LimitsServerEvents,
     MessageServerEvents,
     ModerationServerEvents,
+    MusicServerEvents,
     PermissionsServerEvents,
     PreferencesServerEvents,
     PresenceServerEvents,
@@ -65,6 +68,7 @@ export interface ClientToServerEvents
     FriendsClientEvents,
     MessageClientEvents,
     ModerationClientEvents,
+    MusicClientEvents,
     PermissionsClientEvents,
     PreferencesClientEvents,
     PresenceClientEvents,

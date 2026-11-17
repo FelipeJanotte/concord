@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
 import { ChatView } from './ChatView'
 import { ResizableSide } from './ResizableSide'
+import { MusicPlayer } from './voice/MusicPlayer'
 import { PushToTalkHint } from './voice/PushToTalk'
 import { SoundboardPopover, SoundsPlayingBar } from './voice/Soundboard'
 import { VoiceGrid } from './voice/VoiceGrid'
@@ -39,6 +40,7 @@ export function VoiceView({ channelId }: { channelId: string }) {
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          <MusicPlayer channelId={channelId} />
           {members.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
               <h2 className="text-2xl font-bold text-accent-foreground">{channel.name}</h2>

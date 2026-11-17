@@ -146,7 +146,7 @@ depende: B1, B2, B3, B4 e A2 já estão na `main`.
 | Sons de entrar/sair ✅ | B16 | B4 (na `main`) | pequeno |
 | Efeitos sonoros (soundboard) ✅ | A10 + B17 | A2 (na `main`); permissão opcional da v2 | médio |
 | Overlay em jogos ✅ | B15 | B2 (na `main`) | médio |
-| Bot de música | A11 + B14 | B1 (na `main`); **decisão sobre termos de uso** | grande |
+| Bot de música ✅ (branch `feat/sons-login-musica`; fonte: Spotify → YouTube, ADR 0006) | A11 + B14 | B1 (na `main`); decisão tomada: só links do Spotify por enquanto | grande |
 
 ### B13 Supressão de ruído automática
 
@@ -237,8 +237,8 @@ pode ser bloqueado por **anti-cheat**. Fica fora; a tela de configuração deve 
 
 | Task | Dev | O que faz | Arquivos (dono) |
 |---|---|---|---|
-| **A11 Bot de música (servidor)** | A | Um participante "Música" que o **servidor** coloca na sala do LiveKit com `@livekit/rtc-node` (Apache-2.0), publicando uma faixa de áudio. Fila por sala: `music:play { channelId, url }`, `music:skip`, `music:stop`, `music:queue`; estado em `music:state` para a sala. Áudio obtido com **yt-dlp** (`youtube-dl-exec`, MIT) + **ffmpeg** (decodifica para PCM e envia em quadros). Link do **Spotify** não tem áudio disponível pela API: o bot lê título/artista da página/oEmbed e procura a música no YouTube. Validação de URL (só domínios permitidos), duração máxima, limite de fila e de requisições; sai sozinho quando a sala esvazia. | `server/modules/music.ts`, `server/music/**`, `shared/types/music.ts` |
-| **B14 Bot de música (UI)** | B | Comandos no chat (`/tocar <url>`, `/pular`, `/parar`, `/fila`) e um cartão "Tocando agora" na sala de voz com capa, título, quem pediu e botões; o bot aparece na lista da sala com o selo "BOT" e tem o volume do botão direito (B4) como qualquer pessoa. | `components/voice/MusicPlayer.tsx`, `lib/actions/music.ts`, `store/music.ts`, comandos no `Composer` |
+| **A11 Bot de música (servidor)** ✅ (branch `feat/sons-login-musica`; metadados pela Web API do Spotify com Client Credentials, não oEmbed; yt-dlp chamado direto, sem `youtube-dl-exec`; `docs/areas/music.md`) | A | Um participante "Música" que o **servidor** coloca na sala do LiveKit com `@livekit/rtc-node` (Apache-2.0), publicando uma faixa de áudio. Fila por sala: `music:play { channelId, url }`, `music:skip`, `music:stop`, `music:queue`; estado em `music:state` para a sala. Áudio obtido com **yt-dlp** (`youtube-dl-exec`, MIT) + **ffmpeg** (decodifica para PCM e envia em quadros). Link do **Spotify** não tem áudio disponível pela API: o bot lê título/artista da página/oEmbed e procura a música no YouTube. Validação de URL (só domínios permitidos), duração máxima, limite de fila e de requisições; sai sozinho quando a sala esvazia. | `server/modules/music.ts`, `server/music/**`, `shared/types/music.ts` |
+| **B14 Bot de música (UI)** ✅ (branch `feat/sons-login-musica`; sem o volume do botão direito para o bot, ainda) | B | Comandos no chat (`/tocar <url>`, `/pular`, `/parar`, `/fila`) e um cartão "Tocando agora" na sala de voz com capa, título, quem pediu e botões; o bot aparece na lista da sala com o selo "BOT" e tem o volume do botão direito (B4) como qualquer pessoa. | `components/voice/MusicPlayer.tsx`, `lib/actions/music.ts`, `store/music.ts`, comandos no `Composer` |
 
 **Decidir antes de começar (riscos):**
 - **Termos de uso:** baixar/retransmitir áudio do YouTube viola os termos do YouTube, e o Spotify não permite
@@ -254,7 +254,7 @@ Como sempre: cada task vem com testes e com a skill da área (`concord-voice` pa
 
 ## v6 — Qualidade, chat completo e voz para jogar
 
-Com a v1–v5 e os extras na `main` (falta só o bot de música, que espera a decisão sobre termos de uso), o
+Com a v1–v5 e os extras na `main` (o bot de música saiu depois, na branch `feat/sons-login-musica`), o
 próximo passo junta três frentes: **proteger a `main`** (CI) e levar o app para fora da rede local, **completar o
 chat** (o que todo mundo espera de um chat e ainda falta) e **melhorar a voz para quem joga**.
 

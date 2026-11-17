@@ -53,6 +53,10 @@ Botão **"Efeitos sonoros"** (ícone de nota) nos controles da sala de voz, só 
 baixo do "Voz conectada" (`VoiceStatusPanel` do `UserPanel`). Abre um **popup ancorado no botão** (`Popover` do
 shadcn/Radix com `modal={false}`) com a grade da coleção; clicar num som toca para todos na sala.
 
+**Layout compacto:** popup de 320 px (`w-80`), no máximo 28rem de altura (ou o espaço que sobra na tela) com
+rolagem; grade de 3 colunas (`max-h-60`, rola sozinha). Cada som é um botão de uma linha (32 px, `h-8`, texto `xs`,
+emoji + nome truncado; o nome inteiro fica no `title`). A lixeira aparece ao passar o mouse, no fim do botão.
+
 **Popup, não janela:** não escurece a tela nem bloqueia o resto do app (dá para continuar no chat, mexer no microfone,
 clicar em outra pessoa). Fecha ao clicar fora, com Esc ou clicando no botão de novo. Na sala e na chamada abre para
 cima (`side="top"`); no "Voz conectada", que fica no canto de baixo da barra lateral, abre para a direita

@@ -106,6 +106,9 @@ Cliente → servidor (`ClientToServerEvents`):
 | `sound:list` | — | `Sound[]` | coleção de efeitos sonoros (links assinados para quem pede) — `docs/areas/sounds.md` |
 | `sound:play` | `{ channelId, soundId }` | `SoundResult` | exige estar na sala e `speak`; `sound:played` só para quem está nela; não toca por cima do próprio som anterior |
 | `sound:delete` | `soundId` | `SoundResult` | o autor ou `manageMessages`; `sound:deleted` para todos |
+| `music:play` | `{ channelId, url }` | `MusicResult` | bot de música (A11): só link de faixa do Spotify, quem está na sala com `view`+`connect`, até 15 min por faixa e 20 na fila (`LIMITS.music`); `music:state` para quem vê a sala — `docs/areas/music.md` |
+| `music:skip` / `music:stop` | `channelId` | `MusicResult` | pular a faixa / esvaziar a fila e tirar o bot (mesmas regras do `music:play`) |
+| `music:queue` | `channelId` | `MusicResult` | estado da sala (tocando agora e fila); só `view` |
 | `preferences:get` | — | `Preferences` | tema ativo, temas salvos e canais silenciados da conta (padrão se nada salvo) — `docs/areas/themes.md` |
 | `preferences:update` | `{ theme?, savedThemes?, mutedChannels? }` | `PreferencesResult` | valida com `validateTheme`; `mutedChannels`: até 500 uuids (silenciar canal, `docs/areas/notifications.md`); `preferences:updated` para as outras janelas da mesma conta |
 | `friend:list` / `friend:request` / `friend:accept` / `friend:decline` / `friend:remove` / `friend:block` / `friend:unblock` | `"nome#id"` ou `accountId` | `FriendEntry[]` / `FriendResult` | amizades (v3) — `docs/areas/friends.md` |
@@ -135,7 +138,7 @@ Cliente → servidor (`ClientToServerEvents`):
 Servidor → cliente (`ServerToClientEvents`): `channel:created`, `channel:deleted`, `user:joined`, `user:left`,
 `user:updated` (por `accountId`), `message:new`, `voice:state` (sempre a **lista completa** das salas que a pessoa
 vê), `typing`, `rate:limited`, `access:updated` e `channels:visible` (v2), `sound:created`, `sound:deleted` e
-`sound:played` (soundboard; o último só para a sala) `preferences:updated` (outras janelas da mesma conta), `friend:updated`, `friend:removed` e `friend:presence` (amizades; online só para amigos), `poll:updated` (enquete: contagens novas, para quem vê o canal), `tools:moved` (só para a conexão levada à sala do time), `dm:created` (conversa nova, para a outra pessoa e as minhas outras janelas), `message:deleted` (para quem vê o canal) , `moderation:kicked` (só para a conexão expulsa da voz) e `moderation:moved` (só para a conexão movida para outra sala), `call:updated` e `call:ended` (chamadas privadas, para as duas contas; o fim chega antes do `voice:state`).
+`sound:played` (soundboard; o último só para a sala), `music:state` (bot de música: tocando agora e fila, para quem vê a sala), `preferences:updated` (outras janelas da mesma conta), `friend:updated`, `friend:removed` e `friend:presence` (amizades; online só para amigos), `poll:updated` (enquete: contagens novas, para quem vê o canal), `tools:moved` (só para a conexão levada à sala do time), `dm:created` (conversa nova, para a outra pessoa e as minhas outras janelas), `message:deleted` (para quem vê o canal) , `moderation:kicked` (só para a conexão expulsa da voz) e `moderation:moved` (só para a conexão movida para outra sala), `call:updated` e `call:ended` (chamadas privadas, para as duas contas; o fim chega antes do `voice:state`).
 
 ## Estado do renderer (`store/`)
 

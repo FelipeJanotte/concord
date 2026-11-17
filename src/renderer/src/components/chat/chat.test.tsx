@@ -111,6 +111,17 @@ describe('Composer', () => {
     expect((box as HTMLTextAreaElement).value).toBe('')
   })
 
+  it('comando de música (/pular) vai para o bot da minha sala, não vira mensagem', async () => {
+    useApp.setState({ myVoiceChannelId: 'sala' })
+    socket.replyTo('music:skip', () => ({ ok: true, state: { channelId: 'sala', nowPlaying: null, queue: [] } }))
+    render(<Composer channel={channel} />)
+    const box = screen.getByPlaceholderText('Conversar em #geral')
+    await userEvent.type(box, '/pular{Enter}')
+    expect(socket.sent('music:skip')).toEqual([['sala']])
+    expect(socket.sent('message:send')).toEqual([])
+    expect((box as HTMLTextAreaElement).value).toBe('')
+  })
+
   it('escolher arquivo mostra a prévia com progresso; enviar só depois de terminar', async () => {
     render(<Composer channel={channel} />)
     const input = screen.getByTestId('file-input') as HTMLInputElement

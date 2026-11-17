@@ -21,7 +21,7 @@ export function SoundboardPopover({ side = 'top', children }: { side?: 'top' | '
   return (
     <Popover open={open} onOpenChange={change} modal={false}>
       <PopoverTrigger asChild>{children}</PopoverTrigger>
-      <PopoverContent side={side} sideOffset={8} aria-labelledby={titleId} className="flex max-h-(--radix-popover-content-available-height) w-96 max-w-[calc(100vw-2rem)] flex-col gap-3 overflow-y-auto">
+      <PopoverContent side={side} sideOffset={8} aria-labelledby={titleId} className="flex max-h-[min(28rem,var(--radix-popover-content-available-height))] w-80 max-w-[calc(100vw-2rem)] flex-col gap-2 overflow-y-auto p-3">
         <SoundboardContent titleId={titleId} />
       </PopoverContent>
     </Popover>
@@ -50,12 +50,12 @@ function SoundboardContent({ titleId }: { titleId: string }) {
 
   return (
     <>
-      <div className="space-y-1">
-        <h2 id={titleId} className="font-semibold text-accent-foreground">
+      <div>
+        <h2 id={titleId} className="text-sm font-semibold text-accent-foreground">
           Efeitos sonoros
         </h2>
-        <p className="text-sm text-muted-foreground">
-          Clique num som para tocar para {inCall ? 'a outra pessoa da chamada' : 'todos na sala'}. Cada som tem até 5 segundos.
+        <p className="text-xs text-muted-foreground">
+          Toca para {inCall ? 'a outra pessoa da chamada' : 'todos na sala'}. Até 5 segundos cada.
         </p>
       </div>
 
@@ -65,26 +65,26 @@ function SoundboardContent({ titleId }: { titleId: string }) {
         <SoundUploadForm onDone={() => setUploading(false)} />
       ) : (
         <>
-          {blocked && <p className="text-sm text-muted-foreground">{blocked}</p>}
+          {blocked && <p className="text-xs text-muted-foreground">{blocked}</p>}
           {!loaded ? (
-            <div className="flex justify-center py-6 text-muted-foreground">
-              <Loader2 className="size-6 animate-spin" aria-label="Carregando sons" />
+            <div className="flex justify-center py-4 text-muted-foreground">
+              <Loader2 className="size-5 animate-spin" aria-label="Carregando sons" />
             </div>
           ) : sounds.length === 0 ? (
-            <p className="py-4 text-center text-sm text-muted-foreground">Nenhum som ainda. Envie o primeiro!</p>
+            <p className="py-3 text-center text-xs text-muted-foreground">Nenhum som ainda. Envie o primeiro!</p>
           ) : (
-            <ul aria-label="Sons" className="grid max-h-80 grid-cols-2 gap-2 overflow-y-auto">
+            <ul aria-label="Sons" className="grid max-h-60 grid-cols-3 gap-1 overflow-y-auto">
               {sounds.map((sound) => (
                 <SoundTile key={sound.id} sound={sound} disabled={!!blocked} onPlay={() => void run(() => playSound(sound.id))} onError={setError} />
               ))}
             </ul>
           )}
           {error && (
-            <p role="alert" className="text-sm text-destructive">
+            <p role="alert" className="text-xs text-destructive">
               {error}
             </p>
           )}
-          <button type="button" onClick={() => setUploading(true)} className="self-start text-sm font-medium text-primary hover:underline">
+          <button type="button" onClick={() => setUploading(true)} className="self-start text-xs font-medium text-primary hover:underline">
             Enviar um som
           </button>
         </>
@@ -96,8 +96,8 @@ function SoundboardContent({ titleId }: { titleId: string }) {
 function SoundboardVolume() {
   const pct = useApp((s) => Math.round(s.soundboardVolume * 100))
   return (
-    <div className="flex items-center gap-3">
-      <Volume2 className="size-4 shrink-0 text-muted-foreground" />
+    <div className="flex items-center gap-2">
+      <Volume2 className="size-3.5 shrink-0 text-muted-foreground" />
       <input
         type="range"
         min={0}
@@ -106,9 +106,9 @@ function SoundboardVolume() {
         value={pct}
         aria-label="Volume dos efeitos sonoros"
         onChange={(e) => setSoundboardVolume(Number(e.target.value) / 100)}
-        className="flex-1 accent-primary"
+        className="h-1 flex-1 accent-primary"
       />
-      <span className="w-10 text-right text-xs text-muted-foreground tabular-nums">{pct}%</span>
+      <span className="w-8 text-right text-xs text-muted-foreground tabular-nums">{pct}%</span>
     </div>
   )
 }
@@ -135,17 +135,18 @@ function SoundTile({ sound, disabled, onPlay, onError }: { sound: Sound; disable
         onClick={onPlay}
         disabled={disabled}
         aria-label={`Tocar ${sound.name}`}
+        title={sound.name}
         className={cn(
-          'flex h-14 w-full items-center gap-2 rounded-md bg-accent px-3 text-left text-sm font-medium text-accent-foreground transition-colors hover:bg-primary hover:text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50',
-          playing && 'ring-2 ring-success'
+          'flex h-8 w-full items-center gap-1.5 rounded-md bg-accent px-2 text-left text-xs font-medium text-accent-foreground transition-colors enabled:group-hover:bg-primary enabled:group-hover:text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50',
+          playing && 'ring-2 ring-success ring-inset'
         )}
       >
-        <span className="text-xl leading-none">{sound.emoji ?? <Volume2 className="size-5" />}</span>
+        <span className="shrink-0 text-base leading-none">{sound.emoji ?? <Volume2 className="size-3.5" />}</span>
         <span className="min-w-0 flex-1 truncate">{sound.name}</span>
       </button>
       {(mine || canManage) &&
         (confirming ? (
-          <div className="absolute inset-0 flex items-center justify-center gap-2 rounded-md bg-background/95 text-xs">
+          <div className="absolute inset-0 flex items-center justify-center gap-1.5 rounded-md bg-background/95 text-[11px]">
             <button type="button" className="font-semibold text-destructive" onClick={() => void remove()}>
               Apagar
             </button>
@@ -158,9 +159,9 @@ function SoundTile({ sound, disabled, onPlay, onError }: { sound: Sound; disable
             type="button"
             aria-label={`Apagar ${sound.name}`}
             onClick={() => setConfirming(true)}
-            className="absolute top-1 right-1 rounded p-1 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive focus-visible:opacity-100"
+            className="absolute top-1/2 right-1 -translate-y-1/2 rounded bg-background/80 p-1 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive focus-visible:opacity-100"
           >
-            <Trash2 className="size-3.5" />
+            <Trash2 className="size-3" />
           </button>
         ))}
     </li>

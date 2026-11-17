@@ -86,6 +86,7 @@ export const LIMITS = {
   preferences: { capacity: 20, perSecond: 1 },
   /** efeitos sonoros tocados por conta: 1 a cada 3 s (A10) */
   sound: { capacity: 1, perSecond: 1 / 3 },
+  music: { capacity: 5, perSecond: 1 / 5 },
   /** ações de moderação e apagar mensagem por conta: 20 seguidas, depois 1 por segundo (B6) */
   moderation: { capacity: 20, perSecond: 1 },
   /** ligar para alguém (B8): 5 seguidas, depois 1 a cada 10 s (cada ligação toca na tela da outra pessoa) */

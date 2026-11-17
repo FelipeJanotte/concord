@@ -30,6 +30,7 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.16",
+    "@livekit/rtc-node": "^1.2.2",
     "@sapphi-red/web-noise-suppressor": "^0.4.1",
     "@tailwindcss/vite": "^4.1.11",
     "@testing-library/dom": "^10.4.2",

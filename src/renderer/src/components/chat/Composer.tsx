@@ -3,7 +3,7 @@ import { Paperclip, SendHorizontal } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { EVERYONE_TOKEN, MENTION_EVERYONE, MESSAGE_MAX_LENGTH, mentionToken, type Channel } from '@shared/types'
 import { Button } from '@/components/ui/button'
-import { addFiles, cancelReply, editLastMessage, notifyTyping, sendMessage } from '@/lib/client'
+import { addFiles, cancelReply, editLastMessage, notifyTyping, runMusicCommand, sendMessage } from '@/lib/client'
 import { chatLabel, findDm } from '@/lib/dms'
 import {
   activeMentionQuery,
@@ -108,6 +108,12 @@ export function Composer({ channel }: { channel: Channel }) {
 
   function send() {
     if (!canSend) return
+    if (runMusicCommand(value)) {
+      setValue('')
+      setMention(null)
+      chosen.current = {}
+      return
+    }
     // os "@Nome" escolhidos viram o token da conta antes de ir para o servidor
     if (sendMessage(channel.id, fromEditable(value, chosen.current))) {
       setValue('')

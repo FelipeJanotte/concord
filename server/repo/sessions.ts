@@ -28,6 +28,13 @@ export async function deleteExpiredSessions(now = new Date()): Promise<number> {
   return rows.length
 }
 
+export async function renewSession(tokenHash: string, expiresAt: number): Promise<void> {
+  await db()
+    .update(sessions)
+    .set({ expiresAt: new Date(expiresAt) })
+    .where(eq(sessions.tokenHash, tokenHash))
+}
+
 export async function deleteSession(tokenHash: string): Promise<void> {
   await db().delete(sessions).where(eq(sessions.tokenHash, tokenHash))
 }

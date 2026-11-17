@@ -25,6 +25,7 @@ import { bindPermissionsEvents } from './actions/permissions'
 import { bindPresenceEvents } from './actions/presence'
 import { bindReactionsEvents } from './actions/reactions'
 import { bindSoundsEvents, loadSounds } from './actions/sounds'
+import { bindMusicEvents } from './actions/music'
 import { bindVoiceEvents, OUT_OF_VOICE } from './actions/voice'
 import { clearAllDrafts } from './actions/uploads'
 import { loadAudioPreferences } from './actions/devices'
@@ -97,13 +98,12 @@ export async function restoreSession(): Promise<void> {
   const token = localStorage.getItem(TOKEN_KEY)
   if (!token || get().self || get().restoring) return
   set({ restoring: true })
-  try {
-    await connect(savedServerUrl(), token)
-  } catch {
-    // token inválido/expirado ou servidor fora do ar: mostra o login
-  } finally {
-    set({ restoring: false })
-  }
+  await connect(savedServerUrl(), token).catch(() => undefined)
+  set({ restoring: false })
+}
+
+export function cancelRestore(): void {
+  disconnect()
 }
 
 export function logout(): void {
@@ -115,6 +115,8 @@ export function logout(): void {
 }
 
 // ---------- Conexão ----------
+
+const RETRY_REFUSED_CONNECTION_MS = 3000
 
 export function connect(url: string, token: string): Promise<void> {
   const { restoring } = get()
@@ -144,6 +146,7 @@ export function connect(url: string, token: string): Promise<void> {
   bindModerationEvents(s)
   bindCallsEvents(s)
   bindSoundsEvents(s)
+  bindMusicEvents(s)
   bindNotificationEvents(s)
 
   return new Promise((resolve, reject) => {
@@ -184,19 +187,18 @@ export function connect(url: string, token: string): Promise<void> {
     })
 
     s.on('connect_error', (err) => {
-      const unauthorized = err.message === 'unauthorized'
-      if (unauthorized) localStorage.removeItem(TOKEN_KEY)
+      if (err.message !== 'unauthorized') {
+        if (!s.active) setTimeout(() => getSocket() === s && s.connect(), RETRY_REFUSED_CONNECTION_MS)
+        return
+      }
+      localStorage.removeItem(TOKEN_KEY)
+      disconnect()
       if (settled) {
-        // Sessão revogada/expirada durante uma reconexão: volta para o login.
-        if (unauthorized) {
-          disconnect()
-          notify('Sua sessão expirou. Entre de novo.')
-        }
+        notify('Sua sessão expirou. Entre de novo.')
         return
       }
       settled = true
-      disconnect()
-      reject(unauthorized ? new Error('Sua sessão expirou. Entre de novo.') : err)
+      reject(new Error('Sua sessão expirou. Entre de novo.'))
     })
 
     s.on('disconnect', () => {
@@ -246,6 +248,7 @@ export * from './actions/tools'
 export * from './actions/preferences'
 export * from './actions/settings'
 export * from './actions/sounds'
+export { describeQueue, loadMusicQueue, playMusic, runMusicCommand, skipMusic, stopMusic, trackLabel } from './actions/music'
 export * from './actions/overlay'
 export * from './actions/updates'
 export * from './actions/window'

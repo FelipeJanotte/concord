@@ -16,6 +16,7 @@ import { navigationInitial, type NavigationState } from './navigation'
 import { notificationsInitial, type NotificationsState } from './notifications'
 import { overlayInitial, type OverlayState } from './overlay'
 import { messagesInitial, type MessagesState } from './messages'
+import { musicInitial, type MusicSliceState } from './music'
 import { pushToTalkInitial, type PushToTalkState } from './push-to-talk'
 import { permissionsInitial, type PermissionsState } from './permissions'
 import { sessionInitial, type SessionState } from './session'
@@ -35,7 +36,7 @@ export type { PlayingSound } from './sounds'
 export type { ChannelNotifyMode } from './notifications'
 export type { SettingsSection } from './settings'
 
-export interface AppState extends SessionState, ChannelsState, MessagesState, UploadsState, VoiceSliceState, DevicesState, PermissionsState, FriendsState, ToolsState, PreferencesState, NavigationState, CallsState, SoundsState, OverlayState, UpdatesState, PushToTalkState, NotificationsState, SettingsState, WindowState {}
+export interface AppState extends SessionState, ChannelsState, MessagesState, UploadsState, VoiceSliceState, DevicesState, PermissionsState, FriendsState, ToolsState, PreferencesState, NavigationState, CallsState, SoundsState, MusicSliceState, OverlayState, UpdatesState, PushToTalkState, NotificationsState, SettingsState, WindowState {}
 
 export const initialState: AppState = {
   ...sessionInitial,
@@ -52,6 +53,7 @@ export const initialState: AppState = {
   ...navigationInitial,
   ...callsInitial,
   ...soundsInitial,
+  ...musicInitial,
   ...overlayInitial,
   ...updatesInitial,
   ...windowInitial,

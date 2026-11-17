@@ -31,7 +31,7 @@ import {
   isTagTaken,
   updateAccount
 } from './repo/accounts'
-import { deleteSession, findValidSession, insertSession } from './repo/sessions'
+import { deleteSession, findValidSession, insertSession, renewSession } from './repo/sessions'
 import type { Account } from './repo/types'
 import { DuplicateError } from './repo/util'
 
@@ -40,6 +40,7 @@ export { avatarUrl, findAccount }
 const scryptAsync = promisify(scrypt) as (password: string, salt: Buffer, keylen: number) => Promise<Buffer>
 
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000
+const SESSION_RENEW_AFTER_MS = 24 * 60 * 60 * 1000
 const COLORS = ['#5865f2', '#eb459e', '#3ba55c', '#faa61a', '#ed4245', '#9b59b6', '#1abc9c', '#e67e22', '#2e86de', '#f47b67']
 
 export const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID?.trim() || null
@@ -151,8 +152,12 @@ async function createSession(accountId: string): Promise<string> {
 
 export async function accountFromToken(token: unknown): Promise<Account | undefined> {
   if (typeof token !== 'string' || !token) return undefined
-  const session = await findValidSession(sha256(token))
-  return session ? findAccount(session.accountId) : undefined
+  const tokenHash = sha256(token)
+  const session = await findValidSession(tokenHash)
+  if (!session) return undefined
+  const renewedExpiry = Date.now() + SESSION_TTL_MS
+  if (renewedExpiry - session.expiresAt >= SESSION_RENEW_AFTER_MS) await renewSession(tokenHash, renewedExpiry)
+  return findAccount(session.accountId)
 }
 
 export async function revokeSession(token: unknown): Promise<void> {

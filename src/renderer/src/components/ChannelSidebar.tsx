@@ -16,6 +16,7 @@ import { MuteChannelMenu, useChannelMuted } from './MuteChannelMenu'
 import { MemberContextMenu } from './voice/MemberContextMenu'
 import { ServerMutedIcon } from './voice/ModerationMenu'
 import { LivePreview } from './voice/LivePreview'
+import { MusicBotMember } from './voice/MusicPlayer'
 import { UserPanel, VoiceStatusPanel } from './UserPanel'
 
 export function ChannelSidebar() {
@@ -305,6 +306,7 @@ function VoiceChannelItem({ channel }: { channel: Channel }) {
           {members.map((m) => (
             <VoiceMember key={m.userId} state={m} />
           ))}
+          <MusicBotMember channelId={channel.id} />
         </div>
       )}
     </div>
