@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { MusicState } from '../../src/shared/types'
 import { MusicPlayer } from './player'
-import type { AudioSource, AudioStream, PreparedAudio, QueuedTrack, RoomOutput, RoomPublisher } from './ports'
+import type { AudioLocator, AudioSource, AudioStream, PreparedAudio, QueuedTrack, RoomOutput, RoomPublisher } from './ports'
 
 const track = (id: string): QueuedTrack => ({
   id,
@@ -12,6 +12,12 @@ const track = (id: string): QueuedTrack => ({
   url: `https://open.spotify.com/track/${id}`,
   audio: { kind: 'youtube-search', query: `Banda - Música ${id}` },
   requestedBy: { accountId: 'acc', name: 'Ana' }
+})
+
+const watch = (id: string): string => `https://www.youtube.com/watch?v=${id}`
+const withDirect = (id: string): QueuedTrack => ({
+  ...track(id),
+  audio: { kind: 'audio-url', url: watch(id), direct: { url: `https://rr1.googlevideo.com/videoplayback?id=${id}`, fetchedAt: 1000 } }
 })
 
 class ControlledStream implements AudioStream {
@@ -70,7 +76,9 @@ class FakePrepared implements PreparedAudio {
 class FakeSource implements AudioSource {
   prepared: FakePrepared[] = []
   opened: ControlledStream[] = []
+  audios: AudioLocator[] = []
   prepare(t: QueuedTrack): PreparedAudio {
+    this.audios.push(t.audio)
     const prepared = new FakePrepared(t.title, this)
     this.prepared.push(prepared)
     return prepared
@@ -342,6 +350,35 @@ describe('MusicPlayer', () => {
       await settle()
       expect(source.live()).toEqual([])
       vi.restoreAllMocks()
+    })
+
+    it('a faixa que toca já leva o endereço direto do áudio que veio com ela', async () => {
+      const { player, source } = setup()
+      player.add('sala', [withDirect('a'), withDirect('b')])
+      expect(source.audios).toEqual([withDirect('a').audio])
+      player.stop('sala')
+      await settle()
+    })
+
+    it('faixa que esperou na fila é preparada sem o endereço guardado', async () => {
+      const { player, source } = setup()
+      player.add('sala', [withDirect('a'), withDirect('b')])
+      await settle()
+      await startPlaying(source)
+      expect(source.audios[1]).toEqual({ kind: 'audio-url', url: watch('b') })
+      player.stop('sala')
+      await settle()
+    })
+
+    it('faixa que entra numa sala já tocando é preparada sem o endereço guardado', async () => {
+      const { player, source } = setup()
+      player.add('sala', [track('a')])
+      await settle()
+      await startPlaying(source)
+      player.add('sala', [withDirect('b')])
+      expect(source.audios[1]).toEqual({ kind: 'audio-url', url: watch('b') })
+      player.stop('sala')
+      await settle()
     })
 
     it('fila que acaba sozinha não deixa nada preparado', async () => {

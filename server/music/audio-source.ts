@@ -1,9 +1,11 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import type { Readable } from 'node:stream'
 import { MusicError, PCM_CHANNELS, PCM_FRAME_SAMPLES, PCM_SAMPLE_RATE, type AudioLocator, type AudioSource, type AudioStream, type PreparedAudio, type QueuedTrack } from './ports'
+import { SKIP_HLS } from './youtube'
 
 const FRAME_BYTES = PCM_FRAME_SAMPLES * PCM_CHANNELS * 2
 const DURATION_MARGIN_S = 5
+export const DIRECT_AUDIO_MAX_AGE_MS = 5 * 60_000
 
 export interface AudioTools {
   ytDlp: string
@@ -19,7 +21,7 @@ function ytDlpInput(audio: AudioLocator): string {
 }
 
 export function ytDlpUrlArgs(track: QueuedTrack): string[] {
-  return ['--no-playlist', '--quiet', '--no-warnings', '--format', 'bestaudio/best', '--get-url', ytDlpInput(track.audio)]
+  return ['--no-playlist', '--quiet', '--no-warnings', ...SKIP_HLS, '--format', 'bestaudio/best', '--get-url', ytDlpInput(track.audio)]
 }
 
 export function ffmpegArgs(track: QueuedTrack, url: string): string[] {
@@ -106,16 +108,22 @@ async function* framesOf(stdout: Readable, failures: Promise<never>): AsyncGener
 class YtDlpFfmpegAudio implements PreparedAudio {
   private closed = false
   private ffmpeg: ChildProcess | null = null
-  private readonly ytDlp: ChildProcess
+  private readonly ytDlp: ChildProcess | null = null
   private readonly url: Promise<string>
 
   constructor(
     private readonly tools: AudioTools,
     private readonly run: Spawn,
-    private readonly track: QueuedTrack
+    private readonly track: QueuedTrack,
+    reusable: string | null
   ) {
-    this.ytDlp = run(tools.ytDlp, ytDlpUrlArgs(track))
-    this.url = directUrl(this.ytDlp)
+    if (reusable) {
+      this.url = Promise.resolve(reusable)
+      return
+    }
+    const ytDlp = run(tools.ytDlp, ytDlpUrlArgs(track))
+    this.ytDlp = ytDlp
+    this.url = directUrl(ytDlp)
     this.url.catch(() => {})
   }
 
@@ -136,7 +144,7 @@ class YtDlpFfmpegAudio implements PreparedAudio {
 
   close(): void {
     this.closed = true
-    this.ytDlp.kill()
+    this.ytDlp?.kill()
     this.ffmpeg?.kill()
   }
 
@@ -157,10 +165,16 @@ class YtDlpFfmpegAudio implements PreparedAudio {
 export class YtDlpFfmpegSource implements AudioSource {
   constructor(
     private readonly tools: AudioTools,
-    private readonly run: Spawn = spawnPiped
+    private readonly run: Spawn = spawnPiped,
+    private readonly now: () => number = Date.now
   ) {}
 
   prepare(track: QueuedTrack): PreparedAudio {
-    return new YtDlpFfmpegAudio(this.tools, this.run, track)
+    return new YtDlpFfmpegAudio(this.tools, this.run, track, this.reusableUrl(track.audio))
+  }
+
+  private reusableUrl(audio: AudioLocator): string | null {
+    if (audio.kind !== 'audio-url' || !audio.direct) return null
+    return this.now() - audio.direct.fetchedAt < DIRECT_AUDIO_MAX_AGE_MS ? audio.direct.url : null
   }
 }

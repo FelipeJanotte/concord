@@ -11,6 +11,7 @@ import {
 } from './youtube'
 
 const VIDEO = 'RY1t3IqpWVI'
+const FAST = ['--ignore-no-formats-error', '--extractor-args', 'youtube:skip=hls']
 
 const videoJson = {
   id: VIDEO,
@@ -73,6 +74,41 @@ describe('parseYtDlpVideo', () => {
     expect(track.url).toBe(`https://www.youtube.com/watch?v=${VIDEO}`)
   })
 
+  describe('endereço direto do áudio (formatos do -J)', () => {
+    const format = (format_id: string, acodec: string, vcodec: string, extra: Record<string, unknown> = {}): Record<string, unknown> => ({
+      format_id,
+      acodec,
+      vcodec,
+      url: `https://rr1.googlevideo.com/videoplayback?itag=${format_id}`,
+      ...extra
+    })
+    const direct = (json: Record<string, unknown>): unknown => {
+      const audio = parseYtDlpVideo(json, 5000).audio
+      return audio.kind === 'audio-url' ? audio.direct : undefined
+    }
+
+    it('bestaudio: o último formato só de áudio, com a hora em que foi lido', () => {
+      const formats = [
+        format('sb0', 'none', 'none', { protocol: 'mhtml' }),
+        format('139', 'mp4a.40.5', 'none'),
+        format('18', 'mp4a.40.2', 'avc1'),
+        format('251', 'opus', 'none'),
+        format('137', 'none', 'avc1')
+      ]
+      expect(direct({ ...videoJson, formats })).toEqual({ url: 'https://rr1.googlevideo.com/videoplayback?itag=251', fetchedAt: 5000 })
+    })
+
+    it('sem formato só de áudio: o último com áudio e vídeo (best)', () => {
+      const formats = [format('18', 'mp4a.40.2', 'avc1'), format('22', 'mp4a.40.2', 'avc1'), format('137', 'none', 'avc1')]
+      expect(direct({ ...videoJson, formats })).toEqual({ url: 'https://rr1.googlevideo.com/videoplayback?itag=22', fetchedAt: 5000 })
+    })
+
+    it('formato sem endereço ou sem áudio não serve; nada sobrou: sem endereço direto', () => {
+      expect(direct({ ...videoJson, formats: [format('251', 'opus', 'none', { url: null }), format('137', 'none', 'avc1')] })).toBeUndefined()
+      expect(direct(videoJson)).toBeUndefined()
+    })
+  })
+
   it('JSON sem id: erro', () => {
     expect(() => parseYtDlpVideo({ title: 'x' })).toThrow(MusicError)
     expect(() => parseYtDlpVideo(null)).toThrow(MusicError)
@@ -125,7 +161,7 @@ describe('YouTubeResolver', () => {
     const { run, calls } = fakeYtDlp(() => videoJson)
     const tracks = await new YouTubeResolver(run).resolve({ kind: 'youtube-video', id: VIDEO })
     expect(tracks).toEqual([parseYtDlpVideo(videoJson)])
-    expect(calls).toEqual([['-J', '--no-playlist', '--no-warnings', `https://www.youtube.com/watch?v=${VIDEO}`]])
+    expect(calls).toEqual([['-J', '--no-playlist', '--no-warnings', ...FAST, `https://www.youtube.com/watch?v=${VIDEO}`]])
   })
 
   it('playlist: lista plana, limitada a PLAYLIST_READ_MAX', async () => {
@@ -137,11 +173,31 @@ describe('YouTubeResolver', () => {
     ])
   })
 
-  it('busca: primeiro resultado do ytsearch1', async () => {
-    const { run, calls } = fakeYtDlp(() => ({ entries: [flatEntry('aaaaaaaaaaa')] }))
-    const tracks = await new YouTubeResolver(run).resolve({ kind: 'search', text: 'garota de ipanema' })
+  it('busca: primeiro resultado do ytsearch1, lido inteiro para já trazer o endereço do áudio', async () => {
+    const formats = [{ format_id: '251', acodec: 'opus', vcodec: 'none', url: 'https://rr1.googlevideo.com/videoplayback?itag=251' }]
+    const { run, calls } = fakeYtDlp(() => ({ entries: [flatEntry('aaaaaaaaaaa', { formats })] }))
+    const tracks = await new YouTubeResolver(run, () => 7000).resolve({ kind: 'search', text: 'garota de ipanema' })
     expect(tracks.map((t) => t.url)).toEqual(['https://www.youtube.com/watch?v=aaaaaaaaaaa'])
-    expect(calls).toEqual([['-J', '--flat-playlist', '--no-warnings', 'ytsearch1:garota de ipanema']])
+    expect(tracks[0].audio).toEqual({
+      kind: 'audio-url',
+      url: 'https://www.youtube.com/watch?v=aaaaaaaaaaa',
+      direct: { url: 'https://rr1.googlevideo.com/videoplayback?itag=251', fetchedAt: 7000 }
+    })
+    expect(calls).toEqual([['-J', '--no-playlist', '--no-warnings', ...FAST, 'ytsearch1:garota de ipanema']])
+  })
+
+  it('vídeo: o endereço do áudio leva a hora da leitura', async () => {
+    const formats = [{ format_id: '251', acodec: 'opus', vcodec: 'none', url: 'https://rr1.googlevideo.com/videoplayback?itag=251' }]
+    const { run } = fakeYtDlp(() => ({ ...videoJson, formats }))
+    const [track] = await new YouTubeResolver(run, () => 9000).resolve({ kind: 'youtube-video', id: VIDEO })
+    expect(track.audio).toMatchObject({ direct: { fetchedAt: 9000 } })
+  })
+
+  it('playlist: lista plana, sem endereço direto (a pré-busca acha na hora)', async () => {
+    const formats = [{ format_id: '251', acodec: 'opus', vcodec: 'none', url: 'https://rr1.googlevideo.com/videoplayback?itag=251' }]
+    const { run } = fakeYtDlp(() => ({ entries: [flatEntry('aaaaaaaaaaa', { formats })] }))
+    const [track] = await new YouTubeResolver(run).resolve({ kind: 'youtube-playlist', id: 'PLxyz' })
+    expect(track.audio).toEqual({ kind: 'audio-url', url: 'https://www.youtube.com/watch?v=aaaaaaaaaaa' })
   })
 
   it('busca sem resultado: "Nada encontrado no YouTube"', async () => {

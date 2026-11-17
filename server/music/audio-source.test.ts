@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events'
 import type { ChildProcess } from 'node:child_process'
 import { PassThrough } from 'node:stream'
 import { describe, expect, it } from 'vitest'
-import { audioToolsFromEnv, ffmpegArgs, PcmFramer, YtDlpFfmpegSource, ytDlpUrlArgs } from './audio-source'
+import { audioToolsFromEnv, DIRECT_AUDIO_MAX_AGE_MS, ffmpegArgs, PcmFramer, YtDlpFfmpegSource, ytDlpUrlArgs } from './audio-source'
 import { PCM_FRAME_SAMPLES, type QueuedTrack } from './ports'
 
 const track: QueuedTrack = {
@@ -24,6 +24,7 @@ describe('linhas de comando', () => {
     expect(args.at(-1)).toBe('ytsearch1:Tom Jobim, Vinicius de Moraes - Garota de Ipanema')
     expect(args.join(' ')).toContain('--format bestaudio/best --get-url')
     expect(args).toContain('--no-playlist')
+    expect(args.join(' ')).toContain('--extractor-args youtube:skip=hls')
   })
 
   it('faixa com link de áudio: endereço direto do próprio link', () => {
@@ -160,6 +161,45 @@ describe('YtDlpFfmpegSource', () => {
     stream.close()
     expect(await reading).toEqual([])
     expect(started.map((s) => s.proc.killed)).toEqual([true, true])
+  })
+
+  describe('endereço direto que veio com a faixa', () => {
+    const NOW = 10 * 60_000
+    const withDirect = (fetchedAt: number): QueuedTrack => ({
+      ...track,
+      audio: { kind: 'audio-url', url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', direct: { url: AUDIO_URL, fetchedAt } }
+    })
+
+    it('recente: liga o ffmpeg nele sem chamar o yt-dlp', async () => {
+      const calls: { cmd: string; args: string[] }[] = []
+      const { run: spawnFake, started } = fakeSpawn()
+      const run = (cmd: string, args: string[]): ChildProcess => {
+        calls.push({ cmd, args })
+        return spawnFake(cmd, args)
+      }
+      const prepared = new YtDlpFfmpegSource({ ytDlp: 'yt-dlp', ffmpeg: 'ffmpeg' }, run, () => NOW).prepare(withDirect(NOW - DIRECT_AUDIO_MAX_AGE_MS + 1))
+      expect(calls).toEqual([])
+      const reading = collect(prepared.open())
+      await settle()
+      expect(calls.map((c) => c.cmd)).toEqual(['ffmpeg'])
+      expect(calls[0].args).toContain(AUDIO_URL)
+      started[0].proc.stdout.end(Buffer.alloc(FRAME_BYTES))
+      expect(await reading).toHaveLength(1)
+    })
+
+    it('velho: descartado, o yt-dlp acha um endereço novo', () => {
+      const { run, started } = fakeSpawn()
+      new YtDlpFfmpegSource({ ytDlp: 'yt-dlp', ffmpeg: 'ffmpeg' }, run, () => NOW).prepare(withDirect(NOW - DIRECT_AUDIO_MAX_AGE_MS))
+      expect(started.map((s) => s.cmd)).toEqual(['yt-dlp'])
+    })
+
+    it('fechar antes de abrir não liga o ffmpeg', async () => {
+      const { run, started } = fakeSpawn()
+      const prepared = new YtDlpFfmpegSource({ ytDlp: 'yt-dlp', ffmpeg: 'ffmpeg' }, run, () => NOW).prepare(withDirect(NOW))
+      prepared.close()
+      expect(await collect(prepared.open())).toEqual([])
+      expect(started).toEqual([])
+    })
   })
 
   it('yt-dlp sem resultado: erro claro', async () => {
