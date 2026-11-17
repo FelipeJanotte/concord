@@ -75,7 +75,7 @@ export function MusicQueueDialog() {
   const state = useApp((s) => (channelId ? s.musicRooms[channelId] : undefined))
   return (
     <Dialog open={!!channelId} onOpenChange={(open) => !open && closeMusicQueue()}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-h-[85vh] grid-cols-[minmax(0,1fr)] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Fila de músicas</DialogTitle>
           <DialogDescription>A música tocando agora e as próximas da sala.</DialogDescription>
