@@ -1,5 +1,5 @@
-import { Music2 } from 'lucide-react'
-import { MUSIC_BOT_NAME, musicTrackLabel, type Message, type MusicBotReply, type MusicTrackSummary } from '@shared/types'
+import { Loader2, Music2 } from 'lucide-react'
+import { MUSIC_BOT_NAME, musicFailedText, musicSearchingText, musicTrackLabel, type Message, type MusicBotReply, type MusicTrackSummary } from '@shared/types'
 import { cn } from '@/lib/utils'
 import { BotBadge, TrackCover } from './MusicPlayer'
 
@@ -26,6 +26,8 @@ interface ReplyView {
   heading: string
   track: MusicTrackSummary | null
   note?: string
+  searching?: boolean
+  failed?: boolean
 }
 
 function replyView(reply: MusicBotReply): ReplyView {
@@ -37,16 +39,21 @@ function replyView(reply: MusicBotReply): ReplyView {
       return { heading: 'Pulou', track: reply.skipped, note: reply.next ? `Tocando agora: ${musicTrackLabel(reply.next)}` : undefined }
     case 'stop':
       return { heading: 'Parou a música e limpou a fila', track: null }
+    case 'searching':
+      return { heading: musicSearchingText(reply.query), track: null, searching: true }
+    case 'failed':
+      return { heading: musicFailedText(reply.error), track: null, failed: true }
   }
 }
 
 export function MusicReplyCard({ message, reply }: { message: Message; reply: MusicBotReply }) {
-  const { heading, track, note } = replyView(reply)
+  const { heading, track, note, searching, failed } = replyView(reply)
   return (
     <section aria-label="Resposta do bot de música" className="mt-1 flex max-w-lg items-center gap-3 rounded-lg border border-border bg-panel p-2 text-foreground">
       {track && <TrackCover track={track} className="size-10" />}
+      {searching && <Loader2 role="status" aria-label="Procurando" className="size-4 shrink-0 animate-spin text-muted-foreground" />}
       <div className="min-w-0 flex-1">
-        <p className="text-xs font-semibold text-muted-foreground">{heading}</p>
+        <p className={cn('break-words text-xs font-semibold', failed ? 'text-destructive' : 'text-muted-foreground')}>{heading}</p>
         {track && (
           <>
             <p className="truncate text-sm font-semibold text-accent-foreground" title={track.title}>

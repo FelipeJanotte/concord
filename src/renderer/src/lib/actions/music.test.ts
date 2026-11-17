@@ -132,6 +132,12 @@ describe('runMusicCommand', () => {
     expect(useApp.getState().notice).toMatchObject({ text: 'Nada encontrado para essa busca', kind: 'error' })
   })
 
+  it('/play recusado depois que o comando já foi postado: mostra o erro e conta como enviado', async () => {
+    socket.replyTo('music:play', () => ({ ok: false, error: 'Música não encontrada no Spotify', posted: true }))
+    expect(await runMusicCommand(`/play ${LINK}`, 'geral')).toBe(true)
+    expect(useApp.getState().notice).toMatchObject({ text: 'Música não encontrada no Spotify', kind: 'error' })
+  })
+
   it('/queue busca a fila da sala e abre o painel da fila, sem levar o chat', async () => {
     socket.replyTo('music:queue', () => ({ ok: true, state: state({ queue: [aguas] }) }))
     expect(await runMusicCommand('/queue', 'geral')).toBe(true)

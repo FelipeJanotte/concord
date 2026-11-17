@@ -131,8 +131,9 @@ export function Composer({ channel }: { channel: Channel }) {
     const command = runMusicCommand(value, channel.id)
     if (command) {
       const sent = value
+      setValue('')
       void command.then((done) => {
-        if (done) setValue((current) => (current === sent ? '' : current))
+        if (!done) setValue((current) => (current === '' ? sent : current))
       })
       return
     }

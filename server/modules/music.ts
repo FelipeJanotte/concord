@@ -16,11 +16,12 @@ import { allowed, emitToViewers } from '../access'
 import { guard, type AppServer, type AppSocket, type ServerModule } from '../context'
 import { limiters, retryText } from '../middleware/rate-limit'
 import { INVALID_QUERY } from '../music/catalog'
+import { parseMusicQuery } from '../music/query'
 import { musicDrivers, type MusicDrivers } from '../music/drivers'
 import { MusicPlayer } from '../music/player'
 import type { QueuedTrack, TrackMetadata } from '../music/ports'
 import { findChannel } from '../repo/channels'
-import { insertMessage, resolveMentions } from '../repo/messages'
+import { insertMessage, resolveMentions, updateToolMessage } from '../repo/messages'
 import { mentionSafeContent } from './messages'
 import { onVoiceRoomsChange, voiceChannelOf, voiceSocketsIn } from './voice'
 
@@ -74,14 +75,48 @@ function chatMessage(user: User, channelId: string, content: string): Message {
   return { id: randomUUID(), channelId, author: { ...user }, content, attachments: [], createdAt: Date.now() }
 }
 
-async function postToChat(io: AppServer, user: User, channel: Channel | null, command: string, reply: MusicBotReply): Promise<void> {
-  if (!channel) return
+const botPayload = (reply: MusicBotReply): ToolPayload => ({ tool: 'music', result: reply })
+
+async function postToChat(io: AppServer, user: User, channel: Channel | null, command: string, reply: MusicBotReply): Promise<Message | null> {
+  if (!channel) return null
   const content = await mentionSafeContent(user.accountId, channel.type, command)
   const said = await insertMessage(chatMessage(user, channel.id, content))
   if (said) await emitToViewers(io, channel.id, 'message:new', { ...said, ...(await resolveMentions(content)) })
-  const tool: ToolPayload = { tool: 'music', result: reply }
+  const tool = botPayload(reply)
   const answer = await insertMessage({ ...chatMessage(user, channel.id, toolResultText(tool)), kind: 'tool', tool })
   if (answer) await emitToViewers(io, channel.id, 'message:new', answer)
+  return answer
+}
+
+async function replaceBotReply(io: AppServer, answer: Message, reply: MusicBotReply): Promise<void> {
+  const tool = botPayload(reply)
+  const content = toolResultText(tool)
+  if (await updateToolMessage(answer.id, tool, content)) {
+    await emitToViewers(io, answer.channelId, 'message:edited', { channelId: answer.channelId, messageId: answer.id, content, tool })
+  }
+}
+
+type Enqueued = { ok: true; state: MusicState; added: number; reply: MusicBotReply } | { ok: false; error: string }
+
+interface PlayRequest {
+  catalog: MusicDrivers['catalog']
+  room: MusicPlayer
+  socketId: string
+  requestedBy: QueuedTrack['requestedBy']
+  channelId: string
+  query: string
+}
+
+async function findAndEnqueue({ catalog, room, socketId, requestedBy, channelId, query }: PlayRequest): Promise<Enqueued> {
+  const found = await catalog.find(query)
+  if (!found.ok) return found
+  if (voiceChannelOf(socketId) !== channelId) return fail(NOT_IN_ROOM)
+  const tracks = found.tracks.map((track) => queued(track, requestedBy))
+  const startedNow = !room.state(channelId).nowPlaying
+  const added = room.add(channelId, tracks)
+  if (!added.ok) return fail(added.error)
+  const reply: MusicBotReply = { action: 'play', added: added.added, startedNow, first: summary(tracks[0]) }
+  return { ok: true, state: room.state(channelId), added: added.added, reply }
 }
 
 function rateLimited(accountId: string): string | null {
@@ -106,23 +141,23 @@ export const musicModule: ServerModule = {
         if (!drivers || !player) return ack(fail(NOT_CONFIGURED))
         const channelId = await roomInControl(socket, payload?.channelId)
         if (!channelId) return ack(fail(NOT_IN_ROOM))
-        const query = payload.query
-        if (!validQuery(query)) return ack(fail(INVALID_QUERY))
+        const raw = payload.query
+        if (!validQuery(raw) || !parseMusicQuery(raw)) return ack(fail(INVALID_QUERY))
+        const query = raw.trim()
         const chat = await commandChat(user.accountId, payload.textChannelId)
         if (!chat.ok) return ack(chat)
         const limited = rateLimited(user.accountId)
         if (limited) return ack(fail(limited))
-        const found = await drivers.catalog.find(query)
-        if (!found.ok) return ack(found)
-        if (voiceChannelOf(socket.id) !== channelId) return ack(fail(NOT_IN_ROOM))
+        const answer = await postToChat(io, user, chat.channel, `/play ${query}`, { action: 'searching', query })
         const requestedBy = { accountId: user.accountId, name: user.name }
-        const tracks = found.tracks.map((track) => queued(track, requestedBy))
-        const startedNow = !player.state(channelId).nowPlaying
-        const added = player.add(channelId, tracks)
-        if (!added.ok) return ack(fail(added.error))
-        const state = player.state(channelId)
-        await postToChat(io, user, chat.channel, `/play ${query.trim()}`, { action: 'play', added: added.added, startedNow, first: summary(tracks[0]) })
-        ack({ ok: true, state, added: added.added })
+        const result = await findAndEnqueue({ catalog: drivers.catalog, room: player, socketId: socket.id, requestedBy, channelId, query })
+        if (!result.ok) {
+          if (!answer) return ack(result)
+          await replaceBotReply(io, answer, { action: 'failed', query, error: result.error })
+          return ack({ ...result, posted: true })
+        }
+        if (answer) await replaceBotReply(io, answer, result.reply)
+        ack({ ok: true, state: result.state, added: result.added })
       })
     })
 

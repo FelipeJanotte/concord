@@ -122,6 +122,17 @@ describe('Composer', () => {
     await waitFor(() => expect((box as HTMLTextAreaElement).value).toBe(''))
   })
 
+  it('/play limpa o campo ao enviar, sem esperar a busca do bot', async () => {
+    useApp.setState({ myVoiceChannelId: 'sala' })
+    socket.replyTo('music:play', () => new Promise(() => {}))
+    render(<Composer channel={channel} />)
+    const box = screen.getByPlaceholderText('Conversar em #geral')
+    await userEvent.type(box, '/play lofi{Enter}')
+    expect(socket.sent('music:play')).toEqual([[{ channelId: 'sala', query: 'lofi', textChannelId: 'geral' }]])
+    expect((box as HTMLTextAreaElement).value).toBe('')
+    expect(screen.queryByTestId('command-block')).toBeNull()
+  })
+
   it('comando de música recusado: o texto continua no campo para corrigir', async () => {
     useApp.setState({ myVoiceChannelId: 'sala' })
     socket.replyTo('music:play', () => ({ ok: false, error: 'Envie o nome da música ou um link do Spotify ou do YouTube' }))
@@ -129,7 +140,7 @@ describe('Composer', () => {
     const box = screen.getByPlaceholderText('Conversar em #geral')
     await userEvent.type(box, '/play https://soundcloud.com/x{Enter}')
     await waitFor(() => expect(useApp.getState().notice?.text).toBe('Envie o nome da música ou um link do Spotify ou do YouTube'))
-    expect((box as HTMLTextAreaElement).value).toBe('https://soundcloud.com/x')
+    await waitFor(() => expect((box as HTMLTextAreaElement).value).toBe('https://soundcloud.com/x'))
     expect(within(screen.getByTestId('command-block')).getByText('/play')).toBeTruthy()
     expect(socket.sent('message:send')).toEqual([])
   })

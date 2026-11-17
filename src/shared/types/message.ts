@@ -80,7 +80,7 @@ export interface EditMessagePayload {
 }
 
 /** `message:edited`: o texto novo de uma mensagem (para quem vê o canal). */
-export interface MessageEdited {
+export interface TextMessageEdited {
   channelId: string
   messageId: string
   content: string
@@ -88,6 +88,15 @@ export interface MessageEdited {
   /** as menções do texto novo (B19) */
   mentions?: Mention[]
 }
+
+export interface ToolMessageUpdated {
+  channelId: string
+  messageId: string
+  content: string
+  tool: ToolPayload
+}
+
+export type MessageEdited = TextMessageEdited | ToolMessageUpdated
 
 /** `message:history`: sem `before` = página mais recente; com `before` = as anteriores àquela mensagem. */
 export interface HistoryRequest {

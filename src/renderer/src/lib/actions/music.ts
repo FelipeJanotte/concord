@@ -54,12 +54,25 @@ export function trackDuration(ms: number): string {
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
 }
 
-async function runCommand(command: Exclude<MusicCommand, { kind: 'usage' }>, channelId: string, textChannelId: string): Promise<void> {
-  if (command.kind === 'play') return void (await playMusic(channelId, command.query, textChannelId))
-  if (command.kind === 'skip') return void (await skipMusic(channelId, textChannelId))
-  if (command.kind === 'stop') return void (await stopMusic(channelId, textChannelId))
-  await loadMusicQueue(channelId)
-  openMusicQueue(channelId)
+async function playFromChat(channelId: string, query: string, textChannelId: string): Promise<boolean> {
+  const res = await requireSocket().emitWithAck('music:play', { channelId, query, textChannelId })
+  if (res.ok) {
+    applyMusicState(res.state)
+    return true
+  }
+  notify(res.error)
+  return res.posted === true
+}
+
+async function runCommand(command: Exclude<MusicCommand, { kind: 'usage' }>, channelId: string, textChannelId: string): Promise<boolean> {
+  if (command.kind === 'play') return playFromChat(channelId, command.query, textChannelId)
+  if (command.kind === 'skip') await skipMusic(channelId, textChannelId)
+  else if (command.kind === 'stop') await stopMusic(channelId, textChannelId)
+  else {
+    await loadMusicQueue(channelId)
+    openMusicQueue(channelId)
+  }
+  return true
 }
 
 async function attempt(command: MusicCommand, textChannelId: string): Promise<boolean> {
@@ -73,8 +86,7 @@ async function attempt(command: MusicCommand, textChannelId: string): Promise<bo
     return false
   }
   try {
-    await runCommand(command, channelId, textChannelId)
-    return true
+    return await runCommand(command, channelId, textChannelId)
   } catch (err) {
     notify(err instanceof Error ? err.message : 'Não foi possível falar com o bot de música')
     return false

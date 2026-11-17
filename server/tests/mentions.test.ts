@@ -1,7 +1,7 @@
 // Menções @nome (B19) no servidor real: nomes resolvidos no envio, na edição e no histórico, e o
 // @todos só com a permissão mentionEveryone.
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
-import type { Message } from '../../src/shared/types'
+import type { Message, TextMessageEdited } from '../../src/shared/types'
 import { TestServer, waitFor, type TestUser } from './helpers'
 
 let server: TestServer
@@ -51,7 +51,7 @@ describe('menções', () => {
     expect(msg.mentions).toBeUndefined()
     const edited = waitFor(bia.socket, 'message:edited', (e) => e.messageId === msg.id)
     await ana.socket.emitWithAck('message:edit', { messageId: msg.id, content: `agora <@${bia.self.accountId}> [m2]` })
-    expect((await edited)[0].mentions).toEqual([{ accountId: bia.self.accountId, name: 'Bia' }])
+    expect(((await edited)[0] as TextMessageEdited).mentions).toEqual([{ accountId: bia.self.accountId, name: 'Bia' }])
   })
 
   it('@todos: sem permissão vira texto comum; com mentionEveryone (ou a dona) fica', async () => {

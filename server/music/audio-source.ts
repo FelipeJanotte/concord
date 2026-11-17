@@ -70,7 +70,19 @@ export class PcmFramer {
 
 type Spawn = (command: string, args: string[]) => ChildProcess
 
-const spawnPiped: Spawn = (command, args) => spawn(command, args, { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true })
+const spawnPiped: Spawn = (command, args) => spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
+
+const STDERR_TAIL_CHARS = 400
+
+function stderrTail(child: ChildProcess): () => string {
+  let tail = ''
+  child.stderr?.on('data', (chunk: Buffer) => (tail = (tail + chunk.toString()).slice(-STDERR_TAIL_CHARS)))
+  return () => tail.trim().split(/\r?\n/).at(-1) ?? ''
+}
+
+function exitCode(child: ChildProcess): Promise<number | null> {
+  return new Promise((resolve) => child.once('close', (code: number | null) => resolve(code)))
+}
 
 function toolError(err: NodeJS.ErrnoException, name: string): MusicError {
   return new MusicError(err.code === 'ENOENT' ? `${name} não encontrado no servidor` : `Falha ao iniciar o ${name}`)
@@ -82,7 +94,7 @@ function missingTool(child: ChildProcess, name: string): Promise<never> {
   })
 }
 
-function directUrl(ytDlp: ChildProcess): Promise<string> {
+function directUrl(ytDlp: ChildProcess, reason: () => string): Promise<string> {
   return new Promise((resolve, reject) => {
     let output = ''
     ytDlp.stdout?.on('data', (chunk: Buffer) => (output += chunk.toString()))
@@ -90,7 +102,7 @@ function directUrl(ytDlp: ChildProcess): Promise<string> {
     ytDlp.once('close', (code: number | null) => {
       const url = output.split(/\r?\n/).find((line) => line.startsWith('http'))
       if (code === 0 && url) resolve(url)
-      else reject(new MusicError('Áudio não encontrado no YouTube'))
+      else reject(new MusicError(`Áudio não encontrado no YouTube${reason() ? `: ${reason()}` : ''}`))
     })
   })
 }
@@ -123,7 +135,7 @@ class YtDlpFfmpegAudio implements PreparedAudio {
     }
     const ytDlp = run(tools.ytDlp, ytDlpUrlArgs(track))
     this.ytDlp = ytDlp
-    this.url = directUrl(ytDlp)
+    this.url = directUrl(ytDlp, stderrTail(ytDlp))
     this.url.catch(() => {})
   }
 
@@ -156,9 +168,20 @@ class YtDlpFfmpegAudio implements PreparedAudio {
     if (!url || this.closed) return
     const ffmpeg = this.run(this.tools.ffmpeg, ffmpegArgs(this.track, url))
     this.ffmpeg = ffmpeg
+    const reason = stderrTail(ffmpeg)
+    const exited = exitCode(ffmpeg)
     const failures = missingTool(ffmpeg, 'ffmpeg')
     failures.catch(() => {})
-    if (ffmpeg.stdout) yield* framesOf(ffmpeg.stdout, failures)
+    let played = 0
+    if (ffmpeg.stdout) {
+      for await (const frame of framesOf(ffmpeg.stdout, failures)) {
+        played++
+        yield frame
+      }
+    }
+    if (played > 0 || this.closed) return
+    const code = await exited
+    if (!this.closed) throw new MusicError(`ffmpeg terminou sem áudio (código ${code}): ${reason() || 'sem mensagem'}`)
   }
 }
 

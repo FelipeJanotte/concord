@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { act, cleanup, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { toolResultText, type Channel, type Message, type MusicBotReply, type ToolPayload } from '@shared/types'
 import { ChatView } from '@/components/ChatView'
+import { bindMessageEvents } from '@/lib/actions/messages'
 import { setSocket } from '@/lib/core'
 import { initialState, useApp } from '@/store'
 import { FakeSocket } from '@/test/fake-socket'
@@ -64,6 +65,29 @@ describe('resposta do bot de música no chat', () => {
     show([botReply({ action: 'play', added: 12, startedNow: false, first: aguas })])
     expect(within(card()).getByText('Adicionou 12 músicas à fila, começando por')).toBeTruthy()
     expect(within(card()).getByText('Águas de Março')).toBeTruthy()
+  })
+
+  it('procurando: mostra a busca com o indicador; a resposta chega e troca o cartão no lugar', () => {
+    const socket = new FakeSocket()
+    setSocket(socket.asSocket())
+    bindMessageEvents(socket.asSocket())
+    const searching = botReply({ action: 'searching', query: 'garota de ipanema' })
+    show([said('/play garota de ipanema'), searching])
+    expect(within(card()).getByText('Procurando “garota de ipanema”…')).toBeTruthy()
+    expect(within(card()).getByRole('status', { name: 'Procurando' })).toBeTruthy()
+    const tool: ToolPayload = { tool: 'music', result: { action: 'play', added: 1, startedNow: true, first: ipanema } }
+    act(() => socket.receive('message:edited', { channelId: 'geral', messageId: searching.id, content: toolResultText(tool), tool }))
+    expect(within(card()).getByText('Tocando agora')).toBeTruthy()
+    expect(within(card()).getByText('Garota de Ipanema')).toBeTruthy()
+    expect(within(card()).queryByRole('status')).toBeNull()
+    expect(screen.queryByText('(editada)')).toBeNull()
+  })
+
+  it('erro: "Não consegui tocar" com o motivo, na cor de erro', () => {
+    show([botReply({ action: 'failed', query: 'xyz', error: 'Nada encontrado no YouTube para "xyz"' })])
+    const error = within(card()).getByText('Não consegui tocar: Nada encontrado no YouTube para "xyz"')
+    expect(error.className).toContain('text-destructive')
+    expect(within(card()).queryByRole('status')).toBeNull()
   })
 
   it('pulou (com a próxima) e parou', () => {

@@ -30,6 +30,8 @@ export type MusicBotReply =
   | { action: 'play'; added: number; startedNow: boolean; first: MusicTrackSummary }
   | { action: 'skip'; skipped: MusicTrackSummary; next: MusicTrackSummary | null }
   | { action: 'stop' }
+  | { action: 'searching'; query: string }
+  | { action: 'failed'; query: string; error: string }
 
 export interface MusicControl {
   channelId: string
@@ -42,6 +44,10 @@ export interface MusicPlayRequest extends MusicControl {
 
 export const musicTrackLabel = (track: MusicTrackSummary): string => `${track.title} — ${track.artists.join(', ')}`
 
+export const musicSearchingText = (query: string): string => `Procurando “${query}”…`
+
+export const musicFailedText = (error: string): string => `Não consegui tocar: ${error}`
+
 export function musicBotReplyText(reply: MusicBotReply): string {
   switch (reply.action) {
     case 'play':
@@ -51,12 +57,16 @@ export function musicBotReplyText(reply: MusicBotReply): string {
       return `Pulou: ${musicTrackLabel(reply.skipped)}${reply.next ? `. Tocando agora: ${musicTrackLabel(reply.next)}` : ''}`
     case 'stop':
       return 'Parou a música e limpou a fila'
+    case 'searching':
+      return musicSearchingText(reply.query)
+    case 'failed':
+      return musicFailedText(reply.error)
   }
 }
 
 export type MusicResult = { ok: true; state: MusicState } | { ok: false; error: string }
 
-export type MusicPlayResult = { ok: true; state: MusicState; added: number } | { ok: false; error: string }
+export type MusicPlayResult = { ok: true; state: MusicState; added: number } | { ok: false; error: string; posted?: true }
 
 export interface MusicServerEvents {
   'music:state': (state: MusicState) => void

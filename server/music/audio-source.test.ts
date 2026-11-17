@@ -62,6 +62,7 @@ describe('PcmFramer', () => {
 class FakeProcess extends EventEmitter {
   stdin = new PassThrough()
   stdout = new PassThrough()
+  stderr = new PassThrough()
   killed = false
   kill(): boolean {
     this.killed = true
@@ -226,5 +227,27 @@ describe('YtDlpFfmpegSource', () => {
     await settle()
     started[1].proc.emit('error', Object.assign(new Error('spawn ffmpeg ENOENT'), { code: 'ENOENT' }))
     await expect(reading).rejects.toThrow('ffmpeg não encontrado no servidor')
+  })
+
+  it('ffmpeg que termina sem áudio: erro com o motivo dele', async () => {
+    const { run, started } = fakeSpawn()
+    const prepared = new YtDlpFfmpegSource({ ytDlp: 'yt-dlp', ffmpeg: 'ffmpeg' }, run).prepare(track)
+    const reading = collect(prepared.open())
+    started[0].proc.exit(AUDIO_URL, 0)
+    await settle()
+    started[1].proc.stderr.end('Server returned 403 Forbidden (access denied)\n')
+    started[1].proc.exit('', 1)
+    await expect(reading).rejects.toThrow('ffmpeg terminou sem áudio (código 1): Server returned 403 Forbidden (access denied)')
+  })
+
+  it('ffmpeg que tocou e terminou normalmente: sem erro', async () => {
+    const { run, started } = fakeSpawn()
+    const prepared = new YtDlpFfmpegSource({ ytDlp: 'yt-dlp', ffmpeg: 'ffmpeg' }, run).prepare(track)
+    const reading = collect(prepared.open())
+    started[0].proc.exit(AUDIO_URL, 0)
+    await settle()
+    started[1].proc.stderr.end()
+    started[1].proc.exit(Buffer.alloc(FRAME_BYTES * 2).toString('latin1'), 0)
+    expect(await reading).toHaveLength(2)
   })
 })
