@@ -35,7 +35,7 @@ otherwise, report it, and let the caller decide. Mixing the two hides which chan
    the symbol, and record both in `baseline`. A symbol with no confirmed test after both
    searches is uncovered. A guide that names no test command is a missing input, not evidence
    of no coverage: stop with `blocked: no test command` before the legacy section, because
-   [`test-strategy`](../../test-strategy/README.md) stops on the same absence. Where a coverage measurement is requested or already exists,
+   `test-strategy` stops on the same absence. Where a coverage measurement is requested or already exists,
    `metrics.md` applies, and `not measured` is evidence of nothing.
 2. **Assess.** List every candidate as a table: `smell | file:line | refactoring | why now |
    keep/skip`. `keep` only where the change serves the stated goal. A candidate outside the
@@ -98,7 +98,7 @@ smell is only visible from the callers.
 ## Legacy code: no test covers the scope (Feathers)
 
 The refactor cannot start until behaviour is pinned. Before the first step, confirm that
-[`test-strategy`](../../test-strategy/README.md) is installed next to this skill; when it is not, return the report with
+`test-strategy` is installed next to this skill; when it is not, return the report with
 `blocked: test-strategy not installed` and edit nothing. In order:
 
 1. **Find the seam.** A seam is a place where behaviour can be altered without editing that
@@ -111,12 +111,12 @@ The refactor cannot start until behaviour is pinned. Before the first step, conf
    they are its precondition, and each is one step under the procedure above. A seam created
    here is a new seam. When the request came with a dispatch contract (assigned worktree,
    branch and base), stop before editing: return the report with the proposed seam and its
-   technique under `legacy seams` and `blocked: awaiting seam confirmation`. When [`test-strategy`](../../test-strategy/README.md) selects independent tests, the confirmed seam goes to its strategist
+   technique under `legacy seams` and `blocked: awaiting seam confirmation`. When `test-strategy` selects independent tests, the confirmed seam goes to its strategist
    first; create the seam only in the implementer dispatch after the visible-test commit.
    For focused tests, break the dependency in the dispatch carrying the seam confirmation. Outside any dispatch contract, name the seam under
    `legacy seams` and continue.
-3. **Request characterization tests** from [`test-strategy`](../../test-strategy/README.md) through the route the active
-   workflow selects under [`test-strategy`](../../test-strategy/README.md)'s `reference/proportionality.md`: focused authorship
+3. **Request characterization tests** from `test-strategy` through the route the active
+   workflow selects under `test-strategy`'s `reference/proportionality.md`: focused authorship
    unless independent tests are justified or required. A spec alone does not choose that route. Hand
    over only outputs the caller accepted as the current contract, with the seam and the
    command that runs the scope. A disputed output is not pinned: list it under `blocked` and

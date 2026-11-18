@@ -1,6 +1,9 @@
-# Semantic Docs
+---
+name: semantic-docs
+description: Decide where repository instructions, rules and references belong, with one canonical home and routing indexes. Use for oversized guides, missing indexes or duplicated guidance. Instruction wording belongs to prompt-engineering; human-facing prose to human-writing.
+---
 
-Decide where repository instructions, rules and references belong, with one canonical home and routing indexes. Use for oversized guides, missing indexes or duplicated guidance. Instruction wording belongs to prompt-engineering; human-facing prose to human-writing.
+# Semantic Docs
 
 Category: competency. Owns placement and navigation of repository guidance.
 
@@ -120,7 +123,7 @@ is still live.
 ## Writing Rules
 
 This skill requires `prompt-engineering` when writing or rewriting agent instructions or
-frontmatter descriptions. Read its instruction-writing guidance (`../prompt-engineering/reference/writing-instructions.md`)
+frontmatter descriptions. Read its [instruction-writing guidance](../prompt-engineering/reference/writing-instructions.md)
 for wording; this skill owns placement, routing indexes and canonical locations. Human-facing
 prose uses `human-writing` when needed. Keep each rule at its owner's source.
 

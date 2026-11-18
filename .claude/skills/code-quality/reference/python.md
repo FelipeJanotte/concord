@@ -14,4 +14,4 @@ nearby module conventions. Use supported syntax and existing project checks.
   to read when compressed. Reuse configured standard-library and project helpers first.
 
 Review reports still require the concrete replacement and scoped line; these are decision cues,
-not automatic findings. Send test methodology and doubles to [`test-strategy`](../../test-strategy/README.md).
+not automatic findings. Send test methodology and doubles to `test-strategy`.

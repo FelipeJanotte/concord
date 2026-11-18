@@ -16,4 +16,4 @@ build settings and configured checks. Do not assume the newest language feature 
   useful error information rather than converting failure into a default successful value.
 
 Review reports still require the concrete replacement and scoped line. Send test methodology
-and doubles to [`test-strategy`](../../test-strategy/README.md).
+and doubles to `test-strategy`.

@@ -28,7 +28,6 @@ O índice **aponta, nunca repete** o conteúdo. Nomes locais, no vocabulário da
 | Pasta | Para que serve | O que **não** vai aqui |
 |---|---|---|
 | `areas/` | **Referência do estado atual**, um arquivo por área (`dms.md`, `voice.md`, `permissions.md`…): o que faz e por quê, tabela de arquivos, contrato (`shared/types`), fluxo principal, regras e limites, como testar, depuração. É o que se lê **antes** de mexer no código. | Histórico, justificativa de decisão, plano futuro. |
-| `practices/` | **Como trabalhamos**, um subdiretório por prática (`wise-dev/`, `test-strategy/`, `code-quality/`, `token-efficiency/`, `semantic-docs/`): `README.md` com o procedimento e `reference/` com o detalhe. Valem para qualquer projeto. | Como o Concord é (isso é `areas/`) e por que uma decisão foi tomada (isso é `decisions/`). |
 | `decisions/` | **ADRs**: uma decisão que custa caro desfazer por arquivo (`NNNN-titulo.md`), com contexto, decisão, **alternativas descartadas** e consequências. Imutável depois de aceita. Modelo em `decisions/README.md`. | Descrição de como o código é hoje (isso é `areas/`). |
 
 Arquivo solto na raiz de `docs/`:
@@ -40,7 +39,7 @@ Arquivo solto na raiz de `docs/`:
 
 ## Como a documentação se encontra
 
-`.claude/skills/` guarda apenas as skills `concord-<area>/SKILL.md`, que são **só ponteiros**: frontmatter (`name` + `description`
+As skills `.claude/skills/concord-<area>/SKILL.md` são **só ponteiros**: frontmatter (`name` + `description`
 dizendo *quando* abrir) e uma linha mandando ler `docs/areas/<area>.md`. Elas existem para o assistente carregar
 só a área certa, em vez do índice inteiro. **Nunca** escreva conteúdo numa skill: regra em dois lugares diverge no
 PR seguinte.

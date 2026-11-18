@@ -1,6 +1,9 @@
-# Token Efficiency
+---
+name: token-efficiency
+description: Reduce token waste in agent tasks and handoffs. Use for efficiency assessments or tasks explicitly assigned this skill; excludes prompt rewriting.
+---
 
-Reduce token waste in agent tasks and handoffs. Use for efficiency assessments or tasks explicitly assigned this skill; excludes prompt rewriting.
+# Token Efficiency
 
 Optimize accepted work per token, including failed attempts, helpers and review. Preserve acceptance checks, evidence, authority and user-selected model/effort settings.
 
@@ -21,9 +24,9 @@ Ordinary coding and prose shortening do not trigger an efficiency assessment. An
 | Request | Owner |
 |---|---|
 | Rewrite a prompt or agent brief | `prompt-engineering` |
-| Move or deduplicate repository guidance | [`semantic-docs`](../semantic-docs/README.md) |
+| Move or deduplicate repository guidance | `semantic-docs` |
 | Author or promote a shared skill | `skill-authoring` |
-| Diagnose or fix a product failure | [`wise-dev`](../wise-dev/README.md) |
+| Diagnose or fix a product failure | `wise-dev` |
 
 These name owners, not required dependencies. Hand off an excluded request with its reason; if the owner is unavailable, report that limitation. An explicitly assigned task may use this skill alongside its owning workflow.
 

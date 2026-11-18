@@ -25,7 +25,7 @@ measurements do not require loading the tooling catalogue.
    decomposition must name the responsibility it separates.
 5. Keep cyclomatic complexity, cognitive complexity, CRAP, architecture and mutation results
    distinct. Coverage does not establish assertion quality; send test honesty and mutation
-   interpretation to [`test-strategy`](../../test-strategy/README.md). Even total coverage leaves CRAP equal to CC.
+   interpretation to `test-strategy`. Even total coverage leaves CRAP equal to CC.
 
 Append to the role report:
 

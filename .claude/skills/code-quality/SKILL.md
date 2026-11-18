@@ -1,11 +1,14 @@
-# Code Quality
+---
+name: code-quality
+description: 'Use for authorized implementation, including an already authorized refactor, without a more-specific domain owner, or when explicitly requested as a quality companion or diff reviewer. Guide boundaries, contracts and language idioms; report concrete defects. Does not plan, diagnose, author tests or turn review into edits; use spec-driven, wise-dev and test-strategy.'
+---
 
-Use for authorized implementation, including an already authorized refactor, without a more-specific domain owner, or when explicitly requested as a quality companion or diff reviewer. Guide boundaries, contracts and language idioms; report concrete defects. Does not plan, diagnose, author tests or turn review into edits; use spec-driven, wise-dev and test-strategy.
+# Code Quality
 
 Inputs: an authorized implementation task with target paths, an authorized refactor with scope
 and a goal as `reference/refactoring.md` defines one, or a diff/named paths to review. Stop and
 name the missing input when none is available. A review request authorizes a report,
-not edits. Required siblings: [`wise-dev`](../wise-dev/README.md) and [`test-strategy`](../test-strategy/README.md) for their handoffs below.
+not edits. Required siblings: `wise-dev` and `test-strategy` for their handoffs below.
 
 ## Roles and selective loading
 
@@ -30,9 +33,9 @@ For another language, derive conventions from the repository and its versioned o
 |---|---|
 | planning a feature, refactor or migration | `spec-driven` |
 | Task acceptance and execution coordination | `task-executor`; `epic-run` owns epic scope and ordering |
-| test strategy, writing tests, doubles and honesty audit | [`test-strategy`](../test-strategy/README.md) |
-| finding the cause of a failure, including repeated unsuccessful fixes | [`wise-dev`](../wise-dev/README.md) |
-| deciding where repository guidance belongs | [`semantic-docs`](../semantic-docs/README.md) |
+| test strategy, writing tests, doubles and honesty audit | `test-strategy` |
+| finding the cause of a failure, including repeated unsuccessful fixes | `wise-dev` |
+| deciding where repository guidance belongs | `semantic-docs` |
 | preserving lessons after the work | `compound` |
 
 ## Procedure
@@ -48,7 +51,7 @@ For another language, derive conventions from the repository and its versioned o
    feature merely because the latest documentation offers it.
 3. Load the role reference and affected language references from the table. Follow that procedure;
    load metrics only on its stated trigger. When a failure needs investigation, hand it to
-   [`wise-dev`](../wise-dev/README.md); when tests need authoring or audit, hand that portion to [`test-strategy`](../test-strategy/README.md).
+   `wise-dev`; when tests need authoring or audit, hand that portion to `test-strategy`.
 4. Return the role's report below. Unless the caller supplies another format, retain its field
    labels so the receiving workflow can identify decisions and verification separately. State
    unavailable evidence rather than inventing a result.
