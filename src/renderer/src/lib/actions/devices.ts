@@ -39,6 +39,29 @@ interface SavedAudio {
   leveler: boolean
   levelerTarget: LevelerTarget
   soundboardVolume: number
+  screenVolumes: Record<string, number>
+  screenMuted: string[]
+}
+
+function readVolumes(raw: unknown): Record<string, number> {
+  const volumes: Record<string, number> = {}
+  if (!raw || typeof raw !== 'object') return volumes
+  for (const [id, v] of Object.entries(raw)) {
+    if (typeof v === 'number' && v >= 0 && v < 1) volumes[id] = v
+  }
+  return volumes
+}
+
+function readIds(raw: unknown): string[] {
+  return Array.isArray(raw) ? raw.filter((id): id is string => typeof id === 'string' && !!id) : []
+}
+
+function asFlags(ids: string[]): Record<string, true> {
+  return Object.fromEntries(ids.map((id) => [id, true as const]))
+}
+
+function clampVolume(volume: number): number {
+  return Math.min(1, Math.max(0, Number.isFinite(volume) ? volume : 1))
 }
 
 function readSaved(): SavedAudio {
@@ -54,22 +77,20 @@ function readSaved(): SavedAudio {
     outputVolume: 1,
     leveler: false,
     levelerTarget: 'medium',
-    soundboardVolume: 1
+    soundboardVolume: 1,
+    screenVolumes: {},
+    screenMuted: []
   }
   try {
     const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null
     if (!raw) return empty
     const data = JSON.parse(raw) as Partial<SavedAudio>
-    const volumes: Record<string, number> = {}
-    for (const [id, v] of Object.entries(data.volumes ?? {})) {
-      if (typeof v === 'number' && v >= 0 && v < 1) volumes[id] = v
-    }
     return {
       input: typeof data.input === 'string' && data.input ? data.input : null,
       output: typeof data.output === 'string' && data.output ? data.output : null,
       camera: typeof data.camera === 'string' && data.camera ? data.camera : null,
-      volumes,
-      muted: Array.isArray(data.muted) ? data.muted.filter((id): id is string => typeof id === 'string' && !!id) : [],
+      volumes: readVolumes(data.volumes),
+      muted: readIds(data.muted),
       sounds: {
         enabled: typeof data.sounds?.enabled === 'boolean' ? data.sounds.enabled : empty.sounds.enabled,
         volume:
@@ -82,7 +103,9 @@ function readSaved(): SavedAudio {
       outputVolume: clampOutputVolume(data.outputVolume),
       leveler: data.leveler === true,
       levelerTarget: clampLevelerTarget(data.levelerTarget),
-      soundboardVolume: clampOutputVolume(data.soundboardVolume)
+      soundboardVolume: clampOutputVolume(data.soundboardVolume),
+      screenVolumes: readVolumes(data.screenVolumes),
+      screenMuted: readIds(data.screenMuted)
     }
   } catch {
     return empty
@@ -103,7 +126,9 @@ function save(): void {
     outputVolume,
     voiceLeveler,
     voiceLevelerTarget,
-    soundboardVolume
+    soundboardVolume,
+    screenVolumes,
+    screenMuted
   } = get()
   try {
     localStorage.setItem(
@@ -120,7 +145,9 @@ function save(): void {
         outputVolume,
         leveler: voiceLeveler,
         levelerTarget: voiceLevelerTarget,
-        soundboardVolume
+        soundboardVolume,
+        screenVolumes,
+        screenMuted: Object.keys(screenMuted)
       })
     )
   } catch {
@@ -131,14 +158,14 @@ function save(): void {
 /** Lê as preferências salvas e aplica no VoiceClient. Chamado uma vez ao carregar. */
 export function loadAudioPreferences(): void {
   const saved = readSaved()
-  const userMuted: Record<string, true> = {}
-  for (const id of saved.muted) userMuted[id] = true
   set({
     audioInputId: saved.input,
     audioOutputId: saved.output,
     cameraId: saved.camera,
     userVolumes: saved.volumes,
-    userMuted,
+    userMuted: asFlags(saved.muted),
+    screenVolumes: saved.screenVolumes,
+    screenMuted: asFlags(saved.screenMuted),
     voiceSoundsEnabled: saved.sounds.enabled,
     voiceSoundsVolume: saved.sounds.volume,
     noiseSuppression: saved.noise,
@@ -158,6 +185,8 @@ export function loadAudioPreferences(): void {
   void voice.setCameraDevice(saved.camera)
   for (const [accountId, v] of Object.entries(saved.volumes)) voice.setUserVolume(accountId, v)
   for (const accountId of saved.muted) voice.setUserMuted(accountId, true)
+  for (const [accountId, v] of Object.entries(saved.screenVolumes)) voice.setScreenVolume(accountId, v)
+  for (const accountId of saved.screenMuted) voice.setScreenMuted(accountId, true)
 }
 
 loadAudioPreferences()
@@ -221,7 +250,7 @@ export async function selectAudioOutput(deviceId: string | null): Promise<void> 
 
 /** Volume da voz de uma pessoa (0 a 1), lembrado por conta. */
 export function setUserVolume(accountId: string, volume: number): void {
-  const v = Math.min(1, Math.max(0, Number.isFinite(volume) ? volume : 1))
+  const v = clampVolume(volume)
   set((st) => {
     const userVolumes = { ...st.userVolumes }
     if (v === 1) delete userVolumes[accountId]
@@ -242,6 +271,29 @@ export function setUserMuted(accountId: string, muted: boolean): void {
   })
   save()
   voice.setUserMuted(accountId, muted)
+}
+
+export function setScreenVolume(accountId: string, volume: number): void {
+  const v = clampVolume(volume)
+  set((st) => {
+    const screenVolumes = { ...st.screenVolumes }
+    if (v === 1) delete screenVolumes[accountId]
+    else screenVolumes[accountId] = v
+    return { screenVolumes }
+  })
+  save()
+  voice.setScreenVolume(accountId, v)
+}
+
+export function setScreenMuted(accountId: string, muted: boolean): void {
+  set((st) => {
+    const screenMuted = { ...st.screenMuted }
+    if (muted) screenMuted[accountId] = true
+    else delete screenMuted[accountId]
+    return { screenMuted }
+  })
+  save()
+  voice.setScreenMuted(accountId, muted)
 }
 
 /** Volume do microfone (0 a 2 = 0% a 200%). Vale na hora, mesmo dentro da sala. */

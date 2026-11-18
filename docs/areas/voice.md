@@ -161,8 +161,9 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
 - **Captura:** 1080p a 15 fps, `contentHint: 'detail'` (texto legível). O token já libera `screen_share` e
   `screen_share_audio`.
 - **Receber:** `TrackSubscribed` de vídeo com `source === ScreenShare` entra em `store.screens` (ids de conexão);
-  a própria tela entra como prévia via `LocalTrackPublished`. O áudio da tela toca como os outros áudios (respeita
-  deafen). O `ScreenVideo` (em `ScreenTile.tsx`) liga a faixa num `<video muted>` com `attachScreen(userId, el)` (de `@/lib/client`).
+  a própria tela entra como prévia via `LocalTrackPublished`. O áudio da tela (`ScreenShareAudio`) toca como os
+  outros áudios (respeita deafen e o volume de saída), mas com **volume próprio por pessoa**, separado da voz dela
+  (ver "Volume do áudio da tela" abaixo). O `ScreenVideo` (em `ScreenTile.tsx`) liga a faixa num `<video muted>` com `attachScreen(userId, el)` (de `@/lib/client`).
 - **Parar:** botão de novo (`stopScreenShare`) ou pelo sistema (janela fechada): `LocalTrackUnpublished` chama
   `voice.onScreenShareEnded`, que desliga `sharing` e avisa o servidor uma vez só.
 - **Assistir é opcional** (`components/voice/VoiceGrid.tsx` + `ScreenTile.tsx` + `lib/featured-screens.ts`): ninguém
@@ -192,6 +193,12 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
     `ScreenStage`; o estado (`membersHidden`) é local do `VoiceGrid`, não salvo. Na grade todos aparecem sempre.
   - No quadro de quem compartilha, o "Ao vivo" vira o botão "Assistir" (só essa) quando a tela dela já chegou (e
     não está em destaque).
+  - **Volume do áudio da tela** (`components/voice/ScreenAudioControl.tsx`, na barra do `ScreenStage`): para cada
+    tela em destaque de **outra pessoa** que tem áudio, o botão "Silenciar a tela de Ana"/"Ativar o som da tela de
+    Ana" (`aria-pressed`) e o controle "Volume da tela de Ana" (0–100%, passo 5%). Quem tem áudio na tela vem de
+    `store.screenAudio` (ids de conexão, publicado pelo `VoiceClient`, limpo ao sair da sala); a própria tela não
+    ganha controle. Só para mim e por **conta**: `setScreenVolume`/`setScreenMuted` (ver B4), sem mexer no volume
+    nem no silêncio da voz da pessoa (e vice-versa). Silenciar guarda o volume ajustado; tirar o silêncio volta a ele.
   - A escolha é estado local do `VoiceGrid` (não salva): ao trocar de sala ou sair da tela da sala, para de assistir.
 - **Quem está assistindo** (como os espectadores de uma transmissão no Discord):
   ```
@@ -238,9 +245,11 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
   `notifications` e `fullscreen` no `setPermissionRequestHandler`. Antes só as duas primeiras eram liberadas e o
   botão "Tela cheia" não fazia nada (o `requestFullscreen` era recusado em silêncio).
 - `sharing` no servidor é só indicador (o cliente avisa); quem pode publicar a tela é decidido pelo token do LiveKit.
-- **Testes:** `src/main/screen-share.test.ts` (controlador, sem Electron), `lib/voice.test.ts` (bloco "tela"),
+- **Testes:** `src/main/screen-share.test.ts` (controlador, sem Electron), `lib/voice.test.ts` (blocos "tela" e
+  "volume do áudio da tela"), `lib/actions/devices.test.ts` (bloco "volume do áudio da tela": guardar por conta,
+  salvar e reabrir),
   `lib/actions/screen.test.ts` (botão, seletor, erros, aviso único ao servidor), `components/voice/voice.test.tsx`
-  (jsdom: seletor, card, ninguém entra assistindo, clicar no card assiste e avisa o servidor, própria prévia sem
+  (jsdom: bloco "áudio da tela em destaque"; seletor, card, ninguém entra assistindo, clicar no card assiste e avisa o servidor, própria prévia sem
   contar, "Parar de assistir", tirar a última pelo seletor, sair da tela da sala, tela assistida que acaba e volta,
   quem assiste a minha tela na barra, duas telas em destaque, arrastar para reordenar, lado a lado/empilhadas,
   "Assistir" no quadro, esconder/mostrar membros, tela cheia do quadro com botão/duplo clique e a recusa, grade
@@ -379,9 +388,10 @@ duas barras laterais), como no Discord:
 
 | Peça | Papel |
 |---|---|
-| `lib/voice.ts` | `listDevices(kind)`, `setInputDevice(id)`, `setOutputDevice(id)`, `setUserVolume(accountId, 0–1)`, `setUserMuted(accountId, bool)`. `null` = padrão do sistema. |
-| `lib/actions/devices.ts` | `listAudioDevices`, `selectAudioInput`, `selectAudioOutput`, `setUserVolume`, `setUserMuted`, `openDeviceSettings` (abre as Configurações em "Voz e vídeo"), `canChooseAudioOutput`, `loadAudioPreferences`. |
-| `store/devices.ts` | `audioInputId`, `audioOutputId`, `userVolumes[accountId]`, `userMuted[accountId]`. |
+| `lib/voice.ts` | `listDevices(kind)`, `setInputDevice(id)`, `setOutputDevice(id)`, `setUserVolume(accountId, 0–1)`, `setUserMuted(accountId, bool)`, `setScreenVolume(accountId, 0–1)`, `setScreenMuted(accountId, bool)` (áudio da tela da pessoa). `null` = padrão do sistema. `applyVolume(track)` decide pela faixa: voz = volume/silêncio da pessoa; áudio da tela = volume/silêncio da tela; × volume de saída; o equalizador só mexe na voz. |
+| `lib/actions/devices.ts` | `listAudioDevices`, `selectAudioInput`, `selectAudioOutput`, `setUserVolume`, `setUserMuted`, `setScreenVolume`, `setScreenMuted`, `openDeviceSettings` (abre as Configurações em "Voz e vídeo"), `canChooseAudioOutput`, `loadAudioPreferences`. |
+| `store/devices.ts` | `audioInputId`, `audioOutputId`, `userVolumes[accountId]`, `userMuted[accountId]`, `screenVolumes[accountId]`, `screenMuted[accountId]`. |
+| `store/voice.ts` | `screenAudio`: ids de conexão com áudio na tela agora (só quem tem, controle do `ScreenAudioControl`). |
 
 - **Microfone:** fora da sala, a escolha vale para a próxima entrada (`createMicTrack(deviceId)`); dentro, troca na
   hora com `room.switchActiveDevice('audioinput', id)` (sem microfone, "só ouvindo", não mexe). Se o escolhido
@@ -390,7 +400,8 @@ duas barras laterais), como no Discord:
   Só aparece se o ambiente tem `HTMLMediaElement.setSinkId` (o Electron tem).
 - **Volume por pessoa:** guardado por **conta** (o token traz `attributes.accountId`; a identidade muda a cada
   conexão). Aplicado com `RemoteAudioTrack.setVolume` ao receber o microfone da pessoa e na hora ao mexer no
-  controle. Só o microfone; o áudio da tela não muda. Vai de 0 a 100%: passar de 100% exigiria `webAudioMix`, que
+  controle. Só o microfone; o áudio da tela tem volume e silêncio próprios (`screenVolumes`/`screenMuted`, mesmas
+  regras, controle na barra do `ScreenStage`). Vai de 0 a 100%: passar de 100% exigiria `webAudioMix`, que
   mixa o áudio pela Web Audio e quebraria o deafen (feito com `muted` nos `<audio>`).
 - **Bot de música:** entra no mesmo caminho com a chave fixa `MUSIC_BOT_VOLUME_ID` (`'music-bot'`, em `lib/voice.ts`):
   o participante sem `accountId` e com `attributes.bot === 'music'` (token de `server/music/livekit-publisher.ts`)
@@ -400,7 +411,7 @@ duas barras laterais), como no Discord:
 - **Silenciar alguém:** também por conta. O volume aplicado vira 0, mas o valor ajustado continua em `userVolumes`;
   ao tirar o silêncio, volta ao que era. Mexer no volume enquanto silenciado só guarda o valor. Não afeta os outros:
   é só no meu app (para silenciar para todos, B6 "silenciar pelo servidor").
-- **Preferências desta máquina:** `localStorage` `concord:audio` = `{ input, output, camera, volumes, muted, sounds, noise, micGain, outputVolume, leveler, levelerTarget, soundboardVolume }`, lido ao carregar o
+- **Preferências desta máquina:** `localStorage` `concord:audio` = `{ input, output, camera, volumes, muted, sounds, noise, micGain, outputVolume, leveler, levelerTarget, soundboardVolume, screenVolumes, screenMuted }` (`screenVolumes` = `{ accountId: 0–1 }`, só os abaixo de 100%; `screenMuted` = lista de contas), lido ao carregar o
   app (`loadAudioPreferences`) e de novo depois do `disconnect()` (sair da conta não apaga). Dados inválidos ou
   armazenamento bloqueado: volta aos padrões sem quebrar.
 - **Lista:** `Room.getLocalDevices(kind, false)` (não pede permissão só para listar). Os apelidos do Windows
@@ -644,14 +655,15 @@ frente, segurar a tecla e conferir na outra janela que ela ouve e vê o "falando
   LiveKit, não de cada cliente.
 - **NAT:** em dev o LiveKit usa UDP 7882 e TCP 7881 (fallback). Entre redes restritivas (4G, empresas), ative o
   TURN embutido do LiveKit (`turn.enabled` em `livekit.yaml`, com domínio e TLS) antes de ir para a internet.
-- **Volume acima de 100%** e volume do áudio da tela separado do microfone: precisariam de `webAudioMix` e de
-  refazer o deafen sobre a Web Audio.
+- **Volume acima de 100%:** precisaria de `webAudioMix` e de refazer o deafen sobre a Web Audio.
 - **Teste de microfone** (medidor de nível no diálogo) ainda não existe.
 - **Supressão de ruído e CPU:** o "se adapta ao PC" hoje é por núcleos (≥ 3) e por erro no AudioWorklet; ainda não
   mede atraso real do processamento. Se o RNNoise pesar em algum PC, o próximo passo é medir a carga do worklet e
   cair para o leve automaticamente.
-- **Áudio da tela sem eco:** excluir o próprio Concord do loopback exigiria captura por processo (não existe no
-  Electron hoje).
+- **Áudio da tela sem eco:** o Electron ≥ 43.4.0 respeita `restrictOwnAudio: true` no
+  `setDisplayMediaRequestHandler` (exclui o próprio app do loopback no Windows/macOS). O projeto está no Electron 37,
+  então a correção definitiva exige subir o Electron. Enquanto isso, quem assiste pode silenciar ou baixar o áudio
+  da tela de quem compartilha (`ScreenAudioControl`).
 
 ## Depuração
 

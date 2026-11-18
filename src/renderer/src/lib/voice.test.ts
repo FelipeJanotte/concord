@@ -551,7 +551,7 @@ describe('dispositivos e volume (B4)', () => {
     lastRoom().fire(RoomEvent.TrackSubscribed, anaScreen, {}, micOf('acc-ana'))
     expect(ana.setVolume).toHaveBeenLastCalledWith(0.3)
     expect(bia.setVolume).toHaveBeenLastCalledWith(1)
-    expect(anaScreen.setVolume).not.toHaveBeenCalled()
+    expect(anaScreen.setVolume).toHaveBeenLastCalledWith(1)
 
     client.setUserVolume('acc-bia', 0.5)
     expect(bia.setVolume).toHaveBeenLastCalledWith(0.5)
@@ -1507,5 +1507,77 @@ describe('equalizador automático', () => {
     expect(seen[seen.length - 1]).toEqual({ 'acc-ana': 1.4 })
     c.setLeveler(false)
     expect(seen[seen.length - 1]).toEqual({})
+  })
+})
+
+describe('volume do áudio da tela', () => {
+  const sharer = (accountId: string) => ({ identity: 'sock-' + accountId, attributes: { accountId } })
+  const screenAudio = () => new FakeRemoteTrack(Track.Kind.Audio, Track.Source.ScreenShareAudio)
+
+  it('volume da tela por conta: aplicado ao chegar e na hora, sem mexer na voz da pessoa', async () => {
+    client.setScreenVolume('acc-ana', 0.4)
+    await client.join('sala-1')
+    const voz = new FakeRemoteTrack(Track.Kind.Audio, Track.Source.Microphone)
+    const tela = screenAudio()
+    lastRoom().fire(RoomEvent.TrackSubscribed, voz, {}, sharer('acc-ana'))
+    lastRoom().fire(RoomEvent.TrackSubscribed, tela, {}, sharer('acc-ana'))
+    expect(tela.setVolume).toHaveBeenLastCalledWith(0.4)
+    expect(voz.setVolume).toHaveBeenLastCalledWith(1)
+
+    client.setScreenVolume('acc-ana', 0.7)
+    expect(tela.setVolume).toHaveBeenLastCalledWith(0.7)
+    expect(voz.setVolume).toHaveBeenLastCalledWith(1)
+  })
+
+  it('silenciar a tela zera só ela e voltar restaura o volume ajustado', async () => {
+    await client.join('sala-1')
+    const tela = screenAudio()
+    lastRoom().fire(RoomEvent.TrackSubscribed, tela, {}, sharer('acc-ana'))
+    client.setScreenVolume('acc-ana', 0.5)
+    client.setScreenMuted('acc-ana', true)
+    expect(tela.setVolume).toHaveBeenLastCalledWith(0)
+    client.setScreenVolume('acc-ana', 0.8)
+    expect(tela.setVolume).toHaveBeenLastCalledWith(0)
+    client.setScreenMuted('acc-ana', false)
+    expect(tela.setVolume).toHaveBeenLastCalledWith(0.8)
+  })
+
+  it('silenciar a voz da pessoa não silencia a tela dela', async () => {
+    await client.join('sala-1')
+    const tela = screenAudio()
+    lastRoom().fire(RoomEvent.TrackSubscribed, tela, {}, sharer('acc-ana'))
+    client.setUserMuted('acc-ana', true)
+    client.setOutputVolume(0.5)
+    expect(tela.setVolume).toHaveBeenLastCalledWith(0.5)
+  })
+
+  it('volume de saída multiplica o volume da tela; valor inválido é corrigido', async () => {
+    client.setOutputVolume(0.5)
+    await client.join('sala-1')
+    const tela = screenAudio()
+    lastRoom().fire(RoomEvent.TrackSubscribed, tela, {}, sharer('acc-ana'))
+    client.setScreenVolume('acc-ana', 0.6)
+    expect(tela.setVolume).toHaveBeenLastCalledWith(0.3)
+    client.setScreenVolume('acc-ana', 5)
+    expect(tela.setVolume).toHaveBeenLastCalledWith(0.5)
+    client.setScreenVolume('acc-ana', Number.NaN)
+    expect(tela.setVolume).toHaveBeenLastCalledWith(0.5)
+  })
+
+  it('store.screenAudio lista quem tem áudio na tela e sai quando a faixa some', async () => {
+    await client.join('sala-1')
+    const tela = screenAudio()
+    lastRoom().fire(RoomEvent.TrackSubscribed, new FakeRemoteTrack(Track.Kind.Audio, Track.Source.Microphone), {}, sharer('acc-bia'))
+    lastRoom().fire(RoomEvent.TrackSubscribed, tela, {}, sharer('acc-ana'))
+    expect(useApp.getState().screenAudio).toEqual(['sock-acc-ana'])
+    lastRoom().fire(RoomEvent.TrackUnsubscribed, tela, {}, sharer('acc-ana'))
+    expect(useApp.getState().screenAudio).toEqual([])
+  })
+
+  it('sair da sala limpa store.screenAudio', async () => {
+    await client.join('sala-1')
+    lastRoom().fire(RoomEvent.TrackSubscribed, screenAudio(), {}, sharer('acc-ana'))
+    client.leave()
+    expect(useApp.getState().screenAudio).toEqual([])
   })
 })

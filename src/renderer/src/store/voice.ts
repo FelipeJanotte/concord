@@ -15,6 +15,7 @@ export interface VoiceSliceState {
   sharing: boolean
   /** quem tem tela disponível para assistir na sala atual (ids de conexão; inclui a própria, como prévia) */
   screens: string[]
+  screenAudio: string[]
   /** minha câmera está ligada (B21) */
   cameraOn: boolean
   /** quem está com a câmera ligada na sala atual (ids de conexão; inclui a própria, como prévia) */
@@ -39,6 +40,7 @@ export const voiceInitial: VoiceSliceState = {
   speaking: {},
   sharing: false,
   screens: [],
+  screenAudio: [],
   cameraOn: false,
   cameras: [],
   screenPickerOpen: false,

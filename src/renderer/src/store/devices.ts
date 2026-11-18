@@ -13,6 +13,8 @@ export interface DevicesState {
   userVolumes: Record<string, number>
   /** contas que silenciei só para mim (o volume em `userVolumes` fica guardado para quando voltar) */
   userMuted: Record<string, true>
+  screenVolumes: Record<string, number>
+  screenMuted: Record<string, true>
   /** som quando alguém entra/sai da minha sala de voz (B16) */
   voiceSoundsEnabled: boolean
   /** volume desses sons, de 0 a 1 */
@@ -37,6 +39,8 @@ export const devicesInitial: DevicesState = {
   cameraId: null,
   userVolumes: {},
   userMuted: {},
+  screenVolumes: {},
+  screenMuted: {},
   voiceSoundsEnabled: true,
   voiceSoundsVolume: 0.5,
   micGain: 1,
