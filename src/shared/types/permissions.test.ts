@@ -5,6 +5,7 @@ import {
   canAssignRole,
   canChangeMemberRoles,
   canGrantPermissions,
+  canManageRole,
   channelPermissions,
   displayColor,
   CHANNEL_PERMISSIONS,
@@ -12,8 +13,11 @@ import {
   EVERYONE_ROLE_ID,
   GLOBAL_PERMISSIONS,
   globalPermissions,
+  hasFullAccess,
   highestPosition,
   PERMISSION_LABELS,
+  reorderableRoles,
+  reorderedPositions,
   type AccessState,
   type ChannelOverride,
   type Role
@@ -166,16 +170,17 @@ describe('alterar cargos dos membros', () => {
     })
   const roleOf = (id: string) => people().roles.find((r) => r.id === id)!
 
-  it('assignRoles ou manageMembers: alvo abaixo do seu cargo mais alto (ou sem cargo)', () => {
+  it('assignRoles ou manageMembers: qualquer alvo, abaixo, no mesmo nível ou acima', () => {
     expect(canChangeMemberRoles(people(), 'gil', 'hugo')).toBe(true)
     expect(canChangeMemberRoles(people(), 'gil', 'zé')).toBe(true)
     expect(canChangeMemberRoles(people(), 'gil', 'mara')).toBe(true)
     expect(canChangeMemberRoles(people(), 'mara', 'hugo')).toBe(true)
+    expect(canChangeMemberRoles(people(), 'gil', 'igor')).toBe(true)
+    expect(canChangeMemberRoles(people(), 'gil', 'julia')).toBe(true)
+    expect(canChangeMemberRoles(people(), 'mara', 'kel')).toBe(true)
   })
 
-  it('não mexe em cargo igual ou acima, na dona nem em si mesmo', () => {
-    expect(canChangeMemberRoles(people(), 'gil', 'igor')).toBe(false)
-    expect(canChangeMemberRoles(people(), 'gil', 'julia')).toBe(false)
+  it('não mexe na dona nem em si mesmo', () => {
     expect(canChangeMemberRoles(people(), 'gil', 'dona')).toBe(false)
     expect(canChangeMemberRoles(people(), 'gil', 'gil')).toBe(false)
   })
@@ -263,5 +268,133 @@ describe('accessFor (o que cada um recebe)', () => {
 describe('textos', () => {
   it('toda permissão tem texto em pt-BR', () => {
     for (const p of [...GLOBAL_PERMISSIONS, ...CHANNEL_PERMISSIONS]) expect(PERMISSION_LABELS[p].length).toBeGreaterThan(3)
+  })
+})
+
+describe('gerenciar e reordenar cargos', () => {
+  const ladder = (): AccessState =>
+    access({
+      roles: [
+        everyone(),
+        role('topo', 9),
+        role('gerente', 7, ['manageRoles']),
+        role('meio', 5),
+        role('baixo', 3),
+        role('fundo', 1)
+      ],
+      members: [
+        { accountId: 'gil', roleIds: ['gerente'] },
+        { accountId: 'zeca', roleIds: ['meio'] }
+      ]
+    })
+  const roleIn = (a: AccessState, id: string) => a.roles.find((r) => r.id === id)!
+
+  it('canManageRole: dona tudo; com manageRoles só abaixo do seu; @todos com qualquer cargo', () => {
+    const a = ladder()
+    expect(canManageRole(a, 'dona', roleIn(a, 'topo'))).toBe(true)
+    expect(canManageRole(a, 'gil', roleIn(a, 'topo'))).toBe(false)
+    expect(canManageRole(a, 'gil', roleIn(a, 'gerente'))).toBe(false)
+    expect(canManageRole(a, 'gil', roleIn(a, 'meio'))).toBe(true)
+    expect(canManageRole(a, 'gil', roleIn(a, EVERYONE_ROLE_ID))).toBe(true)
+    expect(canManageRole(a, 'zeca', roleIn(a, 'fundo'))).toBe(false)
+  })
+
+  it('reorderableRoles: só os cargos abaixo do seu, do menos para o mais importante, sem @todos', () => {
+    expect(reorderableRoles(ladder(), 'gil').map((r) => r.id)).toEqual(['fundo', 'baixo', 'meio'])
+    expect(reorderableRoles(ladder(), 'dona').map((r) => r.id)).toEqual(['fundo', 'baixo', 'meio', 'gerente', 'topo'])
+    expect(reorderableRoles(ladder(), 'zeca')).toEqual([])
+  })
+
+  it('reorderedPositions: troca quem fica em cada posição abaixo do seu', () => {
+    expect(reorderedPositions(ladder(), 'gil', ['meio', 'fundo', 'baixo'])).toEqual(
+      new Map([
+        ['meio', 1],
+        ['fundo', 3],
+        ['baixo', 5]
+      ])
+    )
+  })
+
+  it('reorderedPositions: recusa mover o seu cargo, os de cima, @todos e lista incompleta ou repetida', () => {
+    const a = ladder()
+    expect(reorderedPositions(a, 'gil', ['fundo', 'baixo', 'gerente'])).toBeNull()
+    expect(reorderedPositions(a, 'gil', ['fundo', 'baixo', 'meio', 'topo'])).toBeNull()
+    expect(reorderedPositions(a, 'gil', [EVERYONE_ROLE_ID, 'fundo', 'baixo', 'meio'])).toBeNull()
+    expect(reorderedPositions(a, 'gil', ['fundo', 'baixo'])).toBeNull()
+    expect(reorderedPositions(a, 'gil', ['fundo', 'fundo', 'meio'])).toBeNull()
+    expect(reorderedPositions(a, 'gil', 'fundo')).toBeNull()
+    expect(reorderedPositions(a, 'zeca', [])).toBeNull()
+  })
+
+  it('reorderedPositions: a dona move qualquer cargo para qualquer posição (menos @todos)', () => {
+    expect(reorderedPositions(ladder(), 'dona', ['topo', 'fundo', 'baixo', 'meio', 'gerente'])?.get('topo')).toBe(1)
+  })
+})
+
+describe('Administrador', () => {
+  const crew = (): AccessState =>
+    access({
+      roles: [
+        everyone(['view', 'send']),
+        role('chefe', 6, ['manageRoles']),
+        role('alto', 5, ['manageMembers']),
+        role('poder', 4, ['administrator']),
+        role('gerente', 3, ['manageRoles', 'assignRoles', 'manageMembers']),
+        role('admin-baixo', 2, ['administrator']),
+        role('vip', 1)
+      ],
+      members: [
+        { accountId: 'adm', roleIds: ['poder'] },
+        { accountId: 'adm2', roleIds: ['admin-baixo'] },
+        { accountId: 'chefe', roleIds: ['chefe'] },
+        { accountId: 'alto', roleIds: ['alto'] },
+        { accountId: 'gil', roleIds: ['gerente'] },
+        { accountId: 'hugo', roleIds: ['vip'] }
+      ],
+      overrides: [override('segredo', EVERYONE_ROLE_ID, [], ['view']), override('segredo', 'poder', [], ['view', 'send'])]
+    })
+  const roleIn = (id: string) => crew().roles.find((r) => r.id === id)!
+
+  it('passa em toda permissão global e de canal, inclusive com regra de canal que negaria', () => {
+    expect(sorted(globalPermissions(crew(), 'adm'))).toEqual([...GLOBAL_PERMISSIONS].sort())
+    expect(sorted(channelPermissions(crew(), 'adm', 'segredo'))).toEqual([...CHANNEL_PERMISSIONS].sort())
+    expect(can(crew(), 'adm', 'speak', 'segredo')).toBe(true)
+    expect(hasFullAccess(crew(), 'adm')).toBe(true)
+    expect(hasFullAccess(crew(), 'dona')).toBe(true)
+    expect(hasFullAccess(crew(), 'gil')).toBe(false)
+  })
+
+  it('ignora a hierarquia: gerencia, reordena e dá qualquer cargo, inclusive acima do seu', () => {
+    expect(canManageRole(crew(), 'adm', roleIn('chefe'))).toBe(true)
+    expect(reorderableRoles(crew(), 'adm').map((r) => r.id)).toEqual(['vip', 'admin-baixo', 'gerente', 'poder', 'alto', 'chefe'])
+    expect(canAssignRole(crew(), 'adm', roleIn('chefe'))).toBe(true)
+    expect(canAssignRole(crew(), 'adm', roleIn(EVERYONE_ROLE_ID))).toBe(false)
+    expect(canChangeMemberRoles(crew(), 'adm', 'chefe')).toBe(true)
+  })
+
+  it('não mexe na dona nem nos próprios cargos', () => {
+    expect(canChangeMemberRoles(crew(), 'adm', 'dona')).toBe(false)
+    expect(canChangeMemberRoles(crew(), 'adm', 'adm')).toBe(false)
+  })
+
+  it('só a dona ou um admin concede, dá ou mexe num cargo com Administrador', () => {
+    expect(canGrantPermissions(crew(), 'adm', 'vip', ['administrator'])).toBe(true)
+    expect(canGrantPermissions(crew(), 'chefe', 'vip', ['administrator'])).toBe(false)
+    expect(canAssignRole(crew(), 'gil', roleIn('admin-baixo'))).toBe(false)
+    expect(canAssignRole(crew(), 'gil', roleIn('vip'))).toBe(true)
+    expect(canAssignRole(crew(), 'adm', roleIn('admin-baixo'))).toBe(true)
+    expect(canManageRole(crew(), 'gil', roleIn('admin-baixo'))).toBe(false)
+    expect(reorderableRoles(crew(), 'gil').map((r) => r.id)).toEqual(['vip'])
+  })
+
+  it('Administrador no @todos só a dona dá', () => {
+    expect(canGrantPermissions(crew(), 'adm', EVERYONE_ROLE_ID, ['administrator'])).toBe(false)
+    expect(canGrantPermissions(crew(), 'dona', EVERYONE_ROLE_ID, ['administrator'])).toBe(true)
+  })
+
+  it('tem rótulo que avisa do acesso total', () => {
+    expect(GLOBAL_PERMISSIONS[0]).toBe('administrator')
+    expect(PERMISSION_LABELS.administrator).toMatch(/^Administrador/)
+    expect(PERMISSION_LABELS.administrator).toMatch(/acesso total/)
   })
 })

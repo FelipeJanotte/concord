@@ -89,6 +89,7 @@ export const LIMITS = {
   music: { capacity: 5, perSecond: 1 / 5 },
   /** ações de moderação e apagar mensagem por conta: 20 seguidas, depois 1 por segundo (B6) */
   moderation: { capacity: 20, perSecond: 1 },
+  roleReorder: { capacity: 10, perSecond: 1 / 2 },
   /** ligar para alguém (B8): 5 seguidas, depois 1 a cada 10 s (cada ligação toca na tela da outra pessoa) */
   call: { capacity: 5, perSecond: 1 / 10 },
   screenPreview: { capacity: 3, perSecond: 1 / 4 },

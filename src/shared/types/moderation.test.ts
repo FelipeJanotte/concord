@@ -61,3 +61,24 @@ describe('canMoveMember', () => {
     expect(canMoveMember(access(), 'dona', 'dona')).toBe(false)
   })
 })
+
+describe('Administrador na moderação', () => {
+  const withAdmins = (): AccessState => {
+    const a = access()
+    a.roles.push(role('adm', 1, ['administrator']))
+    a.members.push({ accountId: 'adm', roleIds: ['adm'] }, { accountId: 'adm2', roleIds: ['adm'] })
+    return a
+  }
+
+  it('modera e move qualquer membro, inclusive acima do seu cargo e outro admin', () => {
+    expect(canModerate(withAdmins(), 'adm', 'alto')).toBe(true)
+    expect(canModerate(withAdmins(), 'adm', 'adm2')).toBe(true)
+    expect(canMoveMember(withAdmins(), 'adm', 'alto')).toBe(true)
+  })
+
+  it('não modera a dona nem a si mesmo', () => {
+    expect(canModerate(withAdmins(), 'adm', 'dona')).toBe(false)
+    expect(canModerate(withAdmins(), 'adm', 'adm')).toBe(false)
+    expect(canMoveMember(withAdmins(), 'adm', 'dona')).toBe(false)
+  })
+})

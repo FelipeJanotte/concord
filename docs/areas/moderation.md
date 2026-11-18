@@ -31,11 +31,12 @@ Quatro ações para manter a comunidade em ordem, todas decididas no **servidor*
 ## Regras
 
 **Quem pode expulsar/silenciar (`canModerate`)**: ninguém modera a si mesmo nem a dona. A dona modera todo mundo.
-Os demais precisam de `manageMembers` **e** de um cargo mais alto que o mais alto do alvo (`highestPosition`), a
-mesma hierarquia de "dar cargos" (`docs/areas/permissions.md`).
+Quem tem um cargo com **Administrador** também modera qualquer pessoa, inclusive acima dele e outros admins (menos a
+dona e a si mesmo; ADR `docs/decisions/0008-permissao-administrador.md`). Os demais precisam de `manageMembers` **e**
+de um cargo mais alto que o mais alto do alvo (`highestPosition`).
 
 **Quem pode mover (`canMoveMember`)**: a mesma hierarquia (nem a si mesmo, nem a dona, só alvo abaixo do meu cargo mais
-alto), mas basta `moveMembers` ("Mover membros") **ou** `manageMembers`. Assim dá para deixar um cargo arrastar gente
+alto; Administrador sem hierarquia), mas basta `moveMembers` ("Mover membros") **ou** `manageMembers`. Assim dá para deixar um cargo arrastar gente
 entre salas sem poder silenciar, expulsar ou dar cargos; quem já tinha `manageMembers` continua movendo. Vale também
 para o "Mover para as salas" do sorteador (`tools:move-teams`, `docs/areas/tools.md`).
 
