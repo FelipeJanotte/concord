@@ -87,7 +87,7 @@ clica na sala ─► createLocalAudioTrack(echoCancellation/noiseSuppression/aut
   silencia o microfone (`applyAudio` em `lib/actions/voice.ts`).
 - O estado de mute/deafen vai para o servidor em `voice:join` (inicial) e `voice:update`; todos recebem por
   `voice:state`, que mostra os ícones vermelhos.
-- **Quem está falando:** `ActiveSpeakersChanged` do LiveKit (sem `AnalyserNode`). `publishSpeaking()` filtra a
+- **Quem está falando:** medido no app (B23, seção "Borda de quem fala" abaixo). `publishSpeaking()` filtra a
   própria pessoa quando está silenciada e os outros quando está em deafen, e só atualiza `store.speaking`
   quando o conjunto muda.
 - **Troca de sala:** a Room atual só fecha **depois** que o servidor aceita a nova (`teardown()` vem depois do ack do
@@ -114,6 +114,32 @@ clica na sala ─► createLocalAudioTrack(echoCancellation/noiseSuppression/aut
 - **Queda do socket do Concord:** `lib/client.ts` chama `voice.teardown()` (sem avisar o servidor).
 - Dependências injetáveis (`new VoiceClient({ createRoom, createMicTrack })`): os testes em
   `lib/voice.test.ts` usam Room, microfone e faixas falsos.
+
+## Borda de quem fala (B23)
+
+O anel de "está falando" usa a **cor de destaque do tema** (`ring-primary`, que segue `ThemeConfig.accent` por
+`deriveTokens`) no avatar (`UserAvatar`), no quadro da grade (`ParticipantTile` em `VoiceGrid`) e no overlay
+(`OverlayApp`, que recebe o tema ao vivo). O verde (`ring-success`) ficou só para o efeito sonoro tocando.
+
+**Por que medir no app:** antes vinha do `ActiveSpeakersChanged` do LiveKit, que decide no servidor com um limiar
+próprio: voz baixa que todo mundo ouvia não acendia a borda. Agora a regra é **se eu ouço a pessoa, a borda acende**.
+
+| Peça | Papel |
+|---|---|
+| `lib/speaking/speaking.ts` | Pura `nextSpeaking(estado, nívelDb, ms)`: acende em `SPEAKING_ON_DB` (-50 dBFS), entre -50 e `SPEAKING_OFF_DB` (-56) mantém como estava (histerese), abaixo de -56 segura aceso por `SPEAKING_HOLD_MS` (300 ms) e só então apaga (sem piscar entre palavras). |
+| `lib/speaking/detector.ts` | `SpeakingDetector`: um `AnalyserNode` por voz num `AudioContext` próprio (só mede, não toca nada), lido a cada `SPEAKING_TICK_MS` (50 ms) com `rmsDb` (de `lib/leveler/level.ts`). `watch(id, trackOf)` recebe uma função que devolve a faixa atual: se a faixa trocou (microfone trocado, filtro de ruído ligado/desligado, `restartTrack`), o detector solta a antiga e mede a nova; sem faixa = silêncio. `onChange` só quando o conjunto muda; `unwatch` apaga na hora. |
+| `lib/voice.ts` | Cria o detector na entrada: `watch` do meu microfone (`this.mic?.mediaStreamTrack`, que é a faixa já processada pelo filtro de ruído/volume) e do microfone de cada pessoa no `TrackSubscribed` (bot de música incluído; áudio da tela não conta); `unwatch` no `TrackUnsubscribed`; `destroy` no `teardown`. |
+| `src/main/index.ts` | `backgroundThrottling: false` na janela principal: sem isso o Chromium segura os timers em 1 vez por segundo com a janela escondida (jogo na frente) e a borda do overlay atrasaria. |
+
+**Testes:** `lib/speaking/speaking.test.ts` (limiares, histerese, espera, voltar a falar), `lib/speaking/detector.test.ts`
+(AudioContext falso: acender/apagar, faixa trocada, sem faixa, `unwatch`, não avisar à toa, `destroy`),
+`lib/voice.test.ts` (bloco "quem está falando": meu microfone e o dos outros vigiados, bot sim e tela não, sair
+desliga, filtros de mute/deafen), `components/speaking-ring.test.tsx` e `overlay/overlay.test.tsx` (cor do anel).
+**À mão:** duas contas na sala, falar baixo e a borda acende na cor do tema; trocar o tema muda a cor (também no
+overlay); silêncio apaga sem piscar.
+
+**Problemas conhecidos:** os limiares são o ponto de partida do roadmap; microfone sem filtro de ruído num ambiente
+barulhento (ventilador perto) pode passar de -50 dBFS e manter a própria borda acesa. Ajustar medindo com voz real.
 
 ## Permissões de voz no app (v2)
 

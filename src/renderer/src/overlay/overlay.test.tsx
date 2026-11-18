@@ -63,6 +63,8 @@ describe('OverlayApp', () => {
     expect(items.map((li) => li.textContent)).toEqual(['AAna', 'BBia', 'CCaio', 'Duda', '+4'])
     expect(items[0].dataset.speaking).toBe('true')
     expect(items[1].dataset.speaking).toBeUndefined()
+    expect(items[0].firstElementChild?.classList).toContain('ring-primary')
+    expect(items[1].firstElementChild?.classList).not.toContain('ring-primary')
     expect(within(items[1]).getByLabelText('Microfone desligado')).toBeTruthy()
     expect(within(items[2]).getByLabelText('Áudio desativado')).toBeTruthy()
     expect(within(items[2]).queryByLabelText('Microfone desligado')).toBeNull()

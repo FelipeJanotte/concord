@@ -27,7 +27,7 @@ export function UserAvatar({ user, size = 'md', speaking = false, className }: P
       className={cn(
         sizes[size],
         'ring-2 ring-transparent ring-offset-0 transition-shadow',
-        speaking && 'ring-success',
+        speaking && 'ring-primary',
         className
       )}
     >

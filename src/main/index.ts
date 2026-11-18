@@ -32,7 +32,8 @@ function createWindow(): void {
     ...titleBarOptions(process.platform),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
+      sandbox: false,
+      backgroundThrottling: false
     }
   })
 
