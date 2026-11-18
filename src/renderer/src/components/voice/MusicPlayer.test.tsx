@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MusicState, MusicTrack } from '@shared/types'
+import { bindMusicEvents } from '@/lib/actions/music'
 import { setSocket } from '@/lib/core'
 import { MUSIC_BOT_VOLUME_ID, voice } from '@/lib/voice'
 import { initialState, useApp } from '@/store'
@@ -128,6 +129,17 @@ describe('MusicPlayer', () => {
     render(<MusicPlayer channelId="sala" />)
     await userEvent.click(await screen.findByRole('button', { name: 'Ver a fila' }))
     expect(useApp.getState().musicQueueChannelId).toBe('sala')
+  })
+
+  it('duas salas tocando: o cartão mostra a música da sala dele, e o music:state da outra não o muda', async () => {
+    bindMusicEvents(socket.asSocket())
+    render(<MusicPlayer channelId="sala" />)
+    await screen.findByRole('region', { name: 'Tocando agora' })
+    act(() => socket.receive('music:state', playing({ channelId: 'outra', nowPlaying: aguas, queue: [] })))
+    expect(screen.getByRole('region', { name: 'Tocando agora' }).textContent).toContain('Garota de Ipanema')
+    expect(useApp.getState().musicRooms.outra.nowPlaying?.title).toBe('Águas de Março')
+    act(() => socket.receive('music:state', playing({ channelId: 'outra', nowPlaying: null, queue: [] })))
+    expect(screen.getByRole('region', { name: 'Tocando agora' }).textContent).toContain('Garota de Ipanema')
   })
 
   it('sem capa: mostra um ícone no lugar', async () => {

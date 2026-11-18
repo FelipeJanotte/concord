@@ -316,6 +316,77 @@ describe('bot de música', () => {
     await owner.socket.emitWithAck('music:stop', { channelId: id })
   })
 
+  describe('várias salas ao mesmo tempo', () => {
+    const queueOf = async (u: TestUser, channelId: string): Promise<(string | undefined)[]> => {
+      const state = playing(await u.socket.emitWithAck('music:queue', channelId))
+      return [state.nowPlaying?.title, ...state.queue.map((t) => t.title)]
+    }
+    const roomWith = async (u: TestUser): Promise<string> => {
+      const id = await room()
+      await join(u, id)
+      return id
+    }
+
+    it('cada sala tem a sua fila e o seu bot; pular e parar numa não mexe na outra', async () => {
+      const salaA = await roomWith(ana)
+      const salaB = await roomWith(bia)
+      playing(await play(ana, salaA, link(LONG)))
+      playing(await play(bia, salaB, link(LONG_2)))
+      playing(await play(ana, salaA, link(LONG_2)))
+      playing(await play(bia, salaB, link(LONG)))
+      await waitLog(server, `[fake-music] join ${salaA}`)
+      await waitLog(server, `[fake-music] join ${salaB}`)
+      expect(await queueOf(ana, salaA)).toEqual(['Faixa longa', 'Outra longa'])
+      expect(await queueOf(ana, salaB)).toEqual(['Outra longa', 'Faixa longa'])
+
+      expect(await ana.socket.emitWithAck('music:skip', { channelId: salaB })).toEqual({ ok: false, error: 'Entre na sala de voz para controlar a música' })
+      expect(playing(await ana.socket.emitWithAck('music:skip', { channelId: salaA })).nowPlaying?.title).toBe('Outra longa')
+      expect(await queueOf(bia, salaB)).toEqual(['Outra longa', 'Faixa longa'])
+
+      expect(playing(await bia.socket.emitWithAck('music:stop', { channelId: salaB })).nowPlaying).toBeNull()
+      await waitLog(server, `[fake-music] leave ${salaB}`)
+      expect(await queueOf(ana, salaA)).toEqual(['Outra longa'])
+      expect(server.log).not.toContain(`[fake-music] leave ${salaA}`)
+
+      await ana.socket.emitWithAck('music:stop', { channelId: salaA })
+      await waitLog(server, `[fake-music] leave ${salaA}`)
+    })
+
+    it('a sala que esvazia encerra só a sua instância', async () => {
+      const salaA = await roomWith(ana)
+      const salaB = await roomWith(bia)
+      playing(await play(ana, salaA, link(LONG)))
+      playing(await play(bia, salaB, link(LONG)))
+      const emptied = waitFor(ana.socket, 'music:state', (s) => s.channelId === salaB && s.nowPlaying === null)
+      bia.socket.emit('voice:leave')
+      await emptied
+      await waitLog(server, `[fake-music] leave ${salaB}`)
+      expect(await queueOf(ana, salaA)).toEqual(['Faixa longa'])
+      expect(server.log).not.toContain(`[fake-music] leave ${salaA}`)
+      await ana.socket.emitWithAck('music:stop', { channelId: salaA })
+    })
+
+    it('o estado de cada sala vai só para quem vê aquela sala', async () => {
+      const owner = await server.asOwner()
+      const privada = await room()
+      const set = await owner.socket.emitWithAck('channel:set-overrides', {
+        channelId: privada,
+        overrides: [{ roleId: EVERYONE_ROLE_ID, allow: [], deny: ['view'] }]
+      })
+      expect(set.ok).toBe(true)
+      await join(owner, privada)
+      const publica = await roomWith(ana)
+      const hidden = expectNoEvent(bia.socket, 'music:state', (s) => s.channelId === privada)
+      const ownerSees = waitFor(owner.socket, 'music:state', (s) => s.channelId === privada && s.nowPlaying?.title === 'Faixa longa')
+      const biaSees = waitFor(bia.socket, 'music:state', (s) => s.channelId === publica && s.nowPlaying?.title === 'Outra longa')
+      playing(await play(owner, privada, link(LONG)))
+      playing(await play(ana, publica, link(LONG_2)))
+      await Promise.all([ownerSees, biaSees, hidden])
+      await owner.socket.emitWithAck('music:stop', { channelId: privada })
+      await ana.socket.emitWithAck('music:stop', { channelId: publica })
+    })
+  })
+
   describe('comandos vindos do chat', () => {
     const FAIXA = { title: 'Faixa longa', artists: ['Banda Teste'], coverUrl: 'https://i.scdn.co/capa.jpg' }
     const OUTRA = { title: 'Outra longa', artists: ['Banda Teste'], coverUrl: 'https://i.scdn.co/capa.jpg' }
