@@ -1,9 +1,6 @@
----
-name: test-strategy
-description: 'Use to plan or write tests from a spec or explicit behavior contract, author a regression test from an established reproduction, or review whether tests prove their claims. Routes to strategy, authorship, methodology and test doubles as needed. Selects proportional evidence before authorship; independent tests are conditional. Does not implement production code, diagnose failures or invent missing behavior.'
----
-
 # Test Strategy
+
+Use to plan or write tests from a spec or explicit behavior contract, author a regression test from an established reproduction, or review whether tests prove their claims. Routes to strategy, authorship, methodology and test doubles as needed. Selects proportional evidence before authorship; independent tests are conditional. Does not implement production code, diagnose failures or invent missing behavior.
 
 Inputs: the requested role, a spec or explicit behavior contract, and the repository's
 verification conventions and evidence. For planning/authorship start with
@@ -18,8 +15,8 @@ additional inputs and seam-confirmation procedure in `reference/strategist.md`.
 | Situation | Owner or action |
 |---|---|
 | Neither a spec nor an explicit expected behavior | Stop and name the missing contract; `spec-driven` owns planned requirements. |
-| An unexplained failure or uncertain bug cause | `wise-dev` investigates; return here to author tests once behavior and reproduction are established. |
-| Production implementation or general coding design | `code-quality` guides decisions; this skill writes no production code. |
+| An unexplained failure or uncertain bug cause | [`wise-dev`](../wise-dev/README.md) investigates; return here to author tests once behavior and reproduction are established. |
+| Production implementation or general coding design | [`code-quality`](../code-quality/README.md) guides decisions; this skill writes no production code. |
 | Planned ticket execution | `task-executor` consumes the evidence decision before implementation and dispatches the selected roles, including tickets delegated by `epic-run`. |
 | Standalone test request with an explicit contract or established bug reproduction and expected behavior | Author tests through the standalone route; no epic is required. |
 

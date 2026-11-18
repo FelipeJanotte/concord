@@ -1,9 +1,6 @@
----
-name: wise-dev
-description: Investigate a reported bug, failure or regression through independent evidence, diagnosis and proposal phases. Fix only when requested, with the risk gate and original-symptom proof. Uses evidence-based-diagnosis for causal reasoning. Planned work belongs to task-executor; explicit assessment of an existing causal claim belongs to evidence-based-diagnosis.
----
-
 # Wise Dev
+
+Investigate a reported bug, failure or regression through independent evidence, diagnosis and proposal phases. Fix only when requested, with the risk gate and original-symptom proof. Uses evidence-based-diagnosis for causal reasoning. Planned work belongs to task-executor; explicit assessment of an existing causal claim belongs to evidence-based-diagnosis.
 
 Category: procedure. This skill requires `evidence-based-diagnosis` for causal reasoning.
 Read its method in FRAME and supply it to evidence and diagnosis phases without changing their
@@ -13,7 +10,7 @@ A phased debugging procedure. It gathers evidence before forming a belief, marks
 VERIFIED or ASSUMED, diagnoses only on VERIFIED ones, weighs fix options by blast radius, and
 proves the fix on the original symptom before declaring it done.
 
-It requires the `code-quality` skill: the verifier names quality findings from that skill's
+It requires the [`code-quality`](../code-quality/README.md) skill: the verifier names quality findings from that skill's
 vocabulary, so the two install together.
 
 ## When to use
@@ -106,7 +103,7 @@ fresh non-interactive CLI sessions with the same restricted evidence. If neither
 stop with an independence-capability gap; never present self-review as independent verification.
 
 Each phase's full agent prompt is in `reference/agents/`. Load a prompt when you reach that
-phase, not before. VERIFY needs one thing more: read the `code-quality` skill's
+phase, not before. VERIFY needs one thing more: read the [`code-quality`](../code-quality/README.md) skill's
 `reference/smells.md` yourself and paste it into the verifier's prompt. The verifier is confined
 to the target repository and a skill is installed outside it, so a path is the one thing it
 cannot follow. Sent no vocabulary, it reports no smell and the run looks normal. The structured outputs each phase returns are in `reference/schemas.md`; the

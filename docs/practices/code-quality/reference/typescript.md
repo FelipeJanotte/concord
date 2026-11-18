@@ -15,4 +15,4 @@ runtime and framework conventions. Do not change compiler policy as an incidenta
   early exits. Preserve runtime behaviour when changing a type annotation or representation.
 
 Review reports still require the concrete replacement and scoped line. Send test methodology
-and doubles to `test-strategy`.
+and doubles to [`test-strategy`](../../test-strategy/README.md).

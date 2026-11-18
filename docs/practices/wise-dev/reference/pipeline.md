@@ -1,6 +1,6 @@
 # Phase contract
 
-The phase list, its agents and its outputs live in one place only: the table in `SKILL.md`. This
+The phase list, its agents and its outputs live in one place only: the table in `README.md`. This
 file carries the per-phase detail that table does not, and nothing else. If the two ever say the
 same thing twice, delete it here.
 
