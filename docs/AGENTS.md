@@ -39,13 +39,10 @@ Arquivo solto na raiz de `docs/`:
 
 ## Como a documentação se encontra
 
-As skills `.claude/skills/concord-<area>/SKILL.md` são **só ponteiros**: frontmatter (`name` + `description`
-dizendo *quando* abrir) e uma linha mandando ler `docs/areas/<area>.md`. Elas existem para o assistente carregar
-só a área certa, em vez do índice inteiro. **Nunca** escreva conteúdo numa skill: regra em dois lugares diverge no
-PR seguinte.
+O índice é a lista "Documentação por área" do `AGENTS.md` da raiz: cada linha aponta para `areas/<area>.md` e diz
+*quando* abrir (arquivos, eventos e sintomas). Não há skills por área: a regra vive só em `docs/areas/`.
 
-Área nova → cria o doc em `areas/`, a skill-ponteiro, e acrescenta a linha em "Documentação por área" no
-`AGENTS.md` da raiz.
+Área nova → cria o doc em `areas/` e acrescenta a linha em "Documentação por área" no `AGENTS.md` da raiz.
 
 ## Pastas novas: só por necessidade
 

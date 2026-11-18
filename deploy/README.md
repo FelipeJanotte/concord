@@ -43,7 +43,7 @@ Além do app instalado, dá para publicar a tela do Concord como site e os amigo
 continua nesta máquina** (a Vercel só serve a página). Importe o repositório na Vercel (o `vercel.json` já tem
 os comandos) e defina a variável `VITE_DEFAULT_SERVER=https://concord.seudominio.com.br` para a tela de login já
 vir com o seu servidor. O servidor precisa estar em `https://` (o compose acima já faz isso). No navegador não há
-login com Google, pressione para falar, overlay nem notificações nativas. Detalhes: skill `concord-deploy`.
+login com Google, pressione para falar, overlay nem notificações nativas. Detalhes: `docs/areas/deploy.md`.
 
 ## Problemas comuns
 
@@ -55,4 +55,4 @@ login com Google, pressione para falar, overlay nem notificações nativas. Deta
 | `defina ... no .env` ao subir | Falta uma variável obrigatória no `.env` da raiz. |
 | Anexos antigos dão 404 depois de reiniciar | `FILES_SIGNING_SECRET` mudou ou ficou vazio. Defina um valor fixo. |
 
-Mais detalhes (o que cada peça faz, variáveis e decisões): skill `concord-deploy`.
+Mais detalhes (o que cada peça faz, variáveis e decisões): `docs/areas/deploy.md`.
