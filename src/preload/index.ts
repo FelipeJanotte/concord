@@ -13,6 +13,7 @@ import type { ThemeConfig } from '../shared/types/theme'
 import type { PttBinding, PttConfig, PushToTalkBridge } from '../shared/push-to-talk'
 import type { NativeNotification, NotificationsBridge, NotificationTarget } from '../shared/notifications'
 import type { ScreenShareBridge, ScreenSource } from '../shared/screen'
+import type { OpenAtLogin, StartupBridge } from '../shared/startup'
 import { hasOwnWindowButtons, type WindowControlAction, type WindowControlsBridge } from '../shared/window-controls'
 import { supportsTranslucency, type TranslucencyBridge, type TranslucencyRequest } from '../shared/translucency'
 import type { UpdaterBridge, UpdateStatus } from '../shared/updater'
@@ -114,6 +115,11 @@ const translucency: TranslucencyBridge = {
   set: (request: TranslucencyRequest): void => ipcRenderer.send('window-translucency', request)
 }
 
+const startup: StartupBridge = {
+  get: (): Promise<OpenAtLogin> => ipcRenderer.invoke('startup-get'),
+  set: (openAtLogin: boolean): Promise<OpenAtLogin> => ipcRenderer.invoke('startup-set', openAtLogin)
+}
+
 const windowControls: WindowControlsBridge = {
   buttons: hasOwnWindowButtons(process.platform),
   run: (action: WindowControlAction): void => ipcRenderer.send('window-control', action),
@@ -141,6 +147,7 @@ const api = {
   /** Pressione para falar (ver src/main/push-to-talk.ts). */
   pushToTalk,
   translucency,
+  startup,
   windowControls
 }
 

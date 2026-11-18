@@ -8,6 +8,7 @@ import { allowPermission } from './permissions'
 import { setupOverlay, teardownOverlay, type OverlayController } from './overlay'
 import { setupPushToTalk, type PushToTalkController } from './push-to-talk'
 import { setupScreenShare } from './screen-share'
+import { setupStartup } from './startup'
 import { setupTranslucency } from './translucency'
 import { setupUpdater } from './updater'
 import { setupWindowControls, titleBarOptions, watchMaximized } from './window-controls'
@@ -84,6 +85,7 @@ app.whenReady().then(() => {
   })
 
   setupScreenShare()
+  setupStartup()
   setupTranslucency(() => mainWindow)
   setupWindowControls(() => mainWindow)
   overlay = setupOverlay(() => mainWindow)
