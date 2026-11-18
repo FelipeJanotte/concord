@@ -469,6 +469,7 @@ describe('áudio da tela em destaque', () => {
   it('tela com áudio mostra silenciar e volume; regular e silenciar valem só para a tela daquela pessoa', async () => {
     useApp.setState({ screens: ['ana'], screenAudio: ['ana'] })
     render(<VoiceGrid members={members} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Assistir: Tela de Ana' }))
     const slider = screen.getByRole('slider', { name: 'Volume da tela de Ana' }) as HTMLInputElement
     expect(slider.value).toBe('100')
 
@@ -485,18 +486,23 @@ describe('áudio da tela em destaque', () => {
     expect(useApp.getState().screenMuted).toEqual({})
   })
 
-  it('tela sem áudio e a minha própria tela não têm controle de áudio', () => {
-    useApp.setState({ screens: ['eu', 'ana', 'bia'], screenAudio: ['bia'] })
+  it('tela sem áudio e a minha própria tela não têm controle de áudio', async () => {
+    useApp.setState({ screens: ['eu', 'ana', 'bia'], screenAudio: ['eu', 'bia'] })
     render(<VoiceGrid members={members} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Assistir: Tela de Ana' }))
+    expect(screen.getByText(/^Assistindo:/).textContent).toBe('Assistindo: Tela de Ana')
     expect(screen.queryByRole('slider', { name: /Volume da tela/ })).toBeNull()
 
-    act(() => useApp.setState({ screens: ['eu'], screenAudio: [] }))
+    await userEvent.click(within(screen.getByRole('group', { name: 'Telas ao vivo' })).getByRole('button', { name: 'Sua tela' }))
+    await userEvent.click(within(screen.getByRole('group', { name: 'Telas ao vivo' })).getByRole('button', { name: 'Tela de Ana' }))
+    expect(screen.getByText(/^Assistindo:/).textContent).toBe('Assistindo: Sua tela')
     expect(screen.queryByRole('slider', { name: /Volume da tela/ })).toBeNull()
   })
 
   it('duas telas em destaque com áudio: um controle para cada uma', async () => {
     useApp.setState({ screens: ['ana', 'bia'], screenAudio: ['ana', 'bia'] })
     render(<VoiceGrid members={members} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Assistir: Tela de Ana' }))
     await userEvent.click(within(screen.getByRole('group', { name: 'Telas ao vivo' })).getByRole('button', { name: 'Tela de Bia' }))
     expect(screen.getByRole('slider', { name: 'Volume da tela de Ana' })).toBeTruthy()
     expect(screen.getByRole('slider', { name: 'Volume da tela de Bia' })).toBeTruthy()
