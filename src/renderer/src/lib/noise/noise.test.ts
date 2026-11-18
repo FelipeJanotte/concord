@@ -163,7 +163,7 @@ function setup(opts: { cores?: number; engineFails?: boolean } = {}) {
   let tick: (() => void) | null = null
   let now = 0
   const modes: NoiseMode[] = []
-  const track = { applyConstraints: vi.fn(async (_c: MediaTrackConstraints) => {}) }
+  const track = {}
   const proc = new AutoNoiseProcessor(
     {
       loadEngine: vi.fn(async () => {
@@ -198,7 +198,7 @@ function setup(opts: { cores?: number; engineFails?: boolean } = {}) {
     }
   }
   const [dry, wet] = [() => ctx.gains[0], () => ctx.gains[1]]
-  return { proc, ctx, engineNode, destroyEngine, modes, track, init, run, dry, wet, hasTimer: () => tick !== null }
+  return { proc, ctx, engineNode, destroyEngine, modes, init, run, dry, wet, hasTimer: () => tick !== null }
 }
 
 describe('AutoNoiseProcessor', () => {
@@ -226,24 +226,22 @@ describe('AutoNoiseProcessor', () => {
     expect(s.hasTimer()).toBe(true)
   })
 
-  it('ruído de fundo liga o avançado: crossfade para o molhado e desliga a supressão nativa', async () => {
+  it('ruído de fundo liga o avançado: crossfade para o molhado', async () => {
     const s = setup()
     await s.init()
     s.run(0.03, 2000) // ≈ -30 dBFS constante
     expect(s.proc.currentMode).toBe('advanced')
     expect(s.dry().gain.value).toBe(0)
     expect(s.wet().gain.value).toBe(1)
-    expect(s.track.applyConstraints).toHaveBeenLastCalledWith({ noiseSuppression: false })
   })
 
-  it('o silêncio volta para o leve e religa a supressão nativa', async () => {
+  it('o silêncio volta para o leve', async () => {
     const s = setup()
     await s.init()
     s.run(0.03, 2000)
     s.run(0.0001, 3000) // ≈ -80 dBFS
     expect(s.proc.currentMode).toBe('light')
     expect(s.dry().gain.value).toBe(1)
-    expect(s.track.applyConstraints).toHaveBeenLastCalledWith({ noiseSuppression: true })
     expect(s.modes).toEqual(['light', 'advanced', 'light'])
   })
 
@@ -275,7 +273,7 @@ describe('AutoNoiseProcessor', () => {
     warn.mockRestore()
   })
 
-  it('destroy libera o motor, desconecta e devolve a supressão nativa', async () => {
+  it('destroy libera o motor e desconecta', async () => {
     const s = setup()
     await s.init()
     s.run(0.03, 2000)
@@ -283,15 +281,6 @@ describe('AutoNoiseProcessor', () => {
     expect(s.destroyEngine).toHaveBeenCalled()
     expect(s.hasTimer()).toBe(false)
     expect(s.proc.processedTrack).toBeUndefined()
-    expect(s.track.applyConstraints).toHaveBeenLastCalledWith({ noiseSuppression: true })
-  })
-
-  it('applyConstraints recusado não quebra', async () => {
-    const s = setup()
-    s.track.applyConstraints.mockRejectedValue(new Error('OverconstrainedError'))
-    await s.init()
-    expect(() => s.run(0.03, 2000)).not.toThrow()
-    expect(s.proc.currentMode).toBe('advanced')
   })
 })
 

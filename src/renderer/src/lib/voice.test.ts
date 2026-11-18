@@ -1,5 +1,5 @@
 // VoiceClient (B2) com Room, microfone e faixas do LiveKit falsos.
-import { DisconnectReason, RoomEvent, Track, type LocalAudioTrack, type Room } from 'livekit-client'
+import { DisconnectReason, RoomEvent, Track, type AudioCaptureOptions, type LocalAudioTrack, type Room } from 'livekit-client'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { JoinVoiceResult } from '@shared/types'
 import { initialState, useApp } from '@/store'
@@ -46,7 +46,11 @@ class FakeMic {
   setAudioContext = vi.fn(async (_ctx: unknown) => {})
   setProcessor = vi.fn(async (_p: unknown) => {})
   stopProcessor = vi.fn(async () => {})
+  nativeSuppression = true
   mediaStreamTrack = { applyConstraints: vi.fn(async (_c: unknown) => {}) }
+  restartTrack = vi.fn(async (opts?: AudioCaptureOptions) => {
+    this.nativeSuppression = opts?.noiseSuppression !== false
+  })
   mute = vi.fn(async () => {
     this.muted = true
     return this
@@ -650,6 +654,7 @@ describe('supressão de ruído automática (B13)', () => {
       createMicTrack: async (_deviceId, o) => {
         micOpts.push(o)
         mic = new FakeMic()
+        mic.nativeSuppression = o?.noiseSuppression !== false
         if (opts.processorFails) mic.setProcessor.mockRejectedValue(new Error('WASM bloqueado'))
         return mic as unknown as LocalAudioTrack
       },
@@ -738,16 +743,49 @@ describe('supressão de ruído automática (B13)', () => {
     expect(mic!.setProcessor).not.toHaveBeenCalled()
   })
 
-  it('desligar dentro da sala tira o filtro e a nativa; ligar de novo devolve', async () => {
+  it('desligar dentro da sala reabre a captura sem a nativa (o Chromium ignora applyConstraints); ligar devolve', async () => {
     const c = noiseClient()
     await c.join('sala-1')
     await c.setNoiseSuppression(false)
     expect(mic!.stopProcessor).toHaveBeenCalled()
-    expect(mic!.mediaStreamTrack.applyConstraints).toHaveBeenLastCalledWith({ noiseSuppression: false })
+    expect(mic!.nativeSuppression).toBe(false)
     expect(modes.at(-1)).toBe('off')
     await c.setNoiseSuppression(true)
-    expect(mic!.mediaStreamTrack.applyConstraints).toHaveBeenLastCalledWith({ noiseSuppression: true })
+    expect(mic!.nativeSuppression).toBe(true)
     expect(mic!.setProcessor).toHaveBeenCalledTimes(2)
+  })
+
+  it('entrou com a supressão desligada e liga na sala: a captura ganha a nativa', async () => {
+    const c = noiseClient()
+    await c.setNoiseSuppression(false)
+    await c.join('sala-1')
+    await c.setNoiseSuppression(true)
+    expect(mic!.nativeSuppression).toBe(true)
+    expect(mic!.setProcessor).toHaveBeenCalledTimes(1)
+  })
+
+  it('reabrir a captura mantém o microfone escolhido e a captura de voz', async () => {
+    const c = noiseClient()
+    await c.setInputDevice('mic-usb')
+    await c.join('sala-1')
+    await c.setNoiseSuppression(false)
+    expect(mic!.restartTrack).toHaveBeenLastCalledWith({
+      echoCancellation: true,
+      noiseSuppression: false,
+      autoGainControl: true,
+      deviceId: 'mic-usb'
+    })
+  })
+
+  it('microfone que não reabre: avisa no console e a troca não quebra', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const c = noiseClient()
+    await c.join('sala-1')
+    mic!.restartTrack.mockRejectedValue(new DOMException('sumiu', 'NotFoundError'))
+    await expect(c.setNoiseSuppression(false)).resolves.toBeUndefined()
+    expect(modes.at(-1)).toBe('off')
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('[ruído]'), expect.anything())
+    warn.mockRestore()
   })
 
   it('sem microfone (só ouvindo) não tenta ligar nada', async () => {

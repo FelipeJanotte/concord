@@ -479,9 +479,9 @@ de quem fala (processador da faixa do microfone no `livekit-client`); quem ouve 
 | Peça | Papel |
 |---|---|
 | `lib/noise/decide.ts` | `NoiseDecider` (função pura): ruído de fundo = percentil 20% do nível dos últimos 4 s (a fala é alta e intermitente; o fundo fica nos valores baixos). Fundo acima de **-50 dBFS por 2 s** liga o avançado; abaixo de **-58 dBFS por 10 s** desliga. O vão entre os dois evita ficar trocando. |
-| `lib/noise/processor.ts` | `AutoNoiseProcessor` (`TrackProcessor` do LiveKit): microfone → seco + (RNNoise → molhado) → faixa publicada, e um analisador que mede o nível a cada 250 ms. A troca de modo é um crossfade (sem estalo, sem republicar). Com o avançado ligado, desliga a supressão nativa do WebRTC (`applyConstraints`) para não processar duas vezes. |
+| `lib/noise/processor.ts` | `AutoNoiseProcessor` (`TrackProcessor` do LiveKit): microfone → seco + (RNNoise → molhado) → faixa publicada, e um analisador que mede o nível a cada 250 ms. A troca de modo é um crossfade (sem estalo, sem republicar). Não mexe na captura: a supressão nativa continua como o microfone foi aberto (ver "Supressão nativa só muda reabrindo a captura"). |
 | `lib/noise/engine.ts` | Motor: **RNNoise** (MIT) de `@sapphi-red/web-noise-suppressor`, WASM + AudioWorklet, carregado com `import()` só quando o filtro liga. Os arquivos (`rnnoise*.wasm`, worklet) vão empacotados pelo Vite (`?url`). O WASM é baixado uma vez e o worklet é registrado uma vez por AudioContext. |
-| `lib/voice.ts` | `setNoiseSuppression(on)`, `onNoiseModeChange`. Antes de publicar o microfone: `mic.setAudioContext(ctx48k)` + `mic.setProcessor(...)` (um AudioContext a 48 kHz **novo a cada entrada na sala**, fechado no `teardown`, com o vigia do relógio). Desligar na sala: `stopProcessor` + nativa desligada (o mesmo AudioContext continua). |
+| `lib/voice.ts` | `setNoiseSuppression(on)`, `onNoiseModeChange`. Antes de publicar o microfone: `mic.setAudioContext(ctx48k)` + `mic.setProcessor(...)` (um AudioContext a 48 kHz **novo a cada entrada na sala**, fechado no `teardown`, com o vigia do relógio). Ligar/desligar na sala: `stopProcessor`/`setProcessor` + `mic.restartTrack(micCapture(...))`, que reabre a captura com a nativa ligada ou desligada, no mesmo microfone escolhido (o mesmo AudioContext continua). |
 | `lib/audio-clock.ts` | `AudioClockWatchdog`: a cada 2 s (`CLOCK_CHECK_MS`) compara o `currentTime` do AudioContext com o relógio real; abaixo de 0,9x (`MIN_CLOCK_RATE`) em 2 medições seguidas, `suspend()` + `resume()` e o log `[voz] áudio do microfone rodava a Nx...`. Contexto suspenso de propósito não conta. Ver "Voz robotizada" abaixo. |
 | `store/devices.ts` | `noiseSuppression` e `noiseMode` (`'light' \| 'advanced' \| 'light-fallback' \| 'off' \| null`), mostrado como frase em Configurações de voz. |
 
@@ -507,13 +507,36 @@ de quem fala (processador da faixa do microfone no `livekit-client`); quem ouve 
   destrava na hora. Cadeia sem AudioWorklet (só o ganho), no mesmo pico, nunca travou. Duas defesas em `lib/voice.ts`:
   o **vigia** (`AudioClockWatchdog`, destrava sozinho em ~4 s) e um **AudioContext novo a cada entrada** (sair e
   entrar recomeça o áudio). Antes o contexto era criado uma vez e reaproveitado entre salas.
+- **Supressão nativa só muda reabrindo a captura:** no Electron 37 (Chromium 138), `applyConstraints({ noiseSuppression })`
+  numa faixa de microfone aberta **resolve sem erro e não muda nada** (`getSettings().noiseSuppression` continua igual e o
+  nível medido também). Antes, desligar a supressão dentro da sala deixava a nativa ligada (não era "microfone cru"), e
+  ligar numa sala em que se entrou com ela desligada deixava o modo leve sem nenhuma supressão. Agora
+  `setNoiseSuppression` reabre a captura com `restartTrack` (o `livekit-client` troca a faixa enviada e mantém o mudo);
+  se o microfone não reabre, log `[ruído] não foi possível reabrir o microfone...`. Pelo mesmo motivo, **no modo avançado
+  a nativa continua ligada junto com o RNNoise** (o processador tentava desligá-la com `applyConstraints`, sem efeito, e
+  essa tentativa foi removida). Desligá-la de verdade a cada troca de modo exigiria reabrir o microfone a cada troca
+  (corte no áudio e o processador recomeçando a medição); fica como proposta se a dupla supressão soar "abafada".
+- **Verificado no app empacotado** (`electron-builder --dir`, `dist/win-unpacked/concord.exe` com
+  `--remote-debugging-port` e um script CDP): o WASM e o worklet ficam dentro do `app.asar`
+  (`out/renderer/assets/rnnoise*.wasm`, `workletProcessor-*.js`) e carregam por `file://` sem `asarUnpack` e sem erro de
+  CSP (WASM SIMD, ~70 ms). Atenuação medida do nó do RNNoise: ruído rosa -33 dBFS → -47; rosa -47 → -91; marrom -26 → -82;
+  branco -35 → -40 (ruído branco é o ponto fraco do RNNoise); tom puro passa intacto. Com microfone falso
+  (`--use-fake-device-for-media-stream --use-file-for-fake-audio-capture=<wav>`) tocando ruído rosa: a 40 dBFS cru, o
+  analisador (que mede **depois** da nativa, porque a faixa já sai processada do `getUserMedia`) vê -45,5 dBFS e o
+  avançado liga; a -45 dBFS cru, vê -50,8 e fica no leve (a nativa tira só ~5 dB desse ruído). Ou seja, o RNNoise entra
+  com ruído de fundo a partir de ~-45 dBFS no microfone; abaixo disso fica só a nativa. Se ventilador mais baixo passar,
+  a proposta é baixar `noisyDb` (ex.: -55) medindo antes com o mesmo roteiro.
+- **Núcleos:** o avançado exige 3 ou mais (`navigator.hardwareConcurrency`); qualquer dual-core com hyper-threading já
+  informa 4.
 - **CSP:** `script-src` ganhou `'wasm-unsafe-eval'` (necessário para compilar WebAssembly; não libera `eval` de JS).
 - **Trocar de motor:** outra função com a assinatura de `NoiseEngineLoader` (ex.: o GTCRN do mesmo pacote, ou
   DeepFilterNet3). O resto não muda.
 - **Testes:** `lib/noise/noise.test.ts` (decisor: silêncio, ventilador, fala sobre silêncio × sobre ruído, histerese,
-  barulho curto; processador com Web Audio falso: crossfade, nativa liga/desliga, motor que falha, PC fraco, erro no
-  worklet, destroy, `applyConstraints` recusado), `lib/voice.test.ts` (bloco B13: filtro antes de publicar, contexto
-  novo a cada entrada e fechado ao sair, vigia ligado e desligado, falha → entra com a nativa, desligado = cru, ligar/desligar dentro da sala, sair), `lib/actions/devices.test.ts`,
+  barulho curto; processador com Web Audio falso: crossfade, motor que falha, PC fraco, erro no worklet, destroy),
+  `lib/voice.test.ts` (bloco B13: filtro antes de publicar, contexto novo a cada entrada e fechado ao sair, vigia ligado
+  e desligado, falha → entra com a nativa, desligado = cru, ligar/desligar dentro da sala reabrindo a captura (o
+  microfone falso, como o Chromium, ignora `applyConstraints`), mesmo microfone escolhido ao reabrir, microfone que não
+  reabre, sair), `lib/actions/devices.test.ts`,
   `lib/audio-clock.test.ts` (vigia: relógio em dia, preso a 2/3, medição lenta isolada, recomeça depois de destravar,
   suspenso de propósito, `stop`, falha ao retomar) e `components/settings/VoiceSettings.test.tsx`. **À mão (o que os testes não medem):** a qualidade e o atraso do filtro
   e o uso de CPU; falar teclando e com ventilador e ouvir na outra janela.
@@ -616,6 +639,12 @@ frente, segurar a tecla e conferir na outra janela que ela ouve e vê o "falando
     desligue o interruptor para comparar com o microfone cru. Robótico que começa no meio da chamada, uma pessoa por
     vez, e passa ao sair e entrar: veja no console de quem fala o log `[voz] áudio do microfone rodava a Nx` (o vigia
     destravou o AudioContext; seção "Voz robotizada"). Para medir: `ctx.currentTime` contra `performance.now()`.
+    **No app instalado** o Ctrl+Shift+I não abre o DevTools (o `optimizer.watchWindowShortcuts` bloqueia em produção):
+    feche o Concord, abra `%LOCALAPPDATA%\Programs\concord\concord.exe --remote-debugging-port=9222`, vá em
+    `edge://inspect` (ou `chrome://inspect`) no navegador, "Configure..." com `localhost:9222`, e clique em "inspect"
+    na página `index.html`. Roteiro do filtro: entre numa sala, abra Configurações → Voz e vídeo e leia a frase do
+    modo; com um ventilador ou chiado perto do microfone, em ~4 s ela passa para o avançado; no console não deve haver
+    `[ruído]`. Desligar e religar o interruptor na sala reabre o microfone (um corte curto no áudio é esperado).
 12. Voz de alguém só num lado do fone, ou picotando: confira no `chrome://webrtc-internals` de quem fala se o
     `outbound-rtp` de áudio está com 1 canal e o SDP sem `stereo=1`. Com 2 canais, o microfone saiu do caminho
     mono (`MIC_PUBLISH` e `forceMono`, seção "Supressão de ruído automática"). Picote com 1 canal = rede: veja

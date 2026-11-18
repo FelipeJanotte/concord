@@ -29,6 +29,7 @@ import {
   Room,
   RoomEvent,
   Track,
+  type AudioCaptureOptions,
   type LocalAudioTrack,
   type LocalTrackPublication,
   type Participant,
@@ -48,6 +49,10 @@ import { useApp } from '@/store'
 import type { AppSocket } from './core'
 
 const AUDIO_CAPTURE = { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+
+function micCapture(deviceId: string | null, noiseSuppression: boolean): AudioCaptureOptions {
+  return { ...AUDIO_CAPTURE, noiseSuppression, ...(deviceId ? { deviceId } : {}) }
+}
 
 /** Tela em 1080p a 15 fps: texto legível sem pesar demais na rede. */
 /**
@@ -93,12 +98,7 @@ const defaultDeps: VoiceDeps = {
       adaptiveStream: true,
       dynacast: true
     }),
-  createMicTrack: (deviceId, opts) =>
-    createLocalAudioTrack({
-      ...AUDIO_CAPTURE,
-      noiseSuppression: opts?.noiseSuppression ?? true,
-      ...(deviceId ? { deviceId } : {})
-    }),
+  createMicTrack: (deviceId, opts) => createLocalAudioTrack(micCapture(deviceId, opts?.noiseSuppression ?? true)),
   createGainProcessor: (gain) => new MicGainProcessor(gain),
   createNoiseProcessor: (onMode, gain) =>
     new AutoNoiseProcessor(
@@ -485,12 +485,12 @@ export class VoiceClient {
     const mic = this.mic
     if (!mic || !this.room) return
     if (enabled) {
-      await this.setNative(mic, true)
+      await this.recaptureMic(mic, true)
       await this.attachNoise(mic)
     } else {
       await mic.stopProcessor()
       this.gainControl = null
-      await this.setNative(mic, false)
+      await this.recaptureMic(mic, false)
       this.onNoiseModeChange?.('off')
       if (this.micGain !== 1) await this.attachGain(mic)
     }
@@ -603,11 +603,11 @@ export class VoiceClient {
     }
   }
 
-  private async setNative(mic: LocalAudioTrack, on: boolean): Promise<void> {
+  private async recaptureMic(mic: LocalAudioTrack, nativeSuppression: boolean): Promise<void> {
     try {
-      await mic.mediaStreamTrack.applyConstraints({ noiseSuppression: on })
-    } catch {
-      // nem todo dispositivo deixa trocar com a faixa aberta
+      await mic.restartTrack(micCapture(this.inputDeviceId, nativeSuppression))
+    } catch (err) {
+      console.warn('[ruído] não foi possível reabrir o microfone para trocar a supressão nativa:', err)
     }
   }
 
