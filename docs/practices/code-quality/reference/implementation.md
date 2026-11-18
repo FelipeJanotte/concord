@@ -26,8 +26,8 @@ sets the steps and the report; this file governs the decisions inside each step.
 5. Give each resource and side effect an owner and lifetime. Preserve errors with useful context;
    translate them only at a boundary that owns the public contract. Never convert an unexplained
    failure into empty data or success. For retries, establish the operation's repeatability and
-   existing policy before adding one. An unexplained failure belongs to `wise-dev`.
-6. For test creation or changes, hand off to `test-strategy`, preserving any independent-author
+   existing policy before adding one. An unexplained failure belongs to [`wise-dev`](../../wise-dev/README.md).
+6. For test creation or changes, hand off to [`test-strategy`](../../test-strategy/README.md), preserving any independent-author
    requirement of the active workflow. Within its required RED/GREEN process, make the smallest
    passing implementation, then run the refactor step under `refactoring.md` with the goal
    that step owns: remove the duplication or mixed responsibility the GREEN step introduced,

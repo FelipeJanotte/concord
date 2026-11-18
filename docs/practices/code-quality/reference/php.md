@@ -16,4 +16,4 @@ static-analysis configuration. Do not introduce syntax beyond supported PHP vers
   along error paths as well as the happy path.
 
 Review reports still require the concrete replacement and scoped line. Send test methodology
-and doubles to `test-strategy`.
+and doubles to [`test-strategy`](../../test-strategy/README.md).

@@ -18,4 +18,4 @@ analyzers and the repository's dependency-injection conventions before choosing 
   Preserve exception causes and distinguish a valid absence from an operation that failed.
 
 Review reports still require the concrete replacement and scoped line. Send test methodology
-and doubles to `test-strategy`.
+and doubles to [`test-strategy`](../../test-strategy/README.md).

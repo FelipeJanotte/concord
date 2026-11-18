@@ -9,7 +9,7 @@ first; `no-new-tests` returns its decision report without entering authorship.
 
 1. Record the contract source and public seam. For a regression, require both a reproduction
    and the intended result; a failing observation alone is not an oracle. If either is unknown,
-   return the gap to `wise-dev`. Read the repository's test conventions, commands and an existing
+   return the gap to [`wise-dev`](../../wise-dev/README.md). Read the repository's test conventions, commands and an existing
    style sample. Place tests at its existing seam, not a new directory invented for this task.
 2. Before broad behavior work, make a short map from each changed requirement to its material
    risk, public seam/test, and contract-derived oracle. For a material risk, add a compact case

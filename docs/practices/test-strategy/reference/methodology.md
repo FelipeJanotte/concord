@@ -26,4 +26,4 @@ Check the installed language and runner versions before using their APIs.
 
 Coverage shows execution, not strength of assertions. Use a discriminating wrong implementation
 or, when selected under `reference/proportionality.md`, the mutation procedure to assess detection. CRAP and complexity interpretation
-belong to `code-quality`; do not introduce a second metric policy here.
+belong to [`code-quality`](../../code-quality/README.md); do not introduce a second metric policy here.

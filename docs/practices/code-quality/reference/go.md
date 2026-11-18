@@ -15,4 +15,4 @@ configuration before choosing features or commands.
   adds an abstraction that needs its own justification.
 
 Review reports still require the concrete replacement and scoped line. Send test methodology
-and doubles to `test-strategy`.
+and doubles to [`test-strategy`](../../test-strategy/README.md).

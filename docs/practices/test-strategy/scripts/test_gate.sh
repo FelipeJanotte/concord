@@ -25,7 +25,7 @@ gate=$here/gate.sh
 # The seam does not exist yet on the pre-implementation commit, so the first line of output is
 # the equivalent of an import error; the reviewer expects the assertion-level reds only once
 # gate.sh is present.
-[ -f "$gate" ] || { echo "import: skills/test-strategy/scripts/gate.sh: No such file or directory"; exit 1; }
+[ -f "$gate" ] || { echo "import: docs/practices/test-strategy/scripts/gate.sh: No such file or directory"; exit 1; }
 
 # Fixed identity and no signing, so a commit never depends on the developer's global config.
 g() { git -c user.name=fixture -c user.email=fixture@example.invalid -c commit.gpgsign=false "$@"; }
