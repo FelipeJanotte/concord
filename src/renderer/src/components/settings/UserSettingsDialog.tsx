@@ -3,7 +3,7 @@
 // (`openSettings('voice')` pelos botões de configurações de voz). Conta nova do Google ainda escolhendo o id:
 // só "Minha conta", sem o menu, até salvar.
 import type { ComponentType, ReactNode } from 'react'
-import { Bell, Mic, Palette, UserRound } from 'lucide-react'
+import { Bell, Mic, Monitor, Palette, UserRound } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { closeSettings, openSettings } from '@/lib/client'
 import { cn } from '@/lib/utils'
@@ -12,18 +12,22 @@ import { AccountSettings } from './AccountSettings'
 import { AppearanceSettings } from './appearance/AppearanceSettings'
 import { NotificationSettings } from './NotificationSettings'
 import { VoiceSettings } from './VoiceSettings'
+import { WindowsSettings } from './WindowsSettings'
 
 const SECTIONS: { id: SettingsSection; label: string; icon: ReactNode; Body: ComponentType }[] = [
   { id: 'account', label: 'Minha conta', icon: <UserRound />, Body: AccountSettings },
   { id: 'voice', label: 'Voz e vídeo', icon: <Mic />, Body: VoiceSettings },
   { id: 'appearance', label: 'Aparência', icon: <Palette />, Body: AppearanceSettings },
-  { id: 'notifications', label: 'Notificações', icon: <Bell />, Body: NotificationSettings }
+  { id: 'notifications', label: 'Notificações', icon: <Bell />, Body: NotificationSettings },
+  { id: 'windows', label: 'Windows', icon: <Monitor />, Body: WindowsSettings }
 ]
 
 export function UserSettingsDialog() {
   const section = useApp((s) => s.settingsSection)
   const choosingTag = useApp((s) => s.account?.tagLocked === false)
-  const current = SECTIONS.find((s) => s.id === (choosingTag ? 'account' : section)) ?? SECTIONS[0]
+  const startupAvailable = useApp((s) => s.openAtLogin !== null)
+  const sections = SECTIONS.filter((s) => s.id !== 'windows' || startupAvailable)
+  const current = sections.find((s) => s.id === (choosingTag ? 'account' : section)) ?? sections[0]
   const Body = current.Body
 
   return (
@@ -34,7 +38,7 @@ export function UserSettingsDialog() {
         {!choosingTag && (
           <nav aria-label="Seções das configurações" className="flex w-52 shrink-0 flex-col gap-0.5 bg-sidebar p-3">
             <p className="px-2 pb-1 text-xs font-bold tracking-wide text-muted-foreground uppercase">Configurações</p>
-            {SECTIONS.map((s) => (
+            {sections.map((s) => (
               <button
                 key={s.id}
                 type="button"
