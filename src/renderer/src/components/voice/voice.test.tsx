@@ -457,3 +457,48 @@ describe('grade centralizada com tamanho automático', () => {
     expect(grid().className).toContain('[&>*]:w-[var(--tile-w,240px)]')
   })
 })
+
+describe('áudio da tela em destaque', () => {
+  const members = [state('eu', { sharing: true }), state('ana', { sharing: true }), state('bia', { sharing: true })]
+
+  beforeEach(() => {
+    vi.spyOn(voice, 'setScreenVolume').mockImplementation(() => {})
+    vi.spyOn(voice, 'setScreenMuted').mockImplementation(() => {})
+  })
+
+  it('tela com áudio mostra silenciar e volume; regular e silenciar valem só para a tela daquela pessoa', async () => {
+    useApp.setState({ screens: ['ana'], screenAudio: ['ana'] })
+    render(<VoiceGrid members={members} />)
+    const slider = screen.getByRole('slider', { name: 'Volume da tela de Ana' }) as HTMLInputElement
+    expect(slider.value).toBe('100')
+
+    fireEvent.change(slider, { target: { value: '35' } })
+    expect(useApp.getState().screenVolumes).toEqual({ 'acc-ana': 0.35 })
+    expect(voice.setScreenVolume).toHaveBeenLastCalledWith('acc-ana', 0.35)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Silenciar a tela de Ana' }))
+    expect(useApp.getState().screenMuted).toEqual({ 'acc-ana': true })
+    expect(useApp.getState().userMuted).toEqual({})
+    expect(voice.setScreenMuted).toHaveBeenLastCalledWith('acc-ana', true)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Ativar o som da tela de Ana' }))
+    expect(useApp.getState().screenMuted).toEqual({})
+  })
+
+  it('tela sem áudio e a minha própria tela não têm controle de áudio', () => {
+    useApp.setState({ screens: ['eu', 'ana', 'bia'], screenAudio: ['bia'] })
+    render(<VoiceGrid members={members} />)
+    expect(screen.queryByRole('slider', { name: /Volume da tela/ })).toBeNull()
+
+    act(() => useApp.setState({ screens: ['eu'], screenAudio: [] }))
+    expect(screen.queryByRole('slider', { name: /Volume da tela/ })).toBeNull()
+  })
+
+  it('duas telas em destaque com áudio: um controle para cada uma', async () => {
+    useApp.setState({ screens: ['ana', 'bia'], screenAudio: ['ana', 'bia'] })
+    render(<VoiceGrid members={members} />)
+    await userEvent.click(within(screen.getByRole('group', { name: 'Telas ao vivo' })).getByRole('button', { name: 'Tela de Bia' }))
+    expect(screen.getByRole('slider', { name: 'Volume da tela de Ana' })).toBeTruthy()
+    expect(screen.getByRole('slider', { name: 'Volume da tela de Bia' })).toBeTruthy()
+  })
+})

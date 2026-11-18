@@ -9,6 +9,8 @@ import {
   selectAudioInput,
   selectAudioOutput,
   setUserMuted,
+  setScreenMuted,
+  setScreenVolume,
   setMicGain,
   setNoiseSuppression,
   setOutputVolume,
@@ -84,7 +86,7 @@ describe('escolher dispositivo', () => {
     await selectAudioInput('mic-usb')
     await selectAudioOutput('fone')
     expect(useApp.getState()).toMatchObject({ audioInputId: 'mic-usb', audioOutputId: 'fone' })
-    expect(saved()).toEqual({ input: 'mic-usb', output: 'fone', camera: null, volumes: {}, muted: [], sounds: { enabled: true, volume: 0.5 }, noise: true, micGain: 1, outputVolume: 1, leveler: false, levelerTarget: 'medium', soundboardVolume: 1 })
+    expect(saved()).toEqual({ input: 'mic-usb', output: 'fone', camera: null, volumes: {}, muted: [], sounds: { enabled: true, volume: 0.5 }, noise: true, micGain: 1, outputVolume: 1, leveler: false, levelerTarget: 'medium', soundboardVolume: 1, screenVolumes: {}, screenMuted: [] })
     expect(voice.setInputDevice).toHaveBeenCalledWith('mic-usb')
     expect(voice.setOutputDevice).toHaveBeenCalledWith('fone')
 
@@ -350,5 +352,49 @@ describe('equalizador automático', () => {
     expect(useApp.getState().levelerGains).toEqual({ 'acc-ana': 1.4 })
     voice.onLevelerGains?.({})
     expect(useApp.getState().levelerGains).toEqual({})
+  })
+})
+
+describe('volume do áudio da tela', () => {
+  beforeEach(() => {
+    vi.spyOn(voice, 'setScreenVolume').mockImplementation(() => {})
+    vi.spyOn(voice, 'setScreenMuted').mockImplementation(() => {})
+  })
+
+  it('guarda por conta, salva e avisa o VoiceClient; 100% some da lista', () => {
+    setScreenVolume('acc-ana', 0.3)
+    expect(useApp.getState().screenVolumes).toEqual({ 'acc-ana': 0.3 })
+    expect(saved()).toMatchObject({ screenVolumes: { 'acc-ana': 0.3 } })
+    expect(voice.setScreenVolume).toHaveBeenLastCalledWith('acc-ana', 0.3)
+
+    setScreenVolume('acc-ana', 1)
+    expect(useApp.getState().screenVolumes).toEqual({})
+    setScreenVolume('acc-ana', -4)
+    expect(useApp.getState().screenVolumes).toEqual({ 'acc-ana': 0 })
+  })
+
+  it('silenciar a tela não mexe no volume nem no silêncio da voz', () => {
+    setScreenVolume('acc-ana', 0.6)
+    setScreenMuted('acc-ana', true)
+    expect(useApp.getState().screenMuted).toEqual({ 'acc-ana': true })
+    expect(useApp.getState().screenVolumes).toEqual({ 'acc-ana': 0.6 })
+    expect(useApp.getState().userMuted).toEqual({})
+    expect(saved()).toMatchObject({ screenMuted: ['acc-ana'], muted: [] })
+    expect(voice.setScreenMuted).toHaveBeenLastCalledWith('acc-ana', true)
+
+    setScreenMuted('acc-ana', false)
+    expect(useApp.getState().screenMuted).toEqual({})
+  })
+
+  it('volta como estava depois de reabrir o app, ignorando valores inválidos', () => {
+    storage.setItem(
+      'concord:audio',
+      JSON.stringify({ screenVolumes: { 'acc-ana': 0.2, b: 'alto', c: 9 }, screenMuted: ['acc-bia', 42, ''] })
+    )
+    loadAudioPreferences()
+    expect(useApp.getState().screenVolumes).toEqual({ 'acc-ana': 0.2 })
+    expect(useApp.getState().screenMuted).toEqual({ 'acc-bia': true })
+    expect(voice.setScreenVolume).toHaveBeenCalledWith('acc-ana', 0.2)
+    expect(voice.setScreenMuted).toHaveBeenCalledWith('acc-bia', true)
   })
 })

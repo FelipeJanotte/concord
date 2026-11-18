@@ -4,6 +4,7 @@ import { attachScreen } from '@/lib/client'
 import { useFullscreen } from '@/lib/fullscreen'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
+import { ScreenAudioControl } from './ScreenAudioControl'
 import { ScreenViewers } from './ScreenViewers'
 
 export type ScreenArrangement = 'side-by-side' | 'stacked'
@@ -160,6 +161,9 @@ export function ScreenStage({ featured, screens, onToggle, onMove, arrangement, 
         )}
         {selfId && featured.includes(selfId) && <ScreenViewers userId={selfId} className="ml-2 text-white/80" />}
         <div className="ml-auto flex shrink-0 gap-1">
+          {featured.map((id) => (
+            <ScreenAudioControl key={id} userId={id} />
+          ))}
           {several && (
             <button type="button" onClick={onToggleArrangement} title={arrangementLabel} aria-label={arrangementLabel} className={toolbarButton}>
               {arrangement === 'side-by-side' ? <Rows2 /> : <Columns2 />}

@@ -190,6 +190,9 @@ export class VoiceClient {
   private mutedUsers = new Set<string>()
   /** faixa do microfone de cada pessoa → conta dela (para aplicar o volume) */
   private voices = new Map<RemoteTrack, string>()
+  private screenVolumes = new Map<string, number>()
+  private mutedScreens = new Set<string>()
+  private screenAudio = new Map<RemoteTrack, { identity: string; accountId: string | undefined }>()
 
   /** O que esta conexão pode publicar na sala atual (v2): microfone com `speak`, tela com `share`. */
   private permissions: VoicePermissions = { canSpeak: true, canShare: true, canVideo: true }
@@ -345,6 +348,8 @@ export class VoiceClient {
     for (const track of this.remoteAudio) track.detach().forEach((el) => el.remove())
     this.remoteAudio.clear()
     this.voices.clear()
+    this.screenAudio.clear()
+    this.publishScreenAudio()
     this.mic?.stop() // o LiveKit destrói o processador junto com a faixa
     this.closeAudioContext()
     this.gainControl = null
@@ -382,7 +387,7 @@ export class VoiceClient {
   setDeafened(deafened: boolean): void {
     this.deafened = deafened
     for (const track of this.remoteAudio) this.muteElements(track)
-    for (const track of this.leveled) this.applyVolume(track, this.voices.get(track) ?? null)
+    for (const track of this.leveled) this.applyVolume(track)
     this.publishSpeaking()
   }
 
@@ -466,14 +471,31 @@ export class VoiceClient {
     const v = Math.min(1, Math.max(0, Number.isFinite(volume) ? volume : 1))
     if (v === 1) this.volumes.delete(accountId)
     else this.volumes.set(accountId, v)
-    for (const [track, owner] of this.voices) if (owner === accountId) this.applyVolume(track, owner)
+    for (const [track, owner] of this.voices) if (owner === accountId) this.applyVolume(track)
   }
 
   /** Silencia (ou volta) a voz de uma pessoa só para mim, sem perder o volume ajustado. */
   setUserMuted(accountId: string, muted: boolean): void {
     if (muted) this.mutedUsers.add(accountId)
     else this.mutedUsers.delete(accountId)
-    for (const [track, owner] of this.voices) if (owner === accountId) this.applyVolume(track, owner)
+    for (const [track, owner] of this.voices) if (owner === accountId) this.applyVolume(track)
+  }
+
+  setScreenVolume(accountId: string, volume: number): void {
+    const v = Math.min(1, Math.max(0, Number.isFinite(volume) ? volume : 1))
+    if (v === 1) this.screenVolumes.delete(accountId)
+    else this.screenVolumes.set(accountId, v)
+    this.applyScreenVolumes(accountId)
+  }
+
+  setScreenMuted(accountId: string, muted: boolean): void {
+    if (muted) this.mutedScreens.add(accountId)
+    else this.mutedScreens.delete(accountId)
+    this.applyScreenVolumes(accountId)
+  }
+
+  private applyScreenVolumes(accountId: string): void {
+    for (const [track, owner] of this.screenAudio) if (owner.accountId === accountId) this.applyVolume(track)
   }
 
   /** Abre o microfone escolhido; se ele sumiu (desconectado), cai para o padrão do sistema. */
@@ -509,7 +531,7 @@ export class VoiceClient {
   /** Volume de saída (0 a 1): todo áudio da sala, junto com o volume de cada pessoa. */
   setOutputVolume(volume: number): void {
     this.outputVolume = clampOutputVolume(volume)
-    for (const track of this.remoteAudio) this.applyVolume(track, this.voices.get(track) ?? null)
+    for (const track of this.remoteAudio) this.applyVolume(track)
   }
 
   setLeveler(enabled: boolean): void {
@@ -545,7 +567,7 @@ export class VoiceClient {
     this.leveled.clear()
     for (const track of tracks) {
       this.muteElements(track)
-      this.applyVolume(track, this.voices.get(track) ?? null)
+      this.applyVolume(track)
     }
     this.onLevelerGains?.({})
   }
@@ -622,12 +644,18 @@ export class VoiceClient {
     }
   }
 
-  /** Volume de uma faixa: o de saída × o da pessoa (`accountId` null = áudio da tela, só o de saída). */
-  private applyVolume(track: RemoteTrack, accountId: string | null): void {
-    if (this.leveled.has(track) && accountId !== null) return this.leveler?.setVolume(track, this.volumeOf(accountId))
-    const personal = accountId === null ? 1 : this.mutedUsers.has(accountId) ? 0 : (this.volumes.get(accountId) ?? 1)
-    const volume = personal * this.outputVolume
+  private applyVolume(track: RemoteTrack): void {
+    const voiceOwner = this.voices.get(track)
+    if (voiceOwner !== undefined && this.leveled.has(track)) return this.leveler?.setVolume(track, this.volumeOf(voiceOwner))
+    const volume = this.ownVolumeOf(track, voiceOwner) * this.outputVolume
     ;(track as RemoteTrack & { setVolume?: (v: number) => void }).setVolume?.(volume)
+  }
+
+  private ownVolumeOf(track: RemoteTrack, voiceOwner: string | undefined): number {
+    if (voiceOwner !== undefined) return this.mutedUsers.has(voiceOwner) ? 0 : (this.volumes.get(voiceOwner) ?? 1)
+    const screenOwner = this.screenAudio.get(track)?.accountId
+    if (screenOwner === undefined) return 1
+    return this.mutedScreens.has(screenOwner) ? 0 : (this.screenVolumes.get(screenOwner) ?? 1)
   }
 
   private volumeOf(accountId: string): number {
@@ -701,8 +729,14 @@ export class VoiceClient {
         if (track.source === Track.Source.Microphone && accountId) {
           this.voices.set(track, accountId)
           if (this.levelerEnabled) this.level(track, accountId)
-          else this.applyVolume(track, accountId)
-        } else if (this.outputVolume !== 1) this.applyVolume(track, null)
+          else this.applyVolume(track)
+          return
+        }
+        if (track.source === Track.Source.ScreenShareAudio) {
+          this.screenAudio.set(track, { identity: participant.identity, accountId })
+          this.publishScreenAudio()
+        }
+        this.applyVolume(track)
       })
       .on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack, _pub: RemoteTrackPublication, participant: Participant) => {
         if (track.kind === Track.Kind.Video) {
@@ -710,6 +744,7 @@ export class VoiceClient {
           return this.removeScreen(participant.identity, track)
         }
         this.voices.delete(track)
+        if (this.screenAudio.delete(track)) this.publishScreenAudio()
         if (this.leveled.delete(track)) this.leveler?.remove(track)
         if (!this.remoteAudio.delete(track)) return
         track.detach().forEach((el) => el.remove())
@@ -790,6 +825,12 @@ export class VoiceClient {
     const next = [...this.cameras.keys()]
     const prev = useApp.getState().cameras
     if (prev.length !== next.length || next.some((id, i) => prev[i] !== id)) useApp.setState({ cameras: next })
+  }
+
+  private publishScreenAudio(): void {
+    const next = [...new Set([...this.screenAudio.values()].map((owner) => owner.identity))]
+    const prev = useApp.getState().screenAudio
+    if (prev.length !== next.length || next.some((id, i) => prev[i] !== id)) useApp.setState({ screenAudio: next })
   }
 
   /** `store.screens` = quem tem tela disponível agora (só muda a store se mudou). */
