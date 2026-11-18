@@ -1,8 +1,9 @@
-import { useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { HeadphoneOff, MicOff, VolumeX } from 'lucide-react'
 import type { VoiceState } from '@shared/types'
 import { UserAvatar } from '@/components/UserAvatar'
-import { featuredScreens, moveScreen, toggleFeatured } from '@/lib/featured-screens'
+import { watchScreens } from '@/lib/client'
+import { featuredScreens, moveScreen, toggleFeatured, watchedScreens } from '@/lib/featured-screens'
 import { bestTileLayout, useElementSize } from '@/lib/tile-layout'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
@@ -37,16 +38,17 @@ export function VoiceGrid({ members, fill = true }: { members: VoiceState[]; fil
   const screens = useApp((s) => s.screens)
   const selfId = useApp((s) => s.self?.id)
   const [chosen, setChosen] = useState<string[]>([])
-  const [grid, setGrid] = useState(false)
   const [membersHidden, setMembersHidden] = useState(false)
   const [arrangement, setArrangement] = useState<ScreenArrangement>('side-by-side')
 
-  const featured = featuredScreens(screens, selfId, chosen, grid)
+  const featured = featuredScreens(screens, chosen)
+  if (featured.length !== chosen.length) setChosen(featured)
 
-  const watch = (id: string): void => {
-    setChosen([id])
-    setGrid(false)
-  }
+  const watched = watchedScreens(featured, selfId)
+  useEffect(() => watchScreens(watched), [watched.join(' ')])
+  useEffect(() => () => watchScreens([]), [])
+
+  const watch = (id: string): void => setChosen([id])
   const watchable = (userId: string): (() => void) | undefined =>
     screens.includes(userId) && !featured.includes(userId) ? () => watch(userId) : undefined
 
@@ -74,7 +76,7 @@ export function VoiceGrid({ members, fill = true }: { members: VoiceState[]; fil
         onMove={(dragged, target) => setChosen(moveScreen(featured, dragged, target))}
         arrangement={arrangement}
         onToggleArrangement={() => setArrangement((a) => (a === 'side-by-side' ? 'stacked' : 'side-by-side'))}
-        onShowGrid={() => setGrid(true)}
+        onStopWatching={() => setChosen([])}
         membersHidden={membersHidden}
         onToggleMembers={() => setMembersHidden((h) => !h)}
       />

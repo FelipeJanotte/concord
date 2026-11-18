@@ -14,6 +14,7 @@
 import {
   can,
   channelPermissions,
+  MAX_WATCHED_SCREENS,
   SCREEN_PREVIEW_MAX_CHARS,
   SCREEN_PREVIEW_PREFIX,
   type AccessState,
@@ -41,6 +42,7 @@ const selfMuted = new Map<string, boolean>()
 /** contas silenciadas por um moderador (B6): cache do banco (`server_mutes`), carregado no `init`. */
 const serverMuted = new Set<string>()
 const screenPreviews = new Map<string, string>()
+const watchRequests = new Map<string, string[]>()
 
 const PREVIEW_UNAVAILABLE: ScreenPreviewResult = { ok: false, error: 'Prévia indisponível' }
 
@@ -53,6 +55,33 @@ async function canPreview(accountId: string, channelId: string): Promise<boolean
 }
 
 export const voiceStates = (): VoiceState[] => [...voice.values()]
+
+function isScreenList(ids: unknown): ids is string[] {
+  return Array.isArray(ids) && ids.length <= MAX_WATCHED_SCREENS && ids.every((id) => typeof id === 'string')
+}
+
+function sameIds(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((id, i) => b[i] === id)
+}
+
+function inSameRoom(viewer: VoiceState, screenId: string): boolean {
+  return screenId !== viewer.userId && voice.get(screenId)?.channelId === viewer.channelId
+}
+
+function watchedScreens(viewer: VoiceState): string[] {
+  return (watchRequests.get(viewer.userId) ?? []).filter((id) => voice.get(id)?.sharing)
+}
+
+function forgetScreen(screenId: string): void {
+  for (const [viewerId, ids] of watchRequests) {
+    if (ids.includes(screenId)) watchRequests.set(viewerId, ids.filter((id) => id !== screenId))
+  }
+}
+
+function forgetConnection(socketId: string): void {
+  watchRequests.delete(socketId)
+  forgetScreen(socketId)
+}
 
 function voicePermissions(access: AccessState, accountId: string, channelId: string): VoicePermissions {
   const perms = channelPermissions(access, accountId, channelId)
@@ -84,9 +113,12 @@ export function voiceSocketsIn(channelId: string): string[] {
 }
 
 /** Estado de voz que a conta pode ver (quem está em sala privada não aparece para quem não vê a sala). */
-export function voiceStatesFor(accountId: string): VoiceState[] {
+export function voiceStatesFor(accountId: string, socketId?: string): VoiceState[] {
   const access = accessSnapshot()
-  return voiceStates().filter((v) => seesRoom(access, accountId, v.channelId))
+  const room = socketId ? voiceChannelOf(socketId) : undefined
+  return voiceStates()
+    .filter((v) => seesRoom(access, accountId, v.channelId))
+    .map((v) => (room && v.channelId === room ? { ...v, watching: watchedScreens(v) } : v))
 }
 
 /** Quem quer saber quando as salas mudam (B8: a chamada acaba quando os dois saem da sala da conversa). */
@@ -101,7 +133,7 @@ export function onVoiceRoomsChange(fn: (io: AppServer) => void): void {
 export function emitVoice(io: AppServer): void {
   for (const socket of io.sockets.sockets.values()) {
     const user = socket.data.user
-    if (user) socket.emit('voice:state', voiceStatesFor(user.accountId))
+    if (user) socket.emit('voice:state', voiceStatesFor(user.accountId, socket.id))
   }
   for (const fn of roomListeners) fn(io)
 }
@@ -133,6 +165,7 @@ export function applyVoiceAccess(io: AppServer, access: AccessState): void {
     if (!next.canShare) {
       state.sharing = false
       screenPreviews.delete(socket.id)
+      forgetScreen(socket.id)
     }
     if (liveKitConfig) void updateVoicePermissions(liveKitConfig, state.channelId, socket.id, next)
   }
@@ -146,6 +179,7 @@ function leaveVoice(io: AppServer, socket: AppSocket, { emit = true } = {}): voi
   published.delete(socket.id)
   selfMuted.delete(socket.id)
   screenPreviews.delete(socket.id)
+  forgetConnection(socket.id)
   if (liveKitConfig) void kickFromRoom(liveKitConfig, state.channelId, socket.id)
   if (emit) emitVoice(io)
 }
@@ -201,6 +235,7 @@ export function clearVoiceChannel(_io: AppServer, channelId: string): void {
     published.delete(sid)
     selfMuted.delete(sid)
     screenPreviews.delete(sid)
+    forgetConnection(sid)
   }
   // Sempre encerra: pode haver alguém no LiveKit que a lista não conhece (o 404 é ignorado).
   if (liveKitConfig) void closeRoom(liveKitConfig, channelId)
@@ -250,6 +285,7 @@ export const voiceModule: ServerModule = {
         published.set(socket.id, permissions)
         selfMuted.set(socket.id, !!payload.muted)
         screenPreviews.delete(socket.id)
+        forgetConnection(socket.id)
         ack({ ok: true, ...credentials, ...permissions })
         emitVoice(io)
       })
@@ -276,7 +312,20 @@ export const voiceModule: ServerModule = {
       // sem `share` não aparece "ao vivo" (o LiveKit também não aceita a tela)
       if (sharing && published.get(socket.id)?.canShare === false) return
       state.sharing = sharing
-      if (!sharing) screenPreviews.delete(socket.id)
+      if (!sharing) {
+        screenPreviews.delete(socket.id)
+        forgetScreen(socket.id)
+      }
+      emitVoice(io)
+    })
+
+    socket.on('voice:watching', (screenIds) => {
+      const state = voice.get(socket.id)
+      if (!state || !isScreenList(screenIds)) return
+      if (!limiters.screenWatching.take(socket.id).ok) return
+      const next = [...new Set(screenIds)].filter((id) => inSameRoom(state, id))
+      if (sameIds(next, watchRequests.get(socket.id) ?? [])) return
+      watchRequests.set(socket.id, next)
       emitVoice(io)
     })
 

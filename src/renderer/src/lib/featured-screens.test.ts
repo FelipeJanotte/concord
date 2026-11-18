@@ -1,24 +1,29 @@
 import { describe, expect, it } from 'vitest'
-import { featuredScreens, moveScreen, toggleFeatured } from './featured-screens'
+import type { VoiceState } from '@shared/types'
+import { featuredScreens, moveScreen, screenViewers, toggleFeatured, watchedScreens } from './featured-screens'
 
 describe('featuredScreens', () => {
-  it('sem telas ou na grade: nenhuma', () => {
-    expect(featuredScreens([], 'eu', [], false)).toEqual([])
-    expect(featuredScreens(['ana'], 'eu', ['ana'], true)).toEqual([])
-  })
-
-  it('sem escolha: a primeira de outra pessoa; a própria só se for a única', () => {
-    expect(featuredScreens(['eu', 'ana', 'bia'], 'eu', [], false)).toEqual(['ana'])
-    expect(featuredScreens(['eu'], 'eu', [], false)).toEqual(['eu'])
+  it('sem escolha: nenhuma, nem a própria (assistir é opcional)', () => {
+    expect(featuredScreens([], [])).toEqual([])
+    expect(featuredScreens(['eu', 'ana', 'bia'], [])).toEqual([])
+    expect(featuredScreens(['eu'], [])).toEqual([])
   })
 
   it('as escolhidas ainda ao vivo, na ordem escolhida', () => {
-    expect(featuredScreens(['eu', 'ana', 'bia'], 'eu', ['bia', 'eu'], false)).toEqual(['bia', 'eu'])
-    expect(featuredScreens(['eu', 'ana'], 'eu', ['bia', 'eu'], false)).toEqual(['eu'])
+    expect(featuredScreens(['eu', 'ana', 'bia'], ['bia', 'eu'])).toEqual(['bia', 'eu'])
+    expect(featuredScreens(['eu', 'ana'], ['bia', 'eu'])).toEqual(['eu'])
   })
 
-  it('todas as escolhidas acabaram: volta ao automático', () => {
-    expect(featuredScreens(['eu', 'ana'], 'eu', ['bia'], false)).toEqual(['ana'])
+  it('todas as escolhidas acabaram: nenhuma', () => {
+    expect(featuredScreens(['eu', 'ana'], ['bia'])).toEqual([])
+  })
+})
+
+describe('watchedScreens', () => {
+  it('as telas em destaque menos a própria prévia', () => {
+    expect(watchedScreens(['ana', 'eu', 'bia'], 'eu')).toEqual(['ana', 'bia'])
+    expect(watchedScreens(['eu'], 'eu')).toEqual([])
+    expect(watchedScreens(['ana'], undefined)).toEqual(['ana'])
   })
 })
 
@@ -28,8 +33,8 @@ describe('toggleFeatured', () => {
     expect(toggleFeatured(['ana', 'bia'], 'ana')).toEqual(['bia'])
   })
 
-  it('a última não sai do destaque', () => {
-    expect(toggleFeatured(['ana'], 'ana')).toEqual(['ana'])
+  it('a última também sai do destaque (parar de assistir)', () => {
+    expect(toggleFeatured(['ana'], 'ana')).toEqual([])
   })
 })
 
@@ -44,5 +49,16 @@ describe('moveScreen', () => {
     expect(moveScreen(['a', 'b'], 'a', 'a')).toEqual(['a', 'b'])
     expect(moveScreen(['a', 'b'], 'x', 'a')).toEqual(['a', 'b'])
     expect(moveScreen(['a', 'b'], 'a', 'x')).toEqual(['a', 'b'])
+  })
+})
+
+describe('screenViewers', () => {
+  const state = (userId: string, watching?: string[]): VoiceState => ({ userId, channelId: 'sala', muted: false, deafened: false, sharing: false, watching })
+
+  it('quem está assistindo a tela, na ordem da sala', () => {
+    const voice = [state('eu'), state('ana', ['eu']), state('bia', ['ana', 'eu']), state('cid', ['ana'])]
+    expect(screenViewers(voice, 'eu')).toEqual(['ana', 'bia'])
+    expect(screenViewers(voice, 'ana')).toEqual(['bia', 'cid'])
+    expect(screenViewers(voice, 'cid')).toEqual([])
   })
 })

@@ -165,32 +165,65 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
   deafen). O `ScreenVideo` (em `ScreenTile.tsx`) liga a faixa num `<video muted>` com `attachScreen(userId, el)` (de `@/lib/client`).
 - **Parar:** botão de novo (`stopScreenShare`) ou pelo sistema (janela fechada): `LocalTrackUnpublished` chama
   `voice.onScreenShareEnded`, que desliga `sharing` e avisa o servidor uma vez só.
-- **Assistir** (`components/voice/VoiceGrid.tsx` + `ScreenTile.tsx` + `lib/featured-screens.ts`): podem ficar
-  **várias telas em destaque ao mesmo tempo**. `featuredScreens(telas, eu, escolhidas, grade)` devolve a lista em
-  ordem: as escolhidas que ainda estão ao vivo; se nenhuma, a primeira de **outra pessoa** (a própria só se for a
-  única); `[]` = sem telas ou "Ver grade". `toggleFeatured` põe no fim/tira do destaque (a última não sai) e
+- **Assistir é opcional** (`components/voice/VoiceGrid.tsx` + `ScreenTile.tsx` + `lib/featured-screens.ts`): ninguém
+  entra assistindo sozinho. Quando alguém compartilha, os outros veem na grade um card da tela (`ScreenTile`: o
+  vídeo, "Ao vivo" e "Tela de Ana") e no quadro da pessoa o botão "Assistir". Clicar assiste: a tela vai para o
+  destaque (`ScreenStage`) e a pessoa passa a contar como espectadora. Podem ficar **várias telas em destaque ao
+  mesmo tempo**. `featuredScreens(telas, escolhidas)` devolve as escolhidas que ainda estão ao vivo, em ordem (sem
+  escolha: `[]`, nem a própria); o `VoiceGrid` corrige `chosen` quando uma delas acaba, então a tela que volta não
+  entra assistindo de novo. `toggleFeatured` põe no fim/tira do destaque (a última também sai: para de assistir) e
   `moveScreen(ordem, arrastada, destino)` leva a arrastada para o lugar do destino.
   - `ScreenStage` (destaque, prop `featured`): barra de cima **sempre à vista** com "Ao vivo", "Assistindo: Tela de
     Ana e Tela de Bia" (`Intl.ListFormat` pt-BR), o seletor "Telas ao vivo" (um botão por tela, com mais de uma;
-    clicar **põe ou tira do destaque**, `aria-pressed` nas que estão; a única em destaque fica desabilitada),
-    "Ver grade" e "Tela cheia". Cada tela em destaque é um `ScreenPane` (`data-screen-pane`) com o próprio
-    `<video>`, todos dividindo o espaço (`flex-1`).
+    clicar **põe ou tira do destaque**, `aria-pressed` nas que estão), "Parar de assistir" (`EyeOff`, volta para a
+    grade com os cards; some em tela cheia) e "Tela cheia". Cada tela em destaque é um `ScreenPane`
+    (`data-screen-pane`) com o próprio `<video>`, todos dividindo o espaço (`flex-1`).
+  - A **própria tela** também tem card ("Sua tela"): clicar abre a prévia no destaque, mas ela não conta como
+    espectador e nunca vai para o destaque sozinha.
   - **Organizar** (com 2 ou mais em destaque): arrastar uma tela sobre outra muda a ordem (HTML5 drag and drop; o id
     arrastado fica num `ref` do `ScreenStage`, sem `dataTransfer`) e o botão "Empilhar as telas"/"Pôr as telas lado
     a lado" (`Rows2`/`Columns2`, `data-arrangement` = `side-by-side`|`stacked`) alterna lado a lado e empilhadas.
     Cada tela mostra o nome embaixo. Ordem e arranjo são locais do `VoiceGrid` (não salvos).
-  - Embaixo, a fileira "Membros da chamada" (`role="group"`), **centralizada**, com as miniaturas das
+  - Embaixo, a fileira "Membros da chamada" (`role="group"`), **centralizada**, com os cards das
     telas que não estão em destaque (`ScreenTile`, clicar = assistir **só** essa) e os participantes. A centralização usa `ml-auto` no primeiro e
     `mr-auto` no último filho (não `justify-center`, que cortaria o começo quando a fileira rola de lado).
-  - "Esconder membros"/"Mostrar membros" (ícones `UserX`/`Users`, `aria-pressed`, ao lado de "Ver grade"; some em
+  - "Esconder membros"/"Mostrar membros" (ícones `UserX`/`Users`, `aria-pressed`, ao lado de "Parar de assistir"; some em
     tela cheia): esconde/mostra essa fileira para a tela ganhar espaço. Props `membersHidden`/`onToggleMembers` do
     `ScreenStage`; o estado (`membersHidden`) é local do `VoiceGrid`, não salvo. Na grade todos aparecem sempre.
   - No quadro de quem compartilha, o "Ao vivo" vira o botão "Assistir" (só essa) quando a tela dela já chegou (e
     não está em destaque).
-  - "Ver grade": todas as telas lado a lado na grade (antes dos participantes); clicar numa volta ao destaque.
-  - Escolha e grade são estado local do `VoiceGrid` (não salvos): ao trocar de sala, volta ao automático.
+  - A escolha é estado local do `VoiceGrid` (não salva): ao trocar de sala ou sair da tela da sala, para de assistir.
+- **Quem está assistindo** (como os espectadores de uma transmissão no Discord):
+  ```
+  VoiceGrid: watchedScreens(featured, eu) muda ─► watchScreens(lista) (lib/actions/screen-watching.ts)
+    ─► só envia se for diferente do `watching` que o servidor já mandou para mim ─► emit('voice:watching', ids)
+  servidor: valida, guarda por conexão ─► emitVoice ─► voice:state com `watching` em cada VoiceState da MINHA sala
+  quem compartilha: screenViewers(voice, eu) ─► ScreenViewers "Assistindo: Ana e Bia" (avatares + nomes)
+  ```
+  - **Conta** como espectador: só as telas **em destaque** de outras pessoas (`watchedScreens` tira a própria).
+    Grade, cards e miniaturas não contam. Desmontar o `VoiceGrid` (sair da tela da sala) manda `[]`.
+  - **Contrato** (`src/shared/types/voice.ts`): `voice:watching (screenIds: string[])` (cliente → servidor) e o
+    campo opcional `VoiceState.watching?: string[]` (ids de conexão das telas que aquela pessoa assiste).
+    `MAX_WATCHED_SCREENS = 25`.
+  - **Servidor** (`server/modules/voice.ts`): ignora quem não está numa sala, lista que não é array de strings ou
+    com mais de 25, e acima de `LIMITS.screenWatching` (rajada de 10, depois 2/s). Guarda em `watchRequests` (por
+    conexão) só ids **sem repetir, da mesma sala e que não sejam a própria**; lista igual à guardada não emite nada.
+    Ao montar o `voice:state` conta só quem **está compartilhando** (o aviso pode chegar antes do
+    `voice:sharing`; quando ele chega, passa a contar). Limpa: ao sair/trocar de sala, desconectar ou ser tirado
+    da sala (`forgetConnection`: o que a pessoa assistia e quem assistia a tela dela) e ao parar de compartilhar
+    ou perder `share` (`forgetScreen`: voltar a compartilhar não volta a contar ninguém).
+  - **Privacidade:** `watching` só vai nos estados da sala de quem recebe (`voiceStatesFor(conta, socketId)`); quem
+    vê a sala de fora (barra de canais) recebe sem o campo. Nunca `io.emit`.
+  - **Tela:** `components/voice/ScreenViewers.tsx` (olho + até 3 avatares + "Assistindo: Ana e Bia" ou "Ninguém
+    assistindo") aparece na barra do `ScreenStage` quando a **própria** tela está em destaque e no painel "Voz
+    conectada" (`VoiceStatusPanel` em `UserPanel.tsx`) enquanto compartilho.
+  - **Banda:** o vídeo da tela continua assinado no LiveKit assim que chega (o card mostra o vídeo ao vivo). Só
+    assinar depois do clique exigiria trocar o card por uma imagem (a prévia do "ao vivo") e mexer na assinatura
+    em `lib/voice.ts`: próximo passo, não feito.
+  - **Problema conhecido:** se a conexão cair e voltar com a mesma tela em destaque, o servidor esqueceu a lista e
+    o app só reenvia quando ela mudar (tirar e pôr a tela de novo resolve).
 - **Grade centralizada com tamanho automático** (`TileGrid` em `VoiceGrid.tsx` + `lib/tile-layout.ts`): os quadros
-  (pessoas e, na "Ver grade", as telas) ficam centralizados na horizontal e na vertical, e o tamanho sai de
+  (pessoas e, sem destaque, os cards das telas) ficam centralizados na horizontal e na vertical, e o tamanho sai de
   `bestTileLayout(quantos, largura, altura)`: testa de 1 a N colunas e fica com a que deixa o quadro 16:9 maior sem
   passar da área (empate: menos colunas). A área é medida com `useElementSize` (`ResizeObserver`), então os quadros
   crescem/encolhem com a janela e com quem entra/sai; a última linha fica no meio. Largura vai em `--tile-w`
@@ -207,14 +240,22 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
 - `sharing` no servidor é só indicador (o cliente avisa); quem pode publicar a tela é decidido pelo token do LiveKit.
 - **Testes:** `src/main/screen-share.test.ts` (controlador, sem Electron), `lib/voice.test.ts` (bloco "tela"),
   `lib/actions/screen.test.ts` (botão, seletor, erros, aviso único ao servidor), `components/voice/voice.test.tsx`
-  (jsdom: seletor, miniatura, destaque com "Assistindo" e seletor, duas telas em destaque, arrastar para reordenar,
-  lado a lado/empilhadas, uma das telas em destaque que acaba, "Assistir" no quadro, "Ver
-  grade", esconder/mostrar membros, tela que acaba, tela cheia do quadro com botão/duplo clique e a recusa, grade centralizada com o tamanho
-  medido), `lib/featured-screens.test.ts` (escolha, pôr/tirar, reordenar), `lib/tile-layout.test.ts` (colunas e tamanho, limites, sem altura, gente demais), `src/main/permissions.test.ts`
-  e `server/tests/voice.test.ts` (`voice:sharing`). À mão: três janelas na mesma sala com o LiveKit rodando; duas
-  compartilham, a terceira põe as duas em destaque pelo seletor, arrasta para trocar a ordem, empilha, troca pelo
-  "Assistir", usa "Ver grade", entra e sai da tela cheia (botão,
-  duplo clique, Esc) e o "ao vivo" some ao parar.
+  (jsdom: seletor, card, ninguém entra assistindo, clicar no card assiste e avisa o servidor, própria prévia sem
+  contar, "Parar de assistir", tirar a última pelo seletor, sair da tela da sala, tela assistida que acaba e volta,
+  quem assiste a minha tela na barra, duas telas em destaque, arrastar para reordenar, lado a lado/empilhadas,
+  "Assistir" no quadro, esconder/mostrar membros, tela cheia do quadro com botão/duplo clique e a recusa, grade
+  centralizada com o tamanho medido), `components/voice-panel.test.tsx` (espectadores no "Voz conectada"),
+  `lib/actions/screen-watching.test.ts` (envia só quando muda, fora da sala não envia),
+  `lib/featured-screens.test.ts` (escolha, pôr/tirar, reordenar, `watchedScreens`, `screenViewers`),
+  `lib/tile-layout.test.ts` (colunas e tamanho, limites, sem altura, gente demais), `src/main/permissions.test.ts`
+  e `server/tests/voice.test.ts` (`voice:sharing` e o bloco `voice:watching`: só a sala recebe, validação, lista
+  igual, parar de compartilhar, sair/desconectar, trocar de sala e o limite real com `RATE_LIMIT_MULTIPLIER=1`).
+  À mão: três janelas (A, B, C) na mesma sala com o LiveKit rodando. A compartilha: B e C veem o card, sem
+  destaque, e A vê "Ninguém assistindo" no "Voz conectada". B clica no card: A vê "Assistindo: B" (barra do
+  destaque ao abrir a própria prévia e "Voz conectada"); C clica também: "Assistindo: B e C". B usa "Parar de
+  assistir": volta à grade e A vê só C. A abre a própria prévia: não conta. C sai da sala: some da lista. A para de
+  compartilhar e volta: ninguém assistindo. Com duas telas: destaque pelo seletor, arrastar, empilhar, tela cheia
+  (botão, duplo clique, Esc) e o "ao vivo" some ao parar.
 
 ## Prévia do "ao vivo"
 

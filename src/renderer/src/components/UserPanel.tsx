@@ -9,6 +9,7 @@ import { UserSettingsDialog } from './settings/UserSettingsDialog'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 import { UserAvatar } from './UserAvatar'
 import { ScreenPicker } from './voice/ScreenPicker'
+import { ScreenViewers } from './voice/ScreenViewers'
 import { SoundboardPopover } from './voice/Soundboard'
 
 /**
@@ -25,6 +26,7 @@ export function VoiceStatusPanel() {
   const cameraOn = useApp((s) => s.cameraOn)
   const canShare = useApp((s) => s.voiceCanShare)
   const sharing = useApp((s) => s.sharing)
+  const selfId = useApp((s) => s.self?.id)
   if (!channelId || (!channel && !dm)) return null
 
   return (
@@ -66,6 +68,7 @@ export function VoiceStatusPanel() {
           </PanelButton>
         </SoundboardPopover>
       </div>
+      {sharing && selfId && <ScreenViewers userId={selfId} className="text-muted-foreground" />}
     </div>
   )
 }
