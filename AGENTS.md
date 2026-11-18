@@ -77,7 +77,7 @@ Gerenciador de pacotes: **npm** (não use pnpm/yarn; o projeto foi revertido do 
 | `.github/workflows/ci.yml` | CI (A12): typecheck + testes em todo PR e push na `main` (Ubuntu, Node 22, PGlite, sem Docker). |
 | `.github/workflows/pr-version.yml`, `.github/workflows/auto-release.yml`, `.github/workflows/release.yml`, `.github/scripts/next-version.mjs` | Versão e release automáticas: o PR recebe o commit da versão no `package.json` (patch; labels `release: minor`/`release: major`/`sem release`; secret `RELEASE_TOKEN`); no merge, tag `vX.Y.Z` e instalador no GitHub Releases (`docs/areas/updates.md`). |
 | `Dockerfile`, `docker-compose.prod.yml`, `deploy/` | Hospedagem pela internet (A14): imagem do servidor, compose de produção (servidor + Postgres com backup + LiveKit com TURN + Caddy/HTTPS), `deploy/.env.example` e o guia `deploy/README.md`. |
-| `docs/` | Documentação, organizada por gênero em pastas: `areas/` (referência por área, apontada pelas skills `concord-*`), `decisions/` (ADRs), `practices/` (como trabalhamos: depuração, testes, qualidade, tokens, docs) e `ROADMAP.md` (plano das tasks). As regras e o índice das pastas estão em `docs/AGENTS.md`. |
+| `docs/` | Documentação, organizada por gênero em pastas: `areas/` (referência por área, indexada em "Documentação por área" abaixo), `decisions/` (ADRs) e `ROADMAP.md` (plano das tasks). As regras e o índice das pastas estão em `docs/AGENTS.md`. |
 | `vitest.config.ts` | Testes `*.test.ts(x)` ao lado do código (`npm test`). |
 | `src/renderer/src/components/` | Telas: `LoginScreen`, `ChannelSidebar`, `ChatView` (também `embedded` no chat da sala de voz), `VoiceView` (com o botão e o painel "Chat" da sala), `MemberList`, `UserPanel` (com o `VoiceStatusPanel` "Voz conectada": câmera, tela e efeitos sonoros fora da sala; monta `DeviceSettings`, `ScreenPicker` e `Soundboard` uma vez só), `CreateChannelDialog`, `Toast`; `voice/` tem `VoiceGrid`, `ScreenTile` (miniatura e `ScreenStage`: uma ou mais telas em destaque, lado a lado ou empilhadas e reordenáveis arrastando, com "Assistindo", seletor das telas ao vivo (pôr/tirar do destaque), "Parar de assistir" e tela cheia via `lib/fullscreen.ts`; assistir é opcional: clicar no card) e `ScreenViewers` (quem está assistindo a minha tela: barra do destaque e "Voz conectada"; avisar o servidor em `lib/actions/screen-watching.ts`, evento `voice:watching`) e `ScreenAudioControl` (silenciar e volume do áudio da tela de cada pessoa, na barra do `ScreenStage`) e `ScreenPicker` (tela compartilhada) e `LivePreview` (passar o mouse no "Ao vivo" da barra de canais mostra a miniatura da tela sem entrar na sala; ação em `lib/actions/screen-preview.ts`, captura em `lib/screen-snapshot.ts`) e `CameraTile` (câmera de cada um na grade, B21) e `Soundboard`/`SoundUploadForm`/`EmojiPicker` (efeitos sonoros, B17; ações em `lib/actions/sounds.ts`, estado em `store/sounds.ts`) e `MemberContextMenu` (botão direito numa pessoa: volume, silenciar, cargos, moderação, "Mensagem"/"Adicionar amigo" (B7), ver perfil) com `ModerationMenu` (mover para outra sala, silenciar para todos e expulsar da voz, B6); `UserProfileDialog` é o cartão de perfil. |
 
@@ -88,11 +88,11 @@ npm install
 npm run dev:all     # servidor (porta 3001) + app Electron juntos
 npm run server      # só o servidor (tsx watch)
 npm run dev         # só o app
-docker compose up -d  # Postgres + LiveKit locais (ver concord-dev-workflow)
+docker compose up -d  # Postgres + LiveKit locais (ver `docs/areas/dev-workflow.md`)
 npm run typecheck   # checagem de tipos (main/preload/server, renderer e testes)
 npm test            # todos os testes automatizados (vitest)
 npm run test:watch  # testes em modo watch
-npm run db:generate # gera a migration depois de mudar server/db/schema (ver concord-dev-workflow)
+npm run db:generate # gera a migration depois de mudar server/db/schema (ver `docs/areas/dev-workflow.md`)
 npm run db:import-json [arquivo]  # importa um db.json antigo para o banco
 npm run db:restore [arquivo]      # restaura um backup do PGlite (servidor parado)
 npm run build       # typecheck + build em out/
@@ -178,18 +178,16 @@ Uma tarefa (task do roadmap, correção, refatoração ou mudança de comportame
 1. `npm run typecheck` **e** `npm test` passam por completo, com testes novos cobrindo a mudança (regra 5).
 2. **A documentação da área está em dia com o código entregue** (`docs/areas/<area>.md`):
    - **Área nova** (domínio, módulo do servidor, processo do Electron, conjunto de telas): crie
-     `docs/areas/<area>.md` e a skill-ponteiro `.claude/skills/concord-<area>/SKILL.md` — só frontmatter
-     (`name` e `description`, e a `description` diz **quando** abrir o doc, citando arquivos e eventos) mais
-     a linha que manda ler o doc. Acrescente a área na lista "Documentação por área" abaixo.
+     `docs/areas/<area>.md` e acrescente a área na lista "Documentação por área" abaixo, com a linha
+     dizendo **quando** abrir o doc (arquivos, eventos e sintomas).
      Se a área for pequena e pertencer a um doc que já existe, uma **seção nova** nesse doc basta.
    - **Alteração** em algo que já tem doc: atualize as seções afetadas no mesmo PR. Nada de doc descrevendo
      comportamento antigo (evento removido, arquivo renomeado, regra que mudou).
    - O conteúdo mínimo de cada doc ou seção: o que faz e por quê, arquivos envolvidos, eventos e contratos
      (`shared/types`), fluxo principal, regras e limites, como testar e problemas conhecidos/depuração.
-   - **Nada de conteúdo nas skills `concord-*`.** Elas são só o gatilho que leva ao doc; regra duplicada
-     divergiria no PR seguinte. `.claude/skills/` guarda só ponteiros `concord-*`: as práticas de trabalho
-     (`wise-dev`, `test-strategy`, `code-quality`, `token-efficiency`, `semantic-docs`) descrevem *como
-     trabalhar*, não como o Concord é, e vivem em `docs/practices/<nome>/README.md` (com `reference/`).
+   - **Não há skills por área.** A documentação de área vive só em `docs/areas/`. As skills de
+     **competência** (`wise-dev`, `test-strategy`, `code-quality`, `token-efficiency`, `semantic-docs`)
+     descrevem *como trabalhar*, não como o Concord é, e carregam o próprio conteúdo em `reference/`.
 3. Decisão que **custa caro desfazer** (troca de biblioteca, formato de dado, limite, protocolo) vira um ADR em
    `docs/decisions/NNNN-*.md`, com as alternativas descartadas. Modelo em `docs/decisions/README.md`.
 4. Eventos novos ou alterados aparecem na tabela de eventos de `docs/areas/architecture.md`.
@@ -198,31 +196,31 @@ Uma tarefa (task do roadmap, correção, refatoração ou mudança de comportame
 
 ## Documentação por área
 
-Leia o doc certo antes de mexer em cada área (ficam em `docs/areas/<area>.md`; as skills `concord-*` são só
-ponteiros para eles):
+Leia o doc certo antes de mexer em cada área (ficam em `docs/areas/<area>.md`; cada linha diz quando
+abrir):
 
-- `docs/areas/architecture.md` — visão completa: fluxo de dados, todos os eventos, estado, ciclo de conexão.
-- `docs/areas/add-feature.md` — passo a passo para adicionar uma funcionalidade de ponta a ponta, com exemplo.
-- `docs/areas/accounts.md` — contas: cadastro/login com e-mail e senha, sessões, login com Google, perfil `nome#id` e foto, regra do id único e imutável.
-- `docs/areas/messages.md` — mensagens: envio, histórico, editar (A15), responder citando (B18), reações (A16), menções @nome (B19) e links clicáveis.
-- `docs/areas/permissions.md` — cargos e permissões (v2): regra de cálculo compartilhada, @todos, dona, regras por canal, hierarquia, eventos `role:*` e o que cada handler bloqueia.
-- `docs/areas/friends.md` — amizades (v3): pedidos por `nome#id`, bloqueio, online só para amigos e os eventos `friend:*`.
-- `docs/areas/dms.md` — conversas privadas (v3): canal `dm` com dois membros, quem pode abrir, acesso só dos membros, bloqueio e os eventos `dm:*`.
-- `docs/areas/tools.md` — ferramentas do grupo (v4): sorteio no servidor, mensagem `kind: 'tool'`, sorteador de times (`tools:teams`, lanes e preferências), dado, moeda, sortear 1 nome e como criar uma ferramenta nova.
-- `docs/areas/settings.md` — configurações do usuário: janela única com menu lateral (Minha conta, Voz e vídeo, Aparência, Notificações, Windows: iniciar com o Windows), `openSettings`/`openDeviceSettings` e a conta nova do Google escolhendo o id.
-- `docs/areas/themes.md` — temas personalizáveis (v5), "Surpreenda-me" e o tema translúcido (vidro): `ThemeConfig`, `validateTheme`, código de compartilhamento e preferências da conta no servidor.
-- `docs/areas/sounds.md` — efeitos sonoros (soundboard): envio por `POST /sounds`, tipo e duração pelos bytes, tocar só para a sala, sobreposição e quem apaga.
-- `docs/areas/music.md` — bot de música (A11/B14): `/play` com link do Spotify/YouTube (faixa, álbum, playlist) ou texto para buscar, áudio do YouTube (yt-dlp + ffmpeg) publicado pelo servidor no LiveKit, fila, limites, variáveis `SPOTIFY_*` e os eventos `music:*`.
-- `docs/areas/calls.md` — chamadas privadas (B8): ligar, tocar, atender, desligar, tempos limite e os eventos `call:*`.
-- `docs/areas/home.md` — navegação (B7): barra de úteis, Home (Amigos e conversas), `section`/`homeView`, "Mensagem" no botão direito e o registro de ferramentas.
-- `docs/areas/moderation.md` — moderação (B6): expulsar da voz, silenciar pelo servidor e apagar mensagem, com a hierarquia e os eventos `moderation:*`/`message:delete`.
-- `docs/areas/attachments.md` — anexos: envio por `POST /uploads`, download por `GET /files`, tipo pelos bytes, storage, limpeza e a interface (clipe, colar, arrastar, prévia).
-- `docs/areas/voice.md` — como a voz funciona (LiveKit no servidor, token por sala), compartilhamento de tela, dispositivos e volume por pessoa, pressione para falar (B20), limites e depuração.
-- `docs/areas/notifications.md` — notificações (B9): quando avisar (conversa, chamada, pedido de amizade, só fora de foco), clique, selo no ícone, silenciar canal/conversa, interruptor geral no app e som por tipo.
-- `docs/areas/overlay.md` — sobreposição em jogos (B15): janela transparente com quem fala, atalhos globais escolhidos, canto/tamanho, arrastar para mover e redimensionar (como no Discord), tema ao vivo e o limite da tela cheia exclusiva.
-- `docs/areas/updates.md` — atualização automática (A13): electron-updater, faixa e botão "Atualizar o Concord", e a release automática a cada PR mergeado na `main` (tag vX.Y.Z).
-- `docs/areas/deploy.md` — hospedar pela internet (A14): imagem, compose de produção, LiveKit com TURN, Caddy, variáveis e guia.
-- `docs/areas/dev-workflow.md` — rodar, testar com vários usuários, build e solução de problemas conhecidos.
+- `docs/areas/architecture.md` — visão completa: fluxo de dados, todos os eventos, estado, ciclo de conexão. Abra antes de qualquer mudança não trivial.
+- `docs/areas/add-feature.md` — passo a passo para adicionar uma funcionalidade de ponta a ponta, com exemplo. Abra ao criar eventos, telas, componentes ou módulos.
+- `docs/areas/accounts.md` — contas: cadastro/login com e-mail e senha, sessões, login com Google, perfil `nome#id` e foto, regra do id único e imutável. Abra ao mexer em `server/auth.ts`, `/auth/*`, `/avatars/*`, `LoginScreen`, `AccountSettings`, `src/main/google-auth.ts` ou ao investigar login, sessão expirada, foto que não aparece.
+- `docs/areas/messages.md` — mensagens: envio, histórico, editar (A15), responder citando (B18), reações (A16), menções @nome (B19) e links clicáveis. Abra ao mexer em `server/modules/{messages,reactions}.ts`, `lib/actions/messages.ts`, `lib/mentions.ts`, `src/shared/links.ts`, `components/chat/**` ou ao investigar link, menção, citação ou "(editada)" errados.
+- `docs/areas/permissions.md` — cargos e permissões (v2): regra de cálculo compartilhada, @todos, dona, regras por canal, hierarquia, eventos `role:*` e o que cada handler bloqueia. Abra ao mexer em `server/access.ts`, `server/modules/permissions.ts`, `src/shared/types/permissions.ts`, `components/settings/**`, ou ao investigar canal que some, "Você não tem permissão" e mensagem que não chega.
+- `docs/areas/friends.md` — amizades (v3): pedidos por `nome#id`, bloqueio, online só para amigos e os eventos `friend:*`. Abra ao mexer em `server/modules/friends.ts`, `server/repo/friends.ts`, presença ou tela Amigos, ou ao investigar pedido que não chega e amigo que não aparece online.
+- `docs/areas/dms.md` — conversas privadas (v3): canal `dm` com dois membros, quem pode abrir, acesso só dos membros, bloqueio e os eventos `dm:*`. Abra ao mexer em `server/modules/dms.ts`, `server/repo/dms.ts`, `server/access.ts` (membros de DM) ou ao investigar mensagem de DM que vaza ou não chega.
+- `docs/areas/tools.md` — ferramentas do grupo (v4): sorteio no servidor, mensagem `kind: 'tool'`, sorteador de times (`tools:teams`, lanes e preferências), dado, moeda, sortear 1 nome e como criar uma ferramenta nova. Abra ao mexer em `server/modules/{tools,polls}.ts`, `server/tools/**`, `src/shared/types/tools.ts`, `components/tools/**` ou ao investigar sorteio recusado ou resultado diferente entre telas.
+- `docs/areas/settings.md` — configurações do usuário: janela única com menu lateral (Minha conta, Voz e vídeo, Aparência, Notificações, Windows: iniciar com o Windows), `openSettings`/`openDeviceSettings` e a conta nova do Google escolhendo o id. Abra ao mexer em `components/settings/UserSettingsDialog.tsx`, `store/settings.ts`, `src/main/startup.ts` ou ao criar seção de configurações.
+- `docs/areas/themes.md` — temas personalizáveis (v5), "Surpreenda-me" e o tema translúcido (vidro): `ThemeConfig`, `validateTheme`, código de compartilhamento e preferências da conta no servidor. Abra ao mexer em `src/shared/types/theme.ts`, `lib/theme/**`, `components/settings/appearance/**`, `server/modules/preferences.ts`, tokens de `globals.css` ou ao investigar tema que não salva ou "Tema inválido".
+- `docs/areas/sounds.md` — efeitos sonoros (soundboard): envio por `POST /sounds`, tipo e duração pelos bytes, tocar só para a sala, sobreposição e quem apaga. Abra ao mexer em `server/modules/sounds.ts`, `server/storage/audio.ts`, `components/voice/Soundboard.tsx`, `lib/actions/sounds.ts` ou ao investigar som recusado ou que não toca.
+- `docs/areas/music.md` — bot de música (A11/B14): `/play` com link do Spotify/YouTube (faixa, álbum, playlist) ou texto para buscar, áudio do YouTube (yt-dlp + ffmpeg) publicado pelo servidor no LiveKit, fila, limites, variáveis `SPOTIFY_*` e os eventos `music:*`. Abra ao mexer em `server/modules/music.ts`, `server/music/**`, `lib/actions/music.ts`, `components/voice/Music*.tsx`, variáveis `SPOTIFY_*`/`YTDLP_PATH`/`FFMPEG_PATH` ou ao investigar música que não toca ou bot que não sai da sala.
+- `docs/areas/calls.md` — chamadas privadas (B8): ligar, tocar, atender, desligar, tempos limite e os eventos `call:*`. Abra ao mexer em `server/modules/calls.ts`, `lib/actions/calls.ts`, `components/call/**` ou ao investigar chamada que não toca, toque que não para ou que acaba sozinha.
+- `docs/areas/home.md` — navegação (B7): barra de úteis, Home (Amigos e conversas), `section`/`homeView`, "Mensagem" no botão direito e o registro de ferramentas. Abra ao mexer em `store/navigation.ts`, `lib/actions/navigation.ts`, `components/{rail,home,friends,dm,tools}/**`, `App.tsx` ou ao investigar selo errado, não lido que não some ou conversa que não abre.
+- `docs/areas/moderation.md` — moderação (B6): expulsar da voz, silenciar pelo servidor e apagar mensagem, com a hierarquia e os eventos `moderation:*`/`message:delete`. Abra ao mexer em `server/modules/moderation.ts`, `src/shared/types/moderation.ts`, `components/voice/ModerationMenu.tsx` ou ao investigar "Você não pode expulsar essa pessoa" ou mensagem apagada que não some.
+- `docs/areas/attachments.md` — anexos: envio por `POST /uploads`, download por `GET /files`, tipo pelos bytes, storage, limpeza e a interface (clipe, colar, arrastar, prévia). Abra ao mexer em `server/modules/uploads.ts`, `server/storage/**`, `lib/actions/uploads.ts`, `components/chat/{Composer,AttachmentPreview,MessageAttachments,ImageLightbox}.tsx` ou ao investigar envio que falha ou imagem que não aparece.
+- `docs/areas/voice.md` — como a voz funciona (LiveKit no servidor, token por sala), compartilhamento de tela, dispositivos e volume por pessoa, pressione para falar (B20), limites e depuração. Abra ao mexer em `server/livekit.ts`, `server/modules/voice.ts`, `lib/voice.ts`, `lib/mic-gain.ts`, `src/main/push-to-talk.ts`, eventos `voice:*` ou ao investigar áudio que não chega, token recusado ou falha de conexão.
+- `docs/areas/notifications.md` — notificações (B9): quando avisar (conversa, chamada, pedido de amizade, só fora de foco), clique, selo no ícone, silenciar canal/conversa, interruptor geral no app e som por tipo. Abra ao mexer em `src/main/notifications.ts`, `lib/notifications.ts`, `lib/actions/notifications.ts`, `components/MuteChannelMenu.tsx` ou ao investigar notificação ausente, selo errado ou clique que não abre a conversa.
+- `docs/areas/overlay.md` — sobreposição em jogos (B15): janela transparente com quem fala, atalhos globais escolhidos, canto/tamanho, arrastar para mover e redimensionar (como no Discord), tema ao vivo e o limite da tela cheia exclusiva. Abra ao mexer em `src/main/overlay.ts`, `src/renderer/overlay.html`, `src/renderer/src/overlay/**`, `lib/actions/overlay.ts`, `electron.vite.config.ts` ou ao investigar overlay que não aparece, atalho que não funciona ou rouba clique.
+- `docs/areas/updates.md` — atualização automática (A13): electron-updater, faixa e botão "Atualizar o Concord", e a release automática a cada PR mergeado na `main` (tag vX.Y.Z). Abra ao mexer em `src/main/updater.ts`, `components/UpdateBanner.tsx`, `electron-builder.yml`, `.github/workflows/{release,auto-release,pr-version}.yml` ou ao investigar app que não atualiza ou release que falhou.
+- `docs/areas/deploy.md` — hospedar pela internet (A14): imagem, compose de produção, LiveKit com TURN, Caddy, variáveis e guia. Abra ao mexer em `Dockerfile`, `docker-compose.prod.yml`, `deploy/**`, `vercel.json`, ao adicionar variável de ambiente ao servidor ou ao investigar certificado ou voz fora da rede local.
+- `docs/areas/dev-workflow.md` — rodar, testar com vários usuários, build e solução de problemas conhecidos. Abra ao configurar o ambiente, testar com vários usuários, gerar o build ou diagnosticar erro de inicialização.
 
 ## Estilo das respostas
 

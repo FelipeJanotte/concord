@@ -1,8 +1,0 @@
----
-name: concord-messages
-description: Como funcionam as mensagens do Concord — envio (message:send, fila por conexão, limites), histórico paginado (message:history), editar a própria mensagem (A15: message:edit/message:edited, edited_at, "(editada)", edição no lugar com Enter/Esc e seta para cima) responder citando (B18: replyToId, ReplyPreview pronto do servidor, faixa "Respondendo a", citação que rola até a original, "mensagem apagada") reações (A16: message:react/message:reactions, tabela message_reactions, chips e seletor de emoji) menções @nome (B19: <@id>, autocompletar no campo, @todos com mentionEveryone, destaque e notificação em canal) e links clicáveis (src/shared/links.ts: splitLinks/externalUrl, abrem no navegador padrão, só http/https). Use ao mexer em server/modules/messages.ts, server/repo/messages.ts, server/db/schema/messages.ts, src/shared/types/message.ts, lib/actions/messages.ts, store/messages.ts, server/modules/reactions.ts, server/repo/reactions.ts, src/shared/types/reactions.ts, src/shared/types/mentions.ts, lib/mentions.ts, components/chat/{Composer,MessageActions,MessageEditor,ReplyPreview,Reactions,MessageText,MentionMenu}.tsx ou no MessageBody/MessageItem do ChatView, src/shared/links.ts, setWindowOpenHandler/will-navigate em src/main/index.ts, ou ao investigar link que não fica clicável, link que abre dentro do app, mensagem que não chega, "(editada)" que não aparece, "Você só pode editar as suas mensagens" ou citação errada.
----
-
-A documentação desta área fica em **`docs/areas/messages.md`**. Leia esse arquivo antes de mexer no código.
-
-Esta skill existe só para te trazer até lá: nada de conteúdo aqui, para não haver duas versões da mesma regra.

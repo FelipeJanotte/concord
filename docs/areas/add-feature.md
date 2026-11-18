@@ -109,8 +109,8 @@ Mudanças em contas/perfil seguem a `docs/areas/accounts.md`.
 Toda tarefa, módulo novo ou alteração só está pronta com a documentação em dia (R14 e "Definição de pronto"
 no `AGENTS.md`).
 
-- **Área nova** → crie `docs/areas/<area>.md` com o modelo abaixo, a skill-ponteiro
-  `.claude/skills/concord-<area>/SKILL.md` e acrescente a área em "Documentação por área" no `AGENTS.md`.
+- **Área nova** → crie `docs/areas/<area>.md` com o modelo abaixo e acrescente a área em
+  "Documentação por área" no `AGENTS.md`, dizendo quando abrir o doc (arquivos, eventos e sintomas).
   Área pequena que cabe num doc existente → uma seção nova nele.
 - **Alteração** → atualize as seções afetadas do doc da área no mesmo PR (e a tabela de eventos de
   `docs/areas/architecture.md` se mexeu em evento).
@@ -143,17 +143,6 @@ Onde estão e o que cobrem; como testar à mão (duas janelas, duas contas).
 Sintoma → causa → como resolver.
 ```
 
-A skill-ponteiro é só o gatilho (sem conteúdo, para não existir duas versões da mesma regra):
-
-```markdown
----
-name: concord-<area>
-description: O que a área faz em uma frase. Use ao mexer em <arquivos principais>, nos eventos <area>:* ou ao investigar <sintomas comuns>.
----
-
-A documentação desta área fica em **`docs/areas/<area>.md`**. Leia esse arquivo antes de mexer no código.
-```
-
 ## Checklist antes de terminar
 
 - [ ] O tipo existe em `shared/types/<dominio>.ts` e o servidor valida o payload
@@ -163,7 +152,7 @@ A documentação desta área fica em **`docs/areas/<area>.md`**. Leia esse arqui
 - [ ] Funciona depois de reconectar (o `hello` repõe o estado?)
 - [ ] Testes novos (`server/tests/` e/ou `*.test.ts` ao lado do código) cobrindo o caminho feliz e as validações
 - [ ] `npm run typecheck` **e** `npm test` passam por completo
-- [ ] **`docs/areas/<area>.md` criado (área nova) ou atualizado (alteração)**, listado no `AGENTS.md` se for novo; eventos em `docs/areas/architecture.md`; skill-ponteiro criada se a área é nova
+- [ ] **`docs/areas/<area>.md` criado (área nova) ou atualizado (alteração)**, listado no `AGENTS.md` se for novo; eventos em `docs/areas/architecture.md`
 - [ ] Arquivos novos no "Mapa rápido" do `AGENTS.md`
 - [ ] A descrição do PR diz quais docs e ADRs foram criados ou atualizados
 - [ ] Testado com duas janelas e **duas contas** (ver `docs/areas/dev-workflow.md`)
