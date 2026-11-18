@@ -2,14 +2,11 @@
 // B7 na tela: barra de úteis, Home (Amigos + conversas), chat da conversa e "Mensagem" no botão direito.
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { Dice5 } from 'lucide-react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Channel, DmEntry, FriendEntry, User } from '@shared/types'
 import { ChatView } from '@/components/ChatView'
 import { FriendsView } from '@/components/friends/FriendsView'
 import { UtilityRail } from '@/components/rail/UtilityRail'
-import { ToolView } from '@/components/tools/ToolView'
-import type { ToolDefinition } from '@/components/tools/registry'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { MemberContextMenu } from '@/components/voice/MemberContextMenu'
 import { setSocket } from '@/lib/core'
@@ -65,26 +62,11 @@ describe('barra de úteis', () => {
       dms: [dmWith('ana', 'Ana')],
       unread: { 'dm-ana': true }
     })
-    ui(<UtilityRail tools={[]} />)
+    ui(<UtilityRail />)
     await userEvent.click(screen.getByRole('button', { name: 'Início (2)' }))
     expect(useApp.getState().section).toBe('home')
     await userEvent.click(screen.getByRole('button', { name: 'Concord' }))
     expect(useApp.getState().section).toBe('community')
-  })
-
-  it('as ferramentas do registro aparecem abaixo do separador e abrem o painel', async () => {
-    const tools: ToolDefinition[] = [{ id: 'dado', name: 'Dado', icon: Dice5, Panel: () => <p>painel do dado</p> }]
-    setup()
-    ui(
-      <>
-        <UtilityRail tools={tools} />
-        <ToolView tools={tools} />
-      </>
-    )
-    await userEvent.click(screen.getByRole('button', { name: 'Dado' }))
-    expect(useApp.getState()).toMatchObject({ section: 'tool', toolId: 'dado' })
-    expect(screen.getByText('painel do dado')).toBeTruthy()
-    expect(screen.getByRole('heading', { name: 'Dado' })).toBeTruthy()
   })
 })
 

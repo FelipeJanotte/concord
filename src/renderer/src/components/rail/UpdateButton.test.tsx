@@ -31,7 +31,7 @@ afterEach(() => {
 const rail = () =>
   render(
     <TooltipProvider>
-      <UtilityRail tools={[]} />
+      <UtilityRail />
     </TooltipProvider>
   )
 const labels = () => screen.getAllByRole('button').map((b) => b.getAttribute('aria-label'))
@@ -41,7 +41,7 @@ describe('botão de atualizar na barra de úteis', () => {
     for (const update of [{ state: 'idle' }, { state: 'error', message: 'x' }] as const) {
       useApp.setState({ update })
       rail()
-      expect(labels()).toEqual(['Início', 'Concord', 'Procurar atualizações'])
+      expect(labels()).toEqual(['Início', 'Concord', 'Ferramentas', 'Procurar atualizações'])
       cleanup()
     }
   })
@@ -68,13 +68,13 @@ describe('botão de atualizar na barra de úteis', () => {
   it('fora do Electron (versão web): sem botão de procurar', () => {
     vi.spyOn(updatesEnv, 'bridge').mockReturnValue(null)
     rail()
-    expect(labels()).toEqual(['Início', 'Concord'])
+    expect(labels()).toEqual(['Início', 'Concord', 'Ferramentas'])
   })
 
   it('baixando: aparece acima do Início com o progresso e não instala ao clicar', async () => {
     useApp.setState({ update: { state: 'downloading', version: '0.2.0', percent: 42 } })
     rail()
-    expect(labels()).toEqual(['Baixando atualização (42%)', 'Início', 'Concord'])
+    expect(labels()).toEqual(['Baixando atualização (42%)', 'Início', 'Concord', 'Ferramentas'])
     await userEvent.click(screen.getByRole('button', { name: 'Baixando atualização (42%)' }))
     expect(install).not.toHaveBeenCalled()
   })

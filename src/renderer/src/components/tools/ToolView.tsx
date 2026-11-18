@@ -1,10 +1,12 @@
-// Área central de uma ferramenta da barra de úteis (B7): cabeçalho + o painel do registro.
 import { Wrench } from 'lucide-react'
 import { useApp } from '@/store'
 import { findTool, TOOLS, type ToolDefinition } from './registry'
+import { ToolGallery } from './ToolGallery'
 
 export function ToolView({ tools = TOOLS }: { tools?: readonly ToolDefinition[] }) {
-  const tool = useApp((s) => findTool(s.toolId, tools))
+  const toolId = useApp((s) => s.toolId)
+  const tool = findTool(toolId, tools)
+  if (toolId === null) return <ToolGallery tools={tools} />
   if (!tool) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 text-muted-foreground">

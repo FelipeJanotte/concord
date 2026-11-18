@@ -100,8 +100,7 @@ function describeMediaError(err: unknown): string {
  */
 export async function joinVoice(channelId: string, { show = true }: { show?: boolean } = {}): Promise<void> {
   const st = get()
-  // chamada de uma conversa (B8): a tela continua na conversa; sala da comunidade abre a tela da sala
-  if (show && !findDm(st.dms, channelId)) set({ section: 'community', toolId: null, view: { kind: 'voice', channelId } })
+  if (show && !findDm(st.dms, channelId)) set({ section: 'community', view: { kind: 'voice', channelId } })
   if (st.myVoiceChannelId === channelId || st.joiningVoice) return
   set({ joiningVoice: true })
   try {

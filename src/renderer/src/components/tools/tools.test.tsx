@@ -88,7 +88,7 @@ afterEach(() => {
 })
 
 describe('registro', () => {
-  it('as cinco ferramentas aparecem na barra de úteis', () => {
+  it('as cinco ferramentas estão no registro', () => {
     expect(TOOLS.map((t) => t.id)).toEqual(['teams', 'dice', 'coin', 'pick', 'poll'])
   })
 })

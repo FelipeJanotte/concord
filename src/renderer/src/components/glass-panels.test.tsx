@@ -7,6 +7,7 @@ import { initialState, useApp } from '@/store'
 import { ChannelSidebar } from './ChannelSidebar'
 import { HomeSidebar } from './home/HomeSidebar'
 import { MemberList } from './MemberList'
+import { ToolsSidebar } from '@/components/tools/ToolsSidebar'
 import { UtilityRail } from './rail/UtilityRail'
 
 globalThis.ResizeObserver ??= class {
@@ -22,7 +23,7 @@ const rootOf = (node: ReactNode) => render(<TooltipProvider>{node}</TooltipProvi
 
 describe('painéis do layout no vidro', () => {
   it('barra de úteis, barras laterais e lista de membros são cartões de vidro (data-glass="panel")', () => {
-    for (const node of [<UtilityRail key="rail" tools={[]} />, <ChannelSidebar key="channels" />, <HomeSidebar key="home" />, <MemberList key="members" />]) {
+    for (const node of [<UtilityRail key="rail" />, <ChannelSidebar key="channels" />, <HomeSidebar key="home" />, <ToolsSidebar key="tools" />, <MemberList key="members" />]) {
       expect(rootOf(node)?.getAttribute('data-glass')).toBe('panel')
       cleanup()
     }
