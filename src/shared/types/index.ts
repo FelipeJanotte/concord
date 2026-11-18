@@ -15,6 +15,7 @@ import type { MessageClientEvents, MessageServerEvents } from './message'
 import type { ModerationClientEvents, ModerationServerEvents } from './moderation'
 import type { MusicClientEvents, MusicServerEvents } from './music'
 import type { PermissionsClientEvents, PermissionsServerEvents } from './permissions'
+import type { PlaylistsClientEvents, PlaylistsServerEvents } from './playlists'
 import type { PreferencesClientEvents, PreferencesServerEvents } from './preferences'
 import type { PresenceClientEvents, PresenceServerEvents } from './presence'
 import type { ReactionsClientEvents, ReactionsServerEvents } from './reactions'
@@ -34,6 +35,7 @@ export * from './message'
 export * from './moderation'
 export * from './music'
 export * from './permissions'
+export * from './playlists'
 export * from './preferences'
 export * from './presence'
 export * from './reactions'
@@ -53,6 +55,7 @@ export interface ServerToClientEvents
     ModerationServerEvents,
     MusicServerEvents,
     PermissionsServerEvents,
+    PlaylistsServerEvents,
     PreferencesServerEvents,
     PresenceServerEvents,
     ReactionsServerEvents,
@@ -70,6 +73,7 @@ export interface ClientToServerEvents
     ModerationClientEvents,
     MusicClientEvents,
     PermissionsClientEvents,
+    PlaylistsClientEvents,
     PreferencesClientEvents,
     PresenceClientEvents,
     ReactionsClientEvents,
