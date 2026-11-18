@@ -593,6 +593,36 @@ de quem fala (processador da faixa do microfone no `livekit-client`); quem ouve 
   suspenso de propósito, `stop`, falha ao retomar) e `components/settings/VoiceSettings.test.tsx`. **À mão (o que os testes não medem):** a qualidade e o atraso do filtro
   e o uso de CPU; falar teclando e com ventilador e ouvir na outra janela.
 
+## Botões na miniatura da barra de tarefas (B24)
+
+Como no Discord: em chamada (sala de voz ou chamada privada, `myVoiceChannelId`), passar o mouse no ícone do Concord
+na barra de tarefas do Windows mostra 3 botões: **silenciar/ativar microfone**, **desativar/ativar áudio** e **sair
+da chamada**. Fora de chamada os botões somem. Só Windows (`BrowserWindow.setThumbarButtons`).
+
+| Peça | Papel |
+|---|---|
+| `src/shared/thumbar.ts` | Contrato: `ThumbarAction` (`mute`, `deafen`, `leave`), `ThumbarButton` (`action`, `tooltip`, `icon` em data URL PNG), `ThumbarBridge`, `THUMBAR_ICON_SIZE` (32 px) e `THUMBAR_TOOLTIP_MAX` (64). |
+| `src/main/thumbar.ts` | `cleanThumbarButtons` (só ações conhecidas, sem repetir, ícone PNG, dica cortada) e `setupThumbar` (IPC `thumbar-buttons` → `setThumbarButtons`; clique manda `thumbar-click` com a ação). O ícone vira `nativeImage` com `scaleFactor` 2 (32 px desenhados = 16 px lógicos, nítido em tela de alta densidade). Fora do Windows não faz nada. |
+| `src/preload/index.ts` | `window.api.thumbar`: `setButtons`, `onClick`. |
+| `lib/thumbar-icons.tsx` | Ícones desenhados no app: o ícone do lucide (`Mic`, `MicOff`, `Headphones`, `HeadphoneOff`, `PhoneOff`) vira SVG (`renderToStaticMarkup`) e depois PNG num canvas. Ligado em branco; desligado e sair na cor do token `--destructive` (mesma do selo das notificações). |
+| `lib/actions/thumbar.ts` | `startThumbar` (chamado em `main.tsx`): acompanha a store e manda os botões só quando microfone/áudio/estar em chamada mudam; clique chama `toggleMute`, `toggleDeafen` e `leaveVoice` (as mesmas ações dos botões do `UserPanel`). |
+
+**Regras:**
+- O microfone aparece silenciado com `muted`, sem microfone (`noMic`) ou sem permissão de falar (`voiceCanSpeak`),
+  igual ao que os outros veem; o clique nesses casos dá o mesmo aviso do botão do app.
+- Os 5 ícones são desenhados uma vez por abertura do app (cache em memória); se o canvas falhar, nenhum botão é posto
+  (o Windows não aceita botão sem ícone).
+- Saiu da chamada enquanto os ícones eram desenhados: os botões não aparecem depois.
+
+**Testes:** `src/main/thumbar.test.ts` (validação, Windows × outros sistemas, ícone em 2x, clique avisa a ação),
+`lib/actions/thumbar.test.ts` (aparecer/sumir, troca de ícone e dica, sem microfone/sem `speak`, sem reenviar à toa,
+corrida com o desenho, clique) e `lib/thumbar-icons.test.ts` (SVG do tamanho e cor certos). **À mão (Windows):**
+entrar numa sala, passar o mouse no ícone da barra de tarefas, clicar nos 3 botões e conferir que o ícone troca e que
+a outra janela vê o silêncio; sair e os botões somem.
+
+**Problemas conhecidos:** o Windows só mostra os botões depois que a janela apareceu na barra de tarefas; reiniciar o
+Explorer tira os botões até o próximo estado mudar (entrar, silenciar etc.).
+
 ## Pressione para falar (B20)
 
 Modo em que o microfone **só abre enquanto uma tecla (ou botão do mouse) está pressionada**, mesmo com um jogo em

@@ -14,6 +14,7 @@ import type { PttBinding, PttConfig, PushToTalkBridge } from '../shared/push-to-
 import type { NativeNotification, NotificationsBridge, NotificationTarget } from '../shared/notifications'
 import type { ScreenShareBridge, ScreenSource } from '../shared/screen'
 import type { OpenAtLogin, StartupBridge } from '../shared/startup'
+import type { ThumbarAction, ThumbarBridge, ThumbarButton } from '../shared/thumbar'
 import { hasOwnWindowButtons, type WindowControlAction, type WindowControlsBridge } from '../shared/window-controls'
 import { supportsTranslucency, type TranslucencyBridge, type TranslucencyRequest } from '../shared/translucency'
 import type { UpdaterBridge, UpdateStatus } from '../shared/updater'
@@ -97,6 +98,15 @@ const notifications: NotificationsBridge = {
   }
 }
 
+const thumbar: ThumbarBridge = {
+  setButtons: (buttons: ThumbarButton[]): void => ipcRenderer.send('thumbar-buttons', buttons),
+  onClick: (listener) => {
+    const handler = (_event: unknown, action: ThumbarAction): void => listener(action)
+    ipcRenderer.on('thumbar-click', handler)
+    return () => ipcRenderer.removeListener('thumbar-click', handler)
+  }
+}
+
 /** Atualização automática (A13, ver src/main/updater.ts). */
 const updater: UpdaterBridge = {
   getStatus: (): Promise<UpdateStatus> => ipcRenderer.invoke('update-get'),
@@ -143,6 +153,7 @@ const api = {
   overlayView,
   /** Notificações nativas e selo no ícone (ver src/main/notifications.ts). */
   notifications,
+  thumbar,
   updater,
   /** Pressione para falar (ver src/main/push-to-talk.ts). */
   pushToTalk,

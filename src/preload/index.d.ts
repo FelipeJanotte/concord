@@ -3,6 +3,7 @@ import type { PushToTalkBridge } from '../shared/push-to-talk'
 import type { NotificationsBridge } from '../shared/notifications'
 import type { ScreenShareBridge } from '../shared/screen'
 import type { StartupBridge } from '../shared/startup'
+import type { ThumbarBridge } from '../shared/thumbar'
 import type { TranslucencyBridge } from '../shared/translucency'
 import type { UpdaterBridge } from '../shared/updater'
 import type { WindowControlsBridge } from '../shared/window-controls'
@@ -16,6 +17,7 @@ declare global {
       overlay: OverlayBridge
       overlayView: OverlayViewBridge
       notifications: NotificationsBridge
+      thumbar: ThumbarBridge
       updater: UpdaterBridge
       pushToTalk: PushToTalkBridge
       translucency: TranslucencyBridge

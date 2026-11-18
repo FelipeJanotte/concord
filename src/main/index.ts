@@ -9,6 +9,7 @@ import { setupOverlay, teardownOverlay, type OverlayController } from './overlay
 import { setupPushToTalk, type PushToTalkController } from './push-to-talk'
 import { setupScreenShare } from './screen-share'
 import { setupStartup } from './startup'
+import { setupThumbar } from './thumbar'
 import { setupTranslucency } from './translucency'
 import { setupUpdater } from './updater'
 import { setupWindowControls, titleBarOptions, watchMaximized } from './window-controls'
@@ -90,6 +91,7 @@ app.whenReady().then(() => {
   setupWindowControls(() => mainWindow)
   overlay = setupOverlay(() => mainWindow)
   setupNotifications(() => mainWindow)
+  setupThumbar(() => mainWindow)
   void setupUpdater(() => mainWindow).catch((err: unknown) => console.warn('[atualização] não iniciou:', err))
   pushToTalk = setupPushToTalk(() => mainWindow)
 
