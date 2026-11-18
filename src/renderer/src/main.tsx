@@ -6,6 +6,7 @@ import App from './App'
 import { startOverlay } from './lib/actions/overlay'
 import { startPushToTalk } from './lib/actions/push-to-talk'
 import { loadStartup } from './lib/actions/startup'
+import { startThumbar } from './lib/actions/thumbar'
 import { startUpdates } from './lib/actions/updates'
 import { startWindowControls } from './lib/actions/window'
 import { applyTheme, loadLocalTheme } from './lib/theme/apply'
@@ -19,6 +20,7 @@ startUpdates()
 // B20: pressione para falar (a tecla é ouvida pelo processo principal)
 startPushToTalk()
 startWindowControls()
+startThumbar()
 void loadStartup()
 
 createRoot(document.getElementById('root')!).render(
