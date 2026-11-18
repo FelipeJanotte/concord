@@ -7,8 +7,7 @@
  *              └─► analisador (mede o ruído de fundo)
  *
  * A cada 250 ms o `NoiseDecider` diz se o ambiente pede o filtro avançado; a troca é um
- * crossfade entre seco e molhado (sem estalo, sem republicar a faixa). Com o avançado ligado,
- * a supressão nativa do WebRTC é desligada para não processar duas vezes (som "abafado").
+ * crossfade entre seco e molhado (sem estalo, sem republicar a faixa).
  * Se o motor não carrega, dá erro no AudioWorklet ou o PC é fraco, fica no filtro nativo.
  * O "volume" é o volume do microfone das Configurações de voz (`setGain`, 0 a 200%).
  */
@@ -46,7 +45,6 @@ export class AutoNoiseProcessor implements TrackProcessor<Track.Kind.Audio, Audi
   private analyser: AnalyserNode | null = null
   private engine: NoiseEngineNode | null = null
   private timer: unknown = null
-  private input: MediaStreamTrack | null = null
   private decider = new NoiseDecider()
   private mode: NoiseMode = 'light'
   private buffer = new Float32Array(2048)
@@ -66,7 +64,6 @@ export class AutoNoiseProcessor implements TrackProcessor<Track.Kind.Audio, Audi
   async init({ track, audioContext }: AudioProcessorOptions): Promise<void> {
     const ctx = audioContext
     this.ctx = ctx
-    this.input = track
     this.decider = new NoiseDecider(this.deps.deciderOptions)
 
     const source = ctx.createMediaStreamSource(new MediaStream([track]))
@@ -116,7 +113,6 @@ export class AutoNoiseProcessor implements TrackProcessor<Track.Kind.Audio, Audi
     for (const node of [this.source, this.dry, this.wet, this.volume, this.analyser]) node?.disconnect()
     this.source = this.dry = this.wet = this.volume = this.analyser = null
     this.processedTrack = undefined
-    void this.setNativeSuppression(true) // devolve a faixa como veio
   }
 
   get currentMode(): NoiseMode {
@@ -150,15 +146,6 @@ export class AutoNoiseProcessor implements TrackProcessor<Track.Kind.Audio, Audi
       this.dry.gain.setTargetAtTime(advanced ? 0 : 1, t, FADE_S / 3)
       this.wet.gain.setTargetAtTime(advanced ? 1 : 0, t, FADE_S / 3)
     }
-    void this.setNativeSuppression(!advanced)
     this.onMode(mode)
-  }
-
-  private async setNativeSuppression(on: boolean): Promise<void> {
-    try {
-      await this.input?.applyConstraints({ noiseSuppression: on })
-    } catch {
-      // nem todo dispositivo deixa trocar com a faixa aberta; o avançado continua valendo
-    }
   }
 }
