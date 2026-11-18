@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest'
 import { EVERYONE_ROLE_ID, type AccessState, type Role } from '@shared/types'
 import {
   allows,
-  canManageRole,
   isPrivateChannel,
   memberRoleIds,
   rolesByPosition,
@@ -43,6 +42,13 @@ describe('allows', () => {
     expect(allows(access, 'caio', 'view', 'segredo')).toBe(true)
     expect(allows(access, 'bia', 'view', 'segredo')).toBe(false)
   })
+
+  it('Administrador passa em tudo, inclusive no canal privado', () => {
+    const withAdmin: AccessState = { ...access, members: [...access.members, { accountId: 'adm', roleIds: ['adm'] }], roles: [...access.roles, { id: 'adm', name: 'Adm', color: null, position: 1, permissions: ['administrator'] }] }
+    expect(allows(withAdmin, 'adm', 'manageChannels')).toBe(true)
+    expect(allows(withAdmin, 'adm', 'view', 'segredo')).toBe(true)
+    expect(allows(withAdmin, 'adm', 'send', 'avisos')).toBe(true)
+  })
 })
 
 describe('canal privado e cargos', () => {
@@ -61,15 +67,5 @@ describe('canal privado e cargos', () => {
     expect(topRole(access, 'dona')).toBeNull()
     expect(memberRoleIds(access, 'bia')).toEqual(['mod'])
     expect(memberRoleIds(access, 'ninguem')).toEqual([])
-  })
-})
-
-describe('hierarquia', () => {
-  it('canManageRole: dona tudo; com manageRoles só abaixo do seu; @todos com qualquer cargo', () => {
-    expect(canManageRole(access, 'dona', admin)).toBe(true)
-    expect(canManageRole(access, 'ana', admin)).toBe(false)
-    expect(canManageRole(access, 'ana', mod)).toBe(true)
-    expect(canManageRole(access, 'ana', everyone)).toBe(true)
-    expect(canManageRole(access, 'bia', vip)).toBe(false) // sem manageRoles
   })
 })

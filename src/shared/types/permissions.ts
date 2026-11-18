@@ -20,7 +20,7 @@
 import type { Channel } from './channel'
 
 /** Permissões da comunidade inteira. */
-export const GLOBAL_PERMISSIONS = ['manageChannels', 'manageRoles', 'manageMembers', 'manageMessages', 'mentionEveryone', 'moveMembers', 'assignRoles'] as const
+export const GLOBAL_PERMISSIONS = ['administrator', 'manageChannels', 'manageRoles', 'manageMembers', 'manageMessages', 'mentionEveryone', 'moveMembers', 'assignRoles'] as const
 /** Permissões que cada canal pode liberar ou negar por cargo. */
 export const CHANNEL_PERMISSIONS = ['view', 'send', 'attach', 'connect', 'speak', 'share', 'video'] as const
 
@@ -30,6 +30,7 @@ export type Permission = GlobalPermission | ChannelPermission
 
 /** Textos para a tela (pt-BR). */
 export const PERMISSION_LABELS: Record<Permission, string> = {
+  administrator: 'Administrador (acesso total: todas as permissões em todos os canais e sobre todos os cargos)',
   manageChannels: 'Gerenciar canais (criar, apagar, editar permissões; vê todos os canais)',
   manageRoles: 'Gerenciar cargos (abaixo do seu cargo mais alto)',
   manageMembers: 'Gerenciar membros (atribuir cargos, silenciar e expulsar da voz)',
@@ -87,14 +88,20 @@ export interface AccessState {
 
 // ---------- Regra de cálculo ----------
 
+const grantsFullAccess = (role: Role): boolean => role.permissions.includes('administrator')
+
 function rolesOf(access: AccessState, accountId: string): Role[] {
   const assigned = new Set(access.members.find((m) => m.accountId === accountId)?.roleIds ?? [])
   return access.roles.filter((r) => r.id === EVERYONE_ROLE_ID || assigned.has(r.id))
 }
 
 /** Permissões globais da conta. A dona tem todas. */
+export function hasFullAccess(access: AccessState, accountId: string): boolean {
+  return accountId === access.ownerAccountId || rolesOf(access, accountId).some(grantsFullAccess)
+}
+
 export function globalPermissions(access: AccessState, accountId: string): Set<GlobalPermission> {
-  if (accountId === access.ownerAccountId) return new Set(GLOBAL_PERMISSIONS)
+  if (hasFullAccess(access, accountId)) return new Set(GLOBAL_PERMISSIONS)
   const all = new Set(rolesOf(access, accountId).flatMap((r) => r.permissions))
   return new Set(GLOBAL_PERMISSIONS.filter((p) => all.has(p)))
 }
@@ -111,7 +118,7 @@ export function globalPermissions(access: AccessState, accountId: string): Set<G
  *    sem `connect` não há `speak` nem `share`.
  */
 export function channelPermissions(access: AccessState, accountId: string, channelId: string): Set<ChannelPermission> {
-  if (accountId === access.ownerAccountId) return new Set(CHANNEL_PERMISSIONS)
+  if (hasFullAccess(access, accountId)) return new Set(CHANNEL_PERMISSIONS)
   const roles = rolesOf(access, accountId)
   const perms = new Set<ChannelPermission>(
     roles.flatMap((r) => r.permissions).filter((p): p is ChannelPermission => (CHANNEL_PERMISSIONS as readonly string[]).includes(p))
@@ -176,14 +183,34 @@ export function canChangeAnyMemberRoles(access: AccessState, accountId: string):
 
 export function canChangeMemberRoles(access: AccessState, actorId: string, targetId: string): boolean {
   if (actorId === access.ownerAccountId) return true
-  if (!canChangeAnyMemberRoles(access, actorId) || targetId === access.ownerAccountId || targetId === actorId) return false
-  return highestPosition(access, targetId) < highestPosition(access, actorId)
+  return canChangeAnyMemberRoles(access, actorId) && targetId !== access.ownerAccountId && targetId !== actorId
 }
 
 export function canAssignRole(access: AccessState, actorId: string, role: Role): boolean {
   if (role.id === EVERYONE_ROLE_ID) return false
-  if (actorId === access.ownerAccountId) return true
+  if (hasFullAccess(access, actorId)) return true
+  if (grantsFullAccess(role)) return false
   return canChangeAnyMemberRoles(access, actorId) && role.position < highestPosition(access, actorId)
+}
+
+export function canManageRole(access: AccessState, actorId: string, role: Role): boolean {
+  if (hasFullAccess(access, actorId)) return true
+  if (!can(access, actorId, 'manageRoles') || grantsFullAccess(role)) return false
+  const mine = highestPosition(access, actorId)
+  return role.id === EVERYONE_ROLE_ID ? mine > 0 : role.position < mine
+}
+
+export function reorderableRoles(access: AccessState, actorId: string): Role[] {
+  return access.roles
+    .filter((r) => r.id !== EVERYONE_ROLE_ID && canManageRole(access, actorId, r))
+    .sort((a, b) => a.position - b.position)
+}
+
+export function reorderedPositions(access: AccessState, actorId: string, roleIds: unknown): Map<string, number> | null {
+  const movable = reorderableRoles(access, actorId)
+  if (movable.length === 0 || !Array.isArray(roleIds) || roleIds.length !== movable.length) return null
+  if (new Set(roleIds).size !== roleIds.length || !roleIds.every((id) => movable.some((r) => r.id === id))) return null
+  return new Map(roleIds.map((id: string, i) => [id, movable[i].position]))
 }
 
 /** Cor do nome da pessoa: a do cargo mais alto que tem cor, ou null (usar a cor da conta). */

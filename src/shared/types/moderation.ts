@@ -14,7 +14,7 @@
  * - apagar mensagem: o próprio autor, ou quem tem `manageMessages`; nos dois casos precisa ver o canal.
  *   Os anexos da mensagem são apagados junto.
  */
-import { globalPermissions, highestPosition, type AccessState, type GlobalPermission, type OkResult } from './permissions'
+import { globalPermissions, hasFullAccess, highestPosition, type AccessState, type GlobalPermission, type OkResult } from './permissions'
 
 /**
  * `actor` pode expulsar/silenciar `target`? (mesma regra no servidor e na tela)
@@ -31,7 +31,7 @@ export function canMoveMember(access: AccessState, actor: string, target: string
 
 function outranks(access: AccessState, actor: string, target: string, anyOf: GlobalPermission[]): boolean {
   if (actor === target || target === access.ownerAccountId) return false
-  if (actor === access.ownerAccountId) return true
+  if (hasFullAccess(access, actor)) return true
   const mine = globalPermissions(access, actor)
   if (!anyOf.some((p) => mine.has(p))) return false
   return highestPosition(access, target) < highestPosition(access, actor)

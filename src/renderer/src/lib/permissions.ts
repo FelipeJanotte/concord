@@ -8,7 +8,6 @@ import {
   canChangeAnyMemberRoles,
   displayColor,
   EVERYONE_ROLE_ID,
-  highestPosition,
   type AccessState,
   type Permission,
   type Role
@@ -59,14 +58,6 @@ export function topRole(access: AccessState | null, accountId: string): Role | n
   const ids = new Set(memberRoleIds(access, accountId))
   const mine = (access?.roles ?? []).filter((r) => ids.has(r.id))
   return mine.length === 0 ? null : mine.reduce((a, b) => (b.position > a.position ? b : a))
-}
-
-/** Posso editar este cargo? Igual ao servidor: dona tudo; @todos com qualquer cargo; os demais só abaixo do meu. */
-export function canManageRole(access: AccessState, accountId: string, role: Role): boolean {
-  if (accountId === access.ownerAccountId) return true
-  if (!can(access, accountId, 'manageRoles')) return false
-  const mine = highestPosition(access, accountId)
-  return role.id === EVERYONE_ROLE_ID ? mine > 0 : role.position < mine
 }
 
 /** Hook: cor do nome da pessoa (a do cargo mais alto com cor, ou a da conta). */

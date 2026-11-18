@@ -3,18 +3,21 @@
  * dar/tirar cargos das pessoas (aba Membros). Mostra só o que a pessoa pode mexer;
  * o servidor confere tudo de novo (hierarquia, `canGrantPermissions`).
  */
-import { useEffect, useState } from 'react'
-import { ArrowDown, ArrowUp, Loader2, Plus, Shield, Trash2 } from 'lucide-react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { ArrowDown, ArrowUp, GripVertical, Loader2, Lock, Plus, Shield, Trash2, TriangleAlert } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import {
   can,
   canAssignRole,
   canChangeMemberRoles,
   canGrantPermissions,
+  canManageRole,
   CHANNEL_PERMISSIONS,
   EVERYONE_ROLE_ID,
   GLOBAL_PERMISSIONS,
+  hasFullAccess,
   PERMISSION_LABELS,
+  reorderableRoles,
   type AccessState,
   type Permission,
   type Role,
@@ -25,13 +28,14 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { createRole, deleteRole, reorderRoles, setMemberRoles, updateRole } from '@/lib/client'
-import { canManageRole, memberRoleIds, rolesByPosition } from '@/lib/permissions'
+import { memberRoleIds, rolesByPosition } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
 import { RoleDot } from './RoleDot'
 
 export const ROLE_NAME_MAX = 32
 const DEFAULT_COLOR = '#5865f2'
+const ADMIN_WARNING_ID = 'role-administrator-warning'
 
 type Tab = 'roles' | 'members'
 
@@ -98,8 +102,8 @@ function RolesTab({ access, me }: { access: AccessState; me: string }) {
   const selected = roles.find((r) => r.id === selectedId) ?? roles[roles.length - 1]
   const canCreate = can(access, me, 'manageRoles')
 
-  // Ordem que o servidor espera: só os cargos que posso mexer, do menos para o mais importante.
-  const manageable = roles.filter((r) => r.id !== EVERYONE_ROLE_ID && canManageRole(access, me, r))
+  const order = reorderableRoles(access, me).map((r) => r.id)
+  const dragged = useRef<string | null>(null)
 
   async function run(fn: () => Promise<void>) {
     setBusy(true)
@@ -113,13 +117,22 @@ function RolesTab({ access, me }: { access: AccessState; me: string }) {
     }
   }
 
-  function move(role: Role, direction: 1 | -1) {
-    const order = [...manageable].reverse() // menos → mais importante
-    const i = order.findIndex((r) => r.id === role.id)
-    const j = i + direction
-    if (i < 0 || j < 0 || j >= order.length) return
-    ;[order[i], order[j]] = [order[j], order[i]]
-    void run(() => reorderRoles(order.map((r) => r.id)))
+  function moveTo(roleId: string, targetIndex: number) {
+    const from = order.indexOf(roleId)
+    if (busy || from < 0 || targetIndex < 0 || targetIndex >= order.length || targetIndex === from) return
+    const next = order.filter((id) => id !== roleId)
+    next.splice(targetIndex, 0, roleId)
+    void run(() => reorderRoles(next))
+  }
+
+  const moveUp = (role: Role) => moveTo(role.id, order.indexOf(role.id) + 1)
+  const moveDown = (role: Role) => moveTo(role.id, order.indexOf(role.id) - 1)
+
+  function moveWithKeys(event: KeyboardEvent, role: Role) {
+    if (!event.altKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return
+    event.preventDefault()
+    if (event.key === 'ArrowUp') moveUp(role)
+    else moveDown(role)
   }
 
   return (
@@ -144,12 +157,42 @@ function RolesTab({ access, me }: { access: AccessState; me: string }) {
         )}
         <ul aria-label="Cargos" className="space-y-0.5">
           {roles.map((role) => {
-            const index = manageable.findIndex((r) => r.id === role.id)
+            const index = order.indexOf(role.id)
+            const movable = index >= 0
+            const label = roleLabel(role)
             return (
-              <li key={role.id} className="group flex items-center gap-1">
+              <li
+                key={role.id}
+                aria-label={label}
+                draggable={movable}
+                onDragStart={(event) => {
+                  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
+                  dragged.current = role.id
+                }}
+                onDragOver={(event) => {
+                  if (movable) event.preventDefault()
+                }}
+                onDrop={(event) => {
+                  event.preventDefault()
+                  if (dragged.current) moveTo(dragged.current, index)
+                  dragged.current = null
+                }}
+                onDragEnd={() => {
+                  dragged.current = null
+                }}
+                className={cn('group flex items-center gap-1', movable && 'cursor-grab')}
+              >
+                {movable ? (
+                  <GripVertical aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+                ) : (
+                  <span title="Você não pode mover este cargo" className="shrink-0">
+                    <Lock role="img" aria-label={`${label}: você não pode mover este cargo`} className="size-3.5 text-muted-foreground opacity-60" />
+                  </span>
+                )}
                 <button
                   type="button"
                   onClick={() => setSelectedId(role.id)}
+                  onKeyDown={(event) => movable && moveWithKeys(event, role)}
                   aria-current={role.id === selected?.id}
                   className={cn(
                     'flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent/50',
@@ -157,24 +200,26 @@ function RolesTab({ access, me }: { access: AccessState; me: string }) {
                   )}
                 >
                   <RoleDot color={role.color} />
-                  <span className="truncate">{roleLabel(role)}</span>
+                  <span className="truncate">{label}</span>
                 </button>
-                {index >= 0 && (
+                {movable && (
                   <>
                     <button
                       type="button"
-                      aria-label={`Subir ${role.name}`}
-                      disabled={busy || index === 0}
-                      onClick={() => move(role, 1)}
+                      aria-label={`Mover ${label} para cima`}
+                      title="Mover para cima (Alt + seta para cima)"
+                      disabled={busy || index === order.length - 1}
+                      onClick={() => moveUp(role)}
                       className="text-muted-foreground hover:text-accent-foreground disabled:opacity-30"
                     >
                       <ArrowUp className="size-3.5" />
                     </button>
                     <button
                       type="button"
-                      aria-label={`Descer ${role.name}`}
-                      disabled={busy || index === manageable.length - 1}
-                      onClick={() => move(role, -1)}
+                      aria-label={`Mover ${label} para baixo`}
+                      title="Mover para baixo (Alt + seta para baixo)"
+                      disabled={busy || index === 0}
+                      onClick={() => moveDown(role)}
                       className="text-muted-foreground hover:text-accent-foreground disabled:opacity-30"
                     >
                       <ArrowDown className="size-3.5" />
@@ -275,7 +320,9 @@ function RoleEditor({ role, access, me, onDeleted }: { role: Role; access: Acces
       {!editable && (
         <p className="flex items-center gap-2 rounded-md bg-card px-3 py-2 text-sm text-muted-foreground">
           <Shield className="size-4" />
-          Este cargo está no seu nível ou acima: só dá para ver.
+          {role.permissions.includes('administrator') && !hasFullAccess(access, me)
+            ? 'Só a dona ou um administrador mexe em cargos com Administrador.'
+            : 'Este cargo está no seu nível ou acima: só dá para ver.'}
         </p>
       )}
 
@@ -383,19 +430,28 @@ function PermissionGroup({
     <fieldset className="space-y-1">
       <legend className="pb-1 text-xs font-bold tracking-wide text-muted-foreground uppercase">{title}</legend>
       {perms.map((p) => (
-        <label
-          key={p}
-          className={cn('flex items-start gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent/30', locked(p) && 'opacity-60')}
-        >
-          <input
-            type="checkbox"
-            className="mt-0.5"
-            checked={checked.has(p)}
-            disabled={locked(p)}
-            onChange={(e) => onToggle(p, e.target.checked)}
-          />
-          {PERMISSION_LABELS[p]}
-        </label>
+        <div key={p}>
+          <label
+            className={cn('flex items-start gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent/30', locked(p) && 'opacity-60')}
+          >
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={checked.has(p)}
+              disabled={locked(p)}
+              aria-describedby={p === 'administrator' ? ADMIN_WARNING_ID : undefined}
+              onChange={(e) => onToggle(p, e.target.checked)}
+            />
+            {PERMISSION_LABELS[p]}
+          </label>
+          {p === 'administrator' && (
+            <p id={ADMIN_WARNING_ID} className="flex items-start gap-1.5 px-2 pb-1 pl-7 text-xs text-destructive">
+              <TriangleAlert className="mt-px size-3.5 shrink-0" />
+              Quem tiver este cargo pode fazer tudo na comunidade: vê todos os canais, ignora as regras deles, modera qualquer
+              pessoa e mexe em todos os cargos, inclusive nos acima do seu. Só não mexe na dona. Dê só a quem você confia.
+            </p>
+          )}
+        </div>
       ))}
     </fieldset>
   )

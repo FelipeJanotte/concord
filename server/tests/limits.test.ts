@@ -99,6 +99,17 @@ describe('limites por conta', () => {
     expect(!res.ok && res.error).toMatch(/^Muitas alterações seguidas\./)
   })
 
+  it('reordenar cargos: 10 seguidos; o 11º é recusado', async () => {
+    const ids: string[] = []
+    for (const name of ['Um', 'Dois']) {
+      const res = await a.socket.emitWithAck('role:create', { name, color: null, permissions: [] })
+      if (res.ok) ids.push(res.role.id)
+    }
+    for (let i = 0; i < 10; i++) expect(await a.socket.emitWithAck('role:reorder', i % 2 ? ids : [...ids].reverse())).toEqual({ ok: true })
+    const res = await a.socket.emitWithAck('role:reorder', ids)
+    expect(!res.ok && res.error).toMatch(/^Muitas alterações seguidas\./)
+  })
+
   it('upload: 10 seguidos; o 11º recebe 429 com Retry-After', async () => {
     for (let i = 0; i < 10; i++) expect((await server.upload(a.token, `arquivo ${i}`)).status).toBe(200)
     const res = await fetch(server.url + '/uploads', {

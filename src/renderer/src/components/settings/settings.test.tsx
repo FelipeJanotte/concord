@@ -171,10 +171,10 @@ describe('Configurações da comunidade — Cargos', () => {
     })
   })
 
-  it('subir um cargo manda a ordem nova (do menos para o mais importante)', async () => {
+  it('Mover para cima manda a ordem nova (do menos para o mais importante)', async () => {
     login('dona')
     render(<CommunitySettingsDialog open onOpenChange={() => {}} />)
-    await userEvent.click(screen.getByRole('button', { name: 'Subir VIP' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Mover VIP para cima' }))
     expect(socket.sent('role:reorder')[0][0]).toEqual(['mod', 'vip'])
   })
 
@@ -202,7 +202,20 @@ describe('Configurações da comunidade — Membros', () => {
     expect(socket.sent('member:set-roles')[0][0]).toEqual({ accountId: 'caio', roleIds: ['vip', 'mod'] })
   })
 
-  it('quem gerencia membros não mexe em quem está acima nem dá cargo do seu nível', async () => {
+  it('quem gerencia membros dá cargo abaixo do seu a quem está acima, sem tocar no cargo alto dele', async () => {
+    const access = baseAccess()
+    access.roles.push({ id: 'admin', name: 'Admin', color: null, position: 3, permissions: ['manageRoles'] })
+    access.members.push({ accountId: 'davi', roleIds: ['admin'] })
+    login('bia', access)
+    render(<CommunitySettingsDialog open onOpenChange={() => {}} />)
+    await userEvent.click(screen.getByRole('tab', { name: 'Membros' }))
+    const davi = screen.getByRole('group', { name: 'Cargos de Davi' })
+    expect((within(davi).getByRole('checkbox', { name: /Admin/ }) as HTMLInputElement).disabled).toBe(true)
+    await userEvent.click(within(davi).getByRole('checkbox', { name: /VIP/ }))
+    expect(socket.sent('member:set-roles')[0][0]).toEqual({ accountId: 'davi', roleIds: ['admin', 'vip'] })
+  })
+
+  it('quem gerencia membros não mexe na dona nem dá cargo do seu nível', async () => {
     login('bia')
     render(<CommunitySettingsDialog open onOpenChange={() => {}} />)
     await userEvent.click(screen.getByRole('tab', { name: 'Membros' }))
@@ -341,5 +354,98 @@ describe('alterar cargos dos membros (assignRoles)', () => {
     render(<MemberList />)
     fireEvent.contextMenu(screen.getByText('Bia'))
     expect(within(screen.getByRole('menu')).queryByRole('menuitem', { name: /Cargos/ })).toBeNull()
+  })
+
+  it('botão direito: Cargos também em quem tem cargo acima do seu', async () => {
+    const access = assignerAccess()
+    access.roles.push({ id: 'admin', name: 'Admin', color: null, position: 3, permissions: [] })
+    access.members.push({ accountId: 'davi', roleIds: ['admin'] })
+    login('bia', access)
+    render(<MemberList />)
+    fireEvent.contextMenu(screen.getByText('Davi'))
+    await userEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: /Cargos/ }))
+    const submenu = await screen.findByRole('menu', { name: 'Cargos' })
+    expect(within(submenu).getAllByRole('menuitemcheckbox').map((i) => i.textContent)).toEqual(['VIP'])
+  })
+})
+
+describe('reordenar cargos e Administrador', () => {
+  const ladderAccess = (bossPermissions: Role['permissions']): AccessState => ({
+    ownerAccountId: 'dona',
+    roles: [
+      everyone,
+      { id: 'topo', name: 'Topo', color: null, position: 4, permissions: [] },
+      { id: 'chefe', name: 'Chefe', color: null, position: 3, permissions: bossPermissions },
+      { id: 'vip', name: 'VIP', color: null, position: 2, permissions: [] },
+      { id: 'fa', name: 'Fã', color: null, position: 1, permissions: [] }
+    ],
+    members: [{ accountId: 'bia', roleIds: ['chefe'] }],
+    overrides: []
+  })
+  const roleItem = (name: string) => within(screen.getByRole('list', { name: 'Cargos' })).getByRole('listitem', { name })
+
+  it('arrastar um cargo e soltar sobre outro manda a ordem nova', () => {
+    login('bia', ladderAccess(['manageRoles']))
+    render(<CommunitySettingsDialog open onOpenChange={() => {}} />)
+    fireEvent.dragStart(roleItem('Fã'))
+    fireEvent.dragOver(roleItem('VIP'))
+    fireEvent.drop(roleItem('VIP'))
+    expect(socket.sent('role:reorder')[0][0]).toEqual(['vip', 'fa'])
+  })
+
+  it('Alt + seta para baixo no cargo também move', async () => {
+    login('bia', ladderAccess(['manageRoles']))
+    render(<CommunitySettingsDialog open onOpenChange={() => {}} />)
+    within(roleItem('VIP')).getByRole('button', { name: 'VIP' }).focus()
+    await userEvent.keyboard('{Alt>}{ArrowDown}{/Alt}')
+    expect(socket.sent('role:reorder')[0][0]).toEqual(['vip', 'fa'])
+  })
+
+  it('o meu cargo, os de cima e o @todos aparecem travados e não se arrastam', () => {
+    login('bia', ladderAccess(['manageRoles']))
+    render(<CommunitySettingsDialog open onOpenChange={() => {}} />)
+    for (const name of ['Topo', 'Chefe', '@todos']) {
+      expect(within(roleItem(name)).getByLabelText(`${name}: você não pode mover este cargo`)).toBeTruthy()
+      expect(within(roleItem(name)).queryByRole('button', { name: `Mover ${name} para cima` })).toBeNull()
+      expect(roleItem(name).getAttribute('draggable')).not.toBe('true')
+    }
+    expect((screen.getByRole('button', { name: 'Mover VIP para cima' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.dragStart(roleItem('Fã'))
+    fireEvent.drop(roleItem('Chefe'))
+    fireEvent.dragStart(roleItem('Topo'))
+    fireEvent.drop(roleItem('Fã'))
+    expect(socket.sent('role:reorder')).toHaveLength(0)
+  })
+
+  it('com Administrador move e edita os cargos acima do seu', async () => {
+    login('bia', ladderAccess(['administrator']))
+    render(<CommunitySettingsDialog open onOpenChange={() => {}} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Mover Topo para baixo' }))
+    expect(socket.sent('role:reorder')[0][0]).toEqual(['fa', 'vip', 'topo', 'chefe'])
+    await userEvent.click(within(roleItem('Topo')).getByRole('button', { name: 'Topo' }))
+    expect(screen.queryByText(/só dá para ver/)).toBeNull()
+    expect((screen.getByLabelText('Nome do cargo') as HTMLInputElement).disabled).toBe(false)
+  })
+
+  it('a dona liga Administrador num cargo, com aviso de acesso total', async () => {
+    login('dona', ladderAccess(['manageRoles']))
+    render(<CommunitySettingsDialog open onOpenChange={() => {}} />)
+    await userEvent.click(within(roleItem('VIP')).getByRole('button', { name: 'VIP' }))
+    expect(screen.getByText(/pode fazer tudo na comunidade/)).toBeTruthy()
+    await userEvent.click(screen.getByRole('checkbox', { name: /^Administrador/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Salvar alterações' }))
+    expect(socket.sent('role:update')[0][0]).toMatchObject({ id: 'vip', permissions: ['administrator'] })
+  })
+
+  it('sem Administrador a opção fica travada e o cargo de administrador fica só para ver', async () => {
+    const access = ladderAccess(['manageRoles'])
+    access.roles = access.roles.map((r) => (r.id === 'vip' ? { ...r, permissions: ['administrator'] } : r))
+    login('bia', access)
+    render(<CommunitySettingsDialog open onOpenChange={() => {}} />)
+    await userEvent.click(within(roleItem('Fã')).getByRole('button', { name: 'Fã' }))
+    expect((screen.getByRole('checkbox', { name: /^Administrador/ }) as HTMLInputElement).disabled).toBe(true)
+    await userEvent.click(within(roleItem('VIP')).getByRole('button', { name: 'VIP' }))
+    expect(screen.getByText('Só a dona ou um administrador mexe em cargos com Administrador.')).toBeTruthy()
+    expect(within(roleItem('VIP')).getByLabelText('VIP: você não pode mover este cargo')).toBeTruthy()
   })
 })

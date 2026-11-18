@@ -56,7 +56,8 @@ cadastro/login (antes de existir socket) e **Socket.IO** para o resto. Detalhes 
 Contrato e regra de cálculo em `src/shared/types/permissions.ts` (`can`, `channelPermissions`, `globalPermissions`,
 `highestPosition`), usados pelo servidor e pela tela. Cargos (`roles`), cargos de cada conta (`member_roles`) e regras
 por canal (`channel_overrides`) ficam no banco; `server/access.ts` guarda o estado em memória e recarrega depois de
-cada mudança. A **dona** (primeira conta) pode tudo; o `@todos` (id fixo `EVERYONE_ROLE_ID`) vale para todo mundo e
+cada mudança. A **dona** (primeira conta) pode tudo; quem tem um cargo com **Administrador** também (todas as
+permissões, sem hierarquia), menos mexer na dona e nos próprios cargos; DMs continuam só dos membros. O `@todos` (id fixo `EVERYONE_ROLE_ID`) vale para todo mundo e
 começa com as permissões de canal, sem as de administração (criar/apagar canal exige `manageChannels`).
 `hello`, `voice:state`, `message:new`, `typing` e `channel:created` só chegam a quem pode ver o canal. O estado de
 acesso vem no `hello` (`state.access`) e no `access:updated`, sempre por `accessFor` (cargos e membros inteiros; regras
@@ -125,8 +126,11 @@ Cliente → servidor (`ClientToServerEvents`):
 | `voice:preview` | `string` (JPEG em data URL) | — | miniatura da própria tela, só compartilhando; o servidor guarda a última (limite `screenPreview`) — `docs/areas/voice.md` |
 | `voice:preview-get` | `userId` | `ScreenPreviewResult` | prévia do "ao vivo" sem entrar na sala; exige `view` + `connect` na sala de quem compartilha (limite `screenPreviewGet`) — `docs/areas/voice.md` |
 | `typing` | `channelId` | — | broadcast `typing` (o cliente limita a 1 envio a cada 2,5 s) |
-| `moderation:voice-move` | `{ userId, channelId }` | `OkResult` | `canMoveMember` (`moveMembers` ou `manageMembers` + cargo acima) + sala de voz que quem move vê e em que a pessoa pode entrar; `moderation:moved` só para a conexão movida, que troca de sala pelo `voice:join` — `docs/areas/moderation.md` |
-| `moderation:voice-kick` | `{ userId }` | `OkResult` | `manageMembers` + cargo acima (`canModerate`); `moderation:kicked` para a conexão expulsa, tira da sala (também no LiveKit) + `voice:state` — `docs/areas/moderation.md` |
+| `moderation:voice-move` | `{ userId, channelId }` | `OkResult` | `canMoveMember` (`moveMembers` ou `manageMembers` + cargo acima, ou Administrador) + sala de voz que quem move vê e em que a pessoa pode entrar; `moderation:moved` só para a conexão movida, que troca de sala pelo `voice:join` — `docs/areas/moderation.md` |
+| `role:create` / `role:update` / `role:delete` | `{ name, color, permissions }` / `{ id, name?, color?, permissions? }` / `roleId` | `RoleResult` / `OkResult` | `manageRoles` + cargo abaixo do seu (`canManageRole`; Administrador e dona ignoram a hierarquia; cargo com Administrador só a dona ou um admin); `access:updated` para todos — `docs/areas/permissions.md` |
+| `role:reorder` | `roleIds[]` (do menos para o mais importante) | `OkResult` | exatamente os cargos que eu posso mover (`reorderableRoles`: abaixo do meu cargo mais alto, sem @todos); reaproveita as mesmas posições (`reorderedPositions`); `LIMITS.roleReorder`; `access:updated` para todos — `docs/areas/permissions.md` |
+| `member:set-roles` | `{ accountId, roleIds }` | `OkResult` | `canChangeMemberRoles` no alvo e `canAssignRole` em cada cargo dado ou tirado — `docs/areas/permissions.md` |
+| `moderation:voice-kick` | `{ userId }` | `OkResult` | `manageMembers` + cargo acima, ou Administrador (`canModerate`); `moderation:kicked` para a conexão expulsa, tira da sala (também no LiveKit) + `voice:state` — `docs/areas/moderation.md` |
 | `moderation:voice-mute` | `{ accountId, muted }` | `OkResult` | silencia a conta para todos (sem microfone no LiveKit, `VoiceState.serverMuted`; guardado em `server_mutes`, sobrevive a reiniciar) + `voice:state` |
 | `call:invite` | `channelId` (conversa) | `CallResult` | membro, sem bloqueio, um por conversa e por pessoa; `call:updated` (`ringing`) para as duas contas; `missed` depois de `CALL_RING_MS` — `docs/areas/calls.md` |
 | `call:accept` / `call:decline` / `call:cancel` / `call:end` | `channelId` | `CallResult` / `OkResult` | atender (`active`), recusar, cancelar, desligar; o fim manda `call:ended` e tira os dois da sala da conversa |

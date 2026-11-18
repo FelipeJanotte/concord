@@ -343,7 +343,7 @@ describe('hierarquia e validação', () => {
     })
   })
 
-  it('admin cria cargo abaixo do seu, não dá permissão que não tem e não mexe em cargo igual/acima', async () => {
+  it('admin cria cargo abaixo do seu, não dá permissão que não tem, não mexe em cargo igual/acima nem na dona', async () => {
     const admin = await createRole(owner, 'Admin', ['manageRoles', 'manageMembers'])
     const c = await user('Carla')
     await setRoles(owner, c.account.id, [admin.id])
@@ -369,7 +369,7 @@ describe('hierarquia e validação', () => {
     expect(await setRoles(c, d.account.id, [admin.id])).toEqual({ ok: false, error: 'Você só pode dar ou tirar cargos abaixo do seu' })
     expect(await setRoles(c, owner.account.id, [mod.id])).toEqual({
       ok: false,
-      error: 'Você não pode alterar alguém com cargo igual ou acima do seu'
+      error: 'Você não pode alterar os cargos da dona da comunidade'
     })
   })
 
@@ -414,16 +414,30 @@ describe('hierarquia e validação', () => {
       expect(await setRoles(g, h.account.id, [acima.id])).toEqual({ ok: false, error })
     })
 
-    it('recusa alvo no seu nível ou acima, a dona e a si mesmo', async () => {
+    it('dá e tira cargo abaixo do seu de quem está no seu nível ou acima, sem tocar nos cargos altos dele', async () => {
       const { gerente, vip, acima, g } = await setup()
       const igual = await user('Igor')
       await setRoles(owner, igual.account.id, [gerente.id])
       const alto = await user('Julia')
       await setRoles(owner, alto.account.id, [acima.id])
-      const error = 'Você não pode alterar alguém com cargo igual ou acima do seu'
-      expect(await setRoles(g, igual.account.id, [gerente.id, vip.id])).toEqual({ ok: false, error })
-      expect(await setRoles(g, alto.account.id, [acima.id, vip.id])).toEqual({ ok: false, error })
-      expect(await setRoles(g, owner.account.id, [vip.id])).toEqual({ ok: false, error })
+      expect(await setRoles(g, igual.account.id, [gerente.id, vip.id])).toEqual({ ok: true })
+      expect(await setRoles(g, alto.account.id, [acima.id, vip.id])).toEqual({ ok: true })
+      const rolesOf = async (accountId: string) =>
+        (await g.socket.emitWithAck('access:get')).members.find((m) => m.accountId === accountId)?.roleIds.sort()
+      expect(await rolesOf(alto.account.id)).toEqual([acima.id, vip.id].sort())
+      expect(await setRoles(g, alto.account.id, [acima.id])).toEqual({ ok: true })
+      expect(await rolesOf(alto.account.id)).toEqual([acima.id])
+      const error = 'Você só pode dar ou tirar cargos abaixo do seu'
+      expect(await setRoles(g, alto.account.id, [vip.id])).toEqual({ ok: false, error })
+      expect(await setRoles(g, igual.account.id, [vip.id])).toEqual({ ok: false, error })
+    })
+
+    it('recusa a dona e a si mesmo', async () => {
+      const { gerente, vip, g } = await setup()
+      expect(await setRoles(g, owner.account.id, [vip.id])).toEqual({
+        ok: false,
+        error: 'Você não pode alterar os cargos da dona da comunidade'
+      })
       expect(await setRoles(g, g.account.id, [gerente.id, vip.id])).toEqual({
         ok: false,
         error: 'Você não pode alterar os próprios cargos'
@@ -494,5 +508,150 @@ describe('hierarquia e validação', () => {
     await setRoles(owner, e.account.id, [manager.id])
     await shown
     expect((await e.socket.emitWithAck('channel:create', { name: 'da-eva', type: 'text' })).ok).toBe(true)
+  })
+})
+
+describe('reordenar cargos', () => {
+  async function ladder() {
+    const fundo = await createRole(owner, 'Fundo')
+    const meio = await createRole(owner, 'Meio')
+    const gerente = await createRole(owner, 'Gerente', ['manageRoles'])
+    const topo = await createRole(owner, 'Topo')
+    const g = await user('Gil')
+    await setRoles(owner, g.account.id, [gerente.id])
+    return { fundo, meio, gerente, topo, g }
+  }
+  const positions = async (by: TestUser) =>
+    Object.fromEntries((await by.socket.emitWithAck('access:get')).roles.map((r) => [r.name, r.position]))
+
+  it('quem gerencia cargos troca a ordem dos cargos abaixo do seu e todos recebem access:updated', async () => {
+    const { fundo, meio, g } = await ladder()
+    const before = await positions(g)
+    const other = await user('Outra')
+    const updated = waitFor(other.socket, 'access:updated', (s) => {
+      const pos = (id: string) => s.roles.find((r) => r.id === id)?.position ?? -1
+      return pos(meio.id) < pos(fundo.id)
+    })
+    expect(await g.socket.emitWithAck('role:reorder', [meio.id, fundo.id])).toEqual({ ok: true })
+    await updated
+    const after = await positions(g)
+    expect(after.Meio).toBe(before.Fundo)
+    expect(after.Fundo).toBe(before.Meio)
+    expect(after.Gerente).toBe(before.Gerente)
+    expect(after.Topo).toBe(before.Topo)
+  })
+
+  it('não move o próprio cargo, os de cima nem o @todos', async () => {
+    const { fundo, meio, gerente, topo, g } = await ladder()
+    const before = await positions(g)
+    const error = 'Você só pode mover cargos abaixo do seu'
+    expect(await g.socket.emitWithAck('role:reorder', [meio.id, gerente.id, fundo.id])).toEqual({ ok: false, error })
+    expect(await g.socket.emitWithAck('role:reorder', [meio.id, fundo.id, topo.id])).toEqual({ ok: false, error })
+    expect(await g.socket.emitWithAck('role:reorder', [EVERYONE_ROLE_ID, meio.id, fundo.id])).toEqual({ ok: false, error })
+    expect(await positions(g)).toEqual(before)
+  })
+
+  it('ordem inválida é recusada sem mudar nada', async () => {
+    const { fundo, meio, g } = await ladder()
+    const before = await positions(g)
+    const error = 'Lista de cargos inválida'
+    expect(await g.socket.emitWithAck('role:reorder', [meio.id])).toEqual({ ok: false, error })
+    expect(await g.socket.emitWithAck('role:reorder', [meio.id, meio.id])).toEqual({ ok: false, error })
+    expect(await g.socket.emitWithAck('role:reorder', [meio.id, fundo.id, '11111111-1111-1111-1111-111111111111'])).toEqual({
+      ok: false,
+      error
+    })
+    expect(await g.socket.emitWithAck('role:reorder', 'x' as unknown as string[])).toEqual({ ok: false, error })
+    expect(await positions(g)).toEqual(before)
+  })
+
+  it('a dona move qualquer cargo; o @todos fica sempre na posição 0', async () => {
+    const { fundo, meio, gerente, topo } = await ladder()
+    expect(await owner.socket.emitWithAck('role:reorder', [topo.id, gerente.id, meio.id, fundo.id])).toEqual({ ok: true })
+    const after = await positions(owner)
+    expect(after.Topo).toBeLessThan(after.Fundo)
+    expect(after['@todos']).toBe(0)
+  })
+})
+
+describe('Administrador', () => {
+  async function crew() {
+    const adm = await createRole(owner, 'Adm', ['administrator'])
+    const topo = await createRole(owner, 'Topo', ['manageMembers'])
+    const a = await user('Adriana')
+    await setRoles(owner, a.account.id, [adm.id])
+    return { adm, topo, a }
+  }
+
+  it('vê e usa canal com regra que nega a ele e ao @todos', async () => {
+    const { adm, a } = await crew()
+    const b = await user('Bruno')
+    const ch = await server.createChannel('segredo-adm')
+    const hiddenFromB = waitFor(b.socket, 'channels:visible', (list) => !list.some((c) => c.id === ch.id))
+    const hiddenFromAdmin = expectNoEvent(a.socket, 'channels:visible', (list) => !list.some((c) => c.id === ch.id))
+    await overrides(ch.id, [
+      { roleId: EVERYONE_ROLE_ID, deny: ['view'] },
+      { roleId: adm.id, deny: ['view', 'send'] }
+    ])
+    await hiddenFromB
+    await hiddenFromAdmin
+    const got = waitFor(owner.socket, 'message:new', (m) => m.content === 'admin aqui')
+    a.socket.emit('message:send', { channelId: ch.id, content: 'admin aqui' })
+    await got
+  })
+
+  it('edita, dá, reordena e apaga cargo acima do seu', async () => {
+    const { adm, topo, a } = await crew()
+    const b = await user('Bruno')
+    expect((await a.socket.emitWithAck('role:update', { id: topo.id, name: 'Topo editado' })).ok).toBe(true)
+    expect(await setRoles(a, b.account.id, [topo.id, adm.id])).toEqual({ ok: true })
+    expect(await a.socket.emitWithAck('role:reorder', [topo.id, adm.id])).toEqual({ ok: true })
+    expect(await a.socket.emitWithAck('role:delete', topo.id)).toEqual({ ok: true })
+  })
+
+  it('modera quem tem cargo acima do seu', async () => {
+    const { topo, a } = await crew()
+    const alto = await user('Alto')
+    await setRoles(owner, alto.account.id, [topo.id])
+    const sala = await server.createChannel('sala-adm', 'voice')
+    const joined = await alto.socket.emitWithAck('voice:join', { channelId: sala.id, muted: false, deafened: false })
+    expect(joined.ok).toBe(true)
+    const kicked = waitFor(alto.socket, 'moderation:kicked')
+    expect(await a.socket.emitWithAck('moderation:voice-kick', { userId: alto.self.id })).toEqual({ ok: true })
+    await kicked
+  })
+
+  it('não mexe na dona nem nos próprios cargos', async () => {
+    const { adm, topo, a } = await crew()
+    expect(await setRoles(a, owner.account.id, [topo.id])).toEqual({
+      ok: false,
+      error: 'Você não pode alterar os cargos da dona da comunidade'
+    })
+    expect(await setRoles(a, a.account.id, [adm.id, topo.id])).toEqual({
+      ok: false,
+      error: 'Você não pode alterar os próprios cargos'
+    })
+  })
+
+  it('só a dona ou um admin cria, liga, dá ou mexe num cargo com Administrador', async () => {
+    const { adm, topo, a } = await crew()
+    const gerente = await createRole(owner, 'Gerente', ['manageRoles', 'assignRoles'])
+    const vip = await createRole(owner, 'VIP')
+    await owner.socket.emitWithAck('role:reorder', [vip.id, adm.id, gerente.id, topo.id])
+    const g = await user('Gil')
+    await setRoles(owner, g.account.id, [gerente.id])
+    const h = await user('Hugo')
+
+    const noGrant = { ok: false, error: 'Você não pode dar permissões que não tem' }
+    expect(await g.socket.emitWithAck('role:create', { name: 'Admin 2', color: null, permissions: ['administrator'] })).toEqual(noGrant)
+    expect(await g.socket.emitWithAck('role:update', { id: vip.id, permissions: ['administrator'] })).toEqual(noGrant)
+    const onlyFull = { ok: false, error: 'Só a dona ou um administrador mexe em cargos com Administrador' }
+    expect(await setRoles(g, h.account.id, [adm.id])).toEqual(onlyFull)
+    expect(await g.socket.emitWithAck('role:update', { id: adm.id, name: 'Rebaixado' })).toEqual(onlyFull)
+    expect(await g.socket.emitWithAck('role:delete', adm.id)).toEqual(onlyFull)
+
+    expect((await a.socket.emitWithAck('role:create', { name: 'Admin 2', color: null, permissions: ['administrator'] })).ok).toBe(true)
+    expect((await a.socket.emitWithAck('role:update', { id: vip.id, permissions: ['administrator'] })).ok).toBe(true)
+    expect(await setRoles(a, h.account.id, [adm.id])).toEqual({ ok: true })
   })
 })
