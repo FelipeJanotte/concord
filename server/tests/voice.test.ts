@@ -2,7 +2,7 @@
 // remoção da sala no LiveKit quando a pessoa sai. Um LiveKit falso (HTTP) registra as chamadas da API.
 import { TokenVerifier } from 'livekit-server-sdk'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
-import type { Channel, JoinVoiceResult, VoiceCredentials } from '../../src/shared/types'
+import type { Channel, JoinVoiceResult, VoiceCredentials, VoiceState } from '../../src/shared/types'
 import {
   FakeLiveKit,
   LIVEKIT_API_KEY as API_KEY,
@@ -17,9 +17,10 @@ let server: TestServer
 /** Servidor sem LIVEKIT_* configurado. */
 let unconfigured: TestServer
 const open: ClientSocket[] = []
+let apiUrl = ''
 
 beforeAll(async () => {
-  const apiUrl = await livekit.start()
+  apiUrl = await livekit.start()
   // O servidor de teste herda process.env; o server/.env não sobrescreve o que já existe.
   server = await withEnv(
     { LIVEKIT_URL, LIVEKIT_API_URL: apiUrl, LIVEKIT_API_KEY: API_KEY, LIVEKIT_API_SECRET: API_SECRET },
@@ -292,5 +293,187 @@ describe('estado e saída', () => {
     await livekit.waitCall('RemoveParticipant', (body) => body.identity === b.socket.id)
     // O servidor continua respondendo normalmente.
     credentials(await join(b, ch.id))
+  })
+})
+
+describe('voice:watching', () => {
+  type Raw = { emit(e: string, p: unknown): void }
+  type States = VoiceState[]
+  const latest = new Map<TestUser, States>()
+
+  function tracked(u: TestUser): TestUser {
+    u.socket.on('voice:state', (states) => latest.set(u, states))
+    return u
+  }
+
+  async function room(srv = server): Promise<{ sharer: TestUser; viewer: TestUser; other: TestUser; ch: Channel }> {
+    const sharer = tracked(await user(undefined, srv))
+    const viewer = tracked(await user(undefined, srv))
+    const other = tracked(await user(undefined, srv))
+    const ch = await voiceChannel(sharer, srv)
+    for (const u of [sharer, viewer, other]) credentials(await join(u, ch.id))
+    const live = waitFor(other.socket, 'voice:state', (s) => s.some((v) => v.userId === sharer.socket.id && v.sharing))
+    sharer.socket.emit('voice:sharing', true)
+    await live
+    return { sharer, viewer, other, ch }
+  }
+
+  function idOf(u: TestUser): string {
+    return u.socket.id ?? ''
+  }
+
+  function watchingOf(u: TestUser, target: TestUser): string[] | undefined {
+    return latest.get(u)?.find((v) => v.userId === target.socket.id)?.watching
+  }
+
+  function watches(viewer: TestUser, screen: TestUser) {
+    return (states: States) => !!states.find((v) => v.userId === viewer.socket.id)?.watching?.includes(idOf(screen))
+  }
+
+  function stoppedWatching(viewer: TestUser) {
+    return (states: States) => {
+      const state = states.find((v) => v.userId === viewer.socket.id)
+      return !!state && (state.watching ?? []).length === 0
+    }
+  }
+
+  it('quem está na sala recebe quem está assistindo cada tela', async () => {
+    const { sharer, viewer, other } = await room()
+    const toSharer = waitFor(sharer.socket, 'voice:state', watches(viewer, sharer))
+    const toOther = waitFor(other.socket, 'voice:state', watches(viewer, sharer))
+    viewer.socket.emit('voice:watching', [idOf(sharer)])
+    await Promise.all([toSharer, toOther])
+    expect(watchingOf(sharer, viewer)).toEqual([sharer.socket.id])
+  })
+
+  it('quem vê a sala de fora não recebe quem está assistindo', async () => {
+    const { sharer, viewer } = await room()
+    const outsider = await user()
+    const elsewhere = await voiceChannel(outsider)
+    credentials(await join(outsider, elsewhere.id))
+    const leak = expectNoEvent(outsider.socket, 'voice:state', (s) => s.some((v) => v.watching !== undefined && v.channelId !== elsewhere.id))
+    const seen = waitFor(sharer.socket, 'voice:state', watches(viewer, sharer))
+    viewer.socket.emit('voice:watching', [idOf(sharer)])
+    await seen
+    await leak
+  })
+
+  it('só aceita telas de quem está na mesma sala, sem a própria e sem repetir', async () => {
+    const { sharer, viewer, other } = await room()
+    const stranger = await user()
+    credentials(await join(stranger, (await voiceChannel(stranger)).id))
+    stranger.socket.emit('voice:sharing', true)
+    viewer.socket.emit('voice:sharing', true)
+    await sleep(100)
+    const seen = waitFor(other.socket, 'voice:state', watches(viewer, sharer))
+    viewer.socket.emit('voice:watching', [idOf(stranger), idOf(viewer), 'nao-existe', idOf(sharer), idOf(sharer)])
+    await seen
+    expect(watchingOf(other, viewer)).toEqual([sharer.socket.id])
+  })
+
+  it('só conta a tela de quem está compartilhando, inclusive quando a tela chega depois do aviso', async () => {
+    const { sharer, viewer, other } = await room()
+    viewer.socket.emit('voice:watching', [idOf(other)])
+    await sleep(150)
+    expect(watchingOf(sharer, viewer) ?? []).toEqual([])
+    const live = waitFor(sharer.socket, 'voice:state', watches(viewer, other))
+    other.socket.emit('voice:sharing', true)
+    await live
+  })
+
+  it('recusa lista inválida, grande demais ou fora da sala', async () => {
+    const { sharer, viewer, other } = await room()
+    const raw = viewer.socket as unknown as Raw
+    const silent = expectNoEvent(other.socket, 'voice:state')
+    raw.emit('voice:watching', idOf(sharer))
+    raw.emit('voice:watching', [42])
+    raw.emit('voice:watching', null)
+    raw.emit('voice:watching', Array.from({ length: 26 }, () => idOf(sharer)))
+    await silent
+    const outside = await user()
+    const silentOutside = expectNoEvent(other.socket, 'voice:state')
+    outside.socket.emit('voice:watching', [idOf(sharer)])
+    await silentOutside
+  })
+
+  it('mudar a lista rápido demais é ignorado (LIMITS.screenWatching)', async () => {
+    const limited = await withEnv(
+      { LIVEKIT_URL, LIVEKIT_API_URL: apiUrl, LIVEKIT_API_KEY: API_KEY, LIVEKIT_API_SECRET: API_SECRET },
+      () => TestServer.start({ env: { RATE_LIMIT_MULTIPLIER: '1' } })
+    )
+    try {
+      const { sharer, viewer, other } = await room(limited)
+      for (let i = 0; i <= 10; i++) viewer.socket.emit('voice:watching', i % 2 === 0 ? [idOf(sharer)] : [])
+      await sleep(200)
+      expect(watchingOf(other, viewer)).toEqual([])
+    } finally {
+      await limited.destroy()
+    }
+  })
+
+  it('repetir a mesma lista não avisa de novo', async () => {
+    const { sharer, viewer, other } = await room()
+    const seen = waitFor(other.socket, 'voice:state', watches(viewer, sharer))
+    viewer.socket.emit('voice:watching', [idOf(sharer)])
+    await seen
+    const silent = expectNoEvent(other.socket, 'voice:state')
+    viewer.socket.emit('voice:watching', [idOf(sharer)])
+    await silent
+  })
+
+  it('parar de assistir tira da lista', async () => {
+    const { sharer, viewer } = await room()
+    const seen = waitFor(sharer.socket, 'voice:state', watches(viewer, sharer))
+    viewer.socket.emit('voice:watching', [idOf(sharer)])
+    await seen
+    const stopped = waitFor(sharer.socket, 'voice:state', stoppedWatching(viewer))
+    viewer.socket.emit('voice:watching', [])
+    await stopped
+  })
+
+  it('parar de compartilhar limpa quem assistia, e voltar a compartilhar não volta a contar', async () => {
+    const { sharer, viewer, other } = await room()
+    const seen = waitFor(other.socket, 'voice:state', watches(viewer, sharer))
+    viewer.socket.emit('voice:watching', [idOf(sharer)])
+    await seen
+    const cleared = waitFor(other.socket, 'voice:state', stoppedWatching(viewer))
+    sharer.socket.emit('voice:sharing', false)
+    await cleared
+    const again = waitFor(other.socket, 'voice:state', (s) => s.some((v) => v.userId === sharer.socket.id && v.sharing))
+    sharer.socket.emit('voice:sharing', true)
+    await again
+    expect(watchingOf(other, viewer)).toEqual([])
+  })
+
+  it('quem compartilha sair da sala ou desconectar limpa quem assistia', async () => {
+    const left = await room()
+    const seenLeft = waitFor(left.other.socket, 'voice:state', watches(left.viewer, left.sharer))
+    left.viewer.socket.emit('voice:watching', [idOf(left.sharer)])
+    await seenLeft
+    const clearedLeft = waitFor(left.other.socket, 'voice:state', stoppedWatching(left.viewer))
+    left.sharer.socket.emit('voice:leave')
+    await clearedLeft
+
+    const gone = await room()
+    const seenGone = waitFor(gone.other.socket, 'voice:state', watches(gone.viewer, gone.sharer))
+    gone.viewer.socket.emit('voice:watching', [idOf(gone.sharer)])
+    await seenGone
+    const clearedGone = waitFor(gone.other.socket, 'voice:state', stoppedWatching(gone.viewer))
+    gone.sharer.socket.close()
+    await clearedGone
+  })
+
+  it('quem assiste trocar de sala deixa de contar, mesmo voltando', async () => {
+    const { sharer, viewer, ch } = await room()
+    const seen = waitFor(sharer.socket, 'voice:state', watches(viewer, sharer))
+    viewer.socket.emit('voice:watching', [idOf(sharer)])
+    await seen
+    const moved = waitFor(sharer.socket, 'voice:state', (s) => !s.some((v) => v.userId === viewer.socket.id && v.channelId === ch.id))
+    credentials(await join(viewer, (await voiceChannel(viewer)).id))
+    await moved
+    const back = waitFor(sharer.socket, 'voice:state', (s) => s.some((v) => v.userId === viewer.socket.id && v.channelId === ch.id))
+    credentials(await join(viewer, ch.id))
+    await back
+    expect(watchingOf(sharer, viewer)).toEqual([])
   })
 })

@@ -14,6 +14,7 @@ export interface VoiceState {
    * Ausente = false (servidor antigo). Quem está assim também aparece com `muted: true`.
    */
   serverMuted?: boolean
+  watching?: string[]
 }
 
 /** Como conectar na sala do LiveKit (sala = id do canal, identidade = `User.id`). */
@@ -44,6 +45,7 @@ export const SCREEN_PREVIEW_PREFIX = 'data:image/jpeg;base64,'
 export const SCREEN_PREVIEW_MAX_CHARS = 200_000
 export const SCREEN_PREVIEW_WIDTH = 480
 export const SCREEN_PREVIEW_INTERVAL_MS = 5000
+export const MAX_WATCHED_SCREENS = 25
 
 // ---------- Eventos ----------
 
@@ -61,6 +63,7 @@ export interface VoiceClientEvents {
   'voice:update': (payload: { muted: boolean; deafened: boolean }) => void
   /** começou/parou de compartilhar a tela (só vale para quem está numa sala) */
   'voice:sharing': (sharing: boolean) => void
+  'voice:watching': (screenIds: string[]) => void
   'voice:preview': (image: string) => void
   'voice:preview-get': (userId: string, ack: (res: ScreenPreviewResult) => void) => void
 }

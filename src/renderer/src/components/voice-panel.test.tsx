@@ -102,6 +102,23 @@ describe('"Voz conectada" fora da sala', () => {
     expect(stop).toHaveBeenCalled()
   })
 
+  it('compartilhando: mostra quem está assistindo a minha tela; sem ninguém, "Ninguém assistindo"', () => {
+    const ana: User = { ...me, id: 'ana', accountId: 'acc-ana', name: 'Ana', tag: 'ana' }
+    const bia: User = { ...me, id: 'bia', accountId: 'acc-bia', name: 'Bia', tag: 'bia' }
+    const state = (userId: string, watching: string[] = []) => ({ userId, channelId: 'sala', muted: false, deafened: false, sharing: userId === 'eu', watching })
+    useApp.setState({ sharing: true, users: [me, ana, bia], voice: [state('eu'), state('ana')] })
+    renderPanels()
+    expect(screen.getByText('Ninguém assistindo')).toBeTruthy()
+    act(() => useApp.setState({ voice: [state('eu'), state('ana', ['eu']), state('bia', ['eu'])] }))
+    expect(screen.getByText('Assistindo: Ana e Bia')).toBeTruthy()
+  })
+
+  it('sem compartilhar: não mostra espectadores', () => {
+    renderPanels()
+    expect(screen.queryByText('Ninguém assistindo')).toBeNull()
+    expect(screen.queryByText(/^Assistindo:/)).toBeNull()
+  })
+
   it('efeitos sonoros abre o popup de sons daqui', async () => {
     renderPanels()
     await userEvent.click(screen.getByRole('button', { name: 'Efeitos sonoros' }))

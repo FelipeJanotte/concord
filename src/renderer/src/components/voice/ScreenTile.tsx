@@ -1,9 +1,10 @@
 import { useEffect, useRef, type DragEvent } from 'react'
-import { Columns2, LayoutGrid, Maximize2, Minimize2, Rows2, Users, UserX } from 'lucide-react'
+import { Columns2, EyeOff, Maximize2, Minimize2, Rows2, Users, UserX } from 'lucide-react'
 import { attachScreen } from '@/lib/client'
 import { useFullscreen } from '@/lib/fullscreen'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
+import { ScreenViewers } from './ScreenViewers'
 
 export type ScreenArrangement = 'side-by-side' | 'stacked'
 
@@ -65,17 +66,16 @@ export function ScreenTile({ userId, onSelect }: { userId: string; onSelect: () 
   )
 }
 
-function ScreenChip({ userId, selected, locked, onToggle }: { userId: string; selected: boolean; locked: boolean; onToggle: () => void }) {
+function ScreenChip({ userId, selected, onToggle }: { userId: string; selected: boolean; onToggle: () => void }) {
   const label = useScreenLabel(userId)
   return (
     <button
       type="button"
       aria-pressed={selected}
-      disabled={locked}
       onClick={onToggle}
       title={selected ? `Tirar do destaque: ${label}` : `Pôr em destaque: ${label}`}
       className={cn(
-        'shrink-0 truncate rounded-full px-3 py-1 text-xs font-medium transition-colors disabled:cursor-default',
+        'shrink-0 truncate rounded-full px-3 py-1 text-xs font-medium transition-colors',
         selected ? 'bg-primary text-primary-foreground' : 'bg-white/10 text-white hover:bg-white/20'
       )}
     >
@@ -128,18 +128,19 @@ interface StageProps {
   onMove: (dragged: string, target: string) => void
   arrangement: ScreenArrangement
   onToggleArrangement: () => void
-  onShowGrid: () => void
+  onStopWatching: () => void
   membersHidden?: boolean
   onToggleMembers?: () => void
 }
 
 const toolbarButton = 'rounded-md p-1.5 hover:bg-white/15 [&_svg]:size-4'
 
-export function ScreenStage({ featured, screens, onToggle, onMove, arrangement, onToggleArrangement, onShowGrid, membersHidden = false, onToggleMembers }: StageProps) {
+export function ScreenStage({ featured, screens, onToggle, onMove, arrangement, onToggleArrangement, onStopWatching, membersHidden = false, onToggleMembers }: StageProps) {
   const ref = useRef<HTMLDivElement>(null)
   const dragged = useRef<string | null>(null)
   const { active, toggle } = useFullscreen(ref)
   const label = useScreenLabels(featured)
+  const selfId = useApp((s) => s.self?.id)
   const several = featured.length > 1
   const arrangementLabel = arrangement === 'side-by-side' ? 'Empilhar as telas' : 'Pôr as telas lado a lado'
 
@@ -153,10 +154,11 @@ export function ScreenStage({ featured, screens, onToggle, onMove, arrangement, 
         {screens.length > 1 && (
           <div role="group" aria-label="Telas ao vivo" className="ml-2 flex min-w-0 gap-1.5 overflow-x-auto">
             {screens.map((id) => (
-              <ScreenChip key={id} userId={id} selected={featured.includes(id)} locked={!several && featured.includes(id)} onToggle={() => onToggle(id)} />
+              <ScreenChip key={id} userId={id} selected={featured.includes(id)} onToggle={() => onToggle(id)} />
             ))}
           </div>
         )}
+        {selfId && featured.includes(selfId) && <ScreenViewers userId={selfId} className="ml-2 text-white/80" />}
         <div className="ml-auto flex shrink-0 gap-1">
           {several && (
             <button type="button" onClick={onToggleArrangement} title={arrangementLabel} aria-label={arrangementLabel} className={toolbarButton}>
@@ -176,8 +178,8 @@ export function ScreenStage({ featured, screens, onToggle, onMove, arrangement, 
             </button>
           )}
           {!active && (
-            <button type="button" onClick={onShowGrid} title="Ver grade" aria-label="Ver grade" className={toolbarButton}>
-              <LayoutGrid />
+            <button type="button" onClick={onStopWatching} title="Parar de assistir" aria-label="Parar de assistir" className={toolbarButton}>
+              <EyeOff />
             </button>
           )}
           <button

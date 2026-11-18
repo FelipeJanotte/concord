@@ -83,7 +83,7 @@ abre o banco antes do `listen` e roda o `init` dos módulos). Tabelas: `accounts
 unicidade (e-mail, `lower(tag)`, Google id, `type + lower(name)` do canal), tamanhos (`check`) e apaga em cascata
 (canal → mensagens; conta → sessões; conta apagada deixa a mensagem com a cópia `author_*`). `seed.ts` cria os
 canais padrão ou importa o `db.json` antigo quando o banco está vazio.
-- `VoiceState { userId, channelId, muted, deafened }`: quem está em qual sala de voz.
+- `VoiceState { userId, channelId, muted, deafened, sharing, serverMuted?, watching? }`: quem está em qual sala de voz; `watching` (telas que a pessoa assiste) só vem para quem está na mesma sala.
 - `ServerState { channels, users, voice }`: snapshot enviado no `hello`.
 
 ## Eventos
@@ -123,6 +123,7 @@ Cliente → servidor (`ClientToServerEvents`):
 | `voice:leave` | — | — | tira da sala no LiveKit (`RemoveParticipant`) + `voice:state` |
 | `voice:update` | `{ muted, deafened }` | — | `voice:state` |
 | `voice:sharing` | `boolean` | — | liga/desliga o "ao vivo" (só para quem está numa sala); `voice:state` |
+| `voice:watching` | `string[]` (ids das telas em destaque, até `MAX_WATCHED_SCREENS` = 25) | — | quais telas estou assistindo; só da mesma sala, sem a própria, `LIMITS.screenWatching`; lista igual não emite; `voice:state` com `VoiceState.watching` (só conta quem está compartilhando) apenas para quem está na mesma sala — `docs/areas/voice.md` |
 | `voice:preview` | `string` (JPEG em data URL) | — | miniatura da própria tela, só compartilhando; o servidor guarda a última (limite `screenPreview`) — `docs/areas/voice.md` |
 | `voice:preview-get` | `userId` | `ScreenPreviewResult` | prévia do "ao vivo" sem entrar na sala; exige `view` + `connect` na sala de quem compartilha (limite `screenPreviewGet`) — `docs/areas/voice.md` |
 | `typing` | `channelId` | — | broadcast `typing` (o cliente limita a 1 envio a cada 2,5 s) |
