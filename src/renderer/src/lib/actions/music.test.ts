@@ -67,6 +67,15 @@ describe('estado da sala', () => {
     expect(useApp.getState().musicRooms).toEqual({})
   })
 
+  it('duas salas tocando: cada music:state mexe só na sua sala', () => {
+    socket.receive('music:state', state())
+    socket.receive('music:state', state({ channelId: 'outra', nowPlaying: aguas }))
+    expect(useApp.getState().musicRooms.sala.nowPlaying?.title).toBe('Garota de Ipanema')
+    expect(useApp.getState().musicRooms.outra.nowPlaying?.title).toBe('Águas de Março')
+    socket.receive('music:state', state({ channelId: 'outra', nowPlaying: null }))
+    expect(Object.keys(useApp.getState().musicRooms)).toEqual(['sala'])
+  })
+
   it('openMusicQueue e closeMusicQueue abrem e fecham o painel da fila da sala', () => {
     openMusicQueue('sala')
     expect(useApp.getState().musicQueueChannelId).toBe('sala')

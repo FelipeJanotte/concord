@@ -76,6 +76,33 @@ publicado no LiveKit pelo próprio servidor com `@livekit/rtc-node`. Por que ass
 5. Faixa acabou → próxima; fila acabou, `/stop` ou sala vazia → o bot sai (`leave`) e `music:state` vai com `nowPlaying: null`.
 6. No app, o áudio do bot chega como o de qualquer participante e segue o volume geral de saída, o deafen e o volume/silenciar próprio do bot (chave `music-bot`, `docs/areas/voice.md`).
 
+## Várias salas ao mesmo tempo
+
+Cada sala de voz com música tem a **sua instância** do bot, independente das outras: salas diferentes tocam em
+paralelo. Não há "o bot já está em outra sala".
+
+| Peça | Por sala | Onde |
+|---|---|---|
+| Fila, tocando agora, faixas preparadas | `Room` no `Map` `rooms` do `MusicPlayer`, chave = id da sala | `server/music/player.ts` |
+| Laço de reprodução (`run`) e saída automática (fila acabou, falha ao entrar) | um `run` por sala; acaba só a sua | `server/music/player.ts` |
+| Conexão e faixa no LiveKit | cada `join` cria um `Room` do `@livekit/rtc-node` com identidade `music-bot:<sala>` (o LiveKit só derruba identidade repetida **dentro** da mesma sala) | `server/music/livekit-publisher.ts` |
+| Processos de áudio | cada `prepare` inicia o seu `yt-dlp` e o `open` o seu `ffmpeg` | `server/music/audio-source.ts` |
+| Comandos | `/play`, `/skip`, `/stop`, `/queue` vão para a sala em que **eu** estou (`myVoiceChannelId`); o servidor recusa sala que não é a do socket ("Entre na sala de voz para controlar a música") | `lib/actions/music.ts`, `roomInControl` em `server/modules/music.ts` |
+| Sala que esvazia | `leaveEmptyRooms` para só as salas sem ninguém (`voiceSocketsIn`) | `server/modules/music.ts` |
+| `music:state` | leva o `channelId`; vai por `emitToViewers` só para quem vê aquela sala | `server/modules/music.ts` |
+| Tela | `musicRooms[channelId]`: cada `MusicPlayer`/`MusicBotMember`/painel da fila lê a sala dele; `music:state` de uma sala não mexe nas outras | `lib/actions/music.ts` (`applyMusicState`), `store/music.ts` |
+
+Compartilhado entre as salas (de propósito): o `MusicPlayer`, a fonte (`YtDlpFfmpegSource`) e o publicador
+(`LiveKitPublisher`) são fábricas sem estado de sala; `LIMITS.music` é por conta (vale somando as salas); o volume do bot
+na tela é uma chave só (`music-bot`), mas cada pessoa só ouve o bot da sala em que está.
+
+**Sem limite de instâncias.** Custo por sala tocando: 1 `ffmpeg` (decodifica para PCM, leve), até 2 `yt-dlp` (o da faixa
+e o da próxima, parado no pipe a maior parte do tempo), 1 conexão do rtc-node e ~1,5 Mbit/s de PCM interno + ~64 kbit/s
+de Opus para o LiveKit. Cada instância exige alguém **dentro** da sala, cada conexão está em uma sala só e criar sala
+de voz exige permissão; numa comunidade de amigos isso fica em poucas salas. Um limite configurável seria flexibilidade
+sem uso (P6). Se um servidor pequeno passar a sofrer, o lugar é o `MusicPlayer.add` (recusar sala nova acima de N
+salas ativas, `activeRooms().length`).
+
 ## Pré-busca
 
 Medido em 17/11/2026 (Windows, yt-dlp 2026.10.26 do winget, Node como runtime de JS, LiveKit local): quase todo o
@@ -257,9 +284,15 @@ instala o ffmpeg e baixa o yt-dlp oficial na hora do build. Para atualizar o yt-
   falso (`fake-youtube.ts`) e a fonte falsa (`fake-music-playback.ts`: toca 100x mais rápido que a duração e escreve
   `[fake-music] join/leave` no log). Cobre playlist do Spotify e do YouTube (`added`), vídeo, ao vivo, busca e playlist
   maior que a fila.
+- `server/tests/music.test.ts` "várias salas ao mesmo tempo": duas salas tocando com filas e bots próprios (`[fake-music]
+  join` de cada uma), pular numa e parar na outra sem mexer na vizinha, comando para a sala em que não estou recusado,
+  sala que esvazia encerrando só a sua instância, e o `music:state` de uma sala privada não chegando a quem só vê a
+  outra. Conferido quebrando de propósito (recusar 2ª sala, `stop` limpando todas, esvaziar uma parando todas,
+  `io.emit` no lugar do `emitToViewers`): cada quebra derruba ao menos um desses testes.
 - `src/renderer/src/lib/actions/music.test.ts` (socket falso: `/play`, `/skip`, `/stop` com o chat, `/queue` abrindo o painel
-  sem chat, sucesso/falha devolvidos ao Composer, erro com `posted` conta como enviado), `lib/paginate.test.ts`, `components/voice/MusicPlayer.test.tsx` (volume do
-  player ↔ menu do bot, ocultar/mostrar guardado, "Ver a fila"), `components/voice/MusicQueueDialog.test.tsx`
+  sem chat, sucesso/falha devolvidos ao Composer, erro com `posted` conta como enviado, duas salas no `musicRooms` sem
+  uma apagar a outra), `lib/paginate.test.ts`, `components/voice/MusicPlayer.test.tsx` (volume do
+  player ↔ menu do bot, ocultar/mostrar guardado, "Ver a fila", cartão da sala certa com `music:state` de outra sala), `components/voice/MusicQueueDialog.test.tsx`
   (itens, paginação, vazio, fechar), a posição do player em `components/VoiceView.test.tsx`, os comandos e o destaque
   (dica `query` só no `/play`) no `components/chat/chat.test.tsx`, o volume do bot em `lib/voice.test.ts` ("bot de
   música") e o menu do bot em `components/voice/MemberContextMenu.test.tsx`.
@@ -267,7 +300,9 @@ instala o ffmpeg e baixa o yt-dlp oficial na hora do build. Para atualizar o yt-
 
 Teste manual: `docker compose up -d`, preencha `SPOTIFY_*`, instale yt-dlp e ffmpeg, `npm run dev:all`, entre numa sala
 com duas janelas e mande `/play` com um link (faixa/álbum/playlist do Spotify, vídeo/playlist do YouTube) ou o nome da
-música. Só os resolvedores, sem o app: um script com `process.loadEnvFile("server/.env")` que chame
+música. Várias salas: com 3 janelas (contas diferentes), duas em salas de voz diferentes mandam `/play` cada uma e a
+terceira, fora da voz, abre uma sala e depois a outra: cada cartão mostra a sua música, `/skip`/`/stop` numa não muda a
+outra e o LiveKit mostra um "Música" (`music-bot:<sala>`) em cada sala. Só os resolvedores, sem o app: um script com `process.loadEnvFile("server/.env")` que chame
 `new MusicCatalog(spotifyFromEnv(process.env), new YouTubeResolver(ytDlpRunner(process.env.YTDLP_PATH ?? "yt-dlp"))).find(texto)`
 (rodar com `npx tsx`). Medido em 17/11/2026: Spotify ~0,3–0,5 s; vídeo do YouTube (`-J` completo) ~4,9–5,2 s; busca e playlist planas ~3 s.
 
