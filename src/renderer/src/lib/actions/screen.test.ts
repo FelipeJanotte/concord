@@ -5,7 +5,7 @@ import { setSocket } from '@/lib/core'
 import { voice } from '@/lib/voice'
 import { initialState, useApp } from '@/store'
 import { FakeSocket } from '@/test/fake-socket'
-import { canShareSystemAudio, closeScreenPicker, leaveVoice, startScreenShare, stopScreenShare, toggleScreenShare } from './voice'
+import { canShareSystemAudio, closeScreenPicker, leaveVoice, listScreenSources, startScreenShare, stopScreenShare, toggleScreenShare } from './voice'
 
 let socket: FakeSocket
 let bridge: ScreenShareBridge & { select: ReturnType<typeof vi.fn> }
@@ -124,5 +124,18 @@ describe('parar e sair', () => {
     useApp.setState({ sharing: true, screenPickerOpen: true })
     leaveVoice()
     expect(useApp.getState()).toMatchObject({ myVoiceChannelId: null, sharing: false, screenPickerOpen: false })
+  })
+})
+
+describe('listScreenSources', () => {
+  it('no Electron lista as telas e janelas da ponte', async () => {
+    const tela = { id: 'screen:0:0', name: 'Tela 1', kind: 'screen' as const, thumbnail: '', appIcon: null }
+    bridge.getSources = vi.fn(async () => [tela])
+    expect(await listScreenSources()).toEqual([tela])
+  })
+
+  it('no navegador (sem window.api) devolve a lista vazia', async () => {
+    vi.stubGlobal('window', {})
+    expect(await listScreenSources()).toEqual([])
   })
 })

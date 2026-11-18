@@ -79,12 +79,22 @@ export async function login(url: string, req: LoginRequest): Promise<void> {
   await startSession(url, await http<AuthResult>(url, '/auth/login', req))
 }
 
+function googleSignInBridge() {
+  return typeof window !== 'undefined' ? window.api?.googleSignIn : undefined
+}
+
+export function canSignInWithGoogle(): boolean {
+  return !!googleSignInBridge()
+}
+
 export async function loginWithGoogle(url: string): Promise<void> {
+  const signIn = googleSignInBridge()
+  if (!signIn) throw new Error('Entrar com Google só funciona no app instalado.')
   const { googleClientId } = await getAuthConfig(url)
   if (!googleClientId) throw new Error('Login com Google não está configurado neste servidor')
-  let code: Awaited<ReturnType<typeof window.api.googleSignIn>>
+  let code: Awaited<ReturnType<typeof signIn>>
   try {
-    code = await window.api.googleSignIn(googleClientId)
+    code = await signIn(googleClientId)
   } catch (err) {
     // O Electron prefixa "Error invoking remote method ...: Error: " na mensagem.
     const msg = err instanceof Error ? err.message.replace(/^.*?Error: /, '') : ''

@@ -4,7 +4,7 @@ import { AppWindow, Loader2, Monitor, RefreshCw } from 'lucide-react'
 import type { ScreenSource } from '@shared/screen'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { canShareSystemAudio, closeScreenPicker, startScreenShare } from '@/lib/client'
+import { canShareSystemAudio, closeScreenPicker, listScreenSources, startScreenShare } from '@/lib/client'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
 
@@ -22,7 +22,7 @@ export function ScreenPicker() {
   const load = useCallback(async () => {
     setError(null)
     try {
-      const list = await window.api.screen.getSources()
+      const list = await listScreenSources()
       setSources(list)
       // Mantém a escolha se a fonte ainda existe; senão, pré-seleciona a primeira tela.
       setSelected((cur) => (cur && list.some((s) => s.id === cur) ? cur : (list.find((s) => s.kind === 'screen')?.id ?? null)))

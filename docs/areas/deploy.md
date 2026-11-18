@@ -42,19 +42,33 @@ continua na VPS acima; o site só fala com ele.
   (conteúdo misto). Com o compose deste doc isso já vem do Caddy (`https://` e `wss://`).
 - **CORS:** o servidor aceita qualquer origem (`cors: { origin: '*' }` no Socket.IO e os cabeçalhos das rotas HTTP);
   o login é por token, sem cookie.
-- **Não funciona no navegador** (precisa da ponte do Electron): login com Google, pressione para falar, overlay,
-  notificações nativas e selo no ícone, atualização automática e áudio do Windows ao compartilhar a tela. Texto, voz,
-  câmera, tela (com o seletor do navegador), anexos, sons e ferramentas funcionam. O navegador pede permissão de
-  microfone e câmera.
-- **Conferir sem a Vercel:** `VITE_DEFAULT_SERVER=https://exemplo npx electron-vite build` e servir `out/renderer`
-  com qualquer servidor estático; a tela de login mostra o endereço do build.
+- **Sem Electron não existe `window.api`.** O tipo é opcional (`api?:` em `src/preload/index.d.ts`), então o
+  `npm run typecheck` recusa qualquer acesso sem guarda: um só derrubaria a página inteira. Cada ponte é lida por uma
+  função que devolve `null`/`undefined` fora do app (`overlayEnv`, `pttEnv`, `windowEnv`, `translucencyEnv`,
+  `screenBridge`, `googleSignInBridge`...).
+
+| No navegador | Como fica |
+|---|---|
+| Cadastro e login com e-mail e senha, canais, mensagens, anexos, DMs, amigos, ferramentas, temas, sons | Funcionam igual. |
+| Voz, câmera e tela | Voz e câmera pelo LiveKit (o navegador pede permissão); a tela usa o seletor do próprio navegador (`getDisplayMedia`), sem o `ScreenPicker` e sem o áudio do Windows. |
+| Login com Google | Botão escondido (`canSignInWithGoogle` em `lib/client.ts`): o fluxo usa o loopback do Electron. Na web precisaria de um redirect OAuth novo no servidor. |
+| Sobreposição em jogos | Seção escondida em Configurações → Voz e vídeo (precisa da janela extra do Electron). |
+| Pressione para falar | Opção bloqueada com "Disponível só no app instalado." (gancho de teclado do sistema). |
+| Barra de título, atualização automática, vidro (translúcido) | Não aparecem. |
+| Notificações | Sem aviso do sistema nem selo no ícone (a ponte é do Electron); os sons de mensagem e menção tocam. A chave "Mostrar notificações do Concord" aparece, mas não tem efeito no navegador. |
+
+- **Conferir sem a Vercel:** `npx electron-vite build` (com `VITE_DEFAULT_SERVER=...` se quiser o endereço padrão) e
+  servir `out/renderer` com qualquer servidor estático (os caminhos são relativos, `./assets/`). Com o servidor local
+  (`npm run server`), a página em `http://localhost:<porta>` fala com `http://localhost:3001` sem conteúdo misto.
 
 ## Testes
 
 `server/deploy.test.ts`: serviços do compose, toda variável do compose no `.env` de exemplo, obrigatórias com
 mensagem, portas publicadas, `TRUST_PROXY` e usuários do banco, versão do LiveKit igual à de dev, o servidor aceita
 os endereços do LiveKit do compose (`readLiveKitConfig`), portas e TURN do `livekit.yaml`, rotas do Caddy, o que a
-imagem copia e ignora, script do `concord_app` e o `vercel.json` (comandos e pasta de saída). `src/renderer/src/lib/default-server.test.ts`: o endereço padrão vindo do build. Não sobe Docker: subir de verdade é o passo a passo do
+imagem copia e ignora, script do `concord_app` e o `vercel.json` (comandos e pasta de saída). `src/renderer/src/lib/default-server.test.ts`: o endereço padrão vindo do build. Fora do app (sem `window.api`):
+`components/login-restoring.test.tsx` (sem o botão do Google), `components/settings/VoiceSettings.test.tsx` (sem a
+sobreposição) e `lib/actions/screen.test.ts` (`listScreenSources` vazia e seletor do navegador). Não sobe Docker: subir de verdade é o passo a passo do
 `deploy/README.md` numa VPS.
 
 ## Problemas conhecidos / depuração

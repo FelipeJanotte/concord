@@ -8,6 +8,7 @@ import {
   cancelOverlayShortcutRecording,
   canChooseAudioOutput,
   listAudioDevices,
+  overlayEnv,
   previewVoiceSound,
   recordOverlayShortcutKey,
   resetOverlayShortcuts,
@@ -98,7 +99,7 @@ export function VoiceSettings() {
 
       <JoinLeaveSounds />
 
-      <GameOverlay />
+      {overlayEnv.bridge() && <GameOverlay />}
 
       <p className="text-xs text-muted-foreground">Para ajustar o volume ou silenciar alguém, clique com o botão direito na pessoa.</p>
     </div>
@@ -281,8 +282,6 @@ function GameOverlay() {
   const moved = useApp((s) => s.overlayPosition !== null)
   const editing = useApp((s) => s.overlayEditing)
   const editLabel = useApp((s) => shortcutLabel(s.overlayShortcuts.edit))
-  // o modo de mover só existe no app (precisa da janela do overlay)
-  const canMove = typeof window !== 'undefined' && !!window.api?.overlay
   const selectClass = 'h-9 rounded-md border border-border bg-input px-2 text-sm text-foreground disabled:opacity-60'
   return (
     <div className="space-y-2 border-t border-border pt-4">
@@ -312,11 +311,9 @@ function GameOverlay() {
             </option>
           ))}
         </select>
-        {canMove && (
-          <Button variant={editing ? 'default' : 'secondary'} size="sm" className="h-9" disabled={!enabled} onClick={() => setOverlayEditing(!editing)}>
-            {editing ? 'Concluir' : 'Mover'}
-          </Button>
-        )}
+        <Button variant={editing ? 'default' : 'secondary'} size="sm" className="h-9" disabled={!enabled} onClick={() => setOverlayEditing(!editing)}>
+          {editing ? 'Concluir' : 'Mover'}
+        </Button>
       </div>
       {editing && (
         <p className="pl-6 text-xs text-foreground" aria-live="polite">
@@ -327,7 +324,7 @@ function GameOverlay() {
         Mostra só quem está falando na sua sala de voz e some enquanto o Concord está em foco. Os atalhos funcionam mesmo dentro do jogo. Funciona com o
         jogo em janela ou em tela cheia sem bordas; em tela cheia exclusiva o Windows não deixa nada aparecer por cima.
       </p>
-      {canMove && <OverlayShortcutSettings />}
+      <OverlayShortcutSettings />
     </div>
   )
 }

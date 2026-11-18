@@ -8,7 +8,7 @@ import type { WindowControlsBridge } from '../shared/window-controls'
 
 declare global {
   interface Window {
-    api: {
+    api?: {
       platform: string
       googleSignIn: (clientId: string) => Promise<{ code: string; codeVerifier: string; redirectUri: string }>
       screen: ScreenShareBridge

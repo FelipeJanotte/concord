@@ -4,7 +4,7 @@ import { PASSWORD_MIN, TAG_MAX, TAG_PATTERN } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { cancelRestore, getAuthConfig, login, loginWithGoogle, register, savedServerUrl, updateProfile } from '@/lib/client'
+import { cancelRestore, canSignInWithGoogle, getAuthConfig, login, loginWithGoogle, register, savedServerUrl, updateProfile } from '@/lib/client'
 import { randomTag } from '@/lib/image'
 import { useApp } from '@/store'
 import { AvatarPicker } from './AvatarPicker'
@@ -202,24 +202,28 @@ export function LoginScreen() {
             {isRegister ? 'Criar conta' : 'Entrar'}
           </Button>
 
-          <div className="flex items-center gap-3 text-xs text-muted-foreground uppercase">
-            <div className="h-px flex-1 bg-border" />
-            ou
-            <div className="h-px flex-1 bg-border" />
-          </div>
+          {canSignInWithGoogle() && (
+            <>
+              <div className="flex items-center gap-3 text-xs text-muted-foreground uppercase">
+                <div className="h-px flex-1 bg-border" />
+                ou
+                <div className="h-px flex-1 bg-border" />
+              </div>
 
-          <Button
-            type="button"
-            variant="outline"
-            size="lg"
-            className="w-full"
-            disabled={!!busy || !googleEnabled}
-            onClick={() => void google()}
-            title={googleEnabled === false ? 'Login com Google não está configurado neste servidor' : undefined}
-          >
-            {busy === 'google' ? <Loader2 className="animate-spin" /> : <GoogleIcon />}
-            {busy === 'google' ? 'Continue no navegador...' : 'Entrar com Google'}
-          </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="lg"
+                className="w-full"
+                disabled={!!busy || !googleEnabled}
+                onClick={() => void google()}
+                title={googleEnabled === false ? 'Login com Google não está configurado neste servidor' : undefined}
+              >
+                {busy === 'google' ? <Loader2 className="animate-spin" /> : <GoogleIcon />}
+                {busy === 'google' ? 'Continue no navegador...' : 'Entrar com Google'}
+              </Button>
+            </>
+          )}
 
           <p className="text-sm text-muted-foreground">
             {isRegister ? 'Já tem uma conta? ' : 'Precisa de uma conta? '}

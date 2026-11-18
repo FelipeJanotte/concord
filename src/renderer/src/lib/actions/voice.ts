@@ -1,4 +1,5 @@
 // Entrar/sair da sala de voz, mute, deafen, compartilhar a tela e câmera (B21). A conexão com o LiveKit fica em `lib/voice.ts`.
+import type { ScreenSource } from '@shared/screen'
 import { get, getSocket, notify, set, type AppSocket } from '../core'
 import { findDm } from '../dms'
 import { voice } from '../voice'
@@ -186,6 +187,10 @@ function setSharing(sharing: boolean): void {
 /** No Electron existe o seletor próprio; no navegador (npm run dev), o do próprio navegador. */
 function screenBridge() {
   return typeof window !== 'undefined' ? window.api?.screen : undefined
+}
+
+export async function listScreenSources(): Promise<ScreenSource[]> {
+  return (await screenBridge()?.getSources()) ?? []
 }
 
 export function canShareSystemAudio(): boolean {

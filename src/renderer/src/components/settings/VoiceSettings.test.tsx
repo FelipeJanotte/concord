@@ -46,6 +46,7 @@ afterEach(() => {
   cleanup()
   delete proto.setSinkId
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
 })
 
 async function openDialog(): Promise<void> {
@@ -168,6 +169,7 @@ describe('VoiceSettings', () => {
 
 describe('sobreposição em jogos (B15)', () => {
   it('liga, escolhe canto e tamanho (desligado, os seletores ficam bloqueados) e explica o atalho', async () => {
+    vi.stubGlobal('api', { overlay: { setEditing: vi.fn(), setConfig: vi.fn(), setRoom: vi.fn(), setShortcuts: vi.fn(async () => ({ toggle: true, edit: true })), pauseShortcuts: vi.fn() } })
     localStorage.clear()
     render(<VoiceSettings />)
     const corner = screen.getByLabelText('Posição do overlay') as HTMLSelectElement
@@ -207,10 +209,12 @@ describe('sobreposição em jogos (B15)', () => {
     }
   })
 
-  it("fora do app (sem a ponte) não mostra Mover", () => {
+  it('fora do app (sem a ponte) não mostra a sobreposição', () => {
     useApp.setState({ overlayEnabled: true })
     render(<VoiceSettings />)
-    expect(screen.queryByRole("button", { name: "Mover" })).toBeNull()
+    expect(screen.queryByLabelText('Mostrar quem está falando por cima dos jogos')).toBeNull()
+    expect(screen.queryByLabelText('Posição do overlay')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Mover' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Restaurar padrão' })).toBeNull()
   })
 

@@ -141,8 +141,8 @@ A `MemberList` deduplica por `accountId` (a mesma conta pode estar em duas janel
   token inválido ou revogado = `unauthorized`; sessão usada é renovada (no máximo 1 vez por dia) e parada 30 dias
   vence (`server/auth.test.ts`, "sessões"); só `unauthorized` apaga o token, servidor fora mantém e tenta de novo
   (`src/renderer/src/lib/client-session.test.ts`, `components/login-restoring.test.tsx`); imagem que não é PNG/JPEG/WebP/GIF = erro.
-- No app (`npm run dev:all`), o renderer também abre em `http://localhost:5173` no navegador; só o botão do Google
-  depende do Electron (`window.api`).
+- No app (`npm run dev:all`), o renderer também abre em `http://localhost:5173` no navegador; o botão do Google
+  depende do Electron (`window.api.googleSignIn`) e some fora dele (`canSignInWithGoogle`).
 
 ## Limitações atuais
 

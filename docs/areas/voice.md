@@ -146,7 +146,7 @@ servidor acima). O app acompanha:
 
 ```
 botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
-  Electron:  abre o ScreenPicker ─► window.api.screen.getSources() ─► IPC screen-sources (desktopCapturer)
+  Electron:  abre o ScreenPicker ─► listScreenSources() (window.api.screen.getSources) ─► IPC screen-sources (desktopCapturer)
              escolhe ─► startScreenShare(id, áudio) ─► IPC screen-select (guarda a escolha no main, 15 s)
   navegador: (npm run dev em localhost:5173) o próprio navegador pergunta
   ─► voice.startScreenShare(áudio) ─► localParticipant.setScreenShareEnabled(true, {...})
