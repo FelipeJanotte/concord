@@ -13,6 +13,7 @@ import { ResizableSide } from '@/components/ResizableSide'
 import { UtilityRail } from '@/components/rail/UtilityRail'
 import { TitleBar } from '@/components/TitleBar'
 import { Toast } from '@/components/Toast'
+import { ToolsSidebar } from '@/components/tools/ToolsSidebar'
 import { ToolView } from '@/components/tools/ToolView'
 import { UpdateBanner } from '@/components/UpdateBanner'
 import { VoiceView } from '@/components/VoiceView'
@@ -58,7 +59,7 @@ function MainLayout() {
       <div data-glass="stage" className="flex min-h-0 flex-1 overflow-hidden select-none">
         <UtilityRail />
         <ResizableSide panel={SIDE_PANELS.navigation} edge="right" label="Redimensionar a barra lateral">
-          {section === 'home' ? <HomeSidebar /> : <ChannelSidebar />}
+          {section === 'home' ? <HomeSidebar /> : section === 'tool' ? <ToolsSidebar /> : <ChannelSidebar />}
         </ResizableSide>
         <main data-glass="panel" className="flex min-w-0 flex-1 flex-col bg-background">
           {section === 'tool' ? (

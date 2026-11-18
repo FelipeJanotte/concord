@@ -71,14 +71,14 @@ describe('seções', () => {
     expect(useApp.getState().homeView).toEqual({ kind: 'friends' })
   })
 
-  it('ferramenta: seção própria; escolher canal ou voltar à comunidade fecha a ferramenta', () => {
+  it('ferramenta: seção própria; escolher canal sai da seção e lembra a ferramenta', () => {
     openTool('sorteador')
     expect(useApp.getState()).toMatchObject({ section: 'tool', toolId: 'sorteador' })
     selectTextChannel('geral')
-    expect(useApp.getState()).toMatchObject({ section: 'community', toolId: null })
+    expect(useApp.getState()).toMatchObject({ section: 'community', toolId: 'sorteador' })
   })
 
-  it('ferramenta pelo + do composer guarda o canal; pela barra de úteis volta a sugerir', () => {
+  it('ferramenta pelo + do composer guarda o canal; abrir sem canal volta a sugerir', () => {
     openTool('dice', 'dm-ana')
     expect(useApp.getState()).toMatchObject({ section: 'tool', toolId: 'dice', toolChannelId: 'dm-ana' })
     openTool('coin')

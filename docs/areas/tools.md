@@ -113,7 +113,7 @@ No app (`lib/actions/tools.ts`): `createPoll(channelId, pergunta, opções, mult
 
 ## Na tela (B10)
 
-Cada ferramenta é uma linha em `TOOLS` (`components/tools/registry.ts`): ícone na barra de úteis e o painel que
+Cada ferramenta é uma linha em `TOOLS` (`components/tools/registry.ts`): grupo, descrição (cartão da galeria) e o painel que
 abre na área central (`ToolView`, `docs/areas/home.md`). O resultado aparece no chat como **cartão**: o
 `MessageBody` do `ChatView` troca o texto por `<ToolResultCard>` quando `message.kind === 'tool'`.
 
@@ -141,11 +141,11 @@ avisa e não deixa sortear; com times menores que as lanes, avisa que nem todas 
 
 O botão `+` (rótulo "Ferramentas") à esquerda do clipe no `Composer` abre um menu (`components/chat/ToolsMenu.tsx`,
 `Popover` do shadcn) com as ferramentas de `TOOLS`, na ordem do registro. Escolher uma chama
-`openTool(id, channelId)`: a área central vira o `ToolView` com o **mesmo painel** da barra de úteis, e o "Postar em"
+`openTool(id, channelId)`: a área central vira o `ToolView` com o **mesmo painel** aberto pelo hub, e o "Postar em"
 já vem no canal ou conversa do chat de onde se clicou.
 
 - **Destino:** `openTool` grava `toolChannelId` (`store/navigation.ts`); `useDefaultTarget` (`shared.tsx`) usa ele
-  antes do canal de texto aberto e da conversa da Home. Pela barra de úteis, `openTool(id)` zera `toolChannelId` e
+  antes do canal de texto aberto e da conversa da Home. Pelo hub (`showTools`, `showToolGallery`, cartão ou barra lateral) `toolChannelId` é zerado e
   volta a sugestão de antes. Sem isso, um `+` numa conversa privada sugeriria o canal da comunidade que estivesse
   aberto em `view`. Se o canal não puder receber (sumiu, perdeu `send`), cai na sugestão normal.
 - **Onde aparece:** chat de texto e conversa privada com `send`. No chat da sala de voz não aparece (o servidor
@@ -167,7 +167,7 @@ página que chegou, então as enquetes do histórico já aparecem marcadas.
 3. Uma entrada em `TOOLS` (`server/modules/tools.ts`): `run(req, rand)` devolve o erro (texto) ou o `ToolPayload`.
    O `runTool` cuida do resto (canal, `send`, limite, `insertMessage` com `kind: 'tool'`, `emitToViewers`).
 4. Ação em `lib/actions/tools.ts`. Na tela: painel em `components/tools/<Nome>Panel.tsx` (use `ToolPanel`, `usePostTarget`,
-   `ChannelSelect`, `usePost` e `PostedResult` de `shared.tsx`), um `case` no `ToolResultCard` e uma linha em `TOOLS`.
+   `ChannelSelect`, `usePost` e `PostedResult` de `shared.tsx`), um `case` no `ToolResultCard` e uma linha em `TOOLS` (`components/tools/registry.ts`, com `group` e `description`: aparece sozinha na barra lateral e na galeria).
 
 ## Testes
 

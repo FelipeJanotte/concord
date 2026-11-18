@@ -1,25 +1,27 @@
 # Navegação: barra de úteis e Home (v3, B7)
 
 A barra da esquerda (onde no Discord ficam os servidores) é a **barra de úteis**: no topo, **Início** (Amigos +
-conversas privadas) e **Concord** (a comunidade: canais de texto e voz); abaixo do separador, as **ferramentas** da
-v4, lidas de um registro. É só tela: não há evento novo. Amizades e conversas vêm das ações da A6/A7 (`docs/areas/friends.md` e `docs/areas/dms.md`).
+conversas privadas) e **Concord** (a comunidade: canais de texto e voz); abaixo do separador, **um só botão "Ferramentas"**: abre o hub das
+ferramentas da v4 (barra lateral `ToolsSidebar` com as ferramentas por grupo e, sem ferramenta aberta, a galeria `ToolGallery` de cartões). É só tela: não há evento novo. Amizades e conversas vêm das ações da A6/A7 (`docs/areas/friends.md` e `docs/areas/dms.md`).
 
 ## Arquivos
 
 | Arquivo | Papel |
 |---|---|
-| `store/navigation.ts` | `section: 'community' \| 'home' \| 'tool'`, `homeView: { kind: 'friends' } \| { kind: 'dm', channelId }`, `toolId`, `toolChannelId` (destino escolhido pelo `+` do composer, `docs/areas/tools.md`). |
-| `lib/actions/navigation.ts` | `showCommunity`, `showHome`, `showFriends`, `openDmChat(channelId)`, `messageAccount(accountId)`, `openTool(toolId, toolChannelId?)` (o `+` do composer passa o canal do chat), `openVoiceChat(channelId)` e `setVoiceChatOpen(open)` (chat da sala de voz, ver `docs/areas/messages.md`), `isChatOnScreen(state, channelId)` (sala de voz só conta com o painel "Chat" aberto). Reexportadas por `lib/client.ts`. |
+| `store/navigation.ts` | `section: 'community' \| 'home' \| 'tool'`, `homeView: { kind: 'friends' } \| { kind: 'dm', channelId }`, `toolId` (a ferramenta aberta; `null` na seção `tool` é a galeria; **não** é zerado ao sair da seção, então é a memória da última ferramenta, como `homeView`), `toolChannelId` (destino escolhido pelo `+` do composer, `docs/areas/tools.md`). |
+| `lib/actions/navigation.ts` | `showCommunity`, `showHome`, `showFriends`, `openDmChat(channelId)`, `messageAccount(accountId)`, `openTool(toolId, toolChannelId?)` (o `+` do composer passa o canal do chat), `showTools()` (botão da barra: última ferramenta ou a galeria na primeira vez; zera `toolChannelId`), `showToolGallery()` (galeria), `openVoiceChat(channelId)` e `setVoiceChatOpen(open)` (chat da sala de voz, ver `docs/areas/messages.md`), `isChatOnScreen(state, channelId)` (sala de voz só conta com o painel "Chat" aberto). Reexportadas por `lib/client.ts`. |
 | `lib/dms.ts` | `findDm(dms, channelId)`, `chatLabel(channel, dms)` (`#geral` / `@Ana`) e `DM_PERMISSIONS`. |
 | `lib/home.ts` | `homeBadge` (selo do Início) e `communityUnread` (bolinha da comunidade). |
-| `components/rail/UtilityRail.tsx` | A barra de úteis (substitui o antigo `ServerRail` do `App.tsx`). No topo, acima do Início, o botão de atualizar o app quando há versão nova (`UpdateRailSlot`, `docs/areas/updates.md`). |
+| `components/rail/UtilityRail.tsx` | A barra de úteis (substitui o antigo `ServerRail` do `App.tsx`). No topo, acima do Início, o botão de atualizar o app quando há versão nova (`UpdateRailSlot`, `docs/areas/updates.md`). Um único botão "Ferramentas" (ativo com `section === 'tool'`) chama `showTools`. |
 | `components/home/HomeSidebar.tsx` | Barra lateral da Home: botão "Amigos" (selo de pedidos recebidos) + `DmList` + painéis de voz e da conta. |
 | `components/dm/DmList.tsx` | Conversas, a mais recente primeiro, com não lido e online (online só de amigos). |
 | `components/friends/FriendsView.tsx` | Abas Online, Todos, Pendentes, Bloqueados e "Adicionar amigo" (nome#id). |
-| `components/tools/registry.ts` | `TOOLS: ToolDefinition[]` (`id`, `name`, `icon`, `Panel`): as cinco ferramentas da v4 (B10, `docs/areas/tools.md`). |
-| `components/tools/ToolView.tsx` | Cabeçalho + painel da ferramenta aberta. |
+| `components/tools/registry.ts` | `TOOLS: ToolDefinition[]` (`id`, `name`, `description`, `group`, `icon`, `Panel`) e `TOOL_GROUPS` (ordem e rótulos "Comunidade"/"Diversão", fonte única da barra lateral e da galeria): as cinco ferramentas da v4 (B10, `docs/areas/tools.md`). |
+| `components/tools/ToolView.tsx` | Sem ferramenta (`toolId` nulo): a `ToolGallery`; senão cabeçalho + painel (id desconhecido: "Ferramenta não encontrada"). |
+| `components/tools/ToolsSidebar.tsx` | Barra lateral da seção `tool`: cabeçalho "Ferramentas" (galeria), ferramentas por grupo (`aria-current` na aberta) + painéis de voz e da conta. |
+| `components/tools/ToolGallery.tsx` | Cartões (ícone, nome, descrição) por grupo; clicar chama `openTool(id)`. |
 | `components/voice/MemberContextMenu.tsx` | Item `MessageItem`: "Mensagem" ou "Adicionar amigo". |
-| `App.tsx` | Layout: barra de úteis → barra lateral da seção → área central → lista de membros (só na comunidade). Barras com largura ajustável (`ResizableSide`, ver "Barras laterais redimensionáveis"). |
+| `App.tsx` | Layout: barra de úteis → barra lateral da seção (`HomeSidebar`, `ToolsSidebar` ou `ChannelSidebar`) → área central → lista de membros (só na comunidade). Barras com largura ajustável (`ResizableSide`, ver "Barras laterais redimensionáveis"). |
 | `lib/side-width.ts`, `components/ResizableSide.tsx` | Largura das barras laterais: limites, guardar na máquina e a alça de arrastar. |
 
 ## Por que `section` e não `view.kind`
@@ -84,20 +86,21 @@ de canais e a da Home dividem a mesma (`navigation`), então trocar de seção n
   própria tem ~60 linhas e nenhuma dependência.
 - Painel novo redimensionável: uma linha em `SIDE_PANELS` e envolver o painel com `ResizableSide`.
 
-## Ferramenta nova na barra (B10 e seguintes)
+## Ferramenta nova no hub (B10 e seguintes)
 
 1. Crie o painel em `components/tools/<Nome>Panel.tsx` (usa as ações de `lib/actions/tools.ts`).
-2. Acrescente **uma linha** em `TOOLS` (`components/tools/registry.ts`): `{ id, name, icon, Panel }`.
-3. O ícone aparece abaixo do separador, o clique chama `openTool(id)` e o `ToolView` mostra o painel.
+2. Acrescente **uma linha** em `TOOLS` (`components/tools/registry.ts`): `{ id, name, description, group, icon, Panel }` (`group`: `'community'` ou `'fun'`; grupo novo entra em `TOOL_GROUPS`).
+3. A ferramenta aparece na barra lateral (no grupo) e na galeria; o clique chama `openTool(id)` e o `ToolView` mostra o painel.
 
 ## Testes
 
 | Arquivo | Cobre |
 |---|---|
-| `lib/actions/navigation.test.ts` | Seções, a Home lembra a conversa, ferramenta fecha ao escolher canal, `toolChannelId` do `+` do composer, `messageAccount` (sucesso e erro), não lido por seção. |
+| `lib/actions/navigation.test.ts` | Seções, a Home lembra a conversa, escolher canal sai da seção e a ferramenta fica lembrada, `toolChannelId` do `+` do composer, `messageAccount` (sucesso e erro), não lido por seção. |
 | `lib/home.test.ts` | `homeBadge`, `communityUnread`, `findDm`, `chatLabel`, `DM_PERMISSIONS`. |
 | `lib/side-width.test.ts`, `components/ResizableSide.test.tsx` | Limites, largura guardada (inválida, sem armazenamento), arrastar nas duas bordas, mínimo/máximo, só grava ao soltar, duplo clique volta ao padrão. |
-| `components/home/home.test.tsx` | Barra (selo, troca de seção, ferramenta do registro), Home (ordem, online, vazio, selo de pedidos), chat da conversa (@nome, sem cargos, busca o histórico), tela Amigos (abas, ações, confirmações, adicionar), botão direito ("Mensagem", "Adicionar amigo", nada quando bloqueada). |
+| `components/tools/hub.test.tsx` | Um só botão "Ferramentas" na barra, galeria com os grupos, abrir pelo cartão, barra lateral marcando a aberta, voltar à galeria, memória da última ferramenta, `toolChannelId`. |
+| `components/home/home.test.tsx` | Barra (selo, troca de seção), Home (ordem, online, vazio, selo de pedidos), chat da conversa (@nome, sem cargos, busca o histórico), tela Amigos (abas, ações, confirmações, adicionar), botão direito ("Mensagem", "Adicionar amigo", nada quando bloqueada). |
 
 À mão (duas contas, `docs/areas/dev-workflow.md`): A adiciona B pelo `nome#id` → B vê o selo no Início e aceita em
 Pendentes → A clica em "Mensagem" (tela Amigos ou botão direito) → B vê a conversa com bolinha e o selo; abrir limpa.

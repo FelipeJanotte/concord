@@ -150,7 +150,7 @@ vê), `typing`, `rate:limited`, `access:updated` e `channels:visible` (v2), `sou
 - `view: { kind: 'text' | 'voice', channelId }`: a tela da comunidade (canal ou sala aberta).
 - `calls[channelId]` (`store/calls.ts`, B8): chamada tocando ou em andamento em cada conversa; o toque segue esse estado (`syncRinger`).
 - `section`, `homeView`, `toolId` (`store/navigation.ts`, B7): qual parte está na frente (comunidade, Home com "Amigos"
-  ou uma conversa, ou uma ferramenta). Trocar de seção não perde `view`. `toolChannelId`: destino da ferramenta aberta pelo `+` do composer (null = sugestão do painel). `docs/areas/home.md`.
+  ou uma conversa, ou uma ferramenta). Trocar de seção não perde `view`. `toolId` não é zerado ao sair: é a última ferramenta, e `null` na seção `tool` é a galeria. `toolChannelId`: destino da ferramenta aberta pelo `+` do composer (null = sugestão do painel). `docs/areas/home.md`.
 - `myVoiceChannelId`, `joiningVoice`, `muted`, `deafened`, `speaking[userId]`, `sharing`, `screens`, `screenPickerOpen`.
 - `access` (`store/permissions.ts`): `AccessState` do `hello`/`access:updated`, `null` antes de chegar; a tela lê com `useCan`/`useNameColor` de `lib/permissions.ts` (`docs/areas/permissions.md`).
 - `theme`, `savedThemes`, `preferencesLoaded` (`store/preferences.ts`, v5): tema da conta, carregado depois do `hello` e aplicado como variáveis CSS (`lib/theme`, `docs/areas/themes.md`); antes do login vale o último tema da máquina.
