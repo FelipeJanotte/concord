@@ -103,7 +103,7 @@ no contrato: o texto continua o mesmo, só a tela reconhece o link.
 | Arquivo | Papel |
 |---|---|
 | `src/shared/links.ts` | Puras: `splitLinks(texto)` → pedaços `{ text }` / `{ url, href }` e `externalUrl(raw)` (só `http:`/`https:`, senão `null`). Compartilhado porque o processo principal usa a mesma checagem. |
-| `components/chat/MessageText.tsx` | Depois de separar as menções, cada pedaço de texto passa por `splitLinks`; link vira `<a target="_blank" rel="noreferrer noopener">` com `text-primary` sublinhado e o endereço no `title`. |
+| `components/chat/MessageText.tsx` | Cada nó de texto da formatação (B25) separa as menções e passa por `splitLinks`; link vira `<a target="_blank" rel="noreferrer noopener">` com `text-primary` sublinhado e o endereço no `title`. |
 | `src/main/index.ts` | `setWindowOpenHandler`: o `target="_blank"` cai aqui e vai para `shell.openExternal` **só se `externalUrl` aceitar** (nunca `file:`, `javascript:`, `ms-settings:`...). `will-navigate`: link que tentasse trocar a página da janela é cancelado e (se http/https) aberto fora. |
 
 Regras de reconhecimento:
@@ -118,6 +118,50 @@ mostram texto puro. Prévia do site (embed) está pendente.
 
 Testes: `src/shared/links.test.ts` (reconhecimento, pontuação, parênteses, protocolos recusados) e
 `components/chat/links.test.tsx` (`<a>` com `href`/`target`/`rel`, `www.`, link junto com menção, `javascript:` fica texto).
+
+## Formatação (B25)
+
+Subconjunto de markdown, **só na tela**: o servidor guarda e devolve o texto como veio (nada muda no contrato
+nem no banco). Nunca vira HTML: o parser devolve nós e o React desenha elementos (`<b>` digitado continua texto;
+nada de `dangerouslySetInnerHTML`).
+
+| Marcação | Vira |
+|---|---|
+| `**negrito**` | `<strong>` |
+| `*itálico*` | `<em>` |
+| `~~riscado~~` | `<s>` |
+| `` `código` `` | `<code>` com fundo `bg-muted`, texto como veio |
+| ```` ```bloco``` ```` | `<code data-code-block>` em bloco (`bg-muted`, borda); sem destaque de linguagem |
+| `> citação` | `<span data-quote>` com barra à esquerda |
+| `\|\|spoiler\|\|` | Tarja (`bg-foreground`, texto transparente) até clicar ou Enter/Espaço |
+
+| Arquivo | Papel |
+|---|---|
+| `src/shared/markdown.ts` | Pura `parseMarkdown(texto)` → `MarkdownNode[]` (`text`, `code`, `bold`, `italic`, `strike`, `spoiler`, `codeBlock`, `quote`). |
+| `components/chat/MessageText.tsx` | Desenha os nós; cada nó `text` passa pelas menções (`splitMentions`) e links (`splitLinks`). `Spoiler` guarda o "revelado" por spoiler. API inalterada: `<MessageText message={...} />`. |
+
+Regras do parser:
+
+- Ordem: blocos de código primeiro, depois linhas de citação, depois o que está dentro da linha.
+- Código (em linha ou bloco) é literal: **sem** formatação, menção nem link dentro. Marcação que atravessa um código
+  não fecha (em `` **a `b** c` `` o `**` fica texto e `b** c` vira código).
+- Bloco: ```` ``` ```` até o próximo ```` ``` ````; a 1ª linha some se for só um nome de linguagem (```` ```ts ````). Uma quebra de linha
+  logo antes e logo depois do bloco é engolida (o bloco já quebra).
+- Citação: linha que começa com `> ` (ou só `>`); linhas seguidas viram uma citação. `>oi` e `a > b` são texto.
+  Marcação não atravessa a borda da citação.
+- Não fechado ou vazio continua texto (`**sem fim`, `****`, `||||`, `` ` `` sozinho).
+- Itálico não começa nem termina com espaço ou `*`: `2 * 3 * 4` é texto. `***x***` vira negrito com itálico dentro.
+- Aninha: `**a *b***`, `||`código`||`, `*a **b** c*`. Menção e link dentro de negrito/itálico/spoiler funcionam.
+- Spoiler escondido: o clique em qualquer coisa dentro (inclusive link) só revela (`preventDefault`); depois de
+  revelado o link abre normalmente. Escondido tem `role="button"` "Spoiler: clique para ver".
+- Sem escape com `\` e sem `_itálico_`/`__sublinhado__` (fora do escopo).
+
+Onde **não** vale: a citação de resposta (`ReplyPreview`), as notificações e as mensagens de ferramenta mostram o
+texto puro, com os marcadores.
+
+Testes: `src/shared/markdown.test.ts` (cada marcação, aninhado, não fechado, vazio, asterisco solto, HTML, código
+atravessando, bloco com linguagem, citação) e `components/chat/markdown.test.tsx` (elementos, HTML como texto,
+código sem menção/link, menção/link no negrito, bloco, citação, spoiler por clique e teclado).
 
 ## Chat de texto da sala de voz
 
@@ -162,4 +206,5 @@ atalho da barra lateral).
 | Link não ficou clicável | Não começa com `http://`, `https://` ou `www.` (ex.: `exemplo.com` sozinho não é reconhecido) ou está colado em outra palavra. |
 | Link abre dentro do app / não abre | O clique tem de passar por `setWindowOpenHandler` (`target="_blank"`); protocolo que não é http/https é ignorado de propósito. |
 | Mensagem no chat da sala de voz (ou em qualquer canal) some sem enviar | Causa: o servidor recusava o `message:send` em silêncio e o app, que já tinha limpado o campo, não avisava nada. O caso real foi um **servidor desatualizado** (anterior ao chat da sala de voz, que ainda ignorava canal `voice`) com o app novo — o app se atualiza sozinho, o servidor não. Corrigido: o `message:send` tem resposta (`OkResult`) e o app mostra "Mensagem não enviada: <motivo>"; com servidor antigo, "o servidor não respondeu" depois de 10 s. Solução no servidor antigo: atualizar (`docs/areas/deploy.md`). Testes em `lib/actions/actions.test.ts` e `server/tests/realtime.test.ts`. |
-| Pendente | Prévia de link (embed), links na citação, histórico de edições, editar anexos, responder já mencionando o autor e menção a cargo (@Moderadores). |
+| Marcador (`**`, `\|\|`...) aparece em vez da formatação | Não fechou, ficou vazio, está dentro de código, atravessa a borda de uma citação ou é itálico com espaço na ponta (`* a *`). Regras em "Formatação (B25)". |
+| Pendente | Prévia de link (embed), links e formatação na citação, escape com `\`, histórico de edições, editar anexos, responder já mencionando o autor e menção a cargo (@Moderadores). |
