@@ -24,6 +24,7 @@ struct State {
     window: HWND,
     button_created_message: u32,
     on_click: Box<dyn Fn(ThumbAction) + Send>,
+    on_error: Box<dyn Fn(TaskbarError)>,
     buttons: RefCell<Vec<ThumbButton>>,
     taskbar: RefCell<Option<Taskbar>>,
     toolbar_added: Cell<bool>,
@@ -78,6 +79,7 @@ impl ThumbBar {
     pub fn attach(
         hwnd: isize,
         on_click: impl Fn(ThumbAction) + Send + 'static,
+        on_error: impl Fn(TaskbarError) + 'static,
     ) -> Result<ThumbBar, TaskbarError> {
         let window = HWND(hwnd as *mut c_void);
         let button_created_message = unsafe { RegisterWindowMessageW(w!("TaskbarButtonCreated")) };
@@ -93,6 +95,7 @@ impl ThumbBar {
             window,
             button_created_message,
             on_click: Box::new(on_click),
+            on_error: Box::new(on_error),
             buttons: RefCell::new(Vec::new()),
             taskbar: RefCell::new(taskbar),
             toolbar_added: Cell::new(false),
@@ -136,7 +139,9 @@ unsafe extern "system" fn subclass_proc(
         Rc::from_raw(pointer)
     };
     if message == state.button_created_message {
-        let _ = state.rebuild_after_button_created();
+        if let Err(error) = state.rebuild_after_button_created() {
+            (state.on_error)(error);
+        }
     } else if message == WM_COMMAND && clicked_action(wparam).is_some() {
         if let Some(action) = clicked_action(wparam) {
             (state.on_click)(action);
