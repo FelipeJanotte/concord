@@ -224,6 +224,59 @@ Testes: `server/tests/realtime.test.ts` (manda, quem não está na voz recebe, h
 (clique abre a sala com o chat) e `components/voice-chat.test.tsx` (botão e painel, envio sem estar na voz, bolinha,
 atalho da barra lateral).
 
+## Não lido guardado no servidor (A18)
+
+Antes o não lido (`unread` da store) vivia só na memória da janela: reiniciar o app perdia tudo e ler numa janela
+não apagava nas outras. Agora o servidor guarda, por conta e canal (texto, sala de voz ou conversa), a **última
+mensagem lida**. O não lido vem dele ao conectar e a leitura vai para ele.
+
+| Arquivo | Papel |
+|---|---|
+| `src/shared/types/reads.ts` | `ChannelReadState { channelId, lastReadId, unread }`, `ChannelRead { channelId, messageId }`, `ChannelReadResult`, eventos. |
+| `server/db/schema/reads.ts` | Tabela `channel_reads` (chave `account_id + channel_id`, `last_read_id`, `last_read_seq` = `messages.seq` da mensagem lida, `updated_at`); cascata com a conta e o canal. `last_read_id` sem chave estrangeira: a mensagem lida pode ser apagada e o ponto continua valendo pelo `seq`. Migration `0015`. |
+| `server/repo/reads.ts` | `advanceRead` (upsert que só grava se o `seq` novo for maior: `'advanced' \| 'unchanged' \| 'missing'`) e `readStates` (o ponto de cada canal + maior `seq` de mensagem de **outra pessoa** por canal). |
+| `server/modules/reads.ts` | `channel:reads` (canais que vejo, `visibleChannels`, + minhas conversas, `listDms`) e `channel:read` (valida, `LIMITS.read`, `view`, avança e avisa as outras janelas). |
+| `src/renderer/src/lib/actions/reads.ts` | `loadReads` (depois do `hello`), `startReading` (abrir um chat), `markRead` (interna), listeners `channel:read-sync` e `message:new` (chat na tela lê na hora). |
+| `src/renderer/src/store/channels.ts` | `unread`, `lastRead` (última lida por canal) e `readMarker` (onde parei, para a linha). |
+| `components/ChatView.tsx` | Linha vermelha **"Novas mensagens"** (`role="separator"`) antes da primeira mensagem depois de `readMarker`; ela quebra o agrupamento. |
+
+Eventos (tabela completa em `docs/areas/architecture.md`):
+
+| Evento | Payload | Resposta | Regras |
+|---|---|---|---|
+| `channel:reads` | — | `ChannelReadState[]` | um item por canal visível e conversa minha. `unread` = existe mensagem de outra pessoa (ou de conta apagada) com `seq` maior que o lido. Nunca lido + mensagem de outra pessoa = não lido. |
+| `channel:read` | `{ channelId, messageId }` | `ChannelReadResult` | **só avança**: mensagem mais antiga que o ponto responde `ok` sem mudar nada. Id inválido, mensagem de outro canal ou canal que não vê: "Mensagem não encontrada" (sem vazar). `LIMITS.read` (30 seguidas, depois 2/s): "Muitas leituras seguidas. Tente de novo em N s." |
+| `channel:read-sync` (servidor → app) | `{ channelId, messageId }` | — | só quando o ponto avançou, para as **outras** conexões da mesma conta (não a que leu, nem outras contas). |
+
+Fluxo no app:
+
+1. `hello` zera `unread`/`lastRead`/`readMarker`; `loadReads` junta o que veio do servidor com o que chegou no
+   meio (o local vence). Canal silenciado (`mutedChannels`) não vira não lido. Se o chat na tela está não lido,
+   chama `startReading` nele.
+2. Abrir um chat (`selectTextChannel`, `openDmChat`, `openVoiceChat`, `setVoiceChatOpen`, `showHome`,
+   `showCommunity` → `startReading`): tira o não lido, guarda `readMarker = lastRead` **se** estava não lido (senão
+   apaga a linha), espera o histórico (`loadHistory` devolve a mesma promise se já está carregando) e marca a
+   última mensagem como lida.
+3. `markRead`: só emite `channel:read` se a última mensagem carregada for diferente de `lastRead` (abrir de novo
+   não reenvia).
+4. `message:new` com o chat na tela: lê na hora (`isChatOnScreen`, a mesma regra do não lido).
+5. `channel:read-sync`: tira o não lido e anda `lastRead` nesta janela.
+
+Como testar: `server/tests/reads.test.ts` (servidor real: nunca lido, ler e mensagem nova, só avança, canais
+escondidos e DMs, `channel:read-sync` só para as outras janelas, ler o mesmo ponto não avisa, recusas),
+`server/tests/limits.test.ts` ("marcar como lido"), `lib/actions/reads.test.ts` (carregar, silenciado, não perder
+o que chegou no meio, chat aberto ao conectar, abrir com/sem não lido, mensagem nova na tela e fora, sync) e
+`components/chat/new-messages.test.tsx` (posição da linha e quando não aparece). À mão: duas janelas da mesma conta
+(`docs/areas/dev-workflow.md`), ler numa e ver a bolinha sumir na outra; fechar e abrir o app e ver o não lido.
+
+Limites conhecidos:
+
+- Logo depois de subir esta versão, todo canal com mensagem de outra pessoa aparece não lido para todos (ninguém
+  tem ponto de leitura ainda); abrir cada um resolve.
+- A linha só aparece se a mensagem onde parei está na página carregada; mais antiga que isso, não há linha.
+- Ler é "chat na tela", mesmo com a janela fora de foco (igual ao não lido de antes).
+- Canal que fica visível depois (`channels:visible`) só traz o não lido do servidor na próxima conexão.
+
 ## Testes
 
 | Arquivo | Cobre |

@@ -1,34 +1,28 @@
-import { omit } from '../utils'
 import { get, set } from '../core'
 import { openDm } from './friends'
-import { loadHistory } from './messages'
-
-function openChat(channelId: string): void {
-  set((st) => ({ unread: omit(st.unread, channelId) }))
-  void loadHistory(channelId)
-}
+import { startReading } from './reads'
 
 export function showCommunity(): void {
   set({ section: 'community' })
   const { view, voiceChatOpen } = get()
-  if (view?.kind === 'text' || (view?.kind === 'voice' && voiceChatOpen)) openChat(view.channelId)
+  if (view?.kind === 'text' || (view?.kind === 'voice' && voiceChatOpen)) startReading(view.channelId)
 }
 
 export function openVoiceChat(channelId: string): void {
   set({ section: 'community', view: { kind: 'voice', channelId }, voiceChatOpen: true })
-  openChat(channelId)
+  startReading(channelId)
 }
 
 export function setVoiceChatOpen(open: boolean): void {
   set({ voiceChatOpen: open })
   const view = get().view
-  if (open && view?.kind === 'voice') openChat(view.channelId)
+  if (open && view?.kind === 'voice') startReading(view.channelId)
 }
 
 export function showHome(): void {
   set({ section: 'home' })
   const home = get().homeView
-  if (home.kind === 'dm') openChat(home.channelId)
+  if (home.kind === 'dm') startReading(home.channelId)
 }
 
 export function showFriends(): void {
@@ -37,7 +31,7 @@ export function showFriends(): void {
 
 export function openDmChat(channelId: string): void {
   set({ section: 'home', homeView: { kind: 'dm', channelId } })
-  openChat(channelId)
+  startReading(channelId)
 }
 
 export async function messageAccount(accountId: string): Promise<void> {

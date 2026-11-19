@@ -10,11 +10,15 @@ export interface ChannelsState {
   channels: Channel[]
   /** bolinha de não lido por canal */
   unread: Record<string, boolean>
+  lastRead: Record<string, string>
+  readMarker: Record<string, string>
   view: View | null
 }
 
 export const channelsInitial: ChannelsState = {
   channels: [],
   unread: {},
+  lastRead: {},
+  readMarker: {},
   view: null
 }

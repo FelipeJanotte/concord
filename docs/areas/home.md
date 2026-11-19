@@ -48,6 +48,8 @@ Assim, ir para a Home e voltar mantém o canal ou a sala abertos, e a Home lembr
 - `ChatView` busca o histórico sozinho quando `messages[channelId]` está vazio (primeira vez ou depois de
   reconectar, porque o `hello` zera `messages`).
 - **Não lido:** `message:new` usa `isChatOnScreen` (olha a seção, não só o último canal). Abrir a conversa limpa.
+  O não lido é guardado no servidor (A18, `channel:reads`/`channel:read`/`channel:read-sync`): sobrevive a
+  reiniciar o app e ler numa janela apaga nas outras da mesma conta (`docs/areas/messages.md`, "Não lido guardado no servidor").
 - **"Mensagem"** (`messageAccount`): `dm:open` no servidor (cria ou recupera) e abre o chat. Erro do servidor vira
   exceção e a tela mostra no toast.
 

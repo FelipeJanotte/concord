@@ -82,6 +82,7 @@ export const LIMITS = {
   reaction: { capacity: 20, perSecond: 2 },
   search: { capacity: 10, perSecond: 1 / 2 },
   pin: { capacity: 10, perSecond: 1 / 2 },
+  read: { capacity: 30, perSecond: 2 },
   /** sorteios das ferramentas do grupo por conta: 5 seguidos, depois 1 a cada 3 s (v4) */
   tool: { capacity: 5, perSecond: 1 / 3 },
   /** preferências (tema): 20 seguidas (arrastar o seletor de cor), depois 1 por segundo (v5) */

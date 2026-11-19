@@ -4,6 +4,7 @@ import type { View } from '@/store'
 import { omit } from '../utils'
 import { get, requireSocket, set, type AppSocket } from '../core'
 import { loadHistory } from './messages'
+import { startReading } from './reads'
 import { clearDraft } from './uploads'
 import { leaveVoice } from './voice'
 
@@ -31,6 +32,8 @@ function replaceChannels(next: Channel[]): void {
       hasMoreHistory: drop(st.hasMoreHistory),
       loadingOlder: drop(st.loadingOlder),
       unread: drop(st.unread),
+      lastRead: drop(st.lastRead),
+      readMarker: drop(st.readMarker),
       view: st.view && !keep.has(st.view.channelId) ? firstTextView(next) : st.view
     }
   })
@@ -48,8 +51,8 @@ export function bindChannelEvents(s: AppSocket): void {
 }
 
 export function selectTextChannel(channelId: string): void {
-  set((st) => ({ section: 'community', view: { kind: 'text', channelId }, unread: omit(st.unread, channelId) }))
-  void loadHistory(channelId)
+  set({ section: 'community', view: { kind: 'text', channelId } })
+  startReading(channelId)
 }
 
 export async function createChannel(name: string, type: ChannelType): Promise<Channel> {

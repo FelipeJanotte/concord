@@ -49,7 +49,8 @@ export function bindMessageEvents(s: AppSocket): void {
   )
 }
 
-const loadingHistory = new Set<string>()
+const loadingHistory = new Map<string, Promise<void>>()
+const loadingAround = new Set<string>()
 const loadingNewer = new Set<string>()
 const historyVersions = new Map<string, number>()
 
@@ -60,29 +61,33 @@ function replaceHistory(channelId: string): void {
 }
 
 /** Carrega a página mais recente do canal (uma vez; depois as novas chegam por `message:new`). */
-export async function loadHistory(channelId: string): Promise<void> {
+export function loadHistory(channelId: string): Promise<void> {
   const socket = getSocket()
-  if (!socket || get().messages[channelId] || loadingHistory.has(channelId)) return
-  loadingHistory.add(channelId)
+  if (!socket || get().messages[channelId] || loadingAround.has(channelId)) return Promise.resolve()
+  const pending = loadingHistory.get(channelId)
+  if (pending) return pending
+  const started = fetchHistory(socket, channelId).finally(() => loadingHistory.delete(channelId))
+  loadingHistory.set(channelId, started)
+  return started
+}
+
+async function fetchHistory(socket: AppSocket, channelId: string): Promise<void> {
   const version = historyVersion(channelId)
-  let stale = false
   try {
     const page = await socket.emitWithAck('message:history', { channelId })
-    stale = historyVersion(channelId) !== version
-    if (stale) return
+    if (historyVersion(channelId) !== version) {
+      if (!get().messages[channelId] && !loadingAround.has(channelId)) return fetchHistory(socket, channelId)
+      return
+    }
     set((st) => ({
       hasNewerHistory: omit(st.hasNewerHistory, channelId),
       pins: omit(st.pins, channelId),
-      // mensagens que chegaram enquanto a página vinha não se perdem
       messages: { ...st.messages, [channelId]: mergeMessages(page.messages, st.messages[channelId] ?? []) },
       hasMoreHistory: { ...st.hasMoreHistory, [channelId]: page.hasMore }
     }))
-    void loadMyPollVotes(page.messages) // enquetes do histórico: marca o que eu já votei
+    void loadMyPollVotes(page.messages)
   } catch {
     notify('Não foi possível carregar as mensagens')
-  } finally {
-    loadingHistory.delete(channelId)
-    if (stale && !get().messages[channelId]) void loadHistory(channelId)
   }
 }
 
@@ -116,7 +121,7 @@ export async function loadOlderMessages(channelId: string): Promise<void> {
 export async function loadHistoryAround(channelId: string, messageId: string): Promise<boolean> {
   replaceHistory(channelId)
   const version = historyVersion(channelId)
-  loadingHistory.add(channelId)
+  loadingAround.add(channelId)
   let found = false
   try {
     const page = await requireSocket().emitWithAck('message:history', { channelId, around: messageId })
@@ -131,7 +136,7 @@ export async function loadHistoryAround(channelId: string, messageId: string): P
     void loadMyPollVotes(page.messages)
     return true
   } finally {
-    loadingHistory.delete(channelId)
+    loadingAround.delete(channelId)
     if (!found && !get().messages[channelId]) void loadHistory(channelId)
   }
 }

@@ -17,6 +17,7 @@ import { bindPermissionsEvents } from './actions/permissions'
 import { bindPresenceEvents } from './actions/presence'
 import { bindPinsEvents } from './actions/pins'
 import { bindReactionsEvents } from './actions/reactions'
+import { bindReadsEvents, loadReads } from './actions/reads'
 import { bindSoundsEvents, loadSounds } from './actions/sounds'
 import { bindMusicEvents } from './actions/music'
 import { bindPlaylistsEvents } from './actions/playlists'
@@ -123,6 +124,7 @@ export function connect(url: string, token: string): Promise<void> {
   bindMessageEvents(s)
   bindReactionsEvents(s)
   bindPinsEvents(s)
+  bindReadsEvents(s)
   bindVoiceEvents(s)
   bindLimitEvents(s)
   bindPermissionsEvents(s)
@@ -156,6 +158,8 @@ export function connect(url: string, token: string): Promise<void> {
           hasMoreHistory: {},
           loadingOlder: {},
           unread: {},
+          lastRead: {},
+          readMarker: {},
           typing: {},
           speaking: {},
           myVoiceChannelId: null,
@@ -163,6 +167,7 @@ export function connect(url: string, token: string): Promise<void> {
         })
         if (keep?.kind === 'text') void loadHistory(keep.channelId)
         void loadFriendsAndDms().catch(() => {})
+        void loadReads().catch(() => {})
         void loadPreferences().catch(() => {})
         void loadCalls().catch(() => {})
         void loadSounds().catch(() => {})

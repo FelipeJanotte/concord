@@ -43,6 +43,7 @@ export function ChatView({ channelId, embedded = false }: { channelId: string; e
   const hasMore = useApp((s) => !!s.hasMoreHistory[channelId])
   const loadingOlder = useApp((s) => !!s.loadingOlder[channelId])
   const hasNewer = useApp((s) => !!s.hasNewerHistory[channelId])
+  const readMarker = useApp((s) => s.readMarker[channelId])
   const jumpTo = useApp((s) => (s.jumpTarget?.channelId === channelId ? s.jumpTarget.messageId : null))
   const scrollRef = useRef<HTMLDivElement>(null)
   const stickToBottom = useRef(true)
@@ -165,8 +166,10 @@ export function ChatView({ channelId, embedded = false }: { channelId: string; e
                 {messages.map((m, i) => {
                   const prev = messages[i - 1]
                   const newDay = !prev || new Date(prev.createdAt).toDateString() !== new Date(m.createdAt).toDateString()
+                  const firstNew = !!readMarker && prev?.id === readMarker
                   const compact =
                     !newDay &&
+                    !firstNew &&
                     !!prev &&
                     senderOf(prev) === senderOf(m) &&
                     prev.kind !== 'pin' &&
@@ -174,6 +177,7 @@ export function ChatView({ channelId, embedded = false }: { channelId: string; e
                   return (
                     <Fragment key={m.id}>
                       {newDay && <DayDivider ts={m.createdAt} />}
+                      {firstNew && <NewMessagesDivider />}
                       {m.kind === 'pin' ? <PinNotice message={m} /> : <MessageItem message={m} compact={compact} />}
                     </Fragment>
                   )
@@ -250,6 +254,15 @@ function DayDivider({ ts }: { ts: number }) {
       <div className="h-px flex-1 bg-border" />
       <span className="text-xs font-semibold text-muted-foreground">{formatDay(ts)}</span>
       <div className="h-px flex-1 bg-border" />
+    </div>
+  )
+}
+
+function NewMessagesDivider() {
+  return (
+    <div role="separator" aria-label="Novas mensagens" className="mx-4 mt-3 mb-1 flex items-center gap-2">
+      <div className="h-px flex-1 bg-destructive" />
+      <span className="rounded bg-destructive px-1.5 text-[10px] font-bold uppercase text-white">Novas mensagens</span>
     </div>
   )
 }
