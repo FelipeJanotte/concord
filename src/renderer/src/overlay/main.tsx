@@ -4,8 +4,11 @@ import '../assets/globals.css'
 
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { installDesktopApi } from '../lib/desktop/install'
 import { applyTheme, loadLocalTheme } from '../lib/theme/apply'
 import { OverlayApp } from './OverlayApp'
+
+installDesktopApi()
 
 // as mesmas cores do app (último tema desta máquina)
 applyTheme(loadLocalTheme(), { animate: false, windowEffects: false })

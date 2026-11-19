@@ -9,7 +9,10 @@ import { loadStartup } from './lib/actions/startup'
 import { startThumbar } from './lib/actions/thumbar'
 import { startUpdates } from './lib/actions/updates'
 import { startWindowControls } from './lib/actions/window'
+import { installDesktopApi } from './lib/desktop/install'
 import { applyTheme, loadLocalTheme } from './lib/theme/apply'
+
+installDesktopApi()
 
 // O último tema desta máquina já na abertura (antes do login); depois do login vale o da conta.
 applyTheme(loadLocalTheme(), { animate: false })
