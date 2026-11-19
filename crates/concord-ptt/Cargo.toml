@@ -16,7 +16,5 @@ windows = { version = "0.62.2", features = [
     "Win32_UI_WindowsAndMessaging",
 ] }
 
-[lints.clippy]
-await_holding_lock = "deny"
-unwrap_used = "deny"
-expect_used = "deny"
+[lints]
+workspace = true
