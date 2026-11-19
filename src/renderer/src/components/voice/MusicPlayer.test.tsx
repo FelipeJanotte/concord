@@ -21,7 +21,7 @@ const track = (id: string, title: string, coverUrl: string | null = 'https://i.s
 })
 const ipanema = track('t1', 'Garota de Ipanema')
 const aguas = track('t2', 'Águas de Março')
-const playing = (over: Partial<MusicState> = {}): MusicState => ({ channelId: 'sala', nowPlaying: ipanema, queue: [aguas], ...over })
+const playing = (over: Partial<MusicState> = {}): MusicState => ({ channelId: 'sala', nowPlaying: ipanema, queue: [aguas], paused: false, elapsedMs: 0, ...over })
 
 let socket: FakeSocket
 
@@ -68,6 +68,17 @@ describe('MusicPlayer', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Parar a música' }))
     expect(socket.sent('music:stop')).toEqual([[{ channelId: 'sala' }]])
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Tocando agora' })).toBeNull())
+  })
+
+  it('pausar e retomar valem para todos da sala e o botão troca com o estado', async () => {
+    socket.replyTo('music:pause', () => ({ ok: true, state: playing({ paused: true, elapsedMs: 30_000 }) }))
+    socket.replyTo('music:resume', () => ({ ok: true, state: playing({ paused: false, elapsedMs: 30_000 }) }))
+    render(<MusicPlayer channelId="sala" />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Pausar a música' }))
+    expect(socket.sent('music:pause')).toEqual([[{ channelId: 'sala' }]])
+    await userEvent.click(await screen.findByRole('button', { name: 'Retomar a música' }))
+    expect(socket.sent('music:resume')).toEqual([[{ channelId: 'sala' }]])
+    expect(await screen.findByRole('button', { name: 'Pausar a música' })).toBeTruthy()
   })
 
   it('erro ao pular aparece como aviso', async () => {

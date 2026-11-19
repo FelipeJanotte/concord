@@ -3,6 +3,8 @@ import { parseCommand } from '../commands'
 import { omit } from '../utils'
 import { get, notify, requireSocket, set, type AppSocket } from '../core'
 
+type PlayedMusic = Extract<MusicPlayResult, { ok: true }>
+
 export type MusicCommand = { kind: 'play'; query: string } | { kind: 'skip' } | { kind: 'stop' } | { kind: 'queue' } | { kind: 'usage'; text: string }
 
 const PLAY_USAGE = 'Use /play <link ou nome da música>'
@@ -17,8 +19,17 @@ export function parseMusicCommand(text: string): MusicCommand | null {
 }
 
 export function applyMusicState(state: MusicState): void {
-  const rooms = get().musicRooms
-  set({ musicRooms: state.nowPlaying ? { ...rooms, [state.channelId]: state } : omit(rooms, state.channelId) })
+  const { musicRooms, musicSyncedAt } = get()
+  if (!state.nowPlaying) {
+    const { roomCollection } = get()
+    set({
+      musicRooms: omit(musicRooms, state.channelId),
+      musicSyncedAt: omit(musicSyncedAt, state.channelId),
+      ...(roomCollection?.channelId === state.channelId ? { roomCollection: null } : {})
+    })
+    return
+  }
+  set({ musicRooms: { ...musicRooms, [state.channelId]: state }, musicSyncedAt: { ...musicSyncedAt, [state.channelId]: Date.now() } })
 }
 
 export function bindMusicEvents(s: AppSocket): void {
@@ -34,8 +45,17 @@ async function request<R extends MusicResult | MusicPlayResult>(send: (s: AppSoc
 
 const fromChat = (textChannelId?: string): { textChannelId?: string } => (textChannelId ? { textChannelId } : {})
 
-export const playMusic = async (channelId: string, query: string, textChannelId?: string): Promise<{ state: MusicState; added: number }> =>
-  request((s) => s.emitWithAck('music:play', { channelId, query, ...fromChat(textChannelId) }))
+export async function playMusic(channelId: string, query: string, textChannelId?: string): Promise<PlayedMusic> {
+  const played = await request((s) => s.emitWithAck('music:play', { channelId, query, ...fromChat(textChannelId) }))
+  set({ roomCollection: played.collection && { channelId, collection: played.collection } })
+  return played
+}
+
+export const dismissCollection = (): void => set({ roomCollection: null })
+
+export const pauseMusic = async (channelId: string): Promise<MusicState> => (await request((s) => s.emitWithAck('music:pause', { channelId }))).state
+
+export const resumeMusic = async (channelId: string): Promise<MusicState> => (await request((s) => s.emitWithAck('music:resume', { channelId }))).state
 
 export const skipMusic = async (channelId: string, textChannelId?: string): Promise<MusicState> =>
   (await request((s) => s.emitWithAck('music:skip', { channelId, ...fromChat(textChannelId) }))).state

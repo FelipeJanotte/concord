@@ -31,6 +31,7 @@ export function fakeYtDlp(args: string[]): unknown {
   if (target === `${watch}${FAKE_YOUTUBE.long}`) return video(FAKE_YOUTUBE.long, 'Show inteiro', 2 * 60 * 60)
   if (target === `${playlist}${FAKE_YOUTUBE.playlist}`) {
     return {
+      title: 'Playlist do YouTube',
       entries: [
         video('pl000000001', 'Primeira', 200),
         video('pl000000002', '[Private video]', null),

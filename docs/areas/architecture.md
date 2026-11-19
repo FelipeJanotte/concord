@@ -79,7 +79,7 @@ há mais de 1 h é apagado; apagar o canal apaga os arquivos. Permissão por can
 PostgreSQL via Drizzle. `client.ts` abre `DATABASE_URL` com `pg`; sem ela, abre o **PGlite** (Postgres em
 WebAssembly) em `DATA_DIR/pgdata`. Mesmo schema e mesmas migrations nos dois, aplicadas no boot (`server/index.ts`
 abre o banco antes do `listen` e roda o `init` dos módulos). Tabelas: `accounts`, `sessions`, `channels`,
-`messages`, `attachments` (bytes no `FileStorage`, `DATA_DIR/uploads/<id>`), `server_mutes` (silêncio pelo servidor, B6; o módulo de voz carrega no `init`). O banco garante
+`messages`, `attachments` (bytes no `FileStorage`, `DATA_DIR/uploads/<id>`), `server_mutes` (silêncio pelo servidor, B6; o módulo de voz carrega no `init`), `saved_playlists` (playlists da comunidade, A17; `saved_by` em cascata com a conta). O banco garante
 unicidade (e-mail, `lower(tag)`, Google id, `type + lower(name)` do canal), tamanhos (`check`) e apaga em cascata
 (canal → mensagens; conta → sessões; conta apagada deixa a mensagem com a cópia `author_*`). `seed.ts` cria os
 canais padrão ou importa o `db.json` antigo quando o banco está vazio.
@@ -109,6 +109,10 @@ Cliente → servidor (`ClientToServerEvents`):
 | `sound:delete` | `soundId` | `SoundResult` | o autor ou `manageMessages`; `sound:deleted` para todos |
 | `music:play` | `{ channelId, query, textChannelId? }` | `MusicPlayResult` (`added`) | bot de música (A11): `query` é link (faixa/álbum/playlist do Spotify, vídeo/playlist do YouTube) ou texto (busca no YouTube); quem está na sala com `view`+`connect`, até 15 min por faixa e 100 na fila (playlist entra até encher) (`LIMITS.music`); `music:state` para quem vê a sala. Com `textChannelId` (o chat de onde veio o comando; exige `view`+`send` nele), posta **antes da busca** o comando da pessoa e o bot em "procurando" (`kind: 'tool'`, `tool: 'music'`, `action: 'searching'`) por `message:new` para quem vê esse chat; depois da busca a mesma mensagem vira a resposta ou o erro (`failed`) por `message:edited { channelId, messageId, content, tool }`; erro depois de postar volta com `posted: true` — `docs/areas/music.md` |
 | `music:skip` / `music:stop` | `{ channelId, textChannelId? }` (o id em texto do app 0.1.16 ainda vale) | `MusicResult` | pular a faixa / esvaziar a fila e tirar o bot (mesmas regras do `music:play`, inclusive as mensagens no chat com `textChannelId`) |
+| `music:pause` / `music:resume` | `{ channelId, textChannelId? }` | `MusicResult` | pausar/retomar a sala toda (A17; mesmas regras de sala e `LIMITS.music`; não postam no chat); `music:state` leva `paused` e `elapsedMs` |
+| `playlist:list` | — | `PlaylistListResult` | playlists e álbuns salvos da comunidade (A17, `docs/areas/music.md`) |
+| `playlist:create` | `{ name, url }` | `PlaylistSaveResult` | só link de playlist/álbum do Spotify ou YouTube (url canônica); nome 1–60, único; `LIMITS.playlist`; `playlist:created` para todos |
+| `playlist:delete` | `id` | `PlaylistDeleteResult` | quem salvou ou `manageMessages`; `playlist:deleted` para todos |
 | `music:queue` | `channelId` | `MusicResult` | estado da sala (tocando agora e fila); só `view` |
 | `preferences:get` | — | `Preferences` | tema ativo, temas salvos e canais silenciados da conta (padrão se nada salvo) — `docs/areas/themes.md` |
 | `preferences:update` | `{ theme?, savedThemes?, mutedChannels? }` | `PreferencesResult` | valida com `validateTheme`; `mutedChannels`: até 500 uuids (silenciar canal, `docs/areas/notifications.md`); `preferences:updated` para as outras janelas da mesma conta |
@@ -143,7 +147,7 @@ Cliente → servidor (`ClientToServerEvents`):
 Servidor → cliente (`ServerToClientEvents`): `channel:created`, `channel:deleted`, `user:joined`, `user:left`,
 `user:updated` (por `accountId`), `message:new`, `voice:state` (sempre a **lista completa** das salas que a pessoa
 vê), `typing`, `rate:limited`, `access:updated` e `channels:visible` (v2), `sound:created`, `sound:deleted` e
-`sound:played` (soundboard; o último só para a sala), `music:state` (bot de música: tocando agora e fila, para quem vê a sala), `preferences:updated` (outras janelas da mesma conta), `friend:updated`, `friend:removed` e `friend:presence` (amizades; online só para amigos), `poll:updated` (enquete: contagens novas, para quem vê o canal), `tools:moved` (só para a conexão levada à sala do time), `dm:created` (conversa nova, para a outra pessoa e as minhas outras janelas), `message:deleted` (para quem vê o canal) , `moderation:kicked` (só para a conexão expulsa da voz) e `moderation:moved` (só para a conexão movida para outra sala), `call:updated` e `call:ended` (chamadas privadas, para as duas contas; o fim chega antes do `voice:state`).
+`sound:played` (soundboard; o último só para a sala), `music:state` (bot de música: tocando agora, fila, `paused` e `elapsedMs`, para quem vê a sala), `playlist:created` e `playlist:deleted` (playlists salvas, para todos), `preferences:updated` (outras janelas da mesma conta), `friend:updated`, `friend:removed` e `friend:presence` (amizades; online só para amigos), `poll:updated` (enquete: contagens novas, para quem vê o canal), `tools:moved` (só para a conexão levada à sala do time), `dm:created` (conversa nova, para a outra pessoa e as minhas outras janelas), `message:deleted` (para quem vê o canal) , `moderation:kicked` (só para a conexão expulsa da voz) e `moderation:moved` (só para a conexão movida para outra sala), `call:updated` e `call:ended` (chamadas privadas, para as duas contas; o fim chega antes do `voice:state`).
 
 ## Estado do renderer (`store/`)
 
@@ -155,7 +159,8 @@ vê), `typing`, `rate:limited`, `access:updated` e `channels:visible` (v2), `sou
 - `view: { kind: 'text' | 'voice', channelId }`: a tela da comunidade (canal ou sala aberta).
 - `calls[channelId]` (`store/calls.ts`, B8): chamada tocando ou em andamento em cada conversa; o toque segue esse estado (`syncRinger`).
 - `section`, `homeView`, `toolId` (`store/navigation.ts`, B7): qual parte está na frente (comunidade, Home com "Amigos"
-  ou uma conversa, ou uma ferramenta). Trocar de seção não perde `view`. `toolId` não é zerado ao sair: é a última ferramenta, e `null` na seção `tool` é a galeria. `toolChannelId`: destino da ferramenta aberta pelo `+` do composer (null = sugestão do painel). `docs/areas/home.md`.
+  ou uma conversa, uma ferramenta ou a área Música). Trocar de seção não perde `view`. `toolId` não é zerado ao sair: é a última ferramenta, e `null` na seção `tool` é a galeria. `toolChannelId`: destino da ferramenta aberta pelo `+` do composer (null = sugestão do painel). `docs/areas/home.md`.
+- `musicRooms[channelId]`, `musicSyncedAt`, `musicQueueChannelId`, `lastCollection` (`store/music.ts`) e `playlists`, `playlistsLoaded` (`store/playlists.ts`): bot de música e playlists salvas (`docs/areas/music.md`).
 - `myVoiceChannelId`, `joiningVoice`, `muted`, `deafened`, `speaking[userId]`, `sharing`, `screens`, `screenPickerOpen`.
 - `access` (`store/permissions.ts`): `AccessState` do `hello`/`access:updated`, `null` antes de chegar; a tela lê com `useCan`/`useNameColor` de `lib/permissions.ts` (`docs/areas/permissions.md`).
 - `theme`, `savedThemes`, `preferencesLoaded` (`store/preferences.ts`, v5): tema da conta, carregado depois do `hello` e aplicado como variáveis CSS (`lib/theme`, `docs/areas/themes.md`); antes do login vale o último tema da máquina.

@@ -87,6 +87,8 @@ export const LIMITS = {
   /** efeitos sonoros tocados por conta: 1 a cada 3 s (A10) */
   sound: { capacity: 1, perSecond: 1 / 3 },
   music: { capacity: 5, perSecond: 1 / 5 },
+  musicControl: { capacity: 10, perSecond: 1 },
+  playlist: { capacity: 3, perSecond: 1 / 10 },
   /** ações de moderação e apagar mensagem por conta: 20 seguidas, depois 1 por segundo (B6) */
   moderation: { capacity: 20, perSecond: 1 },
   roleReorder: { capacity: 10, perSecond: 1 / 2 },

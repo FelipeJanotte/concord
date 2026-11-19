@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react'
-import { LayoutGrid, MessageCircle } from 'lucide-react'
+import { LayoutGrid, MessageCircle, Music } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { showCommunity, showHome, showTools } from '@/lib/client'
+import { showCommunity, showHome, showMusic, showTools } from '@/lib/client'
 import { communityUnread, homeBadge } from '@/lib/home'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
@@ -38,6 +38,9 @@ export function UtilityRail() {
       <Separator className="mx-auto w-8" />
       <RailButton label="Ferramentas" active={section === 'tool'} onClick={showTools}>
         <LayoutGrid className="size-6" />
+      </RailButton>
+      <RailButton label="Música" active={section === 'music'} onClick={showMusic}>
+        <Music className="size-6" />
       </RailButton>
       <UpdateCheckButton />
     </nav>

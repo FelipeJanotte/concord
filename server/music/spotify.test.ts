@@ -52,7 +52,7 @@ const embedEntity = {
 describe('SpotifyResolver: faixa', () => {
   it('pega o token (client credentials) e devolve título, artistas, capa, duração e a busca no YouTube', async () => {
     const { http, calls } = fakeSpotify({ '/api/token': tokenRoute, [`/v1/tracks/${ID}`]: () => json(trackBody) })
-    expect(await new SpotifyResolver(creds, endpoints, http).resolve(track)).toEqual([
+    expect((await new SpotifyResolver(creds, endpoints, http).resolve(track)).tracks).toEqual([
       {
         title: 'Garota de Ipanema',
         artists: ['Tom Jobim', 'Vinicius de Moraes'],
@@ -84,7 +84,7 @@ describe('SpotifyResolver: faixa', () => {
 
   it('sem capa: coverUrl null', async () => {
     const { http } = fakeSpotify({ '/api/token': tokenRoute, [`/v1/tracks/${ID}`]: () => json({ ...trackBody, album: { images: [] } }) })
-    expect((await new SpotifyResolver(creds, endpoints, http).resolve(track))[0].coverUrl).toBeNull()
+    expect((await new SpotifyResolver(creds, endpoints, http).resolve(track)).tracks[0].coverUrl).toBeNull()
   })
 
   it('faixa que não existe: "Música não encontrada no Spotify"', async () => {
@@ -122,7 +122,8 @@ describe('SpotifyResolver: álbum', () => {
 
   it('lê todas as páginas, com a capa do álbum em cada faixa', async () => {
     const { http, calls } = fakeSpotify(albumRoutes(120))
-    const tracks = await new SpotifyResolver(creds, endpoints, http).resolve({ kind: 'spotify', type: 'album', id: ALBUM })
+    const { tracks, collectionTitle } = await new SpotifyResolver(creds, endpoints, http).resolve({ kind: 'spotify', type: 'album', id: ALBUM })
+    expect(collectionTitle).toBe('Disco')
     expect(tracks.map((t) => t.title)).toEqual(Array.from({ length: 120 }, (_, i) => `Faixa ${i + 1}`))
     expect(tracks[119]).toMatchObject({
       coverUrl: 'https://i.scdn.co/capa-disco.jpg',
@@ -134,7 +135,7 @@ describe('SpotifyResolver: álbum', () => {
 
   it(`para em ${PLAYLIST_READ_MAX} faixas`, async () => {
     const { http } = fakeSpotify(albumRoutes(PLAYLIST_READ_MAX + 80))
-    const tracks = await new SpotifyResolver(creds, endpoints, http).resolve({ kind: 'spotify', type: 'album', id: ALBUM })
+    const { tracks } = await new SpotifyResolver(creds, endpoints, http).resolve({ kind: 'spotify', type: 'album', id: ALBUM })
     expect(tracks).toHaveLength(PLAYLIST_READ_MAX)
   })
 
@@ -149,7 +150,8 @@ describe('SpotifyResolver: álbum', () => {
 describe('SpotifyResolver: playlist (página de incorporação)', () => {
   it('lê as faixas da página pública, sem token, ignorando episódios', async () => {
     const { http, calls } = fakeSpotify({ [`/embed/playlist/${PLAYLIST}`]: () => new Response(embedHtml(embedEntity)) })
-    const tracks = await new SpotifyResolver(creds, endpoints, http).resolve({ kind: 'spotify', type: 'playlist', id: PLAYLIST })
+    const { tracks, collectionTitle } = await new SpotifyResolver(creds, endpoints, http).resolve({ kind: 'spotify', type: 'playlist', id: PLAYLIST })
+    expect(collectionTitle).toBe('Bossa para o grupo')
     expect(tracks).toEqual([
       {
         title: 'Dancing In the Moonlight',
@@ -182,7 +184,11 @@ describe('SpotifyResolver: playlist (página de incorporação)', () => {
 
 describe('parseSpotifyEmbed', () => {
   it('playlist vazia: lista vazia', () => {
-    expect(parseSpotifyEmbed(embedHtml({ ...embedEntity, trackList: [] }))).toEqual([])
+    expect(parseSpotifyEmbed(embedHtml({ ...embedEntity, trackList: [] }))).toEqual({ collectionTitle: 'Bossa para o grupo', tracks: [] })
+  })
+
+  it('sem nome na página: título nulo', () => {
+    expect(parseSpotifyEmbed(embedHtml({ ...embedEntity, name: undefined }))?.collectionTitle).toBeNull()
   })
 
   it('sem o JSON da página: null', () => {

@@ -45,6 +45,7 @@ export class LiveKitPublisher implements RoomPublisher {
     }
     return {
       play: (frame) => source.captureFrame(new AudioFrame(frame, PCM_SAMPLE_RATE, PCM_CHANNELS, frame.length / PCM_CHANNELS)),
+      clearQueue: () => source.clearQueue(),
       leave: async () => {
         await source.close().catch(() => {})
         await room.disconnect()

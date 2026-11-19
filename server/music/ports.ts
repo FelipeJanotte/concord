@@ -28,8 +28,13 @@ export type MusicQuery =
 
 export class MusicError extends Error {}
 
+export interface Resolved {
+  tracks: TrackMetadata[]
+  collectionTitle: string | null
+}
+
 export interface TrackResolver<Q extends MusicQuery = MusicQuery> {
-  resolve(query: Q): Promise<TrackMetadata[]>
+  resolve(query: Q): Promise<Resolved>
 }
 
 export interface AudioStream extends AsyncIterable<Int16Array> {
@@ -47,6 +52,7 @@ export interface AudioSource {
 
 export interface RoomOutput {
   play(frame: Int16Array): Promise<void>
+  clearQueue(): void
   leave(): Promise<void>
 }
 

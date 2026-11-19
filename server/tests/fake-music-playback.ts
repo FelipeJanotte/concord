@@ -43,6 +43,7 @@ overrideMusicDrivers({
         console.log(`[fake-music] join ${channelId}`)
         return {
           play: async () => {},
+          clearQueue: () => {},
           leave: async () => void console.log(`[fake-music] leave ${channelId}`)
         }
       }

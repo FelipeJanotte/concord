@@ -1,12 +1,16 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MusicState, MusicTrack } from '@shared/types'
 import {
+  applyMusicState,
   bindMusicEvents,
   closeMusicQueue,
   loadMusicQueue,
   openMusicQueue,
+  dismissCollection,
   parseMusicCommand,
+  pauseMusic,
   playMusic,
+  resumeMusic,
   runMusicCommand,
   skipMusic,
   stopMusic,
@@ -27,7 +31,7 @@ const track = (id: string, title: string): MusicTrack => ({
 })
 const ipanema = track('t1', 'Garota de Ipanema')
 const aguas = track('t2', 'Águas de Março')
-const state = (over: Partial<MusicState> = {}): MusicState => ({ channelId: 'sala', nowPlaying: ipanema, queue: [], ...over })
+const state = (over: Partial<MusicState> = {}): MusicState => ({ channelId: 'sala', nowPlaying: ipanema, queue: [], paused: false, elapsedMs: 0, ...over })
 const LINK = 'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC'
 
 let socket: FakeSocket
@@ -76,6 +80,16 @@ describe('estado da sala', () => {
     expect(Object.keys(useApp.getState().musicRooms)).toEqual(['sala'])
   })
 
+  it('guarda quando o estado de cada sala chegou, para o progresso andar a partir dali', () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(5_000)
+    socket.receive('music:state', state())
+    expect(useApp.getState().musicSyncedAt).toEqual({ sala: 5_000 })
+    now.mockReturnValue(9_000)
+    socket.receive('music:state', state({ nowPlaying: null }))
+    expect(useApp.getState().musicSyncedAt).toEqual({})
+    now.mockRestore()
+  })
+
   it('openMusicQueue e closeMusicQueue abrem e fecham o painel da fila da sala', () => {
     openMusicQueue('sala')
     expect(useApp.getState().musicQueueChannelId).toBe('sala')
@@ -91,10 +105,43 @@ describe('estado da sala', () => {
 
 describe('ações', () => {
   it('playMusic manda o pedido e aplica o estado da resposta', async () => {
-    socket.replyTo('music:play', () => ({ ok: true, state: state(), added: 1 }))
+    socket.replyTo('music:play', () => ({ ok: true, state: state(), added: 1, collection: null }))
     await playMusic('sala', LINK)
     expect(socket.sent('music:play')[0][0]).toEqual({ channelId: 'sala', query: LINK })
     expect(useApp.getState().musicRooms.sala.nowPlaying?.id).toBe('t1')
+  })
+
+  it('playMusic guarda a playlist ou álbum tocado; uma música solta limpa', async () => {
+    const collection = { kind: 'album' as const, title: 'Elis & Tom', url: 'https://open.spotify.com/album/a1' }
+    socket.replyTo('music:play', () => ({ ok: true, state: state(), added: 14, collection }))
+    expect(await playMusic('sala', collection.url)).toMatchObject({ added: 14, collection })
+    expect(useApp.getState().roomCollection).toEqual({ channelId: 'sala', collection })
+    dismissCollection()
+    expect(useApp.getState().roomCollection).toBeNull()
+    useApp.setState({ roomCollection: { channelId: 'sala', collection } })
+    socket.replyTo('music:play', () => ({ ok: true, state: state(), added: 1, collection: null }))
+    await playMusic('sala', 'garota de ipanema')
+    expect(useApp.getState().roomCollection).toBeNull()
+  })
+
+  it('a playlist tocada acaba quando a música daquela sala acaba; o fim de outra sala não mexe', () => {
+    const collection = { kind: 'album' as const, title: 'Elis & Tom', url: 'https://open.spotify.com/album/a1' }
+    useApp.setState({ roomCollection: { channelId: 'sala', collection } })
+    applyMusicState(state({ channelId: 'outra', nowPlaying: null }))
+    expect(useApp.getState().roomCollection).toEqual({ channelId: 'sala', collection })
+    applyMusicState(state({ nowPlaying: null }))
+    expect(useApp.getState().roomCollection).toBeNull()
+  })
+
+  it('pauseMusic e resumeMusic mandam o id da sala e aplicam o estado', async () => {
+    socket.replyTo('music:pause', () => ({ ok: true, state: state({ paused: true, elapsedMs: 42_000 }) }))
+    socket.replyTo('music:resume', () => ({ ok: true, state: state({ paused: false, elapsedMs: 42_000 }) }))
+    await pauseMusic('sala')
+    expect(useApp.getState().musicRooms.sala).toMatchObject({ paused: true, elapsedMs: 42_000 })
+    await resumeMusic('sala')
+    expect(socket.sent('music:pause')).toEqual([[{ channelId: 'sala' }]])
+    expect(socket.sent('music:resume')).toEqual([[{ channelId: 'sala' }]])
+    expect(useApp.getState().musicRooms.sala.paused).toBe(false)
   })
 
   it('erro do servidor vira exceção com a mensagem', async () => {

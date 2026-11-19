@@ -97,17 +97,27 @@ class FakePublisher implements RoomPublisher {
     this.log.push(`join ${channelId}`)
     return {
       play: async (frame) => void this.frames.push(frame),
+      clearQueue: () => void this.log.push(`clear ${channelId}`),
       leave: async () => void this.log.push(`leave ${channelId}`)
     }
   }
 }
 
-function setup(): { player: MusicPlayer; source: FakeSource; publisher: FakePublisher; states: MusicState[] } {
+class FakeClock {
+  current = 1_000_000
+  now = (): number => this.current
+  advance(ms: number): void {
+    this.current += ms
+  }
+}
+
+function setup(): { player: MusicPlayer; source: FakeSource; publisher: FakePublisher; states: MusicState[]; clock: FakeClock } {
   const source = new FakeSource()
   const publisher = new FakePublisher()
   const states: MusicState[] = []
-  const player = new MusicPlayer({ source, publisher }, (s) => states.push(s))
-  return { player, source, publisher, states }
+  const clock = new FakeClock()
+  const player = new MusicPlayer({ source, publisher }, (s) => states.push(s), clock.now)
+  return { player, source, publisher, states, clock }
 }
 
 const titles = (s: MusicState): (string | undefined)[] => [s.nowPlaying?.title, ...s.queue.map((t) => t.title)]
@@ -161,7 +171,7 @@ describe('MusicPlayer', () => {
     expect(source.last().title).toBe('Música b')
     source.last().end()
     await settle()
-    expect(player.state('sala')).toEqual({ channelId: 'sala', nowPlaying: null, queue: [] })
+    expect(player.state('sala')).toEqual({ channelId: 'sala', nowPlaying: null, queue: [], paused: false, elapsedMs: 0 })
     expect(states.at(-1)?.nowPlaying).toBeNull()
     expect(publisher.log).toEqual(['join sala', 'leave sala'])
     expect(player.activeRooms()).toEqual([])
@@ -189,7 +199,7 @@ describe('MusicPlayer', () => {
     expect(player.stop('sala')).toBe(true)
     await settle()
     expect(source.last().closed).toBe(true)
-    expect(states.at(-1)).toEqual({ channelId: 'sala', nowPlaying: null, queue: [] })
+    expect(states.at(-1)).toEqual({ channelId: 'sala', nowPlaying: null, queue: [], paused: false, elapsedMs: 0 })
     expect(publisher.log).toEqual(['join sala', 'leave sala'])
     expect(player.skip('sala')).toBe(false)
     expect(player.stop('sala')).toBe(false)
@@ -355,6 +365,150 @@ describe('MusicPlayer', () => {
       source.last().end()
       await settle()
       expect(source.live()).toEqual([])
+    })
+  })
+
+  describe('pausa e progresso', () => {
+    it('avisa o estado no primeiro quadro, com o tempo zerado, para o relógio dos clientes começar quando o som começa', async () => {
+      const { player, source, states, clock } = setup()
+      player.add('sala', [track('a')])
+      await settle()
+      const before = states.length
+      clock.advance(4_000)
+      await startPlaying(source)
+      expect(states).toHaveLength(before + 1)
+      expect(states.at(-1)).toMatchObject({ nowPlaying: { title: 'Música a' }, paused: false, elapsedMs: 0 })
+      source.last().send(new Int16Array(960))
+      await settle()
+      expect(states).toHaveLength(before + 1)
+      player.stop('sala')
+      await settle()
+    })
+
+    it('pausar esvazia o áudio já enfileirado na saída para o som parar na hora', async () => {
+      const { player, source, publisher } = setup()
+      player.add('sala', [track('a')])
+      await settle()
+      await startPlaying(source)
+      expect(publisher.log).not.toContain('clear sala')
+      player.pause('sala')
+      expect(publisher.log).toContain('clear sala')
+      player.stop('sala')
+      await settle()
+    })
+
+    it('pausar segura os quadros sem fechar a fonte; continuar toca de onde parou', async () => {
+      const { player, source, publisher } = setup()
+      player.add('sala', [track('a')])
+      await settle()
+      const first = new Int16Array(960).fill(1)
+      const second = new Int16Array(960).fill(2)
+      const third = new Int16Array(960).fill(3)
+      source.last().send(first)
+      await settle()
+      expect(player.pause('sala')).toBe(true)
+      source.last().send(second)
+      await settle()
+      expect(publisher.frames).toEqual([first])
+      expect(source.last().closed).toBe(false)
+      expect(player.resume('sala')).toBe(true)
+      source.last().send(third)
+      await settle()
+      expect(publisher.frames).toEqual([first, second, third])
+      expect(source.opened).toHaveLength(1)
+      player.stop('sala')
+      await settle()
+    })
+
+    it('pausar e continuar avisam o estado com paused', async () => {
+      const { player, states } = setup()
+      player.add('sala', [track('a')])
+      await settle()
+      player.pause('sala')
+      expect(states.at(-1)?.paused).toBe(true)
+      player.resume('sala')
+      expect(states.at(-1)?.paused).toBe(false)
+      player.stop('sala')
+      await settle()
+    })
+
+    it('sem música tocando, pausar e continuar não fazem nada', async () => {
+      const { player, states } = setup()
+      expect(player.pause('sala')).toBe(false)
+      expect(player.resume('sala')).toBe(false)
+      expect(states).toEqual([])
+    })
+
+    it('o progresso conta desde o primeiro quadro e não conta o tempo pausado', async () => {
+      const { player, source, clock } = setup()
+      player.add('sala', [track('a')])
+      await settle()
+      expect(player.state('sala').elapsedMs).toBe(0)
+      await startPlaying(source)
+      clock.advance(5_000)
+      expect(player.state('sala').elapsedMs).toBe(5_000)
+      player.pause('sala')
+      clock.advance(60_000)
+      expect(player.state('sala').elapsedMs).toBe(5_000)
+      player.resume('sala')
+      clock.advance(2_000)
+      expect(player.state('sala').elapsedMs).toBe(7_000)
+      player.stop('sala')
+      await settle()
+    })
+
+    it('a próxima faixa recomeça o progresso do zero', async () => {
+      const { player, source, clock } = setup()
+      player.add('sala', [track('a'), track('b')])
+      await settle()
+      await startPlaying(source)
+      clock.advance(9_000)
+      player.skip('sala')
+      expect(player.state('sala').elapsedMs).toBe(0)
+      await settle()
+      await startPlaying(source)
+      clock.advance(1_500)
+      expect(player.state('sala')).toMatchObject({ nowPlaying: { title: 'Música b' }, elapsedMs: 1_500 })
+      player.stop('sala')
+      await settle()
+    })
+
+    it('pular pausado: a próxima faixa carrega pausada e só toca ao continuar', async () => {
+      const { player, source, publisher, clock } = setup()
+      player.add('sala', [track('a'), track('b')])
+      await settle()
+      await startPlaying(source)
+      player.pause('sala')
+      player.skip('sala')
+      await settle()
+      expect(player.state('sala')).toMatchObject({ nowPlaying: { title: 'Música b' }, paused: true, elapsedMs: 0 })
+      const held = publisher.frames.length
+      await startPlaying(source)
+      expect(publisher.frames).toHaveLength(held)
+      expect(player.state('sala').elapsedMs).toBe(0)
+      player.resume('sala')
+      await settle()
+      expect(publisher.frames).toHaveLength(held + 1)
+      clock.advance(3_000)
+      expect(player.state('sala')).toMatchObject({ paused: false, elapsedMs: 3_000 })
+      player.stop('sala')
+      await settle()
+    })
+
+    it('parar limpa a pausa: a próxima sala começa tocando', async () => {
+      const { player, source, publisher } = setup()
+      player.add('sala', [track('a')])
+      await settle()
+      player.pause('sala')
+      player.stop('sala')
+      await settle()
+      expect(player.state('sala').paused).toBe(false)
+      player.add('sala', [track('b')])
+      await settle()
+      await startPlaying(source)
+      expect(publisher.frames).toHaveLength(1)
+      player.stop('sala')
+      await settle()
     })
   })
 })
