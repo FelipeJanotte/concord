@@ -19,6 +19,8 @@ const room = (queueSize: number, over: Partial<MusicState> = {}): MusicState => 
   channelId: 'sala',
   nowPlaying: track(0),
   queue: Array.from({ length: queueSize }, (_, i) => track(i + 1)),
+  paused: false,
+  elapsedMs: 0,
   ...over
 })
 

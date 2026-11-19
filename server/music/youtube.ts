@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { MusicError, PLAYLIST_READ_MAX, type MusicQuery, type TrackMetadata, type TrackResolver } from './ports'
+import { MusicError, PLAYLIST_READ_MAX, type MusicQuery, type Resolved, type TrackMetadata, type TrackResolver } from './ports'
 
 export type YouTubeQuery = Extract<MusicQuery, { kind: 'youtube-video' | 'youtube-playlist' | 'search' }>
 export type YtDlpJson = (args: string[]) => Promise<unknown>
@@ -79,18 +79,19 @@ export function ytDlpRunner(ytDlp: string, exec: ExecFileLike = execFile as unkn
 export class YouTubeResolver implements TrackResolver<YouTubeQuery> {
   constructor(private readonly ytDlp: YtDlpJson) {}
 
-  async resolve(query: YouTubeQuery): Promise<TrackMetadata[]> {
+  async resolve(query: YouTubeQuery): Promise<Resolved> {
     if (query.kind === 'youtube-video') {
-      return [parseYtDlpVideo(await this.ytDlp([...PLAYER_ARGS, watchUrl(query.id)]))]
+      return { tracks: [parseYtDlpVideo(await this.ytDlp([...PLAYER_ARGS, watchUrl(query.id)]))], collectionTitle: null }
     }
     if (query.kind === 'youtube-playlist') {
       const playlistUrl = `https://www.youtube.com/playlist?list=${query.id}`
-      const tracks = parseYtDlpEntries(await this.ytDlp([...FLAT_LIST_ARGS, '--playlist-end', String(PLAYLIST_READ_MAX), playlistUrl]))
+      const listing = await this.ytDlp([...FLAT_LIST_ARGS, '--playlist-end', String(PLAYLIST_READ_MAX), playlistUrl])
+      const tracks = parseYtDlpEntries(listing)
       if (!tracks.length) throw new MusicError('Playlist do YouTube vazia ou privada')
-      return tracks
+      return { tracks, collectionTitle: isObject(listing) ? text(listing.title) : null }
     }
     const [first] = parseYtDlpEntries(await this.ytDlp([...FLAT_LIST_ARGS, `ytsearch1:${query.text}`]))
     if (!first) throw new MusicError(`Nada encontrado no YouTube para "${query.text}"`)
-    return [first]
+    return { tracks: [first], collectionTitle: null }
   }
 }

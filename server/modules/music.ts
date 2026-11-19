@@ -4,6 +4,7 @@ import {
   toolResultText,
   type Channel,
   type Message,
+  type MusicCollection,
   type MusicBotReply,
   type MusicControl,
   type MusicResult,
@@ -14,7 +15,7 @@ import {
 } from '../../src/shared/types'
 import { allowed, emitToViewers } from '../access'
 import { guard, type AppServer, type AppSocket, type ServerModule } from '../context'
-import { limiters, retryText } from '../middleware/rate-limit'
+import { limiters, retryText, type RateLimiter } from '../middleware/rate-limit'
 import { INVALID_QUERY } from '../music/catalog'
 import { parseMusicQuery } from '../music/query'
 import { musicDrivers, type MusicDrivers } from '../music/drivers'
@@ -59,6 +60,8 @@ function queued(track: TrackMetadata, requestedBy: QueuedTrack['requestedBy']): 
 
 const controlOf = (raw: unknown): Partial<MusicControl> => (typeof raw === 'string' ? { channelId: raw } : ((raw ?? {}) as Partial<MusicControl>))
 
+type RoomControl = { ok: true; user: User; player: MusicPlayer; channelId: string; request: Partial<MusicControl> } | { ok: false; error: string }
+
 type CommandChat = { ok: true; channel: Channel | null } | { ok: false; error: string }
 
 async function commandChat(accountId: string, textChannelId: unknown): Promise<CommandChat> {
@@ -96,7 +99,7 @@ async function replaceBotReply(io: AppServer, answer: Message, reply: MusicBotRe
   }
 }
 
-type Enqueued = { ok: true; state: MusicState; added: number; reply: MusicBotReply } | { ok: false; error: string }
+type Enqueued = { ok: true; state: MusicState; added: number; collection: MusicCollection | null; reply: MusicBotReply } | { ok: false; error: string }
 
 interface PlayRequest {
   catalog: MusicDrivers['catalog']
@@ -116,11 +119,11 @@ async function findAndEnqueue({ catalog, room, socketId, requestedBy, channelId,
   const added = room.add(channelId, tracks)
   if (!added.ok) return fail(added.error)
   const reply: MusicBotReply = { action: 'play', added: added.added, startedNow, first: summary(tracks[0]) }
-  return { ok: true, state: room.state(channelId), added: added.added, reply }
+  return { ok: true, state: room.state(channelId), added: added.added, collection: found.collection, reply }
 }
 
-function rateLimited(accountId: string): string | null {
-  const limited = limiters.music.take(accountId)
+function rateLimited(limiter: RateLimiter, accountId: string): string | null {
+  const limited = limiter.take(accountId)
   return limited.ok ? null : `Muitos comandos de música seguidos. ${retryText(limited.retryAfterMs)}`
 }
 
@@ -146,7 +149,7 @@ export const musicModule: ServerModule = {
         const query = raw.trim()
         const chat = await commandChat(user.accountId, payload.textChannelId)
         if (!chat.ok) return ack(chat)
-        const limited = rateLimited(user.accountId)
+        const limited = rateLimited(limiters.music, user.accountId)
         if (limited) return ack(fail(limited))
         const answer = await postToChat(io, user, chat.channel, `/play ${query}`, { action: 'searching', query })
         const requestedBy = { accountId: user.accountId, name: user.name }
@@ -157,11 +160,21 @@ export const musicModule: ServerModule = {
           return ack({ ...result, posted: true })
         }
         if (answer) await replaceBotReply(io, answer, result.reply)
-        ack({ ok: true, state: result.state, added: result.added })
+        ack({ ok: true, state: result.state, added: result.added, collection: result.collection })
       })
     })
 
-    const control = (
+    const roomControl = async (raw: unknown): Promise<RoomControl> => {
+      const user = socket.data.user
+      if (!user) return fail('Não autenticado')
+      if (!player) return fail(NOT_CONFIGURED)
+      const request = controlOf(raw)
+      const channelId = await roomInControl(socket, request.channelId)
+      if (!channelId) return fail(NOT_IN_ROOM)
+      return { ok: true, user, player, channelId, request }
+    }
+
+    const chatControl = (
       event: 'music:skip' | 'music:stop',
       act: (p: MusicPlayer, channelId: string) => boolean,
       reply: (before: MusicState, after: MusicState) => MusicBotReply
@@ -169,34 +182,48 @@ export const musicModule: ServerModule = {
       socket.on(event, (raw, ack) => {
         if (typeof ack !== 'function') return
         void guard(event, async () => {
-          const user = socket.data.user
-          if (!user) return ack(fail('Não autenticado'))
-          if (!player) return ack(fail(NOT_CONFIGURED))
-          const request = controlOf(raw)
-          const channelId = await roomInControl(socket, request.channelId)
-          if (!channelId) return ack(fail(NOT_IN_ROOM))
+          const control = await roomControl(raw)
+          if (!control.ok) return ack(control)
+          const { user, player: room, channelId, request } = control
           const chat = await commandChat(user.accountId, request.textChannelId)
           if (!chat.ok) return ack(chat)
-          const limited = rateLimited(user.accountId)
+          const limited = rateLimited(limiters.music, user.accountId)
           if (limited) return ack(fail(limited))
-          const before = player.state(channelId)
-          if (!act(player, channelId)) return ack(fail(NOTHING_PLAYING))
-          const after = player.state(channelId)
+          const before = room.state(channelId)
+          if (!act(room, channelId)) return ack(fail(NOTHING_PLAYING))
+          const after = room.state(channelId)
           await postToChat(io, user, chat.channel, `/${event.slice('music:'.length)}`, reply(before, after))
           ack(ok(after))
         })
       })
     }
-    control(
+
+    const silentControl = (event: 'music:pause' | 'music:resume', act: (p: MusicPlayer, channelId: string) => boolean) => {
+      socket.on(event, (raw, ack) => {
+        if (typeof ack !== 'function') return
+        void guard(event, async () => {
+          const control = await roomControl(raw)
+          if (!control.ok) return ack(control)
+          const limited = rateLimited(limiters.musicControl, control.user.accountId)
+          if (limited) return ack(fail(limited))
+          if (!act(control.player, control.channelId)) return ack(fail(NOTHING_PLAYING))
+          ack(ok(control.player.state(control.channelId)))
+        })
+      })
+    }
+
+    chatControl(
       'music:skip',
       (p, id) => p.skip(id),
       (before, after) => ({ action: 'skip', skipped: summary(before.nowPlaying!), next: after.nowPlaying && summary(after.nowPlaying) })
     )
-    control(
+    chatControl(
       'music:stop',
       (p, id) => p.stop(id),
       () => ({ action: 'stop' })
     )
+    silentControl('music:pause', (p, id) => p.pause(id))
+    silentControl('music:resume', (p, id) => p.resume(id))
 
     socket.on('music:queue', (channelId, ack) => {
       if (typeof ack !== 'function') return

@@ -122,7 +122,9 @@ describe('player do bot de música', () => {
             url: 'https://open.spotify.com/track/t1',
             requestedBy: { accountId: 'acc-eu', name: 'Eu' }
           },
-          queue: []
+          queue: [],
+          paused: false,
+          elapsedMs: 0
         }
       }
     })

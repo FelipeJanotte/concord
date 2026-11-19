@@ -1,11 +1,3 @@
-/**
- * Ponto de entrada das ações do app: login/sessão, conexão Socket.IO e
- * reexporta as ações de cada domínio (`lib/actions/*`).
- * Os componentes leem o estado via `useApp` e chamam funções importadas daqui.
- *
- * Domínio novo: crie `lib/actions/<dominio>.ts` com `bind<Dominio>Events(s)`,
- * chame-o em `connect()` e acrescente o `export *` no fim deste arquivo.
- */
 import { io } from 'socket.io-client'
 import type { AuthConfig, AuthResult, LoginRequest, RegisterRequest } from '@shared/types'
 import { initialState } from '@/store'
@@ -26,6 +18,7 @@ import { bindPresenceEvents } from './actions/presence'
 import { bindReactionsEvents } from './actions/reactions'
 import { bindSoundsEvents, loadSounds } from './actions/sounds'
 import { bindMusicEvents } from './actions/music'
+import { bindPlaylistsEvents } from './actions/playlists'
 import { bindVoiceEvents, OUT_OF_VOICE } from './actions/voice'
 import { clearAllDrafts } from './actions/uploads'
 import { loadAudioPreferences } from './actions/devices'
@@ -33,9 +26,6 @@ import { baseUrl, get, getSocket, notify, SERVER_KEY, set, setSocket, TOKEN_KEY,
 import { defaultServerUrl } from './default-server'
 import { voice } from './voice'
 
-// ---------- Contas (HTTP) ----------
-
-/** Servidor da tela de login quando ainda não há um salvo: `VITE_DEFAULT_SERVER` do build ou o local. */
 export const DEFAULT_SERVER = defaultServerUrl(import.meta.env.VITE_DEFAULT_SERVER)
 
 export function savedServerUrl(): string {
@@ -53,7 +43,6 @@ async function http<T>(url: string, path: string, body?: unknown): Promise<T> {
   } catch {
     throw new Error('Não foi possível conectar. Confira o endereço e se o servidor está rodando (npm run server).')
   }
-  // 400 (dados inválidos) e 429 (limite de tentativas) trazem `{ ok: false, error }` para mostrar.
   if (!res.ok && res.status !== 400 && res.status !== 429) throw new Error(`O servidor respondeu com erro (${res.status})`)
   return (await res.json()) as T
 }
@@ -62,7 +51,6 @@ export function getAuthConfig(url: string): Promise<AuthConfig> {
   return http<AuthConfig>(url, '/auth/config')
 }
 
-/** Guarda o token e abre a conexão em tempo real. */
 async function startSession(url: string, result: AuthResult): Promise<void> {
   if (!result.ok) throw new Error(result.error)
   const server = baseUrl(url)
@@ -86,14 +74,12 @@ export async function loginWithGoogle(url: string): Promise<void> {
   try {
     code = await window.api.googleSignIn(googleClientId)
   } catch (err) {
-    // O Electron prefixa "Error invoking remote method ...: Error: " na mensagem.
     const msg = err instanceof Error ? err.message.replace(/^.*?Error: /, '') : ''
     throw new Error(msg || 'Falha no login com Google')
   }
   await startSession(url, await http<AuthResult>(url, '/auth/google', code))
 }
 
-/** Ao abrir o app: entra direto se houver uma sessão salva. */
 export async function restoreSession(): Promise<void> {
   const token = localStorage.getItem(TOKEN_KEY)
   if (!token || get().self || get().restoring) return
@@ -113,8 +99,6 @@ export function logout(): void {
   if (token && url) void http(url, '/auth/logout', { token }).catch(() => {})
   disconnect()
 }
-
-// ---------- Conexão ----------
 
 const RETRY_REFUSED_CONNECTION_MS = 3000
 
@@ -147,6 +131,7 @@ export function connect(url: string, token: string): Promise<void> {
   bindCallsEvents(s)
   bindSoundsEvents(s)
   bindMusicEvents(s)
+  bindPlaylistsEvents(s)
   bindNotificationEvents(s)
 
   return new Promise((resolve, reject) => {
@@ -175,10 +160,10 @@ export function connect(url: string, token: string): Promise<void> {
           view: keep
         })
         if (keep?.kind === 'text') void loadHistory(keep.channelId)
-        void loadFriendsAndDms().catch(() => {}) // v3: amizades e conversas (o servidor já sabe quem eu sou)
-        void loadPreferences().catch(() => {}) // v5: tema da conta
-        void loadCalls().catch(() => {}) // v3 (B8): chamada que está tocando ou em andamento
-        void loadSounds().catch(() => {}) // B17: efeitos sonoros da comunidade
+        void loadFriendsAndDms().catch(() => {})
+        void loadPreferences().catch(() => {})
+        void loadCalls().catch(() => {})
+        void loadSounds().catch(() => {})
         if (!settled) {
           settled = true
           resolve()
@@ -215,19 +200,16 @@ export function disconnect(): void {
   voice.teardown()
   voice.setSocket(null)
   clearAllDrafts()
-  stopNotifications() // B9: zera o selo do ícone
+  stopNotifications()
   if (s) {
     s.removeAllListeners()
     s.disconnect()
   }
   set({ ...initialState })
-  // Dispositivos são preferência da máquina, não da conta: continuam valendo depois de sair.
   loadAudioPreferences()
-  loadOverlayPreferences() // B15: o overlay também é preferência da máquina
-  loadPushToTalkPreferences() // B20: pressione para falar também
+  loadOverlayPreferences()
+  loadPushToTalkPreferences()
 }
-
-// ---------- Ações por domínio ----------
 
 export { notify } from './core'
 export type { AppSocket } from './core'
@@ -249,7 +231,8 @@ export * from './actions/tools'
 export * from './actions/preferences'
 export * from './actions/settings'
 export * from './actions/sounds'
-export { closeMusicQueue, loadMusicQueue, openMusicQueue, playMusic, runMusicCommand, skipMusic, stopMusic, trackDuration } from './actions/music'
+export { closeMusicQueue, dismissCollection, loadMusicQueue, openMusicQueue, pauseMusic, playMusic, resumeMusic, runMusicCommand, skipMusic, stopMusic, trackDuration } from './actions/music'
+export * from './actions/playlists'
 export * from './actions/overlay'
 export * from './actions/updates'
 export * from './actions/startup'

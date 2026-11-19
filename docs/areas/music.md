@@ -1,4 +1,4 @@
-# Bot de música (A11 servidor / B14 tela)
+# Bot de música (A11 servidor / B14 tela / A17 pausa e playlists / B22 área Música)
 
 Quem está numa sala de voz manda `/play <link ou nome da música>` no chat e um participante **"Música"** entra na sala
 tocando a faixa para todos. Aceita faixa, álbum e playlist do Spotify, vídeo e playlist do YouTube e texto livre
@@ -10,24 +10,28 @@ publicado no LiveKit pelo próprio servidor com `@livekit/rtc-node`. Por que ass
 
 | Caminho | O que é |
 |---|---|
-| `src/shared/types/music.ts` | Contrato: `MusicTrack`, `MusicState`, `MusicResult`, `MusicPlayResult` (`added`; erro com `posted: true` = o comando já foi postado), `MusicControl`/`MusicPlayRequest` (com `textChannelId?`), `MusicBotReply` (com `searching`/`failed`) + `musicBotReplyText`/`musicSearchingText`/`musicFailedText`/`musicTrackLabel` (resposta do bot no chat; vai em `ToolPayload` como `{ tool: 'music' }` em `tools.ts`), eventos `music:*`, limites `MUSIC_MAX_TRACK_MS` (15 min), `MUSIC_QUEUE_MAX` (100), `MUSIC_QUERY_MAX` (500), `MUSIC_BOT_NAME`. |
-| `server/modules/music.ts` | Handlers `music:play/skip/stop/queue`, conferência de sala e permissão, limite `LIMITS.music`, `music:state` por `emitToViewers`, saída do bot quando a sala esvazia (`onVoiceRoomsChange` de `voice.ts`) e as mensagens no chat (`commandChat` confere o canal; `postToChat` grava o comando e a resposta pelo `insertMessage` e manda `message:new` por `emitToViewers`; no `/play`, `findAndEnqueue` busca e enfileira depois do "procurando" e `replaceBotReply` troca a resposta no lugar com `updateToolMessage` + `message:edited`; `<@todos>` no comando passa pelo `mentionSafeContent` de `messages.ts`). |
-| `server/music/ports.ts` | Tipos do domínio: `MusicQuery` (o que o pedido é), `TrackMetadata` com `AudioLocator` (`youtube-search` = faixa a buscar no YouTube na hora de tocar; `audio-url` = link do vídeo), `QueuedTrack` (`MusicTrack` + `audio`, só no servidor), `TrackResolver`, `AudioSource.prepare` → `PreparedAudio` (`open()` dá o `AudioStream`, PCM 48 kHz estéreo em quadros de 10 ms; `close()` encerra tudo, aberto ou não), `RoomPublisher`/`RoomOutput`, `MusicError` (mensagem pt-BR) e `PLAYLIST_READ_MAX` (200). |
+| `src/shared/types/music.ts` | Contrato: `MusicTrack`, `MusicState` (`paused`, `elapsedMs`), `MusicCollection`/`MusicCollectionKind`, `MusicResult`, `MusicPlayResult` (`added`, `collection`: a playlist/álbum que o pedido leu ou `null`; erro com `posted: true` = o comando já foi postado), `MusicControl`/`MusicPlayRequest` (com `textChannelId?`), `MusicBotReply` (com `searching`/`failed`) + `musicBotReplyText`/`musicSearchingText`/`musicFailedText`/`musicTrackLabel` (resposta do bot no chat; vai em `ToolPayload` como `{ tool: 'music' }` em `tools.ts`), eventos `music:*`, limites `MUSIC_MAX_TRACK_MS` (15 min), `MUSIC_QUEUE_MAX` (100), `MUSIC_QUERY_MAX` (500), `MUSIC_BOT_NAME`. |
+| `server/modules/music.ts` | Handlers `music:play/skip/stop/pause/resume/queue` (pausar e retomar não postam nada no chat), conferência de sala e permissão (`roomControl`), limite `LIMITS.music` (`play`/`skip`/`stop`) e `LIMITS.musicControl` (`pause`/`resume`), `music:state` por `emitToViewers`, saída do bot quando a sala esvazia (`onVoiceRoomsChange` de `voice.ts`) e as mensagens no chat (`commandChat` confere o canal; `postToChat` grava o comando e a resposta pelo `insertMessage` e manda `message:new` por `emitToViewers`; no `/play`, `findAndEnqueue` busca e enfileira depois do "procurando" e `replaceBotReply` troca a resposta no lugar com `updateToolMessage` + `message:edited`; `<@todos>` no comando passa pelo `mentionSafeContent` de `messages.ts`). |
+| `server/music/ports.ts` | Tipos do domínio: `MusicQuery` (o que o pedido é), `TrackMetadata` com `AudioLocator` (`youtube-search` = faixa a buscar no YouTube na hora de tocar; `audio-url` = link do vídeo), `QueuedTrack` (`MusicTrack` + `audio`, só no servidor), `TrackResolver`, `AudioSource.prepare` → `PreparedAudio` (`open()` dá o `AudioStream`, PCM 48 kHz estéreo em quadros de 10 ms; `close()` encerra tudo, aberto ou não), `RoomPublisher`/`RoomOutput` (`play`, `clearQueue`, `leave`), `MusicError` (mensagem pt-BR) e `PLAYLIST_READ_MAX` (200). |
 | `server/music/query.ts` | `parseMusicQuery` (pura): texto → `MusicQuery` ou `null` (link de outro site). |
 | `server/music/catalog.ts` | `MusicCatalog.find`: roteia a consulta para o resolvedor certo e aplica as regras (ao vivo, sem duração, acima de 15 min: recusa item único, pula em playlist). |
 | `server/music/spotify.ts` | `SpotifyResolver`: faixa e álbum pela Web API (Client Credentials, token até 1 min antes de expirar, álbum paginado de 50 em 50); playlist pela página de incorporação (`parseSpotifyEmbed`). |
 | `server/music/youtube.ts` | `YouTubeResolver`: vídeo lido inteiro (`yt-dlp -J --no-playlist --ignore-no-formats-error --extractor-args youtube:skip=hls`), busca e playlist em lista plana (`-J --flat-playlist`, sem abrir cada vídeo); `parseYtDlpVideo`/`parseYtDlpEntries` (JSON do yt-dlp → faixa com o link do vídeo como áudio), `SKIP_HLS`, `NODE_JS_RUNTIME` (`--js-runtimes node:<Node do servidor>`, em toda chamada do yt-dlp) e `ytDlpRunner` (roda o programa). |
 | `server/music/audio-source.ts` | `YtDlpFfmpegSource.prepare` já inicia o `yt-dlp ... --format bestaudio/best -o -` (`ytDlpArgs`: `ytsearch1:<busca>` ou o link, com `NODE_JS_RUNTIME` e `SKIP_HLS`), que baixa para a saída e fica parado no pipe; `open()` inicia o `ffmpeg -i pipe:0` (`ffmpegArgs`) e liga a saída do yt-dlp na entrada dele → PCM s16le; `close()` mata os dois; sem nenhum quadro, erro `Sem áudio: <programa> (código N): <última linha do stderr>` de quem falhou, ou `Nada encontrado no YouTube para "<busca>"` quando a busca do yt-dlp termina com sucesso sem baixar nada (busca sem resultado); `PcmFramer` corta em quadros; `audioToolsFromEnv`. |
+| `server/music/ports.ts`, `server/music/catalog.ts` | `Resolved` (`tracks` + `collectionTitle`): o `resolve` de `spotify.ts` (álbum: nome; playlist: `name`/`title` da página de incorporação via `parseSpotifyEmbed`) e de `youtube.ts` (`title` da lista plana) devolve o título; `MusicCatalog.find` monta o `MusicCollection` (`kind`, `title`, `url` canônica; título ausente → a própria `url`) só para playlist/álbum, `null` para faixa, vídeo e busca. |
 | `server/music/queue.ts` | Fila pura por sala: `enqueue` (várias de uma vez; a primeira vai para "tocando agora"; entra só o que cabe e devolve `added`; recusa fila cheia) e `advance`. |
-| `server/music/player.ts` | `MusicPlayer`: uma fila e um bot por sala; entra na primeira música, toca em sequência, pula, para e sai quando a fila acaba; pré-busca (`prefetch`, seção "Pré-busca"). Avisa cada mudança (`onChange`) sem o `audio` (estado público). |
+| `server/music/player.ts` | `MusicPlayer`: uma fila e um bot por sala; entra na primeira música, toca em sequência, pula, pausa, retoma, para e sai quando a fila acaba (`pause`/`resume`: `paused` por sala, `elapsedMs` = `playedMs` + tempo desde `playingSince`, relógio injetável `now`; `waitWhilePaused` segura o laço de quadros sem matar yt-dlp/ffmpeg; `pause` chama `RoomOutput.clearQueue`; avisa o estado também no 1º quadro de cada faixa); pré-busca (`prefetch`, seção "Pré-busca"). Avisa cada mudança (`onChange`) sem o `audio` (estado público). |
 | `server/music/livekit-publisher.ts` | `LiveKitPublisher`: token do bot (identidade `music-bot:<canal>`, nome "Música", atributo `bot: music`, só publica microfone, não assina ninguém) e a faixa `AudioSource` do `@livekit/rtc-node`. |
 | `server/music/drivers.ts` | Monta as peças a partir do ambiente (`musicDrivers`); `overrideMusicDrivers({ playback, ytDlp })` troca fonte/publicador e o yt-dlp (testes). |
 | `server/tests/music.test.ts`, `server/tests/fake-music-playback.ts`, `server/tests/fake-youtube.ts` | Integração com servidor de verdade, Spotify falso (HTTP local), yt-dlp falso (JSON fixo por link) e fonte/publicador falsos carregados com `--import` (`TestServer.start({ imports })`). |
-| `src/renderer/src/lib/actions/music.ts` | `playMusic`, `skipMusic`, `stopMusic` (com o `textChannelId` opcional), `loadMusicQueue`, `parseMusicCommand` (lê o registro por `parseCommand`)/`runMusicCommand(texto, chat)` (comandos do Composer; `null` = não é comando, senão `Promise<boolean>` = aceito ou já postado; `false` = o Composer devolve o texto), `openMusicQueue`/`closeMusicQueue` (painel da fila), `trackDuration`. |
+| `src/renderer/src/lib/actions/music.ts` | `playMusic` (guarda `roomCollection`), `dismissCollection`, `pauseMusic`, `resumeMusic`, `skipMusic`, `stopMusic` (com o `textChannelId` opcional), `loadMusicQueue`, `parseMusicCommand` (lê o registro por `parseCommand`)/`runMusicCommand(texto, chat)` (comandos do Composer; `null` = não é comando, senão `Promise<boolean>` = aceito ou já postado; `false` = o Composer devolve o texto), `openMusicQueue`/`closeMusicQueue` (painel da fila), `trackDuration`. |
 | `src/renderer/src/lib/commands.ts` | **Registro dos comandos de chat** (`CHAT_COMMANDS`: nome, argumento opcional com dica e descrição curta) e as puras que leem dele: `commandSuggestions` (menu do `/`), `parseCommand`, `commandDraft` (destaque). Comando novo = uma entrada aqui (+ quem o executa). Menu: `docs/areas/messages.md`. |
 | `src/renderer/src/components/voice/MusicBotReply.tsx` | Resposta do bot no chat: `MusicReplyCard` (capa pequena, "Tocando agora"/"Adicionou à fila"/"Adicionou N músicas à fila, começando por"/"Pulou" + "Tocando agora: …"/"Parou a música e limpou a fila", "Procurando “q”…" com indicador girando, "Não consegui tocar: …" em vermelho, "Pedido por"), `MusicBotAvatar`, `MusicBotName` ("Música" + selo BOT) e `isMusicBotMessage`. |
-| `src/renderer/src/store/music.ts` | `musicRooms` (estado de cada sala com música tocando) e `musicQueueChannelId` (sala cujo painel da fila está aberto; `null` = fechado). |
-| `src/renderer/src/components/voice/MusicPlayer.tsx` | Cartão "Tocando agora" (capa, título, artistas, quem pediu, duração, "Ver a fila", pular/parar, volume do bot, ocultar), a barra fina "Tocando: título" quando oculto, `TrackCover` e `MusicBotMember` (bot com selo "BOT" na lista da sala na barra lateral, com o `MusicBotContextMenu` de `MemberContextMenu.tsx` no botão direito). |
+| `src/renderer/src/store/music.ts` | `musicRooms` (estado de cada sala com música tocando), `musicSyncedAt` (`Date.now()` de quando cada `music:state` chegou), `musicQueueChannelId` (sala cujo painel da fila está aberto; `null` = fechado) e `roomCollection` (`{ channelId, collection }`: playlist/álbum do último `music:play` e a sala em que tocou, para o convite de salvar; zera quando o `music:state` dessa sala chega sem `nowPlaying`). |
+| `src/renderer/src/lib/music-progress.ts` | `playbackElapsedMs(state, syncedAt, now)`: `elapsedMs` do servidor + o tempo desde que o estado chegou (parado se `paused`), limitado à duração. |
+| `src/renderer/src/components/music/` | **Área "Música"** (tela inteira): `MusicView` (cabeçalho, sala atual, `PlaylistsDrawer`; busca a fila da sala e as playlists ao abrir), `NowPlaying` (capa, título, quem pediu, `PlaybackProgress` e `PlaybackControls`; `NothingPlaying` sem música), `PlaybackControls` (Pausar/Retomar, Pular, "Parar e limpar a fila"), `PlaybackProgress` (barra e tempos, interpolada a cada 1 s; refaz o relógio ao chegar estado novo, então retomar não espera o próximo segundo), `MusicVolumeSlider` (volume do bot), `MusicRequestForm` (campo para `music:play`), `MusicQueue`, `CoverArt`, `SaveCollectionChip` (convite "Salvar playlist") e `PlaylistsDrawer` (gaveta "Playlists da comunidade"). |
+| `src/renderer/src/lib/actions/playlists.ts`, `src/renderer/src/store/playlists.ts` | `loadPlaylists`, `savePlaylist`, `deletePlaylist`, `bindPlaylistsEvents` (`playlist:created`/`playlist:deleted`); `playlists` e `playlistsLoaded`. |
+| `src/renderer/src/components/voice/MusicPlayer.tsx` | Cartão "Tocando agora" (capa, título, artistas, quem pediu, duração, "Ver a fila", pausar/retomar, pular/parar, volume do bot (`MusicVolumeSlider`), ocultar), a barra fina "Tocando: título" quando oculto, `TrackCover` e `MusicBotMember` (bot com selo "BOT" na lista da sala na barra lateral, com o `MusicBotContextMenu` de `MemberContextMenu.tsx` no botão direito). |
 | `src/renderer/src/components/voice/MusicQueueDialog.tsx` | Painel "Fila de músicas" (shadcn `Dialog`, montado uma vez em `App.tsx`): música atual e fila paginada de 10 em 10. |
 | `src/renderer/src/lib/paginate.ts` | `paginate(itens, página, porPágina)` → `{ items, page, pages, start }` (pura; página fora do intervalo vai para a mais próxima). |
 | `src/renderer/src/lib/music-player.ts` | `loadPlayerHidden`/`savePlayerHidden`: player oculto ou não, guardado na máquina (`localStorage` `concord:music-player-hidden`). |
@@ -40,8 +44,12 @@ publicado no LiveKit pelo próprio servidor com `@livekit/rtc-node`. Por que ass
 | `music:play` | `{ channelId, query, textChannelId? }` | `MusicPlayResult` (`added`: quantas entraram) | estar na sala `channelId` (`voice:join`) com `view` + `connect`; `query` de 1 a 500 caracteres (link ou texto); até 15 min por faixa; `textChannelId`: ver "Comando e resposta no chat" |
 | `music:skip` | `{ channelId, textChannelId? }` | `MusicResult` | mesma regra de sala; "Nenhuma música tocando" se nada toca |
 | `music:stop` | `{ channelId, textChannelId? }` | `MusicResult` | mesma regra; esvazia a fila e tira o bot |
+| `music:pause` | `{ channelId, textChannelId? }` | `MusicResult` | mesma regra de sala; pausa para a sala toda; "Nenhuma música tocando" se nada toca; já pausado continua pausado; não posta no chat |
+| `music:resume` | `{ channelId, textChannelId? }` | `MusicResult` | idem; continua do mesmo ponto |
 | `music:queue` | `channelId` | `MusicResult` | só `view` (quem olha a sala sem entrar vê o cartão) |
-| `music:state` (servidor → app) | `MusicState` | — | a cada mudança, para quem vê a sala (`emitToViewers`); `nowPlaying: null` = bot saiu |
+| `music:state` (servidor → app) | `MusicState` | — | a cada mudança, para quem vê a sala (`emitToViewers`); `nowPlaying: null` = bot saiu; `paused` e `elapsedMs` (ms já tocados da faixa atual, congelado na pausa) vêm em todo estado |
+
+**Pausa e progresso.** `music:pause` põe `paused: true` na sala: o laço de quadros espera (`waitWhilePaused`), o yt-dlp e o ffmpeg ficam parados pelo pipe e o bot continua na sala; `RoomOutput.clearQueue` (`AudioSource.clearQueue` do rtc-node) descarta o ~1 s de áudio já enfileirado no LiveKit, então o som para na hora. `music:resume` solta o laço e o `elapsedMs` volta a andar. `music:skip` com a sala pausada leva à próxima faixa **ainda pausada** (`elapsedMs: 0`); `music:stop` zera tudo (`paused: false`). O servidor manda o estado quando algo muda e no 1º quadro de cada faixa (o relógio começa depois do preparo do yt-dlp; sem esse aviso os clientes adiantariam a barra a cada faixa), com `elapsedMs` ~0; o app interpola o progresso (`lib/music-progress.ts`).
 
 `MusicTrack.requestedBy` guarda conta e nome de quem pediu no momento do pedido. `music:skip`/`music:stop` ainda aceitam só o id em texto (app 0.1.16), sem chat.
 
@@ -59,6 +67,26 @@ publicado no LiveKit pelo próprio servidor com `@livekit/rtc-node`. Por que ass
 - `/queue` não posta nada (só abre o painel). Os botões do player (pular/parar) não mandam `textChannelId` e não postam nada.
 - Dois pedidos ao mesmo tempo no mesmo chat podem intercalar os pares (comando A, comando B, resposta A...): a ordem é garantida por pedido, não entre pedidos.
 
+## Playlists salvas da comunidade
+
+Qualquer conta guarda o link de uma playlist ou álbum para todos tocarem depois. É dado do servidor (não por sala nem por comunidade: o Concord tem uma só): tabela `saved_playlists` (`server/db/schema/playlists.ts`, migration `0014_optimal_luminals.sql`), acesso por `server/repo/playlists.ts` (`insertSavedPlaylist`, `listSavedPlaylists`, `findSavedPlaylist`, `findSavedPlaylistByUrl`, `deleteSavedPlaylist`, `countSavedPlaylists`), eventos em `server/modules/playlists.ts` e contrato em `src/shared/types/playlists.ts` (`SavedPlaylist`, `PLAYLIST_NAME_MAX`, `SAVED_PLAYLISTS_MAX`).
+
+| Evento | Payload | Ack | Regra |
+|---|---|---|---|
+| `playlist:list` | — | `PlaylistListResult` | qualquer conta autenticada; ordem de criação |
+| `playlist:create` | `{ name, url }` | `PlaylistSaveResult` | valida nome e link, `LIMITS.playlist`, teto, duplicidade; manda `playlist:created` para todos |
+| `playlist:delete` | `id` | `PlaylistDeleteResult` | quem salvou ou quem tem `manageMessages`; manda `playlist:deleted { id }` para todos |
+| `playlist:created` (servidor → app) | `SavedPlaylist` | — | `io.emit`: a coleção não é de canal |
+| `playlist:deleted` (servidor → app) | `{ id }` | — | idem |
+
+- **Nome:** texto sem caracteres de controle, espaços juntados, 1 a 60 caracteres (`PLAYLIST_NAME_MAX`); recusa: "Dê um nome à playlist (até 60 caracteres)".
+- **Link:** passa pelo `parseMusicQuery` e só vale playlist do YouTube ou playlist/álbum do Spotify (faixa, vídeo, texto e outros sites: "Envie o link de uma playlist ou álbum do Spotify ou do YouTube"). Grava-se a url **canônica** remontada (`https://www.youtube.com/playlist?list=<id>`, `https://open.spotify.com/<playlist|album>/<id>`), então links diferentes da mesma lista são o mesmo registro. `kind` = `playlist` ou `album`.
+- **Unicidade (banco):** `lower(name)` e `url` únicos; o servidor confere antes ("Esse link já está salvo em "<nome>"") e o `DuplicateError` do repo cobre a corrida ("Esse link já está salvo" / "Já existe uma playlist salva com esse nome").
+- **Limites:** `LIMITS.playlist` (3 seguidas, depois 1 a cada 10 s, por conta); `SAVED_PLAYLISTS_MAX` = 200 no total ("A coleção de playlists está cheia").
+- **Conta apagada:** `saved_by` apaga em cascata (as playlists dela somem).
+- **Tocar:** não há evento próprio: o app manda `music:play` com a `url` salva (`playMusic`), então valem todas as regras do bot (sala, permissão, `LIMITS.music`, 100 na fila).
+- **Salvar a que acabou de tocar:** `music:play` devolve `collection` (título lido pelo resolvedor); o app guarda em `roomCollection` com a sala e mostra o convite "Salvar playlist “título”" (`SaveCollectionChip`, nome editável) só na minha sala de voz e enquanto ela toca; some ao parar, ao trocar de sala (o `MusicView` limpa), se a url já estiver salva ou ao dispensar.
+
 ## Fluxo
 
 1. `/play <link ou nome>` no Composer (qualquer chat) → `runMusicCommand` usa a sala em que **eu** estou (`myVoiceChannelId`).
@@ -73,8 +101,9 @@ publicado no LiveKit pelo próprio servidor com `@livekit/rtc-node`. Por que ass
    saída do yt-dlp na entrada dele → quadros de 10 ms → `RoomOutput.play` (`AudioSource.captureFrame` do rtc-node, que
    segura o ritmo em tempo real; o pipe cheio segura o yt-dlp). Para a 1ª faixa o `prepare` roda no próprio `/play`,
    em paralelo com a entrada no LiveKit.
-5. Faixa acabou → próxima; fila acabou, `/stop` ou sala vazia → o bot sai (`leave`) e `music:state` vai com `nowPlaying: null`.
-6. No app, o áudio do bot chega como o de qualquer participante e segue o volume geral de saída, o deafen e o volume/silenciar próprio do bot (chave `music-bot`, `docs/areas/voice.md`).
+5. `music:pause`/`music:resume` só mexem em `paused` e no relógio (`elapsedMs`); o bot e os processos ficam como estão.
+6. Faixa acabou → próxima; fila acabou, `/stop` ou sala vazia → o bot sai (`leave`) e `music:state` vai com `nowPlaying: null`.
+7. No app, o áudio do bot chega como o de qualquer participante e segue o volume geral de saída, o deafen e o volume/silenciar próprio do bot (chave `music-bot`, `docs/areas/voice.md`).
 
 ## Várias salas ao mesmo tempo
 
@@ -190,8 +219,8 @@ a resposta é "Não foi possível ler essa playlist do Spotify" (ADR 0006).
   "Playlist não encontrada no Spotify (ou é privada)"; vídeo indisponível → "Não foi possível ler isso no YouTube
   (vídeo indisponível ou privado?)"; busca vazia → `Nada encontrado no YouTube para "<texto>"`; playlist do YouTube
   vazia → "Playlist do YouTube vazia ou privada".
-- `LIMITS.music`: 5 comandos seguidos (`play`/`skip`/`stop`), depois 1 a cada 5 s, por conta.
-- Qualquer um na sala pula ou para (não há "dono" da fila).
+- `LIMITS.music`: 5 comandos seguidos (`play`/`skip`/`stop`), depois 1 a cada 5 s, por conta. `pause`/`resume` têm a regra própria `LIMITS.musicControl` (10 seguidos, depois 1 por segundo) e não gastam a ficha de `play`/`skip` (`rateLimited(limiter, accountId)` em `server/modules/music.ts`).
+- Qualquer um na sala pula, pausa, retoma ou para (não há "dono" da fila).
 - Faixa que falha (yt-dlp/ffmpeg ausente, busca sem resultado) é pulada; o motivo vai para o log `[música]`.
 - Tudo em memória: reiniciar o servidor zera as filas.
 
@@ -225,7 +254,21 @@ conecta em `LIVEKIT_API_URL` trocando `http` por `ws`.
 **Produção:** a imagem do servidor (`Dockerfile`, base Debian por causa do binário glibc do `@livekit/rtc-node`) já
 instala o ffmpeg e baixa o yt-dlp oficial na hora do build. Para atualizar o yt-dlp, refaça a imagem.
 
-## Na tela (B14)
+## Na tela
+
+### Área "Música" (B22)
+
+Botão "Música" na barra de úteis (`UtilityRail`, `showMusic`) põe `section: 'music'` (`docs/areas/home.md`): barra lateral `ChannelSidebar`, centro `MusicView` (`components/music/`), sem lista de membros. Não é uma ferramenta do registro (`tools/registry.ts`): tem seção própria.
+
+- Usa a sala em que **eu** estou (`myVoiceChannelId`); fora de uma sala: convite "Entre numa sala de voz para ouvir música juntos" e o campo desligado. Ao abrir (e ao trocar de sala) pede `music:queue` e `playlist:list`.
+- **Tocando agora** (`NowPlaying`): capa, título, artistas, "Pedido por", progresso e controles. Progresso: `elapsedMs` do servidor + tempo desde que o `music:state` chegou (`musicSyncedAt`, `playbackElapsedMs`), atualizado a cada 1 s e parado na pausa; barra `Progress` do ui-sdk. Controles (`PlaybackControls`): Pausar/Retomar (o botão troca com `state.paused`), Pular e "Parar e limpar a fila". Erro do servidor vira toast; falha ao carregar fila e playlists também (`reportError`).
+- **Pedir música** (`MusicRequestForm`): Enter manda `music:play` com o texto inteiro (link ou nome); erro aparece junto ao campo e o texto fica; sucesso limpa o campo.
+- **Fila** (`MusicQueue`): lista numerada das próximas, só com música tocando.
+- **Salvar a playlist tocada** (`SaveCollectionChip`) e **gaveta "Playlists da comunidade"** (`PlaylistsDrawer`, botão de biblioteca no cabeçalho): lista nome, tipo (Playlist/Álbum) e "salva por"; tocar (desligado fora de sala) manda `music:play` com a url; apagar (confirmação) só aparece para quem salvou ou tem `manageMessages` (`useCan`). Regras e eventos: "Playlists salvas da comunidade".
+- UI feita com `@ui-sdk/react` (ADR 0010, skill `ui-sdk`); testes de componente importam `src/renderer/src/test/ui-sdk-dom.ts` (preenche `popover`, `getAnimations` e `ResizeObserver` no jsdom).
+- O player da sala (`MusicPlayer` na `VoiceView`) também ganhou Pausar/Retomar (botão ao lado de pular/parar) e usa o mesmo `MusicVolumeSlider`.
+
+### Na sala e no chat (B14)
 
 - Comandos no Composer: `/play <link ou nome>`, `/skip`, `/stop`, `/queue` (busca a fila da sala e abre o painel
   "Fila de músicas", o mesmo do botão "Ver a fila"). Nomes, argumento e descrição vêm do registro `lib/commands.ts`
@@ -296,6 +339,9 @@ instala o ffmpeg e baixa o yt-dlp oficial na hora do build. Para atualizar o yt-
   (itens, paginação, vazio, fechar), a posição do player em `components/VoiceView.test.tsx`, os comandos e o destaque
   (dica `query` só no `/play`) no `components/chat/chat.test.tsx`, o volume do bot em `lib/voice.test.ts` ("bot de
   música") e o menu do bot em `components/voice/MemberContextMenu.test.tsx`.
+- Pausa e progresso: `player.test.ts` (estado avisado no 1º quadro com `elapsedMs` 0, pausar chama `clearQueue`, relógio falso: `elapsedMs` congela na pausa e continua na retomada, pular pausado segue pausado, parar zera `paused`), `server/tests/music.test.ts` "pausa a sala toda" (estado para quem vê, só quem está na sala, "Nenhuma música tocando", `elapsedMs` estável pausado), `server/tests/music.test.ts` "limites" (pausar/retomar não gastam a ficha de tocar; servidor com `RATE_LIMIT_MULTIPLIER=1`). `catalog.test.ts`/`spotify.test.ts`/`youtube.test.ts`: `collection` e o título da playlist/álbum.
+- Playlists salvas: `server/tests/playlists.test.ts` (servidor de verdade: criar/listar/apagar, nome e link inválidos, url canônica, duplicidade, limite, quem apaga) e `lib/actions/playlists.test.ts` (socket falso).
+- Área "Música": `components/music/MusicView.test.tsx` (botão da barra, fora de sala, progresso pelo `elapsedMs` e parado na pausa, pausar/retomar/pular/parar, pedir música, fila, convite de salvar, gaveta: tocar, apagar com confirmação, `playlist:created`/`deleted` ao vivo) e `lib/music-progress.test.ts`.
 - Nenhum teste chama a rede, o yt-dlp, o ffmpeg ou um LiveKit de verdade.
 
 Teste manual: `docker compose up -d`, preencha `SPOTIFY_*`, instale yt-dlp e ffmpeg, `npm run dev:all`, entre numa sala
@@ -327,6 +373,10 @@ outra e o LiveKit mostra um "Música" (`music-bot:<sala>`) em cada sala. Só os 
 | Log `Sem áudio: yt-dlp (código 1): ERROR: unable to download video data: HTTP Error 403` isolado | Recusa pontual do YouTube ao próprio yt-dlp (visto 1 vez em 4 tentativas com o mesmo vídeo); pedir de novo costuma tocar. |
 | `Sem áudio: yt-dlp (código 1): ... Sign in to confirm` / `n challenge` / `JS runtime` | O yt-dlp não resolveu os desafios de JavaScript: confira o `--js-runtimes node:<Node do servidor>` (`NODE_JS_RUNTIME`) e atualize o yt-dlp (`yt-dlp -U`). Deno no PATH também serve, mas não é exigido. |
 | Tudo falha com "Não foi possível ler isso no YouTube" / "Áudio não encontrado" depois de atualizar o yt-dlp | O YouTube passou a entregar o áudio só por HLS: tire o `SKIP_HLS` de `youtube.ts` e meça de novo. |
+| Depois de uma pausa longa a música não volta (ou corta) | O yt-dlp fica parado no pipe durante a pausa; o YouTube pode derrubar a conexão parada (não medido além de ~4 min, seção "Pré-busca"). Pular e pedir de novo resolve; o log `[música]` mostra o motivo. |
+| O tempo da barra pula ou fica um pouco fora do som | O progresso é interpolado no app a partir do `elapsedMs` do último `music:state`; relógios e atraso de rede diferem alguns décimos de segundo e o próximo estado corrige. |
+| Salvar playlist: "Esse link já está salvo em ..." | A url canônica já existe na coleção (links diferentes da mesma lista contam como um); apague a antiga ou toque a salva. |
+| `/pause` e `/resume` não existem | Só pelos botões do player (chat não tem esses comandos). |
 | Bot não aparece na barra lateral de quem acabou de abrir o app | O app só conhece o estado depois de um `music:state` ou de abrir a sala (`music:queue`). |
 
 O bot não aparece no `voice:state`; ele é uma linha à parte na lista da sala, com volume e silenciar no botão direito.

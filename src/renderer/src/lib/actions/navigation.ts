@@ -57,6 +57,10 @@ export function showToolGallery(): void {
   set({ section: 'tool', toolId: null, toolChannelId: null })
 }
 
+export function showMusic(): void {
+  set({ section: 'music' })
+}
+
 export function isChatOnScreen(st: ReturnType<typeof get>, channelId: string): boolean {
   if (st.section === 'community') {
     if (st.view?.channelId !== channelId) return false

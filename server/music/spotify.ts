@@ -1,4 +1,4 @@
-import { MusicError, PLAYLIST_READ_MAX, type MusicQuery, type TrackMetadata, type TrackResolver } from './ports'
+import { MusicError, PLAYLIST_READ_MAX, type MusicQuery, type Resolved, type TrackMetadata, type TrackResolver } from './ports'
 
 export type SpotifyQuery = Extract<MusicQuery, { kind: 'spotify' }>
 
@@ -44,6 +44,7 @@ interface TrackPage {
 }
 
 interface SpotifyAlbum {
+  name?: string
   images?: SpotifyImage[]
   tracks: TrackPage
 }
@@ -97,10 +98,12 @@ function fromEmbed(item: EmbedTrack, coverUrl: string | null): TrackMetadata | n
   })
 }
 
-export function parseSpotifyEmbed(html: string): TrackMetadata[] | null {
+const named = (value: unknown): string | null => (typeof value === 'string' && value.trim() ? value.trim() : null)
+
+export function parseSpotifyEmbed(html: string): Resolved | null {
   const data = EMBED_DATA.exec(html)?.[1]
   if (!data) return null
-  let entity: { trackList?: unknown; coverArt?: { sources?: SpotifyImage[] } } | undefined
+  let entity: { name?: unknown; title?: unknown; trackList?: unknown; coverArt?: { sources?: SpotifyImage[] } } | undefined
   try {
     entity = JSON.parse(data)?.props?.pageProps?.state?.data?.entity
   } catch {
@@ -108,7 +111,8 @@ export function parseSpotifyEmbed(html: string): TrackMetadata[] | null {
   }
   if (!entity || !Array.isArray(entity.trackList)) return null
   const coverUrl = entity.coverArt?.sources?.[0]?.url ?? null
-  return (entity.trackList as EmbedTrack[]).flatMap((item) => fromEmbed(item, coverUrl) ?? [])
+  const tracks = (entity.trackList as EmbedTrack[]).flatMap((item) => fromEmbed(item, coverUrl) ?? [])
+  return { tracks, collectionTitle: named(entity.name) ?? named(entity.title) }
 }
 
 export class SpotifyResolver implements TrackResolver<SpotifyQuery> {
@@ -121,8 +125,8 @@ export class SpotifyResolver implements TrackResolver<SpotifyQuery> {
     private readonly now: () => number = Date.now
   ) {}
 
-  async resolve(query: SpotifyQuery): Promise<TrackMetadata[]> {
-    if (query.type === 'track') return [await this.track(query.id)]
+  async resolve(query: SpotifyQuery): Promise<Resolved> {
+    if (query.type === 'track') return { tracks: [await this.track(query.id)], collectionTitle: null }
     if (query.type === 'album') return this.album(query.id)
     return this.playlist(query.id)
   }
@@ -132,7 +136,7 @@ export class SpotifyResolver implements TrackResolver<SpotifyQuery> {
     return fromApi(track, track.album?.images?.[0]?.url ?? null)
   }
 
-  private async album(id: string): Promise<TrackMetadata[]> {
+  private async album(id: string): Promise<Resolved> {
     const notFound = 'Álbum não encontrado no Spotify'
     const album = await this.api<SpotifyAlbum>(`/v1/albums/${id}`, notFound)
     const items = [...album.tracks.items]
@@ -143,16 +147,16 @@ export class SpotifyResolver implements TrackResolver<SpotifyQuery> {
       items.push(...page.items)
     }
     const coverUrl = album.images?.[0]?.url ?? null
-    return items.slice(0, PLAYLIST_READ_MAX).map((track) => fromApi(track, coverUrl))
+    return { tracks: items.slice(0, PLAYLIST_READ_MAX).map((track) => fromApi(track, coverUrl)), collectionTitle: named(album.name) }
   }
 
-  private async playlist(id: string): Promise<TrackMetadata[]> {
+  private async playlist(id: string): Promise<Resolved> {
     const res = await this.request(`${this.endpoints.embed}/embed/playlist/${id}`, { headers: { 'user-agent': 'Mozilla/5.0' } })
     if (res.status === 404 || res.status === 400) throw new MusicError('Playlist não encontrada no Spotify (ou é privada)')
     if (!res.ok) throw new MusicError(SPOTIFY_UNAVAILABLE)
-    const tracks = parseSpotifyEmbed(await res.text())
-    if (!tracks) throw new MusicError('Não foi possível ler essa playlist do Spotify')
-    return tracks.slice(0, PLAYLIST_READ_MAX)
+    const playlist = parseSpotifyEmbed(await res.text())
+    if (!playlist) throw new MusicError('Não foi possível ler essa playlist do Spotify')
+    return { ...playlist, tracks: playlist.tracks.slice(0, PLAYLIST_READ_MAX) }
   }
 
   private async api<T>(path: string, notFound: string): Promise<T> {

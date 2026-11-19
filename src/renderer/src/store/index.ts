@@ -1,10 +1,3 @@
-/**
- * Estado global do app (zustand). Só dados, sem ações: as ações ficam em
- * `lib/client.ts` e `lib/actions/*`.
- *
- * Cada domínio tem seu arquivo nesta pasta (interface + estado inicial). Para
- * um domínio novo, crie `<dominio>.ts` e acrescente-o em `AppState` e `initialState`.
- */
 import { create } from 'zustand'
 import { callsInitial, type CallsState } from './calls'
 import { channelsInitial, type ChannelsState } from './channels'
@@ -17,6 +10,7 @@ import { notificationsInitial, type NotificationsState } from './notifications'
 import { overlayInitial, type OverlayState } from './overlay'
 import { messagesInitial, type MessagesState } from './messages'
 import { musicInitial, type MusicSliceState } from './music'
+import { playlistsInitial, type PlaylistsState } from './playlists'
 import { pushToTalkInitial, type PushToTalkState } from './push-to-talk'
 import { permissionsInitial, type PermissionsState } from './permissions'
 import { sessionInitial, type SessionState } from './session'
@@ -37,7 +31,7 @@ export type { PlayingSound } from './sounds'
 export type { ChannelNotifyMode } from './notifications'
 export type { SettingsSection } from './settings'
 
-export interface AppState extends SessionState, ChannelsState, MessagesState, UploadsState, VoiceSliceState, DevicesState, PermissionsState, FriendsState, ToolsState, PreferencesState, NavigationState, CallsState, SoundsState, MusicSliceState, OverlayState, UpdatesState, PushToTalkState, NotificationsState, SettingsState, StartupState, WindowState {}
+export interface AppState extends SessionState, ChannelsState, MessagesState, UploadsState, VoiceSliceState, DevicesState, PermissionsState, FriendsState, ToolsState, PreferencesState, NavigationState, CallsState, SoundsState, MusicSliceState, PlaylistsState, OverlayState, UpdatesState, PushToTalkState, NotificationsState, SettingsState, StartupState, WindowState {}
 
 export const initialState: AppState = {
   ...sessionInitial,
@@ -55,6 +49,7 @@ export const initialState: AppState = {
   ...callsInitial,
   ...soundsInitial,
   ...musicInitial,
+  ...playlistsInitial,
   ...overlayInitial,
   ...updatesInitial,
   ...windowInitial,

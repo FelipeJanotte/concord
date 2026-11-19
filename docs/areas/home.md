@@ -8,11 +8,11 @@ ferramentas da v4 (barra lateral `ToolsSidebar` com as ferramentas por grupo e, 
 
 | Arquivo | Papel |
 |---|---|
-| `store/navigation.ts` | `section: 'community' \| 'home' \| 'tool'`, `homeView: { kind: 'friends' } \| { kind: 'dm', channelId }`, `toolId` (a ferramenta aberta; `null` na seção `tool` é a galeria; **não** é zerado ao sair da seção, então é a memória da última ferramenta, como `homeView`), `toolChannelId` (destino escolhido pelo `+` do composer, `docs/areas/tools.md`). |
-| `lib/actions/navigation.ts` | `showCommunity`, `showHome`, `showFriends`, `openDmChat(channelId)`, `messageAccount(accountId)`, `openTool(toolId, toolChannelId?)` (o `+` do composer passa o canal do chat), `showTools()` (botão da barra: última ferramenta ou a galeria na primeira vez; zera `toolChannelId`), `showToolGallery()` (galeria), `openVoiceChat(channelId)` e `setVoiceChatOpen(open)` (chat da sala de voz, ver `docs/areas/messages.md`), `isChatOnScreen(state, channelId)` (sala de voz só conta com o painel "Chat" aberto). Reexportadas por `lib/client.ts`. |
+| `store/navigation.ts` | `section: 'community' \| 'home' \| 'tool' \| 'music'`, `homeView: { kind: 'friends' } \| { kind: 'dm', channelId }`, `toolId` (a ferramenta aberta; `null` na seção `tool` é a galeria; **não** é zerado ao sair da seção, então é a memória da última ferramenta, como `homeView`), `toolChannelId` (destino escolhido pelo `+` do composer, `docs/areas/tools.md`). |
+| `lib/actions/navigation.ts` | `showCommunity`, `showHome`, `showFriends`, `openDmChat(channelId)`, `messageAccount(accountId)`, `openTool(toolId, toolChannelId?)` (o `+` do composer passa o canal do chat), `showMusic()` (botão "Música": só põe `section: 'music'`), `showTools()` (botão da barra: última ferramenta ou a galeria na primeira vez; zera `toolChannelId`), `showToolGallery()` (galeria), `openVoiceChat(channelId)` e `setVoiceChatOpen(open)` (chat da sala de voz, ver `docs/areas/messages.md`), `isChatOnScreen(state, channelId)` (sala de voz só conta com o painel "Chat" aberto; nas seções `tool` e `music` nenhum chat está na tela, então devolve `false`). Reexportadas por `lib/client.ts`. |
 | `lib/dms.ts` | `findDm(dms, channelId)`, `chatLabel(channel, dms)` (`#geral` / `@Ana`) e `DM_PERMISSIONS`. |
 | `lib/home.ts` | `homeBadge` (selo do Início) e `communityUnread` (bolinha da comunidade). |
-| `components/rail/UtilityRail.tsx` | A barra de úteis (substitui o antigo `ServerRail` do `App.tsx`). No topo, acima do Início, o botão de atualizar o app quando há versão nova (`UpdateRailSlot`, `docs/areas/updates.md`). Um único botão "Ferramentas" (ativo com `section === 'tool'`) chama `showTools`. |
+| `components/rail/UtilityRail.tsx` | A barra de úteis (substitui o antigo `ServerRail` do `App.tsx`). No topo, acima do Início, o botão de atualizar o app quando há versão nova (`UpdateRailSlot`, `docs/areas/updates.md`). Um único botão "Ferramentas" (ativo com `section === 'tool'`) chama `showTools`; ao lado, o botão "Música" (ativo com `section === 'music'`) chama `showMusic`. |
 | `components/home/HomeSidebar.tsx` | Barra lateral da Home: botão "Amigos" (selo de pedidos recebidos) + `DmList` + painéis de voz e da conta. |
 | `components/dm/DmList.tsx` | Conversas, a mais recente primeiro, com não lido e online (online só de amigos). |
 | `components/friends/FriendsView.tsx` | Abas Online, Todos, Pendentes, Bloqueados e "Adicionar amigo" (nome#id). |
@@ -35,6 +35,7 @@ Assim, ir para a Home e voltar mantém o canal ou a sala abertos, e a Home lembr
 | `community` | `ChannelSidebar` | `ChatView`/`VoiceView` de `view` | sim |
 | `home` | `HomeSidebar` | `FriendsView` ou `ChatView` da conversa | não |
 | `tool` | `ChannelSidebar` (contexto: canal/sala atual) | `ToolView` | não |
+| `music` | `ChannelSidebar` | `MusicView` (`components/music/`, `docs/areas/music.md`) | não |
 
 `selectTextChannel` e `joinVoice` põem `section: 'community'` (clicar num canal sempre leva à comunidade).
 

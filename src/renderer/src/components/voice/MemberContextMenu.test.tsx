@@ -153,7 +153,9 @@ describe('bot de música na barra lateral', () => {
       url: 'https://open.spotify.com/track/t1',
       requestedBy: { accountId: 'acc-ana', name: 'Ana' }
     },
-    queue: []
+    queue: [],
+    paused: false,
+    elapsedMs: 0
   }
 
   it('botão direito no bot: só volume e silenciar, pelo mesmo caminho do volume de uma pessoa', async () => {

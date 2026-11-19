@@ -8,6 +8,7 @@ import { ChatView } from '@/components/ChatView'
 import { FriendsView } from '@/components/friends/FriendsView'
 import { HomeSidebar } from '@/components/home/HomeSidebar'
 import { LoginScreen } from '@/components/LoginScreen'
+import { MusicView } from '@/components/music/MusicView'
 import { MemberList } from '@/components/MemberList'
 import { ResizableSide } from '@/components/ResizableSide'
 import { UtilityRail } from '@/components/rail/UtilityRail'
@@ -64,6 +65,8 @@ function MainLayout() {
         <main data-glass="panel" className="flex min-w-0 flex-1 flex-col bg-background">
           {section === 'tool' ? (
             <ToolView />
+          ) : section === 'music' ? (
+            <MusicView />
           ) : section === 'home' ? (
             homeView.kind === 'dm' ? (
               <ChatView key={homeView.channelId} channelId={homeView.channelId} />

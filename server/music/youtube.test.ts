@@ -125,14 +125,16 @@ function fakeYtDlp(reply: (args: string[]) => unknown): { run: YtDlpJson; calls:
 describe('YouTubeResolver', () => {
   it('vídeo: lê o JSON do link canônico, sem playlist', async () => {
     const { run, calls } = fakeYtDlp(() => videoJson)
-    const tracks = await new YouTubeResolver(run).resolve({ kind: 'youtube-video', id: VIDEO })
+    const { tracks, collectionTitle } = await new YouTubeResolver(run).resolve({ kind: 'youtube-video', id: VIDEO })
     expect(tracks).toEqual([parseYtDlpVideo(videoJson)])
+    expect(collectionTitle).toBeNull()
     expect(calls).toEqual([['-J', '--no-playlist', '--no-warnings', ...FAST, `https://www.youtube.com/watch?v=${VIDEO}`]])
   })
 
   it('playlist: lista plana, limitada a PLAYLIST_READ_MAX', async () => {
-    const { run, calls } = fakeYtDlp(() => ({ entries: [flatEntry('aaaaaaaaaaa'), flatEntry('bbbbbbbbbbb')] }))
-    const tracks = await new YouTubeResolver(run).resolve({ kind: 'youtube-playlist', id: 'PLxyz' })
+    const { run, calls } = fakeYtDlp(() => ({ title: 'Minha lista', entries: [flatEntry('aaaaaaaaaaa'), flatEntry('bbbbbbbbbbb')] }))
+    const { tracks, collectionTitle } = await new YouTubeResolver(run).resolve({ kind: 'youtube-playlist', id: 'PLxyz' })
+    expect(collectionTitle).toBe('Minha lista')
     expect(tracks.map((t) => t.title)).toEqual(['Vídeo aaaaaaaaaaa', 'Vídeo bbbbbbbbbbb'])
     expect(calls).toEqual([
       ['-J', '--flat-playlist', '--no-warnings', '--playlist-end', String(PLAYLIST_READ_MAX), 'https://www.youtube.com/playlist?list=PLxyz']
@@ -141,7 +143,8 @@ describe('YouTubeResolver', () => {
 
   it('busca: primeiro resultado do ytsearch1 em lista plana, com título, canal, capa e duração', async () => {
     const { run, calls } = fakeYtDlp(() => ({ entries: [flatEntry('aaaaaaaaaaa')] }))
-    const tracks = await new YouTubeResolver(run).resolve({ kind: 'search', text: 'garota de ipanema' })
+    const { tracks, collectionTitle } = await new YouTubeResolver(run).resolve({ kind: 'search', text: 'garota de ipanema' })
+    expect(collectionTitle).toBeNull()
     expect(tracks).toEqual(parseYtDlpEntries({ entries: [flatEntry('aaaaaaaaaaa')] }))
     expect(tracks[0]).toMatchObject({ title: 'Vídeo aaaaaaaaaaa', artists: ['Canal'], durationMs: 200_000 })
     expect(calls).toEqual([['-J', '--flat-playlist', '--no-warnings', 'ytsearch1:garota de ipanema']])
@@ -149,7 +152,7 @@ describe('YouTubeResolver', () => {
 
   it('o áudio de toda faixa é só o link do vídeo, mesmo com os formatos no JSON', async () => {
     const formats = [{ format_id: '251', acodec: 'opus', vcodec: 'none', url: 'https://rr1.googlevideo.com/videoplayback?itag=251' }]
-    const resolveWith = (json: unknown, query: YouTubeQuery): Promise<TrackMetadata[]> => new YouTubeResolver(fakeYtDlp(() => json).run).resolve(query)
+    const resolveWith = (json: unknown, query: YouTubeQuery): Promise<TrackMetadata[]> => new YouTubeResolver(fakeYtDlp(() => json).run).resolve(query).then((r) => r.tracks)
     const [video] = await resolveWith({ ...videoJson, formats }, { kind: 'youtube-video', id: VIDEO })
     const [found] = await resolveWith({ entries: [flatEntry('aaaaaaaaaaa', { formats })] }, { kind: 'search', text: 'x' })
     const [listed] = await resolveWith({ entries: [flatEntry('bbbbbbbbbbb', { formats })] }, { kind: 'youtube-playlist', id: 'PLxyz' })

@@ -6,7 +6,14 @@ interface Room {
   queue: RoomQueue
   prepared: Map<string, PreparedAudio>
   playing: QueuedTrack | null
+  paused: boolean
+  playedMs: number
+  playingSince: number | null
+  wakeFrames: (() => void) | null
+  output: RoomOutput | null
 }
+
+const newRoom = (): Room => ({ queue: EMPTY_QUEUE, prepared: new Map(), playing: null, paused: false, playedMs: 0, playingSince: null, wakeFrames: null, output: null })
 
 export type MusicListener = (state: MusicState) => void
 
@@ -19,12 +26,25 @@ export class MusicPlayer {
 
   constructor(
     private readonly playback: MusicPlayback,
-    private readonly onChange: MusicListener
+    private readonly onChange: MusicListener,
+    private readonly now: () => number = Date.now
   ) {}
 
   state(channelId: string): MusicState {
-    const queue = this.rooms.get(channelId)?.queue ?? EMPTY_QUEUE
-    return { channelId, nowPlaying: queue.nowPlaying && publicTrack(queue.nowPlaying), queue: queue.upcoming.map(publicTrack) }
+    const room = this.rooms.get(channelId)
+    const queue = room?.queue ?? EMPTY_QUEUE
+    return {
+      channelId,
+      nowPlaying: queue.nowPlaying && publicTrack(queue.nowPlaying),
+      queue: queue.upcoming.map(publicTrack),
+      paused: room?.paused ?? false,
+      elapsedMs: room ? this.elapsedMs(room) : 0
+    }
+  }
+
+  private elapsedMs(room: Room): number {
+    if (!room.queue.nowPlaying || room.playing !== room.queue.nowPlaying) return 0
+    return room.playedMs + (room.playingSince === null ? 0 : this.now() - room.playingSince)
   }
 
   activeRooms(): string[] {
@@ -33,7 +53,7 @@ export class MusicPlayer {
 
   add(channelId: string, tracks: QueuedTrack[]): EnqueueResult {
     const existing = this.rooms.get(channelId)
-    const room = existing ?? { queue: EMPTY_QUEUE, prepared: new Map(), playing: null }
+    const room = existing ?? newRoom()
     const result = enqueue(room.queue, tracks)
     if (!result.ok) return result
     room.queue = result.queue
@@ -51,6 +71,32 @@ export class MusicPlayer {
     if (!room?.queue.nowPlaying) return false
     room.queue = advance(room.queue)
     this.prefetch(room)
+    this.wake(room)
+    this.emit(channelId)
+    return true
+  }
+
+  pause(channelId: string): boolean {
+    const room = this.rooms.get(channelId)
+    if (!room?.queue.nowPlaying) return false
+    if (!room.paused) {
+      room.playedMs = this.elapsedMs(room)
+      room.playingSince = null
+      room.paused = true
+      room.output?.clearQueue()
+    }
+    this.emit(channelId)
+    return true
+  }
+
+  resume(channelId: string): boolean {
+    const room = this.rooms.get(channelId)
+    if (!room?.queue.nowPlaying) return false
+    if (room.paused) {
+      room.paused = false
+      if (room.playing === room.queue.nowPlaying) room.playingSince = this.now()
+      this.wake(room)
+    }
     this.emit(channelId)
     return true
   }
@@ -60,9 +106,22 @@ export class MusicPlayer {
     if (!room) return false
     this.rooms.delete(channelId)
     room.queue = EMPTY_QUEUE
+    room.paused = false
     this.prefetch(room)
+    this.wake(room)
     this.emit(channelId)
     return true
+  }
+
+  private wake(room: Room): void {
+    room.wakeFrames?.()
+    room.wakeFrames = null
+  }
+
+  private async waitWhilePaused(room: Room, track: QueuedTrack): Promise<void> {
+    while (room.paused && room.queue.nowPlaying === track) {
+      await new Promise<void>((resolve) => (room.wakeFrames = resolve))
+    }
   }
 
   private current(channelId: string, room: Room): boolean {
@@ -93,11 +152,12 @@ export class MusicPlayer {
     let output: RoomOutput | null = null
     try {
       output = await this.playback.publisher.join(channelId)
+      room.output = output
       while (this.current(channelId, room)) {
         const track = room.queue.nowPlaying
         const audio = this.prefetch(room)
         if (!track || !audio) break
-        await this.playTrack(room, track, audio, output)
+        await this.playTrack(channelId, room, track, audio, output)
         if (this.current(channelId, room) && room.queue.nowPlaying === track) {
           room.queue = advance(room.queue)
           this.emit(channelId)
@@ -115,14 +175,18 @@ export class MusicPlayer {
     }
   }
 
-  private async playTrack(room: Room, track: QueuedTrack, audio: PreparedAudio, output: RoomOutput): Promise<void> {
+  private async playTrack(channelId: string, room: Room, track: QueuedTrack, audio: PreparedAudio, output: RoomOutput): Promise<void> {
     const stream = audio.open()
     try {
       for await (const frame of stream) {
+        await this.waitWhilePaused(room, track)
         if (room.queue.nowPlaying !== track) break
         if (room.playing !== track) {
           room.playing = track
+          room.playedMs = 0
+          room.playingSince = this.now()
           this.prefetch(room)
+          this.emit(channelId)
         }
         await output.play(frame)
       }

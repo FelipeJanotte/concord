@@ -1,11 +1,12 @@
 import { useEffect, useState, type ComponentProps } from 'react'
-import { ChevronDown, ChevronUp, ListMusic, Music2, SkipForward, Square, Volume2, VolumeX } from 'lucide-react'
+import { ChevronDown, ChevronUp, ListMusic, Music2, Pause, Play, SkipForward, Square, VolumeX } from 'lucide-react'
 import { MUSIC_BOT_NAME, type MusicTrack } from '@shared/types'
-import { loadMusicQueue, notify, openMusicQueue, setUserVolume, skipMusic, stopMusic, trackDuration } from '@/lib/client'
+import { loadMusicQueue, notify, openMusicQueue, pauseMusic, resumeMusic, skipMusic, stopMusic, trackDuration } from '@/lib/client'
 import { loadPlayerHidden, savePlayerHidden } from '@/lib/music-player'
 import { cn } from '@/lib/utils'
 import { MUSIC_BOT_VOLUME_ID } from '@/lib/voice'
 import { useApp } from '@/store'
+import { MusicVolumeSlider } from '@/components/music/MusicVolumeSlider'
 import { MusicBotContextMenu } from './MemberContextMenu'
 
 const reportError = (err: unknown): void => notify(err instanceof Error ? err.message : 'Não foi possível falar com o bot de música')
@@ -35,34 +36,13 @@ function PlayerButton({ label, className, ...props }: ComponentProps<'button'> &
   )
 }
 
-function MusicVolume() {
-  const pct = useApp((s) => Math.round((s.userVolumes[MUSIC_BOT_VOLUME_ID] ?? 1) * 100))
-  const muted = useApp((s) => !!s.userMuted[MUSIC_BOT_VOLUME_ID])
-  const Icon = muted || pct === 0 ? VolumeX : Volume2
-  return (
-    <div className="flex items-center gap-1.5 px-1 text-muted-foreground" title={`Volume da música: ${pct}%${muted ? ' (silenciado)' : ''}`}>
-      <Icon className="size-4 shrink-0" />
-      <input
-        type="range"
-        min={0}
-        max={100}
-        step={5}
-        value={pct}
-        aria-label="Volume da música"
-        onChange={(e) => setUserVolume(MUSIC_BOT_VOLUME_ID, Number(e.target.value) / 100)}
-        className="w-20 accent-primary"
-      />
-    </div>
-  )
-}
-
 export function MusicPlayer({ channelId }: { channelId: string }) {
   const state = useApp((s) => s.musicRooms[channelId])
   const inRoom = useApp((s) => s.myVoiceChannelId === channelId)
   const [hidden, setHidden] = useState(loadPlayerHidden)
 
   useEffect(() => {
-    loadMusicQueue(channelId).catch(() => {})
+    loadMusicQueue(channelId).catch(reportError)
   }, [channelId])
 
   function changeHidden(next: boolean): void {
@@ -112,14 +92,23 @@ export function MusicPlayer({ channelId }: { channelId: string }) {
         </PlayerButton>
         {inRoom && (
           <>
+            {state.paused ? (
+              <PlayerButton label="Retomar a música" onClick={() => resumeMusic(channelId).catch(reportError)}>
+                <Play />
+              </PlayerButton>
+            ) : (
+              <PlayerButton label="Pausar a música" onClick={() => pauseMusic(channelId).catch(reportError)}>
+                <Pause />
+              </PlayerButton>
+            )}
             <PlayerButton label="Pular música" onClick={() => skipMusic(channelId).catch(reportError)}>
               <SkipForward />
             </PlayerButton>
             <PlayerButton label="Parar a música" onClick={() => stopMusic(channelId).catch(reportError)} className="hover:text-destructive">
               <Square />
             </PlayerButton>
-            <div className="ml-auto">
-              <MusicVolume />
+            <div className="ml-auto px-1">
+              <MusicVolumeSlider className="w-20" />
             </div>
           </>
         )}

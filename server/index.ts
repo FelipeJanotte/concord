@@ -33,6 +33,7 @@ import { preferencesModule } from './modules/preferences'
 import { presenceModule } from './modules/presence'
 import { reactionsModule } from './modules/reactions'
 import { uploadsModule } from './modules/uploads'
+import { playlistsModule } from './modules/playlists'
 import { soundsModule } from './modules/sounds'
 import { pollsModule } from './modules/polls'
 import { toolsModule } from './modules/tools'
@@ -54,6 +55,7 @@ const modules: ServerModule[] = [
   moderationModule,
   callsModule,
   soundsModule,
+  playlistsModule,
   musicModule,
   preferencesModule,
   friendsModule,

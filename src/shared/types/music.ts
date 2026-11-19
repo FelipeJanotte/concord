@@ -22,6 +22,16 @@ export interface MusicState {
   channelId: string
   nowPlaying: MusicTrack | null
   queue: MusicTrack[]
+  paused: boolean
+  elapsedMs: number
+}
+
+export type MusicCollectionKind = 'playlist' | 'album'
+
+export interface MusicCollection {
+  kind: MusicCollectionKind
+  title: string
+  url: string
 }
 
 export type MusicTrackSummary = Pick<MusicTrack, 'title' | 'artists' | 'coverUrl'>
@@ -66,7 +76,9 @@ export function musicBotReplyText(reply: MusicBotReply): string {
 
 export type MusicResult = { ok: true; state: MusicState } | { ok: false; error: string }
 
-export type MusicPlayResult = { ok: true; state: MusicState; added: number } | { ok: false; error: string; posted?: true }
+export type MusicPlayResult =
+  | { ok: true; state: MusicState; added: number; collection: MusicCollection | null }
+  | { ok: false; error: string; posted?: true }
 
 export interface MusicServerEvents {
   'music:state': (state: MusicState) => void
@@ -76,5 +88,7 @@ export interface MusicClientEvents {
   'music:play': (payload: MusicPlayRequest, ack: (res: MusicPlayResult) => void) => void
   'music:skip': (control: MusicControl, ack: (res: MusicResult) => void) => void
   'music:stop': (control: MusicControl, ack: (res: MusicResult) => void) => void
+  'music:pause': (control: MusicControl, ack: (res: MusicResult) => void) => void
+  'music:resume': (control: MusicControl, ack: (res: MusicResult) => void) => void
   'music:queue': (channelId: string, ack: (res: MusicResult) => void) => void
 }
