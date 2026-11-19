@@ -11,6 +11,7 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { PGlite } from '@electric-sql/pglite'
+import { pg_trgm } from '@electric-sql/pglite/contrib/pg_trgm'
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core'
 import { drizzle as drizzlePg } from 'drizzle-orm/node-postgres'
 import { migrate as migratePg } from 'drizzle-orm/node-postgres/migrator'
@@ -103,7 +104,8 @@ export async function openDatabase(config: DatabaseConfig): Promise<void> {
   }
 
   if (config.dir) mkdirSync(config.dir, { recursive: true })
-  const client = config.dir ? new PGlite(config.dir) : new PGlite()
+  const options = { extensions: { pg_trgm } }
+  const client = config.dir ? new PGlite(config.dir, options) : new PGlite(options)
   const database = drizzlePglite(client, { schema })
   try {
     await migratePglite(database, { migrationsFolder: MIGRATIONS })

@@ -56,6 +56,10 @@ da Home + chamadas tocando para mim). Dá para desligar tudo no próprio app e e
   - quando o som do Concord toca, a notificação nativa vai com `silent: true` (sem som duplo); com o som do tipo
     desligado, a notificação mantém o som do sistema;
   - volume = volume de saída (`outputVolume`), na saída escolhida (`audioOutputId`). Chamada: só o toque da B8.
+- **Não perturbe** (B28, `doNotDisturb` nas preferências da conta, escolhido no `UserPanel`): sem notificação nativa
+  e sem som para mensagem (conversa, canal, menção) e pedido de amizade, em `messageNotification`,
+  `friendRequestNotification`, `messageSound` e `friendRequestSound`. **Chamada passa** (`callNotification` e o toque
+  não olham). Selo e bolinhas continuam. Detalhes em `docs/areas/presence.md`.
 - O main valida tudo: título obrigatório, cortes em `NOTIFICATION_TITLE_MAX`/`NOTIFICATION_BODY_MAX`, alvo
   desconhecido vira "sem alvo", selo inteiro de 0 a 999.
 - **Fora do Electron** (renderer aberto no navegador durante o `npm run dev`): `window.api` não existe e nada acontece.
@@ -88,6 +92,7 @@ Preferência pessoal, por canal (texto, sala de voz ou conversa privada), **liga
 |---|---|
 | `src/main/notifications.test.ts` | Electron falso: validação, notificação mostrada e clique (restaura, foca, manda o alvo), selo no Windows (imagem, piscar e parar ao focar, imagem que não é PNG ignorada, descer não pisca) e no macOS. |
 | `src/renderer/src/lib/actions/notifications.test.ts` | Regras (texto, conversa × canal × minha, foco, modos de canal `all`/`mentions`/`none`, preferência salva, chamada só tocando para mim, pedido, selo, som por tipo com interruptor, ensurdecer e silenciado) e a ligação (eventos → notificação, pedido sem repetir, selo acompanha a store e zera ao sair, clique abre a conversa/amigos, interruptor geral sem aviso e selo 0, som no lugar do som do sistema, som em foco menos na conversa aberta). |
+| `src/renderer/src/lib/actions/notifications.test.ts` (Não perturbe) | Não perturbe cala aviso e som de mensagem e de pedido; a chamada continua aparecendo. |
 | `src/renderer/src/lib/sounds/sounds.test.ts` | Os três sons de notificação são diferentes entre si. |
 | `src/renderer/src/components/mute-channel.test.tsx` | Botão direito no canal de texto, na sala de voz e na conversa: silenciar/reativar, esmaecer e enviar a lista. |
 | `src/renderer/src/lib/actions/preferences.test.ts` | `setChannelMuted` (na hora, tira o não lido, não reenvia, erro volta), canais silenciados ao carregar e vindos de outra janela. |
@@ -106,6 +111,7 @@ Desligue "Mostrar notificações do Concord" → nada aparece e o número some (
 | Aparece com o app aberto | Não deveria: a regra exige a janela fora de foco. Confira `notificationEnv.isFocused`. |
 | Selo não some | Ele segue o não lido da Home e as chamadas tocando; abrir a conversa ou responder o pedido zera. Sair da conta também zera. |
 | Canal sem notificação nem bolinha | Está silenciado (item esmaecido na lista): botão direito → "Reativar canal". |
+| Nada notifica nem toca, mas chamada sim | Não perturbe ligado (bolinha vermelha no `UserPanel`): clique no avatar → Online. |
 | Mensagem de canal não notifica | "Notificar mensagens de canal" em Configurações → "Notificações" está em "Só menções" ou "Nenhuma", ou a janela estava em foco. |
 | Nenhuma notificação nem número no ícone com o Windows liberado | "Mostrar notificações do Concord" desligado em Configurações → "Notificações". |
 | Som não toca | Tipo desligado em "Tocar um som", ensurdecido, canal/conversa silenciado ou a conversa estava aberta na tela. |

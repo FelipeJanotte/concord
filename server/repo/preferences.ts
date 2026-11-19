@@ -7,10 +7,10 @@ import { isUuid } from './util'
 
 /** Preferências salvas da conta, ou o padrão (tema de hoje, nenhum tema salvo). */
 export async function getPreferences(accountId: string): Promise<Preferences> {
-  const fallback: Preferences = { theme: DEFAULT_THEME, savedThemes: [], mutedChannels: [] }
+  const fallback: Preferences = { theme: DEFAULT_THEME, savedThemes: [], mutedChannels: [], doNotDisturb: false }
   if (!isUuid(accountId)) return fallback
   const [row] = await db().select().from(accountPreferences).where(eq(accountPreferences.accountId, accountId)).limit(1)
-  return row ? { theme: row.theme, savedThemes: row.savedThemes, mutedChannels: row.mutedChannels } : fallback
+  return row ? { theme: row.theme, savedThemes: row.savedThemes, mutedChannels: row.mutedChannels, doNotDisturb: row.doNotDisturb } : fallback
 }
 
 /** Grava só os campos enviados (cria o registro na primeira vez). Devolve o resultado. */
@@ -19,7 +19,8 @@ export async function updatePreferences(accountId: string, update: PreferencesUp
   const next: Preferences = {
     theme: update.theme ?? current.theme,
     savedThemes: update.savedThemes ?? current.savedThemes,
-    mutedChannels: update.mutedChannels ?? current.mutedChannels
+    mutedChannels: update.mutedChannels ?? current.mutedChannels,
+    doNotDisturb: update.doNotDisturb ?? current.doNotDisturb
   }
   await db()
     .insert(accountPreferences)

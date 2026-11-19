@@ -10,6 +10,7 @@ import type {
   OverlayViewBridge
 } from '../shared/overlay'
 import type { ThemeConfig } from '../shared/types/theme'
+import type { IdleBridge } from '../shared/idle'
 import type { PttBinding, PttConfig, PushToTalkBridge } from '../shared/push-to-talk'
 import type { NativeNotification, NotificationsBridge, NotificationTarget } from '../shared/notifications'
 import type { ScreenShareBridge, ScreenSource } from '../shared/screen'
@@ -88,6 +89,15 @@ const pushToTalk: PushToTalkBridge = {
   }
 }
 
+const idle: IdleBridge = {
+  isIdle: (): Promise<boolean> => ipcRenderer.invoke('idle-get'),
+  onChange: (listener) => {
+    const handler = (_e: unknown, value: boolean): void => listener(value)
+    ipcRenderer.on('idle-change', handler)
+    return () => ipcRenderer.removeListener('idle-change', handler)
+  }
+}
+
 const notifications: NotificationsBridge = {
   show: (notification: NativeNotification): void => ipcRenderer.send('notify', notification),
   setBadge: (count: number, overlay: string | null): void => ipcRenderer.send('badge', count, overlay),
@@ -157,6 +167,7 @@ const api = {
   updater,
   /** Pressione para falar (ver src/main/push-to-talk.ts). */
   pushToTalk,
+  idle,
   translucency,
   startup,
   windowControls

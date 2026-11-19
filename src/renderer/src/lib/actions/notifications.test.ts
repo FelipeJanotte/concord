@@ -34,6 +34,7 @@ describe('regras', () => {
     expect(messagePreview(msg({ content: ' oi \n  gente ' }))).toBe('oi gente')
     expect(messagePreview(msg({ content: 'a'.repeat(200) }))).toHaveLength(120)
     expect(messagePreview(msg({ content: '', attachments: [{}, {}] as never }))).toBe('📎 2 anexos')
+    expect(messagePreview(msg({ content: '', kind: 'pin' }))).toBe('Fixou uma mensagem')
   })
 
   it('conversa privada fora de foco avisa e abre a conversa; com foco ou minha, não', () => {
@@ -101,13 +102,13 @@ describe('regras', () => {
   })
 
   it('pedido de amizade recebido abre a tela de amigos', () => {
-    expect(friendRequestNotification(request(), false)).toEqual({
+    expect(friendRequestNotification(request(), st(), false)).toEqual({
       title: 'Pedido de amizade',
       body: 'Bia#bia7 enviou um pedido de amizade.',
       target: { kind: 'friends' }
     })
-    expect(friendRequestNotification(request('friend'), false)).toBeNull()
-    expect(friendRequestNotification(request(), true)).toBeNull()
+    expect(friendRequestNotification(request('friend'), st(), false)).toBeNull()
+    expect(friendRequestNotification(request(), st(), true)).toBeNull()
   })
 
   it('som da mensagem: conversa privada e menção, cada um com seu interruptor; não na conversa que estou vendo', () => {
@@ -169,6 +170,18 @@ describe('regras', () => {
     vi.unstubAllGlobals()
   })
 
+  it('Não perturbe cala notificações e sons de mensagem e de pedido, menos a chamada', () => {
+    useApp.setState({ channels: [{ id: 'geral', name: 'geral', type: 'text', createdAt: 0 }], doNotDisturb: true })
+    const mention = msg({ channelId: 'geral', content: '<@todos> reunião' })
+    expect(messageNotification(msg(), st(), false)).toBeNull()
+    expect(messageNotification(mention, st(), false)).toBeNull()
+    expect(friendRequestNotification(request(), st(), false)).toBeNull()
+    expect(messageSound(msg(), st(), false)).toBeNull()
+    expect(messageSound(mention, st(), false)).toBeNull()
+    expect(friendRequestSound(request(), st())).toBeNull()
+    expect(callNotification(ringing, st(), false)).toMatchObject({ title: 'Ana está ligando' })
+  })
+
   it('selo: pedidos + conversas não lidas + chamada tocando para mim', () => {
     useApp.setState({ friends: [request()], unread: { 'dm-ana': true, geral: true }, calls: { 'dm-ana': ringing } })
     expect(badgeCount(st())).toBe(3)
@@ -219,6 +232,15 @@ describe('ligação com os eventos', () => {
     focused = true
     socket.receive('message:new', msg({ id: 'm2' }))
     expect(shown).toHaveLength(3)
+  })
+
+  it('Não perturbe: só a chamada aparece; mensagem e pedido ficam quietos', () => {
+    useApp.setState({ doNotDisturb: true })
+    socket.receive('message:new', msg())
+    socket.receive('friend:updated', request())
+    socket.receive('call:updated', ringing)
+    expect(shown.map((n) => n.title)).toEqual(['Ana está ligando'])
+    expect(played).toEqual([])
   })
 
   it('notificações desligadas: nada aparece e o selo fica zerado', () => {

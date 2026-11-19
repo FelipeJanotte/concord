@@ -3,16 +3,16 @@
 Mensagens dos canais de texto, do **chat de texto das salas de voz** e das conversas privadas (`dm`). Anexos têm doc próprio (`docs/areas/attachments.md`),
 apagar fica na moderação (`docs/areas/moderation.md`) e mensagens de ferramenta na `docs/areas/tools.md`.
 
-Tipos (`Message.kind`): `text` (escrita por alguém) e `tool` (postada pelo servidor com `tool` tipado: ferramentas do grupo e, com `tool.tool === 'music'`, a **resposta do bot de música** — autor gravado = quem pediu, mas a tela mostra "Música" com o selo "BOT"; `docs/areas/music.md`).
+Tipos (`Message.kind`): `text` (escrita por alguém), `pin` (aviso "Fulano fixou uma mensagem", B27) e `tool` (postada pelo servidor com `tool` tipado: ferramentas do grupo e, com `tool.tool === 'music'`, a **resposta do bot de música** — autor gravado = quem pediu, mas a tela mostra "Música" com o selo "BOT"; `docs/areas/music.md`).
 
 ## Arquivos
 
 | Arquivo | Papel |
 |---|---|
 | `src/shared/types/message.ts` | `Message` (com `editedAt?` e `replyTo?`), `ReplyPreview`, `replyPreviewText` (mesmo resumo no servidor e na tela), `REPLY_PREVIEW_MAX` (100), `SendMessagePayload.replyToId?`, `EditMessagePayload`, `MessageEdited`, eventos. |
-| `server/modules/messages.ts` | `message:history`, `message:send` (fila por conexão), `message:edit`, `typing`. |
-| `server/repo/messages.ts` | `listMessages` (página + `editedAt` + citações), `insertMessage` (grava `reply_to_id`), `replyPreviews`, `findReplyTarget`, `findEditable`, `editMessage`. |
-| `server/db/schema/messages.ts` | Colunas `edited_at` e `reply_to_id` (migration `0009_edit_reply`). `reply_to_id` **sem chave estrangeira** de propósito: se a original for apagada, o id fica e a leitura mostra "mensagem apagada". |
+| `server/modules/messages.ts` | `message:history` (com `before`/`after`/`around`), `message:send` (fila por conexão), `message:edit`, `message:search` (B26), `message:pin`/`message:pins` (B27), `typing`. |
+| `server/repo/messages.ts` | `listMessages` (página por `before`/`after`/`around` + `editedAt` + `pinnedAt` + citações; `toMessages` monta a `Message`), `searchMessages` (B26), `findPinState`/`countPins`/`setPinned`/`listPins` (B27), `insertMessage` (grava `reply_to_id`), `replyPreviews`, `findReplyTarget`, `findEditable`, `editMessage`. |
+| `server/db/schema/messages.ts` | Colunas `pinned_at`/`pinned_by` e o `kind` `pin` e o índice `messages_content_trgm_idx` (GIN `pg_trgm` para a busca) (migration `0015_v8`, que cria a extensão; índice parcial `messages_channel_pinned_idx` para a lista de fixadas). Colunas `edited_at` e `reply_to_id` (migration `0009_edit_reply`). `reply_to_id` **sem chave estrangeira** de propósito: se a original for apagada, o id fica e a leitura mostra "mensagem apagada". |
 | `src/renderer/src/lib/actions/messages.ts` | `sendMessage` (leva a resposta e limpa), listeners `message:new`, `message:edited`, `message:deleted` (só as citações; a lista é da moderação), `startReply`/`cancelReply`, `startEdit`/`cancelEdit`/`editLastMessage`/`editMessage`. |
 | `src/renderer/src/store/messages.ts` | `replyingTo` (por canal) e `editingMessageId` (uma por vez), além do histórico e do "digitando". |
 | `components/chat/MessageActions.tsx` | Barra ao passar o mouse: Adicionar reação (quem pode `send`), Responder (quem pode `send`), Editar (autor, só texto), Apagar (autor ou `manageMessages`). A barra tem `w-max` e os botões/ícones `shrink-0`: em chat estreito (ex.: o chat da sala de voz) os ícones não achatam (teste em `reactions.test.tsx`). |
@@ -29,6 +29,46 @@ Tipos (`Message.kind`): `text` (escrita por alguém) e `tool` (postada pelo serv
 | `message:send` | `{ channelId, content, attachmentIds?, replyToId? }` | `OkResult` (a mensagem chega como `message:new`) | canal de texto, sala de voz (chat da sala) ou `dm`; texto ou anexo; até 2000; `send` (e `attach` com anexo); `replyToId` só de mensagem do **mesmo canal** (senão vai sem citação); `LIMITS.message`. Toda recusa volta com o motivo ("Canal não encontrado", "Você não tem permissão para enviar mensagens neste canal"...); o app espera até `SEND_TIMEOUT_MS` (10 s) e avisa "Mensagem não enviada: ..." (sem resposta: "o servidor não respondeu"). A resposta é opcional para o servidor: quem manda sem ack continua funcionando. |
 | `message:edit` | `{ messageId, content }` | `OkResult` | ver abaixo |
 | `message:edited` (servidor → app) | `TextMessageEdited { channelId, messageId, content, editedAt, mentions? }` ou `ToolMessageUpdated { channelId, messageId, content, tool }` (`MessageEdited` = os dois) | — | por `emitToViewers`; a forma com `tool` é o servidor trocando o resultado de uma mensagem `kind: 'tool'` (hoje: o bot de música saindo de "procurando") |
+
+## Buscar (B26)
+
+Campo "Buscar" no topo do chat (fora do chat embutido da sala de voz). Enter abre o painel de resultados à direita
+do chat; clicar num resultado abre o canal/conversa e rola até a mensagem, mesmo fora do histórico carregado.
+
+| Arquivo | Papel |
+|---|---|
+| `src/shared/types/message.ts` | `SearchRequest { query, channelId?, authorId?, before? }`, `SearchResult`, `SEARCH_PAGE_SIZE` (25), `SEARCH_QUERY_MAX` (100); `HistoryRequest.after?/around?` e `HistoryPage.hasNewer?`. |
+| `server/modules/messages.ts` | `message:search`: valida, `LIMITS.search` (10 seguidas, 1 a cada 2 s), canais = `visibleChannels` + `dmChannelsOf` (`server/access.ts`), ou só `channelId` se a conta tem `view` nele; anexos assinados para quem pediu. |
+| `server/repo/messages.ts` | `searchMessages`: `content ILIKE '%q%'` com barra invertida, `%` e `_` escapados, filtro de autor, cursor `before` (pelo `seq`), mais novas primeiro, 25 + 1 para saber se há mais. |
+| `src/renderer/src/lib/search.ts` | Puras: `parseSearchInput` (`de:Nome` ou `de:"Nome Composto"`, em qualquer lugar do texto), `findAuthor` (nome ou `nome#id`, sem diferenciar maiúsculas), `highlightParts` (trecho de até 160 caracteres em volta da 1ª ocorrência, partes marcadas), `messageSnippet` (com "@Nome" no lugar das menções). |
+| `src/renderer/src/lib/actions/search.ts` | `searchMessages(texto, channelId ou null)` (resolve o `de:` entre quem está online, amigos e conversas), `loadMoreResults`, `closeSearch`, `jumpToMessage(channelId, messageId)` (abre canal/DM/chat da sala e marca `jumpTarget`; sem a mensagem carregada, chama `loadHistoryAround`). Resposta atrasada de uma busca antiga é descartada. |
+| `src/renderer/src/lib/actions/messages.ts` | `loadHistoryAround` (troca a lista do canal pela página em volta da mensagem), `loadNewerMessages` (`after` da última), `jumpToPresent` (descarta e busca a página mais recente), `clearJumpTarget`. Uma versão por canal descarta páginas que chegam depois de a lista ter sido trocada. Com `hasNewerHistory`, `message:new` **não** entra no fim (haveria buraco); chega ao carregar as mais novas. |
+| `src/renderer/src/store/search.ts` | `search: SearchView` ou `null` (texto, canal, autor, resultados, `hasMore`, `loading`, `error`); `null` = painel fechado. `store/messages.ts`: `hasNewerHistory`, `jumpTarget`. |
+| `components/chat/SearchPanel.tsx` | `SearchBox` (campo no cabeçalho) e `SearchPanel` (aside "Resultados da busca": contagem, "Só neste canal", X, erro, "Nenhum resultado", trecho com `<mark>`, "Carregar mais"). |
+| `components/ChatView.tsx` | `jumpTarget` do canal → `scrollToMessage` (rola e pisca) e limpa; rolar perto do fim com `hasNewerHistory` carrega as mais novas; botão "Ir para as mensagens recentes". |
+
+Regras: `query` sem espaços nas pontas, até 100 caracteres; vazia só com `authorId` ("Digite o que buscar").
+Canal que a conta não vê, DM de outras pessoas (nem a dona) e ids inválidos dão lista vazia, sem erro. A busca é
+no texto guardado: menção é `<@id>`, então "ana" não acha a menção a Ana; mensagem de ferramenta entra pelo
+`content` por extenso.
+
+## Fixar mensagens (B27)
+
+| Arquivo | Papel |
+|---|---|
+| `src/shared/types/message.ts` | `PinMessagePayload { messageId, on }`, `MessagePinned { channelId, messageId, pinnedAt }` (`null` = desafixada), `PINS_PER_CHANNEL_MAX` (50), `canPinMessages` (tem `manageMessages`), `Message.pinnedAt?`, `kind: 'pin'`. |
+| `server/modules/messages.ts` | `message:pin`: `view` (senão "Mensagem não encontrada", sem vazar), aviso não se fixa, em DM qualquer membro, fora dela `canPinMessages`; mesmo estado = `ok` sem evento; `LIMITS.pin`; 50 por canal. Avisa `message:pinned` por `emitToViewers` e, ao fixar, posta o aviso. `message:pins`: lista (sem `view`, vazia). |
+| `src/renderer/src/lib/actions/pins.ts` | `loadPins`, `pinMessage` (lança o erro do servidor), listeners `message:pinned` (marca/desmarca a mensagem carregada; lista em cache: põe no topo, tira, ou descarta se a mensagem não está carregada) e `message:deleted` (tira da lista). `store/messages.ts`: `pins` por canal (`loadHistory` descarta a do canal). |
+| `src/renderer/src/lib/permissions.ts` | `useCanPin(channelId)`: em DM sempre, fora dela `canPinMessages`. |
+| `components/chat/MessageActions.tsx` | "Fixar mensagem" / "Desafixar mensagem" (erro vira aviso). O aviso `pin` não tem reagir/responder/fixar, só apagar. |
+| `components/chat/PinnedMessages.tsx` | Alfinete "Mensagens fixadas" no cabeçalho do chat: popover com a lista (carrega ao abrir), "Nenhuma mensagem fixada aqui ainda.", clicar fecha e rola até a mensagem (`jumpToMessage`, o mesmo caminho da busca), "Desafixar" para quem pode. |
+| `components/ChatView.tsx` | `PinNotice`: alfinete + "Fulano fixou uma mensagem." — "uma mensagem" leva até a original; a mensagem seguinte nunca fica compacta embaixo do aviso. |
+| `lib/notifications.ts` | O aviso aparece como "Fixou uma mensagem" na notificação. |
+
+Decisão do aviso: mensagem `kind: 'pin'` na mesma tabela, com autor = quem fixou, `content` vazio e a original em
+`reply_to_id` (reaproveita o resumo e o "mensagem apagada" da B18). Assim fica no histórico na ordem certa, chega
+pelo `message:new` de sempre e quem tem `manageMessages` (ou o autor) apaga como qualquer mensagem. Desafixar não
+posta aviso. Apagar a mensagem fixada tira da lista (a linha some).
 
 ## Editar (A15)
 
@@ -103,7 +143,7 @@ no contrato: o texto continua o mesmo, só a tela reconhece o link.
 | Arquivo | Papel |
 |---|---|
 | `src/shared/links.ts` | Puras: `splitLinks(texto)` → pedaços `{ text }` / `{ url, href }` e `externalUrl(raw)` (só `http:`/`https:`, senão `null`). Compartilhado porque o processo principal usa a mesma checagem. |
-| `components/chat/MessageText.tsx` | Depois de separar as menções, cada pedaço de texto passa por `splitLinks`; link vira `<a target="_blank" rel="noreferrer noopener">` com `text-primary` sublinhado e o endereço no `title`. |
+| `components/chat/MessageText.tsx` | Cada nó de texto da formatação (B25) separa as menções e passa por `splitLinks`; link vira `<a target="_blank" rel="noreferrer noopener">` com `text-primary` sublinhado e o endereço no `title`. |
 | `src/main/index.ts` | `setWindowOpenHandler`: o `target="_blank"` cai aqui e vai para `shell.openExternal` **só se `externalUrl` aceitar** (nunca `file:`, `javascript:`, `ms-settings:`...). `will-navigate`: link que tentasse trocar a página da janela é cancelado e (se http/https) aberto fora. |
 
 Regras de reconhecimento:
@@ -118,6 +158,50 @@ mostram texto puro. Prévia do site (embed) está pendente.
 
 Testes: `src/shared/links.test.ts` (reconhecimento, pontuação, parênteses, protocolos recusados) e
 `components/chat/links.test.tsx` (`<a>` com `href`/`target`/`rel`, `www.`, link junto com menção, `javascript:` fica texto).
+
+## Formatação (B25)
+
+Subconjunto de markdown, **só na tela**: o servidor guarda e devolve o texto como veio (nada muda no contrato
+nem no banco). Nunca vira HTML: o parser devolve nós e o React desenha elementos (`<b>` digitado continua texto;
+nada de `dangerouslySetInnerHTML`).
+
+| Marcação | Vira |
+|---|---|
+| `**negrito**` | `<strong>` |
+| `*itálico*` | `<em>` |
+| `~~riscado~~` | `<s>` |
+| `` `código` `` | `<code>` com fundo `bg-muted`, texto como veio |
+| ```` ```bloco``` ```` | `<code data-code-block>` em bloco (`bg-muted`, borda); sem destaque de linguagem |
+| `> citação` | `<span data-quote>` com barra à esquerda |
+| `\|\|spoiler\|\|` | Tarja (`bg-foreground`, texto transparente) até clicar ou Enter/Espaço |
+
+| Arquivo | Papel |
+|---|---|
+| `src/shared/markdown.ts` | Pura `parseMarkdown(texto)` → `MarkdownNode[]` (`text`, `code`, `bold`, `italic`, `strike`, `spoiler`, `codeBlock`, `quote`). |
+| `components/chat/MessageText.tsx` | Desenha os nós; cada nó `text` passa pelas menções (`splitMentions`) e links (`splitLinks`). `Spoiler` guarda o "revelado" por spoiler. API inalterada: `<MessageText message={...} />`. |
+
+Regras do parser:
+
+- Ordem: blocos de código primeiro, depois linhas de citação, depois o que está dentro da linha.
+- Código (em linha ou bloco) é literal: **sem** formatação, menção nem link dentro. Marcação que atravessa um código
+  não fecha (em `` **a `b** c` `` o `**` fica texto e `b** c` vira código).
+- Bloco: ```` ``` ```` até o próximo ```` ``` ````; a 1ª linha some se for só um nome de linguagem (```` ```ts ````). Uma quebra de linha
+  logo antes e logo depois do bloco é engolida (o bloco já quebra).
+- Citação: linha que começa com `> ` (ou só `>`); linhas seguidas viram uma citação. `>oi` e `a > b` são texto.
+  Marcação não atravessa a borda da citação.
+- Não fechado ou vazio continua texto (`**sem fim`, `****`, `||||`, `` ` `` sozinho).
+- Itálico não começa nem termina com espaço ou `*`: `2 * 3 * 4` é texto. `***x***` vira negrito com itálico dentro.
+- Aninha: `**a *b***`, `||`código`||`, `*a **b** c*`. Menção e link dentro de negrito/itálico/spoiler funcionam.
+- Spoiler escondido: o clique em qualquer coisa dentro (inclusive link) só revela (`preventDefault`); depois de
+  revelado o link abre normalmente. Escondido tem `role="button"` "Spoiler: clique para ver".
+- Sem escape com `\` e sem `_itálico_`/`__sublinhado__` (fora do escopo).
+
+Onde **não** vale: a citação de resposta (`ReplyPreview`), as notificações e as mensagens de ferramenta mostram o
+texto puro, com os marcadores.
+
+Testes: `src/shared/markdown.test.ts` (cada marcação, aninhado, não fechado, vazio, asterisco solto, HTML, código
+atravessando, bloco com linguagem, citação) e `components/chat/markdown.test.tsx` (elementos, HTML como texto,
+código sem menção/link, menção/link no negrito, bloco, citação, spoiler por clique e teclado).
 
 ## Chat de texto da sala de voz
 
@@ -140,10 +224,67 @@ Testes: `server/tests/realtime.test.ts` (manda, quem não está na voz recebe, h
 (clique abre a sala com o chat) e `components/voice-chat.test.tsx` (botão e painel, envio sem estar na voz, bolinha,
 atalho da barra lateral).
 
+## Não lido guardado no servidor (A18)
+
+Antes o não lido (`unread` da store) vivia só na memória da janela: reiniciar o app perdia tudo e ler numa janela
+não apagava nas outras. Agora o servidor guarda, por conta e canal (texto, sala de voz ou conversa), a **última
+mensagem lida**. O não lido vem dele ao conectar e a leitura vai para ele.
+
+| Arquivo | Papel |
+|---|---|
+| `src/shared/types/reads.ts` | `ChannelReadState { channelId, lastReadId, unread }`, `ChannelRead { channelId, messageId }`, `ChannelReadResult`, eventos. |
+| `server/db/schema/reads.ts` | Tabela `channel_reads` (chave `account_id + channel_id`, `last_read_id`, `last_read_seq` = `messages.seq` da mensagem lida, `updated_at`); cascata com a conta e o canal. `last_read_id` sem chave estrangeira: a mensagem lida pode ser apagada e o ponto continua valendo pelo `seq`. Migration `0015`. |
+| `server/repo/reads.ts` | `advanceRead` (upsert que só grava se o `seq` novo for maior: `'advanced' \| 'unchanged' \| 'missing'`) e `readStates` (o ponto de cada canal + maior `seq` de mensagem de **outra pessoa** por canal). |
+| `server/modules/reads.ts` | `channel:reads` (canais que vejo, `visibleChannels`, + minhas conversas, `listDms`) e `channel:read` (valida, `LIMITS.read`, `view`, avança e avisa as outras janelas). |
+| `src/renderer/src/lib/actions/reads.ts` | `loadReads` (depois do `hello`), `startReading` (abrir um chat), `markRead` (interna), listeners `channel:read-sync` e `message:new` (chat na tela lê na hora). |
+| `src/renderer/src/store/channels.ts` | `unread`, `lastRead` (última lida por canal) e `readMarker` (onde parei, para a linha). |
+| `components/ChatView.tsx` | Linha vermelha **"Novas mensagens"** (`role="separator"`) antes da primeira mensagem depois de `readMarker`; ela quebra o agrupamento. |
+
+Eventos (tabela completa em `docs/areas/architecture.md`):
+
+| Evento | Payload | Resposta | Regras |
+|---|---|---|---|
+| `channel:reads` | — | `ChannelReadState[]` | um item por canal visível e conversa minha. `unread` = existe mensagem de outra pessoa (ou de conta apagada) com `seq` maior que o lido. Nunca lido + mensagem de outra pessoa = não lido. |
+| `channel:read` | `{ channelId, messageId }` | `ChannelReadResult` | **só avança**: mensagem mais antiga que o ponto responde `ok` sem mudar nada. Id inválido, mensagem de outro canal ou canal que não vê: "Mensagem não encontrada" (sem vazar). `LIMITS.read` (30 seguidas, depois 2/s): "Muitas leituras seguidas. Tente de novo em N s." |
+| `channel:read-sync` (servidor → app) | `{ channelId, messageId }` | — | só quando o ponto avançou, para as **outras** conexões da mesma conta (não a que leu, nem outras contas). |
+
+Fluxo no app:
+
+1. `hello` zera `unread`/`lastRead`/`readMarker`; `loadReads` junta o que veio do servidor com o que chegou no
+   meio (o local vence). Canal silenciado (`mutedChannels`) não vira não lido. Se o chat na tela está não lido,
+   chama `startReading` nele.
+2. Abrir um chat (`selectTextChannel`, `openDmChat`, `openVoiceChat`, `setVoiceChatOpen`, `showHome`,
+   `showCommunity` → `startReading`): tira o não lido, guarda `readMarker = lastRead` **se** estava não lido (senão
+   apaga a linha), espera o histórico (`loadHistory` devolve a mesma promise se já está carregando) e marca a
+   última mensagem como lida.
+3. `markRead`: só emite `channel:read` se a última mensagem carregada for diferente de `lastRead` (abrir de novo
+   não reenvia).
+4. `message:new` com o chat na tela: lê na hora (`isChatOnScreen`, a mesma regra do não lido).
+5. `channel:read-sync`: tira o não lido e anda `lastRead` nesta janela.
+
+Como testar: `server/tests/reads.test.ts` (servidor real: nunca lido, ler e mensagem nova, só avança, canais
+escondidos e DMs, `channel:read-sync` só para as outras janelas, ler o mesmo ponto não avisa, recusas),
+`server/tests/limits.test.ts` ("marcar como lido"), `lib/actions/reads.test.ts` (carregar, silenciado, não perder
+o que chegou no meio, chat aberto ao conectar, abrir com/sem não lido, mensagem nova na tela e fora, sync) e
+`components/chat/new-messages.test.tsx` (posição da linha e quando não aparece). À mão: duas janelas da mesma conta
+(`docs/areas/dev-workflow.md`), ler numa e ver a bolinha sumir na outra; fechar e abrir o app e ver o não lido.
+
+Limites conhecidos:
+
+- Logo depois de subir esta versão, todo canal com mensagem de outra pessoa aparece não lido para todos (ninguém
+  tem ponto de leitura ainda); abrir cada um resolve.
+- A linha só aparece se a mensagem onde parei está na página carregada; mais antiga que isso, não há linha.
+- Ler é "chat na tela", mesmo com a janela fora de foco (igual ao não lido de antes).
+- Canal que fica visível depois (`channels:visible`) só traz o não lido do servidor na próxima conexão.
+
 ## Testes
 
 | Arquivo | Cobre |
 |---|---|
+| `server/tests/search.test.ts` | Servidor real: acha por trecho (maiúsculas, ordem), canal privado que não vê, DM alheio (nem a dona), filtros de canal/autor, `%`/`_` literais, páginas com `before`, recusas; `around`/`after` do histórico. |
+| `server/tests/pins.test.ts` | Servidor real: fixar com `manageMessages` (evento, aviso, lista, histórico), desafixar, ordem, sem permissão, canal que não vê sem vazar, DM (os dois sim, a dona não), limite de 50, recusas, apagar tira da lista. |
+| `src/renderer/src/lib/search.test.ts`, `lib/actions/search.test.ts`, `lib/actions/pins.test.ts` | Puras da busca; ações: busca, `de:`, erro, mais resultados, ir até a mensagem (carregada, fora do histórico, sumiu, DM, sala de voz, página atrasada), `message:new` com buraco, mais novas, voltar às recentes; fixar e listeners. |
+| `components/chat/search.test.tsx`, `components/chat/pins.test.tsx` | Tela: campo, painel, destaque, "Só neste canal", erro, rolar até resultado carregado e fora do histórico, "Ir para as mensagens recentes", carregar as mais novas; Fixar/Desafixar por quem pode, DM, erro, lista pelo alfinete, vazia, desafixar pela lista, aviso "fixou". |
 | `server/tests/edit-reply.test.ts` | Servidor real: editar (todos recebem, histórico, sem `editedAt` quando nunca editada, mesmo texto), recusas (outra pessoa/dona, vazia, longa, inexistente, ferramenta, canal que não vê sem vazar), responder (resumo, histórico, editar/apagar a original, outro canal/inexistente/inválido vão sem citação). |
 | `src/renderer/src/lib/actions/edit-reply.test.ts` | App: resposta no envio e limpa, cancelar, apagada, `message:edited` com citações, `message:edited` de ferramenta (troca `tool` sem `editedAt`), editar (limpa, aplica, mesmo texto, erro), seta para cima. |
 | `src/renderer/src/components/chat/edit-reply.test.tsx` | Tela: barra de ações por quem, editar no lugar (Enter, Esc, erro, seta para cima, "(editada)"), faixa de resposta (foco, envio, X, Esc), citação rola e pisca, "Mensagem apagada". |
@@ -162,4 +303,8 @@ atalho da barra lateral).
 | Link não ficou clicável | Não começa com `http://`, `https://` ou `www.` (ex.: `exemplo.com` sozinho não é reconhecido) ou está colado em outra palavra. |
 | Link abre dentro do app / não abre | O clique tem de passar por `setWindowOpenHandler` (`target="_blank"`); protocolo que não é http/https é ignorado de propósito. |
 | Mensagem no chat da sala de voz (ou em qualquer canal) some sem enviar | Causa: o servidor recusava o `message:send` em silêncio e o app, que já tinha limpado o campo, não avisava nada. O caso real foi um **servidor desatualizado** (anterior ao chat da sala de voz, que ainda ignorava canal `voice`) com o app novo — o app se atualiza sozinho, o servidor não. Corrigido: o `message:send` tem resposta (`OkResult`) e o app mostra "Mensagem não enviada: <motivo>"; com servidor antigo, "o servidor não respondeu" depois de 10 s. Solução no servidor antigo: atualizar (`docs/areas/deploy.md`). Testes em `lib/actions/actions.test.ts` e `server/tests/realtime.test.ts`. |
-| Pendente | Prévia de link (embed), links na citação, histórico de edições, editar anexos, responder já mencionando o autor e menção a cargo (@Moderadores). |
+| Marcador (`**`, `\|\|`...) aparece em vez da formatação | Não fechou, ficou vazio, está dentro de código, atravessa a borda de uma citação ou é itálico com espaço na ponta (`* a *`). Regras em "Formatação (B25)". |
+| Busca lenta | O `ILIKE '%q%'` usa o índice `pg_trgm` (ADR 0012). Medido no PGlite com 100 mil mensagens: termo raro 8–19 ms, termo comum ~100 ms, num canal só 20–25 ms; **1 ou 2 letras** não usam trigramas (~300 ms). Postgres próprio sem a extensão `pg_trgm` (contrib) falha na migration `0015`. |
+| Resultado não rola até a mensagem | A mensagem foi apagada depois da busca ("Mensagem não encontrada") ou a conta perdeu `view`. |
+| Mensagem nova não aparece depois de abrir um resultado antigo | De propósito: com `hasNewerHistory` o fim da lista não é o fim do canal. Role até o fim ou clique em "Ir para as mensagens recentes". |
+| Pendente | Busca e alfinete no chat embutido da sala de voz, filtros por data/anexo, busca por relevância; prévia de link (embed), links e formatação na citação, escape com ``, histórico de edições, editar anexos, responder já mencionando o autor e menção a cargo (@Moderadores). |

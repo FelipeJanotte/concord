@@ -30,7 +30,7 @@ const sunset: ThemeConfig = { base: 'escuro', accent: '#F97316', background: { s
 describe('preferências', () => {
   it('sem nada salvo, devolve o tema padrão', async () => {
     const a = await user()
-    expect(await a.socket.emitWithAck('preferences:get')).toEqual({ theme: DEFAULT_THEME, savedThemes: [], mutedChannels: [] })
+    expect(await a.socket.emitWithAck('preferences:get')).toEqual({ theme: DEFAULT_THEME, savedThemes: [], mutedChannels: [], doNotDisturb: false })
   })
 
   it('salva o tema (normalizado), vale na outra janela na hora e volta depois de reiniciar', async () => {
@@ -45,7 +45,7 @@ describe('preferências', () => {
     const notMe = expectNoEvent(a.socket, 'preferences:updated')
     const res = await a.socket.emitWithAck('preferences:update', { theme: sunset })
     const normalized = { ...sunset, accent: '#f97316' }
-    expect(res).toEqual({ ok: true, preferences: { theme: normalized, savedThemes: [], mutedChannels: [] } })
+    expect(res).toEqual({ ok: true, preferences: { theme: normalized, savedThemes: [], mutedChannels: [], doNotDisturb: false } })
     expect((await synced)[0].theme).toEqual(normalized)
     await notOthers
     await notMe
@@ -76,7 +76,7 @@ describe('preferências', () => {
   it('tema translúcido (vidro): guardado e devolvido; translucent false vira opaco (sem o campo)', async () => {
     const a = await user()
     const glass: ThemeConfig = { ...sunset, accent: '#f97316', translucent: true }
-    expect(await a.socket.emitWithAck('preferences:update', { theme: glass })).toEqual({ ok: true, preferences: { theme: glass, savedThemes: [], mutedChannels: [] } })
+    expect(await a.socket.emitWithAck('preferences:update', { theme: glass })).toEqual({ ok: true, preferences: { theme: glass, savedThemes: [], mutedChannels: [], doNotDisturb: false } })
     expect((await a.socket.emitWithAck('preferences:get')).theme).toEqual(glass)
     const res = await a.socket.emitWithAck('preferences:update', { theme: { ...glass, translucent: false } as unknown as ThemeConfig })
     expect(res.ok && res.preferences.theme).not.toHaveProperty('translucent')
@@ -101,7 +101,7 @@ describe('preferências', () => {
 
     const synced = waitFor(otherWindow, 'preferences:updated')
     const res = await a.socket.emitWithAck('preferences:update', { mutedChannels: [channelId, channelId] })
-    expect(res).toEqual({ ok: true, preferences: { theme: DEFAULT_THEME, savedThemes: [], mutedChannels: [channelId] } })
+    expect(res).toEqual({ ok: true, preferences: { theme: DEFAULT_THEME, savedThemes: [], mutedChannels: [channelId], doNotDisturb: false } })
     expect((await synced)[0].mutedChannels).toEqual([channelId])
 
     await a.socket.emitWithAck('preferences:update', { theme: sunset })

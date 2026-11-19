@@ -21,7 +21,7 @@ function serverAccepts(): void {
   hello({
     self: { id: 's', accountId: 'me', name: 'Eu', tag: 'eu1', color: '#000', avatarUrl: null },
     account: {} as HelloResponse['account'],
-    state: { channels: [], users: [], voice: [], access: { ownerAccountId: 'me', roles: [], members: [], overrides: [] } }
+    state: { channels: [], users: [], voice: [], access: { ownerAccountId: 'me', roles: [], members: [], overrides: [] }, statuses: {} }
   } as HelloResponse)
 }
 

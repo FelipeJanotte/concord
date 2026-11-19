@@ -1,13 +1,37 @@
 // Mensagens dos canais de texto e das conversas privadas, "digitando", editar (A15) e responder citando (B18).
 import { randomUUID } from 'node:crypto'
-import { ATTACHMENTS_PER_MESSAGE, EVERYONE_TOKEN, MESSAGE_MAX_LENGTH, type ChannelKind, type Message, type OkResult } from '../../src/shared/types'
-import { allowed, emitToViewers } from '../access'
+import {
+  ATTACHMENTS_PER_MESSAGE,
+  canPinMessages,
+  EVERYONE_TOKEN,
+  MESSAGE_MAX_LENGTH,
+  PINS_PER_CHANNEL_MAX,
+  SEARCH_QUERY_MAX,
+  type ChannelKind,
+  type Message,
+  type OkResult,
+  type User
+} from '../../src/shared/types'
+import { allowed, currentAccess, dmChannelsOf, dmMembersOf, emitToViewers, visibleChannels } from '../access'
 import { signMessage } from '../files-signing'
-import { guard, type ServerModule } from '../context'
+import { guard, type AppServer, type ServerModule } from '../context'
 import { limiters, retryText } from '../middleware/rate-limit'
-import { findChannel } from '../repo/channels'
-import { editMessage, findEditable, findReplyTarget, insertMessage, listMessages, resolveMentions } from '../repo/messages'
+import { findChannel, listChannels } from '../repo/channels'
+import {
+  countPins,
+  editMessage,
+  findEditable,
+  findPinState,
+  findReplyTarget,
+  insertMessage,
+  listMessages,
+  listPins,
+  resolveMentions,
+  searchMessages,
+  setPinned
+} from '../repo/messages'
 import { isUuid } from '../repo/util'
+import { timeoutRefusal } from './timeouts'
 
 /** Sem a permissão `mentionEveryone`, o `<@todos>` vira texto comum (B19): ninguém é avisado. */
 async function checkEveryone(accountId: string, content: string): Promise<string> {
@@ -18,6 +42,33 @@ async function checkEveryone(accountId: string, content: string): Promise<string
 
 export async function mentionSafeContent(accountId: string, channelType: ChannelKind, content: string): Promise<string> {
   return channelType === 'dm' ? content.replace(/<@todos>/gi, '@todos') : checkEveryone(accountId, content)
+}
+
+async function searchableChannels(accountId: string, channelId: unknown): Promise<string[]> {
+  if (typeof channelId === 'string') return (await allowed(accountId, 'view', channelId)) ? [channelId] : []
+  const community = visibleChannels(await currentAccess(), accountId, await listChannels()).map((c) => c.id)
+  return [...community, ...dmChannelsOf(accountId)]
+}
+
+async function mayPin(accountId: string, channelId: string): Promise<boolean> {
+  if (dmMembersOf(channelId)) return true
+  return canPinMessages(await currentAccess(), accountId)
+}
+
+async function postPinNotice(io: AppServer, user: User, channelId: string, messageId: string): Promise<void> {
+  const replyTo = await findReplyTarget(messageId, channelId)
+  const notice: Message = {
+    id: randomUUID(),
+    channelId,
+    author: { ...user },
+    content: '',
+    attachments: [],
+    createdAt: Date.now(),
+    kind: 'pin',
+    ...(replyTo ? { replyTo } : {})
+  }
+  const saved = await insertMessage(notice)
+  if (saved) await emitToViewers(io, channelId, 'message:new', saved)
 }
 
 export const messagesModule: ServerModule = {
@@ -33,8 +84,8 @@ export const messagesModule: ServerModule = {
         if (!user || typeof channelId !== 'string') return ack({ messages: [], hasMore: false })
         // sem permissão de ver: igual a canal inexistente
         if (!(await allowed(user.accountId, 'view', channelId))) return ack({ messages: [], hasMore: false })
-        const before = typeof req.before === 'string' ? req.before : undefined
-        const page = await listMessages(channelId, { before })
+        const cursor = (key: 'before' | 'after' | 'around'): string | undefined => (typeof req[key] === 'string' ? req[key] : undefined)
+        const page = await listMessages(channelId, { before: cursor('before'), after: cursor('after'), around: cursor('around') })
         // links dos anexos assinados para esta conta
         ack({ ...page, messages: page.messages.map((m) => signMessage(m, user.accountId)) })
       })
@@ -58,6 +109,8 @@ export const messagesModule: ServerModule = {
         return refuse('Anexos inválidos')
       }
       if (!content && attachmentIds.length === 0) return refuse('Mensagem vazia')
+      const timedOut = timeoutRefusal(user.accountId)
+      if (timedOut) return refuse(timedOut)
       const limited = limiters.message.take(user.accountId)
       if (!limited.ok) {
         socket.emit('rate:limited', { action: 'message', retryAfterMs: limited.retryAfterMs })
@@ -124,6 +177,59 @@ export const messagesModule: ServerModule = {
           editedAt,
           ...(await resolveMentions(content))
         })
+        ack({ ok: true })
+      })
+    })
+
+    socket.on('message:search', (req, ack) => {
+      if (typeof ack !== 'function') return
+      void guard('message:search', async () => {
+        const user = socket.data.user
+        if (!user) return ack({ ok: false, error: 'Não autenticado' })
+        if (!req || typeof req.query !== 'string') return ack({ ok: false, error: 'Pedido inválido' })
+        const query = req.query.trim()
+        const authorId = typeof req.authorId === 'string' ? req.authorId : undefined
+        if (query.length > SEARCH_QUERY_MAX) return ack({ ok: false, error: `A busca pode ter no máximo ${SEARCH_QUERY_MAX} caracteres` })
+        if (!query && !authorId) return ack({ ok: false, error: 'Digite o que buscar' })
+        const limited = limiters.search.take(user.accountId)
+        if (!limited.ok) return ack({ ok: false, error: `Muitas buscas seguidas. ${retryText(limited.retryAfterMs)}` })
+        const channelIds = await searchableChannels(user.accountId, req.channelId)
+        const before = typeof req.before === 'string' ? req.before : undefined
+        const page = await searchMessages({ channelIds, query, authorId, before })
+        ack({ ok: true, ...page, messages: page.messages.map((m) => signMessage(m, user.accountId)) })
+      })
+    })
+
+    socket.on('message:pins', (req, ack) => {
+      if (typeof ack !== 'function') return
+      void guard('message:pins', async () => {
+        const user = socket.data.user
+        const channelId = req?.channelId
+        if (!user || typeof channelId !== 'string' || !(await allowed(user.accountId, 'view', channelId))) return ack([])
+        ack((await listPins(channelId)).map((m) => signMessage(m, user.accountId)))
+      })
+    })
+
+    socket.on('message:pin', (payload, ack) => {
+      if (typeof ack !== 'function') return
+      void guard('message:pin', async () => {
+        const user = socket.data.user
+        if (!user) return ack({ ok: false, error: 'Não autenticado' })
+        if (typeof payload?.messageId !== 'string' || typeof payload.on !== 'boolean') return ack({ ok: false, error: 'Pedido inválido' })
+        const { messageId, on } = payload
+        const target = await findPinState(messageId)
+        if (!target || !(await allowed(user.accountId, 'view', target.channelId))) return ack({ ok: false, error: 'Mensagem não encontrada' })
+        if (target.kind === 'pin') return ack({ ok: false, error: 'Essa mensagem não pode ser fixada' })
+        if (!(await mayPin(user.accountId, target.channelId))) return ack({ ok: false, error: 'Você não tem permissão para fixar mensagens' })
+        if (target.pinned === on) return ack({ ok: true })
+        const limited = limiters.pin.take(user.accountId)
+        if (!limited.ok) return ack({ ok: false, error: `Muitas ações seguidas. ${retryText(limited.retryAfterMs)}` })
+        if (on && (await countPins(target.channelId)) >= PINS_PER_CHANNEL_MAX) {
+          return ack({ ok: false, error: `Este canal já tem ${PINS_PER_CHANNEL_MAX} mensagens fixadas` })
+        }
+        const pinnedAt = await setPinned(messageId, on ? user.accountId : null)
+        await emitToViewers(io, target.channelId, 'message:pinned', { channelId: target.channelId, messageId, pinnedAt })
+        if (on) await postPinNotice(io, user, target.channelId, messageId)
         ack({ ok: true })
       })
     })

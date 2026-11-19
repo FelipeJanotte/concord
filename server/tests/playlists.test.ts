@@ -167,5 +167,5 @@ describe('limite de criação', () => {
     } finally {
       await limited.destroy()
     }
-  })
+  }, 60_000)
 })

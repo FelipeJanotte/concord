@@ -3,6 +3,7 @@ import { join } from 'path'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { externalUrl } from '../shared/links'
 import { googleSignIn } from './google-auth'
+import { setupIdle, type IdleWatcher } from './idle'
 import { setupNotifications } from './notifications'
 import { allowPermission } from './permissions'
 import { setupOverlay, teardownOverlay, type OverlayController } from './overlay'
@@ -18,6 +19,7 @@ import { setupWindowControls, titleBarOptions, watchMaximized } from './window-c
 let mainWindow: BrowserWindow | null = null
 let overlay: OverlayController | null = null
 let pushToTalk: PushToTalkController | null = null
+let idle: IdleWatcher | null = null
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -95,6 +97,7 @@ app.whenReady().then(() => {
   setupThumbar(() => mainWindow)
   void setupUpdater(() => mainWindow).catch((err: unknown) => console.warn('[atualização] não iniciou:', err))
   pushToTalk = setupPushToTalk(() => mainWindow)
+  idle = setupIdle(() => mainWindow)
 
   createWindow()
 
@@ -106,6 +109,7 @@ app.whenReady().then(() => {
 app.on('will-quit', () => {
   teardownOverlay()
   pushToTalk?.destroy()
+  idle?.destroy()
 })
 
 app.on('window-all-closed', () => {

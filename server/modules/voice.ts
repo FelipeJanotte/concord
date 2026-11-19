@@ -28,6 +28,7 @@ import { closeRoom, createVoiceCredentials, kickFromRoom, liveKitConfig, updateV
 import { limiters, retryText } from '../middleware/rate-limit'
 import { findChannel } from '../repo/channels'
 import { listServerMutes, setServerMute } from '../repo/moderation'
+import { isTimedOut, onTimeoutsChange } from './timeouts'
 
 /** socket.id → estado de voz */
 const voice = new Map<string, VoiceState>()
@@ -85,7 +86,7 @@ function forgetConnection(socketId: string): void {
 
 function voicePermissions(access: AccessState, accountId: string, channelId: string): VoicePermissions {
   const perms = channelPermissions(access, accountId, channelId)
-  return { canSpeak: perms.has('speak') && !serverMuted.has(accountId), canShare: perms.has('share'), canVideo: perms.has('video') }
+  return { canSpeak: perms.has('speak') && !isServerMuted(accountId), canShare: perms.has('share'), canVideo: perms.has('video') }
 }
 
 /** Permissões de voz em qualquer sala: numa DM valem os membros e o bloqueio (`allowed`), não os cargos. */
@@ -155,7 +156,7 @@ export function applyVoiceAccess(io: AppServer, access: AccessState): void {
       leaveVoice(io, socket, { emit: false })
       continue
     }
-    state.serverMuted = serverMuted.has(accountId)
+    state.serverMuted = isServerMuted(accountId)
     const next = voicePermissions(access, accountId, state.channelId)
     const before = published.get(socket.id)
     if (before && before.canSpeak === next.canSpeak && before.canShare === next.canShare && before.canVideo === next.canVideo) continue
@@ -186,7 +187,7 @@ function leaveVoice(io: AppServer, socket: AppSocket, { emit = true } = {}): voi
 
 /** A conta está silenciada por um moderador? */
 export function isServerMuted(accountId: string): boolean {
-  return serverMuted.has(accountId)
+  return serverMuted.has(accountId) || isTimedOut(accountId)
 }
 
 /** Tira a conexão `socketId` da sala (moderação). Devolve o estado que ela tinha, ou undefined se não estava em sala. */
@@ -246,6 +247,7 @@ export const voiceModule: ServerModule = {
   async init() {
     serverMuted.clear()
     for (const accountId of await listServerMutes()) serverMuted.add(accountId)
+    onTimeoutsChange((io) => applyVoiceAccess(io, accessSnapshot()))
   },
 
   socket(io, socket) {
@@ -277,7 +279,7 @@ export const voiceModule: ServerModule = {
           userId: socket.id,
           channelId: channel.id,
           muted: !!payload.muted || !permissions.canSpeak,
-          serverMuted: serverMuted.has(user.accountId),
+          serverMuted: isServerMuted(user.accountId),
           deafened: !!payload.deafened,
           // Entrar (ou trocar de sala) começa sem tela; o app avisa com voice:sharing ao publicar.
           sharing: false

@@ -18,7 +18,7 @@ function applyMutedChannels(mutedChannels: string[]): void {
 }
 
 function applyAccountPreferences(prefs: Preferences): void {
-  set({ theme: prefs.theme, savedThemes: prefs.savedThemes, preferencesLoaded: true })
+  set({ theme: prefs.theme, savedThemes: prefs.savedThemes, doNotDisturb: prefs.doNotDisturb, preferencesLoaded: true })
   applyMutedChannels(prefs.mutedChannels)
   applyTheme(prefs.theme)
   saveLocalTheme(prefs.theme)
@@ -27,7 +27,10 @@ function applyAccountPreferences(prefs: Preferences): void {
 export function bindPreferencesEvents(s: AppSocket): void {
   // mudou em outra janela da mesma conta
   s.on('preferences:updated', (prefs) => {
-    if (pendingTheme) return applyMutedChannels(prefs.mutedChannels)
+    if (pendingTheme) {
+      set({ doNotDisturb: prefs.doNotDisturb })
+      return applyMutedChannels(prefs.mutedChannels)
+    }
     applyAccountPreferences(prefs)
   })
 }

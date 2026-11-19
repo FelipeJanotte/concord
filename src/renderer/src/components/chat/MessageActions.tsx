@@ -4,12 +4,12 @@
  * - Editar (A15): o autor, só mensagem de texto;
  * - Apagar (B6): o autor e, fora das conversas privadas, quem tem "Gerenciar mensagens" (mesma regra do servidor).
  */
-import { CornerUpLeft, Pencil, SmilePlus, Trash2 } from 'lucide-react'
+import { CornerUpLeft, Pencil, Pin, PinOff, SmilePlus, Trash2 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { canDeleteMessage, type Message } from '@shared/types'
-import { deleteMessage, notify, openReactionPicker, startEdit, startReply } from '@/lib/client'
+import { deleteMessage, notify, openReactionPicker, pinMessage, startEdit, startReply } from '@/lib/client'
 import { findDm } from '@/lib/dms'
-import { useCan } from '@/lib/permissions'
+import { useCan, useCanPin } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
 
@@ -22,13 +22,19 @@ export function MessageActions({ message }: { message: Message }) {
     if (findDm(s.dms, message.channelId) || !s.access) return message.author.accountId === me
     return canDeleteMessage(s.access, me, message.author.accountId)
   })
-  const canReply = useCan('send', message.channelId)
+  const isNotice = message.kind === 'pin'
+  const canReply = useCan('send', message.channelId) && !isNotice
+  const canPin = useCanPin(message.channelId) && !isNotice
   const canEdit = isAuthor && (message.kind ?? 'text') === 'text'
-  if (!canReply && !canEdit && !canRemove) return null
+  if (!canReply && !canEdit && !canRemove && !canPin) return null
 
   function remove() {
     if (!window.confirm('Apagar esta mensagem? Isso não pode ser desfeito.')) return
     deleteMessage(message.id).catch((err: unknown) => notify(err instanceof Error ? err.message : 'Não foi possível apagar a mensagem'))
+  }
+
+  function togglePin() {
+    pinMessage(message.id, !message.pinnedAt).catch((err: unknown) => notify(err instanceof Error ? err.message : 'Não foi possível fixar a mensagem'))
   }
 
   return (
@@ -41,6 +47,11 @@ export function MessageActions({ message }: { message: Message }) {
       {canReply && (
         <ActionButton label="Responder" onClick={() => startReply(message)}>
           <CornerUpLeft className="size-4" />
+        </ActionButton>
+      )}
+      {canPin && (
+        <ActionButton label={message.pinnedAt ? 'Desafixar mensagem' : 'Fixar mensagem'} onClick={togglePin}>
+          {message.pinnedAt ? <PinOff className="size-4" /> : <Pin className="size-4" />}
         </ActionButton>
       )}
       {canEdit && (

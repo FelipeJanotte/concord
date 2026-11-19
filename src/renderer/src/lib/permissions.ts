@@ -6,6 +6,7 @@
 import {
   can,
   canChangeAnyMemberRoles,
+  canPinMessages,
   displayColor,
   EVERYONE_ROLE_ID,
   type AccessState,
@@ -29,12 +30,19 @@ export function useCan(permission: Permission, channelId?: string): boolean {
   })
 }
 
+export function useCanPin(channelId: string): boolean {
+  return useApp((s) => {
+    if (findDm(s.dms, channelId)) return true
+    return !!s.access && !!s.self && canPinMessages(s.access, s.self.accountId)
+  })
+}
+
 /** Hook: posso abrir as configurações da comunidade (cargos ou membros)? */
 export function useCanAdminister(): boolean {
   return useApp((s) => {
     if (!s.access || !s.self) return false
     const me = s.self.accountId
-    return can(s.access, me, 'manageRoles') || canChangeAnyMemberRoles(s.access, me)
+    return can(s.access, me, 'manageRoles') || can(s.access, me, 'banMembers') || canChangeAnyMemberRoles(s.access, me)
   })
 }
 

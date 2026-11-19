@@ -1,3 +1,4 @@
+import type { IdleBridge } from '../shared/idle'
 import type { OverlayBridge, OverlayViewBridge } from '../shared/overlay'
 import type { PushToTalkBridge } from '../shared/push-to-talk'
 import type { NotificationsBridge } from '../shared/notifications'
@@ -20,6 +21,7 @@ declare global {
       thumbar: ThumbarBridge
       updater: UpdaterBridge
       pushToTalk: PushToTalkBridge
+      idle: IdleBridge
       translucency: TranslucencyBridge
       startup: StartupBridge
       windowControls: WindowControlsBridge

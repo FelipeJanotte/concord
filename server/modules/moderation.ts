@@ -4,13 +4,28 @@
  * a voz em si fica em `server/modules/voice.ts` (`kickFromVoice`, `setServerMuted`).
  * Skill `concord-moderation`.
  */
-import { canDeleteMessage, canModerate, canMoveMember, type OkResult } from '../../src/shared/types'
+import {
+  BAN_REASON_MAX_LENGTH,
+  canBanMember,
+  canDeleteMessage,
+  canKickMember,
+  canModerate,
+  canMoveMember,
+  canTimeoutMember,
+  TIMEOUT_MAX_MINUTES,
+  type CommunityRemoval,
+  type OkResult
+} from '../../src/shared/types'
 import { allowed, currentAccess, dmMembersOf, emitToViewers } from '../access'
-import { guard, type AppSocket, type ServerModule } from '../context'
+import { guard, type AppServer, type AppSocket, type ServerModule } from '../context'
 import { limiters, retryText } from '../middleware/rate-limit'
+import { findAccount } from '../repo/accounts'
 import { findChannel } from '../repo/channels'
 import { deleteMessage, findMessageMeta } from '../repo/messages'
+import { deleteCommunityBan, insertCommunityBan, listCommunityBans } from '../repo/moderation'
+import { deleteAccountSessions } from '../repo/sessions'
 import { storage } from '../storage'
+import { setTimedOut } from './timeouts'
 import { kickFromVoice, setServerMuted, voiceStates } from './voice'
 
 const fail = (error: string): OkResult => ({ ok: false, error })
@@ -23,6 +38,27 @@ function actorOf(socket: AppSocket): { accountId: string; name: string } | OkRes
   if (!limited.ok) return fail(`Muitas ações seguidas. ${retryText(limited.retryAfterMs)}`)
   return { accountId: user.accountId, name: user.name }
 }
+
+const MINUTE_MS = 60_000
+
+async function removeFromCommunity(io: AppServer, accountId: string, removal: CommunityRemoval): Promise<void> {
+  await deleteAccountSessions(accountId)
+  for (const socket of io.sockets.sockets.values()) {
+    if (socket.data.accountId !== accountId) continue
+    socket.emit('moderation:removed', removal)
+    socket.disconnect(true)
+  }
+}
+
+function banReason(raw: unknown): string | null | undefined {
+  if (raw === undefined || raw === null) return null
+  if (typeof raw !== 'string') return undefined
+  const reason = raw.trim()
+  return reason.length > BAN_REASON_MAX_LENGTH ? undefined : reason || null
+}
+
+const isTimeoutMinutes = (minutes: unknown): minutes is number =>
+  typeof minutes === 'number' && Number.isInteger(minutes) && minutes >= 0 && minutes <= TIMEOUT_MAX_MINUTES
 
 export const moderationModule: ServerModule = {
   socket(io, socket) {
@@ -99,6 +135,76 @@ export const moderationModule: ServerModule = {
           if (!visible.some(Boolean)) return ack(fail('Essa pessoa não está numa sala de voz'))
         }
         await setServerMuted(io, accountId, payload.muted, actor.accountId)
+        ack({ ok: true })
+      })
+    })
+
+    socket.on('moderation:kick', (payload, ack) => {
+      if (typeof ack !== 'function') return
+      void guard('moderation:kick', async () => {
+        const actor = actorOf(socket)
+        if ('ok' in actor) return ack(actor)
+        const accountId = typeof payload?.accountId === 'string' ? payload.accountId : ''
+        if (!canKickMember(await currentAccess(), actor.accountId, accountId)) {
+          return ack(fail('Você não pode expulsar essa pessoa da comunidade'))
+        }
+        if (!(await findAccount(accountId))) return ack(fail('Pessoa não encontrada'))
+        await removeFromCommunity(io, accountId, { kind: 'kick', by: actor.name })
+        ack({ ok: true })
+      })
+    })
+
+    socket.on('moderation:ban', (payload, ack) => {
+      if (typeof ack !== 'function') return
+      void guard('moderation:ban', async () => {
+        const actor = actorOf(socket)
+        if ('ok' in actor) return ack(actor)
+        const accountId = typeof payload?.accountId === 'string' ? payload.accountId : ''
+        if (!canBanMember(await currentAccess(), actor.accountId, accountId)) return ack(fail('Você não pode banir essa pessoa'))
+        const reason = banReason(payload?.reason)
+        if (reason === undefined) return ack(fail(`O motivo pode ter no máximo ${BAN_REASON_MAX_LENGTH} caracteres`))
+        const target = await findAccount(accountId)
+        if (!target) return ack(fail('Pessoa não encontrada'))
+        await insertCommunityBan({ accountId, email: target.email, reason, bannedBy: actor.accountId })
+        await removeFromCommunity(io, accountId, { kind: 'ban', reason })
+        ack({ ok: true })
+      })
+    })
+
+    socket.on('moderation:unban', (payload, ack) => {
+      if (typeof ack !== 'function') return
+      void guard('moderation:unban', async () => {
+        const actor = actorOf(socket)
+        if ('ok' in actor) return ack(actor)
+        if (!(await allowed(actor.accountId, 'banMembers'))) return ack(fail('Você não pode tirar banimentos'))
+        const accountId = typeof payload?.accountId === 'string' ? payload.accountId : ''
+        if (!(await deleteCommunityBan(accountId))) return ack(fail('Essa pessoa não está banida'))
+        ack({ ok: true })
+      })
+    })
+
+    socket.on('moderation:bans', (ack) => {
+      if (typeof ack !== 'function') return
+      void guard('moderation:bans', async () => {
+        const user = socket.data.user
+        if (!user || !(await allowed(user.accountId, 'banMembers'))) return ack({ ok: false, error: 'Você não pode ver os banimentos' })
+        ack({ ok: true, bans: await listCommunityBans() })
+      })
+    })
+
+    socket.on('moderation:timeout', (payload, ack) => {
+      if (typeof ack !== 'function') return
+      void guard('moderation:timeout', async () => {
+        const actor = actorOf(socket)
+        if ('ok' in actor) return ack(actor)
+        const accountId = typeof payload?.accountId === 'string' ? payload.accountId : ''
+        const minutes = payload?.minutes
+        if (!isTimeoutMinutes(minutes)) return ack(fail('Escolha de 1 minuto a 7 dias'))
+        if (!canTimeoutMember(await currentAccess(), actor.accountId, accountId)) {
+          return ack(fail('Você não pode pôr essa pessoa de castigo'))
+        }
+        if (!(await findAccount(accountId))) return ack(fail('Pessoa não encontrada'))
+        await setTimedOut(io, accountId, minutes === 0 ? null : Date.now() + minutes * MINUTE_MS, actor.accountId)
         ack({ ok: true })
       })
     })

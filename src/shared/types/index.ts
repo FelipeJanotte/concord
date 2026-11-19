@@ -19,6 +19,7 @@ import type { PlaylistsClientEvents, PlaylistsServerEvents } from './playlists'
 import type { PreferencesClientEvents, PreferencesServerEvents } from './preferences'
 import type { PresenceClientEvents, PresenceServerEvents } from './presence'
 import type { ReactionsClientEvents, ReactionsServerEvents } from './reactions'
+import type { ReadsClientEvents, ReadsServerEvents } from './reads'
 import type { SoundsClientEvents, SoundsServerEvents } from './sounds'
 import type { ToolsClientEvents, ToolsServerEvents } from './tools'
 import type { VoiceClientEvents, VoiceServerEvents } from './voice'
@@ -39,6 +40,7 @@ export * from './playlists'
 export * from './preferences'
 export * from './presence'
 export * from './reactions'
+export * from './reads'
 export * from './sounds'
 export * from './theme'
 export * from './tools'
@@ -59,6 +61,7 @@ export interface ServerToClientEvents
     PreferencesServerEvents,
     PresenceServerEvents,
     ReactionsServerEvents,
+    ReadsServerEvents,
     SoundsServerEvents,
     ToolsServerEvents,
     VoiceServerEvents {}
@@ -77,6 +80,7 @@ export interface ClientToServerEvents
     PreferencesClientEvents,
     PresenceClientEvents,
     ReactionsClientEvents,
+    ReadsClientEvents,
     SoundsClientEvents,
     ToolsClientEvents,
     VoiceClientEvents {}

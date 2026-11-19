@@ -15,6 +15,12 @@ pode mudar) e um **id** (`tag`, 1 a 5 letras/números) e aparece como `Nome#id`.
 4. Nome: sem `#`, espaços colapsados, de 2 a 32 caracteres (`NAME_MAX`). O nome **não** precisa ser único.
 5. Senha: mínimo `PASSWORD_MIN` (8), máximo 200.
 6. Para identificar uma pessoa use **`accountId`**, nunca `User.id` (que é o `socket.id` e muda a cada conexão).
+7. **Banida não entra (A19).** Com uma linha em `community_bans` (pela conta **ou** pelo e-mail), `server/auth.ts`
+   recusa com `BANNED_MESSAGE` ("Você foi banido desta comunidade"): login com e-mail e senha (só depois de a senha
+   conferir, para não revelar o banimento a quem não sabe a senha), login com Google (pelo e-mail antes de tudo e pela
+   conta no fim) e cadastro com o e-mail banido (antes de "Este e-mail já está cadastrado"). `accountFromToken` também
+   devolve `undefined` para conta banida: uma sessão que sobrasse não abre conexão (handshake `unauthorized`). Banir
+   apaga todas as sessões (`deleteAccountSessions`); expulsar também, sem gravar nada. Ver `docs/areas/moderation.md`.
 
 Constantes compartilhadas em `src/shared/types/account.ts`: `NAME_MAX`, `TAG_MAX`, `TAG_PATTERN`, `PASSWORD_MIN`,
 `AVATAR_MAX_BYTES`. Use-as dos dois lados em vez de repetir números.
@@ -140,7 +146,9 @@ A `MemberList` deduplica por `accountId` (a mesma conta pode estar em duas janel
   de conta travada = erro; trocar só o nome = ok; conta Google escolhe id uma vez e na segunda = erro;
   token inválido ou revogado = `unauthorized`; sessão usada é renovada (no máximo 1 vez por dia) e parada 30 dias
   vence (`server/auth.test.ts`, "sessões"); só `unauthorized` apaga o token, servidor fora mantém e tenta de novo
-  (`src/renderer/src/lib/client-session.test.ts`, `components/login-restoring.test.tsx`); imagem que não é PNG/JPEG/WebP/GIF = erro.
+  (`src/renderer/src/lib/client-session.test.ts`, `components/login-restoring.test.tsx`); imagem que não é PNG/JPEG/WebP/GIF = erro;
+  conta ou e-mail banido: login (só com a senha certa), Google, cadastro e sessão antiga recusados (`server/auth.test.ts`,
+  "banimento da comunidade").
 - No app (`npm run dev:all`), o renderer também abre em `http://localhost:5173` no navegador; só o botão do Google
   depende do Electron (`window.api`).
 

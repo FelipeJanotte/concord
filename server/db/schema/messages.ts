@@ -32,14 +32,18 @@ export const messages = pgTable(
      * mensagem que esta responde (B18), do mesmo canal. Sem chave estrangeira de propósito: se a
      * original for apagada, o id fica e a leitura mostra "mensagem apagada".
      */
-    replyToId: uuid('reply_to_id')
+    replyToId: uuid('reply_to_id'),
+    pinnedAt: timestamp('pinned_at', { withTimezone: true }),
+    pinnedBy: uuid('pinned_by').references(() => accounts.id, { onDelete: 'set null' })
   },
   (t) => [
     // Vazio é permitido para mensagem só com anexos (o servidor exige texto ou anexo).
     check('messages_content_check', sql`char_length(${t.content}) <= 2000`),
-    check('messages_kind_check', sql`${t.kind} in ('text', 'tool')`),
+    check('messages_kind_check', sql`${t.kind} in ('text', 'tool', 'pin')`),
     check('messages_tool_check', sql`(${t.kind} = 'tool') = (${t.tool} is not null)`),
     index('messages_channel_seq_idx').on(t.channelId, t.seq.desc()),
-    index('messages_author_id_idx').on(t.authorId)
+    index('messages_author_id_idx').on(t.authorId),
+    index('messages_content_trgm_idx').using('gin', t.content.op('gin_trgm_ops')),
+    index('messages_channel_pinned_idx').on(t.channelId, t.pinnedAt).where(sql`${t.pinnedAt} is not null`)
   ]
 )

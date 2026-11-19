@@ -8,14 +8,16 @@ import { bindToolsEvents } from './actions/tools'
 import { bindPreferencesEvents, loadPreferences } from './actions/preferences'
 import { bindLimitEvents } from './actions/limits'
 import { bindMessageEvents, loadHistory } from './actions/messages'
-import { bindModerationEvents } from './actions/moderation'
+import { bindModerationEvents, loadTimeouts } from './actions/moderation'
 import { loadOverlayPreferences } from './actions/overlay'
 import { loadPushToTalkPreferences } from './actions/push-to-talk'
 import { bindNotificationEvents, stopNotifications } from './actions/notifications'
 import { bindCallsEvents, loadCalls } from './actions/calls'
 import { bindPermissionsEvents } from './actions/permissions'
-import { bindPresenceEvents } from './actions/presence'
+import { bindPinsEvents } from './actions/pins'
+import { bindPresenceEvents, syncActivityStatus } from './actions/presence'
 import { bindReactionsEvents } from './actions/reactions'
+import { bindReadsEvents, loadReads } from './actions/reads'
 import { bindSoundsEvents, loadSounds } from './actions/sounds'
 import { bindMusicEvents } from './actions/music'
 import { bindPlaylistsEvents } from './actions/playlists'
@@ -121,13 +123,15 @@ export function connect(url: string, token: string): Promise<void> {
   bindChannelEvents(s)
   bindMessageEvents(s)
   bindReactionsEvents(s)
+  bindPinsEvents(s)
+  bindReadsEvents(s)
   bindVoiceEvents(s)
   bindLimitEvents(s)
   bindPermissionsEvents(s)
   bindFriendsEvents(s)
   bindToolsEvents(s)
   bindPreferencesEvents(s)
-  bindModerationEvents(s)
+  bindModerationEvents(s, disconnect)
   bindCallsEvents(s)
   bindSoundsEvents(s)
   bindMusicEvents(s)
@@ -148,12 +152,15 @@ export function connect(url: string, token: string): Promise<void> {
           account,
           channels: state.channels,
           users: state.users,
+          statuses: state.statuses,
           voice: state.voice,
           access: state.access,
           messages: {},
           hasMoreHistory: {},
           loadingOlder: {},
           unread: {},
+          lastRead: {},
+          readMarker: {},
           typing: {},
           speaking: {},
           myVoiceChannelId: null,
@@ -161,9 +168,12 @@ export function connect(url: string, token: string): Promise<void> {
         })
         if (keep?.kind === 'text') void loadHistory(keep.channelId)
         void loadFriendsAndDms().catch(() => {})
+        void loadReads().catch(() => {})
         void loadPreferences().catch(() => {})
         void loadCalls().catch(() => {})
+        void syncActivityStatus().catch(() => {})
         void loadSounds().catch(() => {})
+        void loadTimeouts().catch(() => {})
         if (!settled) {
           settled = true
           resolve()
@@ -217,6 +227,8 @@ export * from './actions/account'
 export * from './actions/channels'
 export * from './actions/messages'
 export * from './actions/reactions'
+export * from './actions/pins'
+export * from './actions/search'
 export * from './actions/moderation'
 export * from './actions/navigation'
 export { acceptCall, cancelCall, declineCall, hangUp, startCall } from './actions/calls'
@@ -229,6 +241,7 @@ export * from './actions/devices'
 export * from './actions/friends'
 export * from './actions/tools'
 export * from './actions/preferences'
+export { setDoNotDisturb } from './actions/presence'
 export * from './actions/settings'
 export * from './actions/sounds'
 export { closeMusicQueue, dismissCollection, loadMusicQueue, openMusicQueue, pauseMusic, playMusic, resumeMusic, runMusicCommand, skipMusic, stopMusic, trackDuration } from './actions/music'

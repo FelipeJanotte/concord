@@ -12,7 +12,7 @@ os tokens de cada parte da tela são **derivados** dela no app (`deriveTokens`, 
 | `src/shared/types/preferences.ts` | `Preferences { theme, savedThemes, mutedChannels }` (canais silenciados: `docs/areas/notifications.md`), `PreferencesUpdate`, eventos `preferences:*`. |
 | `server/modules/preferences.ts` | `preferences:get`, `preferences:update` (valida tudo com o contrato; avisa as outras janelas da mesma conta). |
 | `server/repo/preferences.ts` | `getPreferences` (sem registro → padrão) e `updatePreferences` (grava só o que veio; cria na primeira vez). |
-| `server/db/schema/preferences.ts` | Tabela `account_preferences` (migration `0004_preferences`): `theme` e `saved_themes` em jsonb (`muted_channels` na `0013_muted_channels`); apagar a conta apaga junto. |
+| `server/db/schema/preferences.ts` | Tabela `account_preferences` (migration `0004_preferences`): `theme` e `saved_themes` em jsonb (`muted_channels` na `0013_muted_channels`, `do_not_disturb` na `0015_v8`, `docs/areas/presence.md`); apagar a conta apaga junto. |
 
 ## Contrato
 
@@ -47,7 +47,7 @@ A v5 inteira é do **Dev A** (B11 e B12 transferidas do Dev B).
 | Arquivo | Papel |
 |---|---|
 | `src/renderer/src/lib/theme/color.ts` | Puras: `mix`, `average`, `luminance`, `contrast` (WCAG), `ensureContrast` (puxa o texto para o branco/preto até 4,5:1 com todas as superfícies), `readableOn`. |
-| `src/renderer/src/lib/theme/derive.ts` | `deriveTokens(theme)` → `{ tokens, gradient, gradientStops, colorScheme }`; `THEME_TOKENS` (os nomes das variáveis CSS). |
+| `src/renderer/src/lib/theme/derive.ts` | `deriveTokens(theme)` → `{ tokens, gradient, gradientStops, colorScheme }`; `THEME_TOKENS` (os nomes das variáveis CSS; `idle` é a bolinha amarela de ausente, B28). |
 | `src/renderer/src/lib/theme/presets.ts` | `THEME_PRESETS`: 14 temas prontos (Padrão, Aurora, Pôr do sol, Oceano, Floresta, Neon, Grafite, Lavanda, Cereja, Claro, Amanhecer e os translúcidos Vidro, Vidro aurora e Vidro claro). |
 | `src/renderer/src/lib/theme/apply.ts` | `applyTheme` (variáveis no `<html>`, `--app-gradient`, `color-scheme`, transição de 300 ms), `saveLocalTheme`/`loadLocalTheme` (`concord:theme` no `localStorage`). |
 | `src/renderer/src/lib/actions/preferences.ts` | `loadPreferences` (depois do `hello`), listener `preferences:updated`, `previewTheme`, `setTheme` (envio agrupado em 400 ms), `flushPendingTheme`, `saveThemes`. |

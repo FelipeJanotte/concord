@@ -32,10 +32,12 @@ import { friendsModule } from './modules/friends'
 import { preferencesModule } from './modules/preferences'
 import { presenceModule } from './modules/presence'
 import { reactionsModule } from './modules/reactions'
+import { readsModule } from './modules/reads'
 import { uploadsModule } from './modules/uploads'
 import { playlistsModule } from './modules/playlists'
 import { soundsModule } from './modules/sounds'
 import { pollsModule } from './modules/polls'
+import { timeoutsModule } from './modules/timeouts'
 import { toolsModule } from './modules/tools'
 import { voiceModule } from './modules/voice'
 
@@ -51,8 +53,10 @@ const modules: ServerModule[] = [
   channelsModule,
   messagesModule,
   reactionsModule,
+  readsModule,
   voiceModule,
   moderationModule,
+  timeoutsModule,
   callsModule,
   soundsModule,
   playlistsModule,

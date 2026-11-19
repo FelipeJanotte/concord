@@ -2,14 +2,14 @@
 import type { User } from './account'
 import type { Attachment } from './attachment'
 import type { Mention } from './mentions'
-import type { OkResult } from './permissions'
+import { globalPermissions, type AccessState, type OkResult } from './permissions'
 import type { Reaction } from './reactions'
 import type { ToolPayload } from './tools'
 
 export const MESSAGE_MAX_LENGTH = 2000
 
 /** `text` = escrita por alguém; `tool` = resultado de uma ferramenta do grupo (v4, `tool` preenchido). */
-export type MessageKind = 'text' | 'tool'
+export type MessageKind = 'text' | 'tool' | 'pin'
 /** Quantas mensagens vêm por página do histórico. */
 export const HISTORY_PAGE_SIZE = 50
 /** Tamanho do trecho da mensagem respondida que aparece na citação (B18). */
@@ -62,6 +62,7 @@ export interface Message {
   reactions?: Reaction[]
   /** contas mencionadas no texto com o nome atual (B19); ausente = nenhuma (o @todos está no próprio texto) */
   mentions?: Mention[]
+  pinnedAt?: number
 }
 
 /** `message:send`: texto e/ou anexos já enviados por `POST /uploads` (do próprio usuário, ainda não usados). */
@@ -102,12 +103,44 @@ export type MessageEdited = TextMessageEdited | ToolMessageUpdated
 export interface HistoryRequest {
   channelId: string
   before?: string
+  after?: string
+  around?: string
 }
 
 /** Página do histórico (da mais antiga para a mais nova) e se existem mensagens mais antigas. */
 export interface HistoryPage {
   messages: Message[]
   hasMore: boolean
+  hasNewer?: boolean
+}
+
+export const SEARCH_PAGE_SIZE = 25
+export const SEARCH_QUERY_MAX = 100
+
+export interface SearchRequest {
+  query: string
+  channelId?: string
+  authorId?: string
+  before?: string
+}
+
+export type SearchResult = { ok: true; messages: Message[]; hasMore: boolean } | { ok: false; error: string }
+
+export const PINS_PER_CHANNEL_MAX = 50
+
+export interface PinMessagePayload {
+  messageId: string
+  on: boolean
+}
+
+export interface MessagePinned {
+  channelId: string
+  messageId: string
+  pinnedAt: number | null
+}
+
+export function canPinMessages(access: AccessState, accountId: string): boolean {
+  return globalPermissions(access, accountId).has('manageMessages')
 }
 
 // ---------- Eventos ----------
@@ -117,6 +150,7 @@ export interface MessageServerEvents {
   /** uma mensagem foi editada (A15; para quem vê o canal) */
   'message:edited': (payload: MessageEdited) => void
   typing: (payload: { channelId: string; userId: string; name: string }) => void
+  'message:pinned': (payload: MessagePinned) => void
 }
 
 export interface MessageClientEvents {
@@ -125,4 +159,7 @@ export interface MessageClientEvents {
   /** edita a própria mensagem (A15) */
   'message:edit': (payload: EditMessagePayload, ack: (res: OkResult) => void) => void
   typing: (channelId: string) => void
+  'message:search': (req: SearchRequest, ack: (res: SearchResult) => void) => void
+  'message:pin': (payload: PinMessagePayload, ack: (res: OkResult) => void) => void
+  'message:pins': (req: { channelId: string }, ack: (messages: Message[]) => void) => void
 }

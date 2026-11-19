@@ -33,11 +33,12 @@ describe('connect', () => {
     hello({
       self: { id: 's', accountId: 'me', name: 'Eu', tag: 'eu1', color: '#000', avatarUrl: null },
       account: {} as HelloResponse['account'],
-      state: { channels: [], users: [], voice: [], access: { ownerAccountId: 'me', roles: [], members: [], overrides: [] } }
+      state: { channels: [], users: [], voice: [], access: { ownerAccountId: 'me', roles: [], members: [], overrides: [] }, statuses: { me: 'dnd' } }
     } as HelloResponse)
     await done
     await vi.waitFor(() => expect(useApp.getState().friendsLoaded).toBe(true))
     expect(useApp.getState()).toMatchObject({ friends: [friend], dms: [dm] })
+    expect(useApp.getState().statuses).toEqual({ me: 'dnd' })
     expect(fake.sent('friend:list')).toHaveLength(1)
     // v5: o tema da conta também chega logo depois do hello
     await vi.waitFor(() => expect(useApp.getState().preferencesLoaded).toBe(true))

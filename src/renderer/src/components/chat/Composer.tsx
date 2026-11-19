@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type RefObject } from 'react'
 import { Paperclip, SendHorizontal } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
-import { EVERYONE_TOKEN, MENTION_EVERYONE, MESSAGE_MAX_LENGTH, mentionToken, type Channel } from '@shared/types'
+import { EVERYONE_TOKEN, MENTION_EVERYONE, MESSAGE_MAX_LENGTH, mentionToken, timeoutMessage, type Channel } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { addFiles, cancelReply, editLastMessage, notifyTyping, runMusicCommand, sendMessage } from '@/lib/client'
 import { commandBlock, commandDraft, commandSuggestions, type ChatCommand } from '@/lib/commands'
@@ -56,6 +56,7 @@ export function Composer({ channel }: { channel: Channel }) {
   const ready = uploads.some((u) => u.status === 'done')
   const allowedSend = useCan('send', channel.id)
   const allowedAttach = useCan('attach', channel.id)
+  const timedOutUntil = useApp((s) => (s.self ? s.timeouts[s.self.accountId] : undefined))
   const label = useApp((s) => chatLabel(channel, s.dms))
   const canSend = allowedSend && !uploading && (!!value.trim() || ready)
   const replying = useApp((s) => !!s.replyingTo[channel.id])
@@ -194,15 +195,8 @@ export function Composer({ channel }: { channel: Channel }) {
     addFiles(channel.id, files)
   }
 
-  if (!allowedSend) {
-    return (
-      <div className="shrink-0 px-4 pb-6">
-        <div className="rounded-lg bg-composer px-4 py-3 text-[15px] text-muted-foreground">
-          Você não tem permissão para enviar mensagens neste canal.
-        </div>
-      </div>
-    )
-  }
+  if (!allowedSend) return <BlockedComposer text="Você não tem permissão para enviar mensagens neste canal." />
+  if (timedOutUntil !== undefined) return <BlockedComposer text={`${timeoutMessage(timedOutUntil, Date.now())}.`} />
 
   return (
     <div className="shrink-0 px-4">
@@ -279,6 +273,14 @@ export function Composer({ channel }: { channel: Channel }) {
         </div>
       </div>
       <TypingIndicator channelId={channel.id} />
+    </div>
+  )
+}
+
+function BlockedComposer({ text }: { text: string }) {
+  return (
+    <div className="shrink-0 px-4 pb-6">
+      <div className="rounded-lg bg-composer px-4 py-3 text-[15px] text-muted-foreground">{text}</div>
     </div>
   )
 }

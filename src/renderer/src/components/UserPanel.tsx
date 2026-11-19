@@ -1,13 +1,15 @@
 import { useEffect, type ComponentProps, type ReactNode } from 'react'
+import { Menu, MenuContent, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger } from '@ui-sdk/react/menu'
 import { AudioLines, HeadphoneOff, Headphones, Mic, MicOff, MonitorOff, MonitorUp, Music, PhoneOff, Settings, Signal, Video, VideoOff } from 'lucide-react'
-import { joinVoice, leaveVoice, openDeviceSettings, openDmChat, openSettings, toggleCamera, toggleDeafen, toggleMute, toggleScreenShare } from '@/lib/client'
+import { joinVoice, leaveVoice, openDeviceSettings, openDmChat, openSettings, setDoNotDisturb, toggleCamera, toggleDeafen, toggleMute, toggleScreenShare } from '@/lib/client'
 import { findDm } from '@/lib/dms'
+import { usePresence, type DotStatus } from '@/lib/presence'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
 import { IconButton } from './IconButton'
 import { UserSettingsDialog } from './settings/UserSettingsDialog'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
-import { UserAvatar } from './UserAvatar'
+import { StatusDot, UserAvatar } from './UserAvatar'
 import { ScreenPicker } from './voice/ScreenPicker'
 import { ScreenViewers } from './voice/ScreenViewers'
 import { SoundboardPopover } from './voice/Soundboard'
@@ -106,24 +108,27 @@ export function UserPanel() {
   useEffect(() => {
     if (mustChooseTag) openSettings('account')
   }, [mustChooseTag])
+  const status = usePresence(self?.accountId ?? '')
   if (!self) return null
 
   return (
     <div className="flex h-[52px] shrink-0 items-center gap-1 bg-panel px-2">
-      <button
-        onClick={() => openSettings('account')}
-        className="flex min-w-0 flex-1 items-center gap-2 rounded-md py-1 pr-1 pl-0.5 text-left hover:bg-accent/50"
-        title="Minha conta"
-      >
-        <div className="relative">
-          <UserAvatar user={self} speaking={speaking} />
-          <span className="absolute -right-0.5 -bottom-0.5 size-3.5 rounded-full border-[3px] border-panel bg-success" />
-        </div>
-        <div className="min-w-0 leading-tight">
-          <div className="truncate text-sm font-semibold text-accent-foreground">{self.name}</div>
-          <div className="truncate text-xs text-muted-foreground">#{self.tag}</div>
-        </div>
-      </button>
+      <Menu>
+        <MenuTrigger
+          aria-label="Status e conta"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-md py-1 pr-1 pl-0.5 text-left hover:bg-accent/50 data-open:bg-accent/50"
+        >
+          <div className="relative">
+            <UserAvatar user={self} speaking={speaking} />
+            <StatusDot status={status} className="border-panel" />
+          </div>
+          <div className="min-w-0 leading-tight">
+            <div className="truncate text-sm font-semibold text-accent-foreground">{self.name}</div>
+            <div className="truncate text-xs text-muted-foreground">#{self.tag}</div>
+          </div>
+        </MenuTrigger>
+        <StatusMenuContent />
+      </Menu>
       <IconButton label={muted ? 'Ativar microfone' : 'Silenciar microfone'} onClick={toggleMute} danger={muted}>
         {muted ? <MicOff /> : <Mic />}
       </IconButton>
@@ -139,5 +144,43 @@ export function UserPanel() {
       <UserSettingsDialog />
       <ScreenPicker />
     </div>
+  )
+}
+
+
+const MENU_ITEM = 'flex w-full cursor-default items-start gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-none data-highlighted:bg-accent data-highlighted:text-accent-foreground'
+
+function StatusMenuContent() {
+  const doNotDisturb = useApp((s) => s.doNotDisturb)
+
+  return (
+    <MenuContent side="top" align="start" sideOffset={8} data-glass="surface" className="w-64 rounded-md border border-border bg-popover p-1.5 text-popover-foreground shadow-md">
+      <MenuRadioGroup value={doNotDisturb ? 'dnd' : 'online'} onValueChange={(value) => void setDoNotDisturb(value === 'dnd')}>
+        <MenuRadioItem value="online" closeOnSelect className={MENU_ITEM}>
+          <StatusOption status="online" label="Online" />
+        </MenuRadioItem>
+        <MenuRadioItem value="dnd" closeOnSelect className={MENU_ITEM}>
+          <StatusOption status="dnd" label="Não perturbe" hint="Sem notificações nem sons de mensagem. Chamadas continuam tocando." />
+        </MenuRadioItem>
+      </MenuRadioGroup>
+      <MenuSeparator className="my-1 h-px bg-border" />
+      <MenuItem onSelect={() => openSettings('account')} className={MENU_ITEM}>
+        Minha conta
+      </MenuItem>
+    </MenuContent>
+  )
+}
+
+function StatusOption({ status, label, hint }: { status: DotStatus; label: string; hint?: string }) {
+  return (
+    <>
+      <span aria-hidden className="relative mt-1 size-2.5 shrink-0">
+        <StatusDot status={status} className="inset-0 size-2.5 border-0" />
+      </span>
+      <span className="min-w-0">
+        <span className="block font-medium">{label}</span>
+        {hint && <span className="block text-xs text-muted-foreground">{hint}</span>}
+      </span>
+    </>
   )
 }

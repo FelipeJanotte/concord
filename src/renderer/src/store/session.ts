@@ -1,5 +1,5 @@
 // Conexão, conta logada, quem está online e avisos (toast).
-import type { AccountInfo, User } from '@shared/types'
+import type { AccountInfo, PresenceStatus, User } from '@shared/types'
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting'
 
@@ -19,6 +19,7 @@ export interface SessionState {
   restoring: boolean
   /** usuários online (uma entrada por conexão) */
   users: User[]
+  statuses: Record<string, PresenceStatus>
   notice: Notice | null
 }
 
@@ -29,5 +30,6 @@ export const sessionInitial: SessionState = {
   account: null,
   restoring: false,
   users: [],
+  statuses: {},
   notice: null
 }

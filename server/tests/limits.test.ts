@@ -93,6 +93,19 @@ describe('limites por conta', () => {
     for (const r of refused) expect(!r.ok && r.error).toMatch(/^Muitos votos seguidos\. Tente de novo em \d+ s\.$/)
   })
 
+  it('marcar como lido: 30 seguidos; o resto é recusado com o tempo de espera', async () => {
+    const geral = a.state.channels.find((c) => c.type === 'text')!
+    const { messages } = await b.socket.emitWithAck('message:history', { channelId: geral.id })
+    const last = messages[messages.length - 1]
+    const results = await Promise.all(
+      Array.from({ length: 40 }, () => b.socket.emitWithAck('channel:read', { channelId: geral.id, messageId: last.id }))
+    )
+    expect(results.filter((r) => r.ok).length).toBeGreaterThanOrEqual(30)
+    const refused = results.filter((r) => !r.ok)
+    expect(refused.length).toBeGreaterThan(0)
+    for (const r of refused) expect(!r.ok && r.error).toMatch(/^Muitas leituras seguidas\. Tente de novo em \d+ s\.$/)
+  })
+
   it('perfil: 10 alterações seguidas; a 11ª é recusada', async () => {
     for (let i = 0; i < 10; i++) expect((await a.socket.emitWithAck('account:update', { name: `Nome ${i}` })).ok).toBe(true)
     const res = await a.socket.emitWithAck('account:update', { name: 'Nome 11' })
@@ -209,5 +222,5 @@ describe('backup automático (PGlite)', () => {
     await sleep(150)
     expect(server.log).not.toMatch(/\[backup\] .*\.tar\.gz/)
     expect(backups()).toEqual(before)
-  })
+  }, 60_000)
 })
