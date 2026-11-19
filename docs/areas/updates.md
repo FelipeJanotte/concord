@@ -76,13 +76,14 @@ A primeira versão com a A13 precisa ser instalada à mão (as anteriores não s
 | Item | Como é |
 |---|---|
 | Arquivo | `<userData>/migrate.json`, escrito em `migrate.json.tmp` e renomeado (nunca fica pela metade). |
-| Quando | A cada partida, no `did-finish-load` da janela principal (`setupMigration` em `src/main/migration.ts`). |
+| Quando | No `did-finish-load` da janela principal e de novo ao fechá-la (`setupMigration`/`watchMigration` em `src/main/migration.ts`): o `close` é adiado até a gravação terminar, no máximo 2 s, uma vez só. |
 | Formato | `{ "version": 1, "exportedAt": "<ISO>", "entries": { "<chave>": "<valor cru do localStorage>" } }`; só chaves `concord:*`. |
 | Para quê | O app Tauri tem outra origem e não enxerga o localStorage do Electron: ele lê este arquivo na primeira execução. |
 | Pasta de instalação | `autoUpdater.installDirectory` = pasta de `app.getPath('exe')` (só empacotado), para o instalador do Tauri cair na mesma pasta. |
 | Falha | Só `console.error`; o app segue normalmente. |
+| Limite | Só vale o que está salvo ao fechar pela janela: fechar por fora (processo morto, queda de energia, instalador que mata o app) deixa o arquivo da última gravação. |
 
-Testes: `src/main/migration.test.ts` (filtro `concord:`, formato, temporário + rename, falha logada) e `src/main/updater.test.ts` (pasta de instalação fixada só no app instalado).
+Testes: `src/main/migration.test.ts` (filtro `concord:`, formato, temporário + rename, falha logada com o arquivo anterior intacto, gravação ao carregar e ao fechar, fechamento após 2 s) e `src/main/updater.test.ts` (pasta de instalação fixada só no app instalado).
 
 ## Testes
 
