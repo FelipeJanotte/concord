@@ -14,6 +14,7 @@ import { musicInitial, type MusicSliceState } from './music'
 import { playlistsInitial, type PlaylistsState } from './playlists'
 import { pushToTalkInitial, type PushToTalkState } from './push-to-talk'
 import { permissionsInitial, type PermissionsState } from './permissions'
+import { searchInitial, type SearchState } from './search'
 import { sessionInitial, type SessionState } from './session'
 import { settingsInitial, type SettingsState } from './settings'
 import { soundsInitial, type SoundsState } from './sounds'
@@ -32,7 +33,7 @@ export type { PlayingSound } from './sounds'
 export type { ChannelNotifyMode } from './notifications'
 export type { SettingsSection } from './settings'
 
-export interface AppState extends SessionState, ChannelsState, MessagesState, UploadsState, VoiceSliceState, DevicesState, PermissionsState, FriendsState, ToolsState, PreferencesState, NavigationState, CallsState, SoundsState, MusicSliceState, PlaylistsState, OverlayState, UpdatesState, PushToTalkState, NotificationsState, SettingsState, StartupState, WindowState, ModerationState {}
+export interface AppState extends SessionState, ChannelsState, MessagesState, UploadsState, VoiceSliceState, DevicesState, PermissionsState, FriendsState, ToolsState, PreferencesState, NavigationState, CallsState, SoundsState, MusicSliceState, PlaylistsState, OverlayState, UpdatesState, PushToTalkState, NotificationsState, SettingsState, StartupState, WindowState, ModerationState, SearchState {}
 
 export const initialState: AppState = {
   ...sessionInitial,
@@ -57,7 +58,8 @@ export const initialState: AppState = {
   ...pushToTalkInitial,
   ...settingsInitial,
   ...startupInitial,
-  ...moderationInitial
+  ...moderationInitial,
+  ...searchInitial
 }
 
 export const useApp = create<AppState>()(() => initialState)

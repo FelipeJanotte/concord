@@ -20,6 +20,9 @@ export interface MessagesState {
   editingMessageId: string | null
   /** mensagem com o seletor de reação aberto (A16); só um por vez */
   reactionPickerFor: string | null
+  hasNewerHistory: Record<string, boolean>
+  jumpTarget: { channelId: string; messageId: string } | null
+  pins: Record<string, Message[]>
 }
 
 export const messagesInitial: MessagesState = {
@@ -29,5 +32,8 @@ export const messagesInitial: MessagesState = {
   typing: {},
   replyingTo: {},
   editingMessageId: null,
-  reactionPickerFor: null
+  reactionPickerFor: null,
+  hasNewerHistory: {},
+  jumpTarget: null,
+  pins: {}
 }

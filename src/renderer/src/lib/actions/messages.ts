@@ -13,7 +13,7 @@ export function bindMessageEvents(s: AppSocket): void {
       const isActive = isChatOnScreen(st, message.channelId)
       const typingInChannel = st.typing[message.channelId]
       return {
-        messages: list ? { ...st.messages, [message.channelId]: [...list, message] } : st.messages,
+        messages: list && !st.hasNewerHistory[message.channelId] ? { ...st.messages, [message.channelId]: [...list, message] } : st.messages,
         unread:
           !isActive && message.author.id !== st.self?.id && !st.mutedChannels.includes(message.channelId) ? { ...st.unread, [message.channelId]: true } : st.unread,
         typing: typingInChannel?.[message.author.id]
@@ -50,15 +50,29 @@ export function bindMessageEvents(s: AppSocket): void {
 }
 
 const loadingHistory = new Set<string>()
+const loadingNewer = new Set<string>()
+const historyVersions = new Map<string, number>()
+
+const historyVersion = (channelId: string): number => historyVersions.get(channelId) ?? 0
+
+function replaceHistory(channelId: string): void {
+  historyVersions.set(channelId, historyVersion(channelId) + 1)
+}
 
 /** Carrega a página mais recente do canal (uma vez; depois as novas chegam por `message:new`). */
 export async function loadHistory(channelId: string): Promise<void> {
   const socket = getSocket()
   if (!socket || get().messages[channelId] || loadingHistory.has(channelId)) return
   loadingHistory.add(channelId)
+  const version = historyVersion(channelId)
+  let stale = false
   try {
     const page = await socket.emitWithAck('message:history', { channelId })
+    stale = historyVersion(channelId) !== version
+    if (stale) return
     set((st) => ({
+      hasNewerHistory: omit(st.hasNewerHistory, channelId),
+      pins: omit(st.pins, channelId),
       // mensagens que chegaram enquanto a página vinha não se perdem
       messages: { ...st.messages, [channelId]: mergeMessages(page.messages, st.messages[channelId] ?? []) },
       hasMoreHistory: { ...st.hasMoreHistory, [channelId]: page.hasMore }
@@ -68,6 +82,7 @@ export async function loadHistory(channelId: string): Promise<void> {
     notify('Não foi possível carregar as mensagens')
   } finally {
     loadingHistory.delete(channelId)
+    if (stale && !get().messages[channelId]) void loadHistory(channelId)
   }
 }
 
@@ -78,8 +93,10 @@ export async function loadOlderMessages(channelId: string): Promise<void> {
   const current = st.messages[channelId]
   if (!socket || !current?.length || !st.hasMoreHistory[channelId] || st.loadingOlder[channelId]) return
   set((s) => ({ loadingOlder: { ...s.loadingOlder, [channelId]: true } }))
+  const version = historyVersion(channelId)
   try {
     const page = await socket.emitWithAck('message:history', { channelId, before: current[0].id })
+    if (historyVersion(channelId) !== version) return
     set((s) => {
       const list = s.messages[channelId]
       if (!list) return {} // canal apagado enquanto carregava
@@ -94,6 +111,64 @@ export async function loadOlderMessages(channelId: string): Promise<void> {
   } finally {
     set((s) => ({ loadingOlder: omit(s.loadingOlder, channelId) }))
   }
+}
+
+export async function loadHistoryAround(channelId: string, messageId: string): Promise<boolean> {
+  replaceHistory(channelId)
+  const version = historyVersion(channelId)
+  loadingHistory.add(channelId)
+  let found = false
+  try {
+    const page = await requireSocket().emitWithAck('message:history', { channelId, around: messageId })
+    if (historyVersion(channelId) !== version) return false
+    found = page.messages.some((m) => m.id === messageId)
+    if (!found) return false
+    set((st) => ({
+      messages: { ...st.messages, [channelId]: page.messages },
+      hasMoreHistory: { ...st.hasMoreHistory, [channelId]: page.hasMore },
+      hasNewerHistory: { ...st.hasNewerHistory, [channelId]: !!page.hasNewer }
+    }))
+    void loadMyPollVotes(page.messages)
+    return true
+  } finally {
+    loadingHistory.delete(channelId)
+    if (!found && !get().messages[channelId]) void loadHistory(channelId)
+  }
+}
+
+export async function loadNewerMessages(channelId: string): Promise<void> {
+  const socket = getSocket()
+  const last = get().messages[channelId]?.at(-1)
+  if (!socket || !last || !get().hasNewerHistory[channelId] || loadingNewer.has(channelId)) return
+  loadingNewer.add(channelId)
+  const version = historyVersion(channelId)
+  try {
+    const page = await socket.emitWithAck('message:history', { channelId, after: last.id })
+    if (historyVersion(channelId) !== version) return
+    set((st) => {
+      const list = st.messages[channelId]
+      if (!list) return {}
+      return {
+        messages: { ...st.messages, [channelId]: mergeMessages(list, page.messages) },
+        hasNewerHistory: { ...st.hasNewerHistory, [channelId]: !!page.hasNewer }
+      }
+    })
+    void loadMyPollVotes(page.messages)
+  } catch {
+    notify('Não foi possível carregar as mensagens')
+  } finally {
+    loadingNewer.delete(channelId)
+  }
+}
+
+export async function jumpToPresent(channelId: string): Promise<void> {
+  replaceHistory(channelId)
+  set((st) => ({ messages: omit(st.messages, channelId), hasNewerHistory: omit(st.hasNewerHistory, channelId), jumpTarget: null }))
+  await loadHistory(channelId)
+}
+
+export function clearJumpTarget(): void {
+  set({ jumpTarget: null })
 }
 
 /** Junta `older` antes de `newer`, sem repetir mensagens. */

@@ -5,8 +5,8 @@
  * histórico mostra nome/foto atuais. A cópia `author_*` só aparece quando a
  * conta não existe mais (ou em mensagens importadas de antes das contas).
  */
-import { and, desc, eq, inArray, isNull, lt } from 'drizzle-orm'
-import { HISTORY_PAGE_SIZE, parseMentions, replyPreviewText, type Attachment, type Mention, type Message, type ReplyPreview, type ToolPayload } from '../../src/shared/types'
+import { and, asc, count, desc, eq, gte, ilike, inArray, isNotNull, isNull, lt } from 'drizzle-orm'
+import { HISTORY_PAGE_SIZE, SEARCH_PAGE_SIZE, parseMentions, replyPreviewText, type Attachment, type Mention, type Message, type ReplyPreview, type ToolPayload } from '../../src/shared/types'
 import { db } from '../db/client'
 import { accounts, attachments, messages } from '../db/schema'
 import { accountNames, avatarUrl } from './accounts'
@@ -15,71 +15,166 @@ import { reactionsByMessage } from './reactions'
 import { isUuid } from './util'
 
 export interface HistoryOptions {
-  /** id da mensagem mais antiga que o cliente já tem; devolve só as anteriores a ela */
   before?: string
+  after?: string
+  around?: string
   limit?: number
 }
 
-/** Uma página do histórico, da mais antiga para a mais nova, e se existem mais antigas. */
-export async function listMessages(
-  channelId: string,
-  { before, limit = HISTORY_PAGE_SIZE }: HistoryOptions = {}
-): Promise<{ messages: Message[]; hasMore: boolean }> {
-  const empty = { messages: [], hasMore: false }
-  if (!isUuid(channelId)) return empty
+export interface HistoryResult {
+  messages: Message[]
+  hasMore: boolean
+  hasNewer?: boolean
+}
+
+type MessageRow = { m: typeof messages.$inferSelect; a: typeof accounts.$inferSelect | null }
+
+const EMPTY_PAGE: HistoryResult = { messages: [], hasMore: false }
+
+function selectRows() {
+  return db().select({ m: messages, a: accounts }).from(messages).leftJoin(accounts, eq(accounts.id, messages.authorId))
+}
+
+async function seqOf(id: string, channelId: string): Promise<number | undefined> {
+  if (!isUuid(id)) return undefined
+  const [ref] = await db()
+    .select({ seq: messages.seq })
+    .from(messages)
+    .where(and(eq(messages.id, id), eq(messages.channelId, channelId)))
+    .limit(1)
+  return ref?.seq
+}
+
+const olderThan = (channelId: string, seq: number, size: number) =>
+  selectRows().where(and(eq(messages.channelId, channelId), lt(messages.seq, seq))).orderBy(desc(messages.seq)).limit(size + 1)
+
+const fromSeq = (channelId: string, seq: number, size: number) =>
+  selectRows().where(and(eq(messages.channelId, channelId), gte(messages.seq, seq))).orderBy(asc(messages.seq)).limit(size + 1)
+
+export async function listMessages(channelId: string, { before, after, around, limit = HISTORY_PAGE_SIZE }: HistoryOptions = {}): Promise<HistoryResult> {
+  if (!isUuid(channelId)) return EMPTY_PAGE
   const size = Math.min(Math.max(Math.trunc(limit) || HISTORY_PAGE_SIZE, 1), 100)
 
-  let cursor: number | undefined
+  if (around !== undefined) {
+    const seq = await seqOf(around, channelId)
+    if (seq === undefined) return EMPTY_PAGE
+    const half = Math.ceil(size / 2)
+    const older = await olderThan(channelId, seq, size - half)
+    const newer = await fromSeq(channelId, seq, half)
+    return {
+      messages: await toMessages([...older.slice(0, size - half).reverse(), ...newer.slice(0, half)]),
+      hasMore: older.length > size - half,
+      hasNewer: newer.length > half
+    }
+  }
+
+  if (after !== undefined) {
+    const seq = await seqOf(after, channelId)
+    if (seq === undefined) return EMPTY_PAGE
+    const rows = await fromSeq(channelId, seq + 1, size)
+    return { messages: await toMessages(rows.slice(0, size)), hasMore: true, hasNewer: rows.length > size }
+  }
+
+  let rows: MessageRow[]
   if (before !== undefined) {
-    if (!isUuid(before)) return empty
-    const [ref] = await db()
-      .select({ seq: messages.seq })
-      .from(messages)
-      .where(and(eq(messages.id, before), eq(messages.channelId, channelId)))
-      .limit(1)
-    if (!ref) return empty
-    cursor = ref.seq
+    const seq = await seqOf(before, channelId)
+    if (seq === undefined) return EMPTY_PAGE
+    rows = await olderThan(channelId, seq, size)
+  } else {
+    rows = await selectRows().where(eq(messages.channelId, channelId)).orderBy(desc(messages.seq)).limit(size + 1)
   }
+  return { messages: await toMessages(rows.slice(0, size).reverse()), hasMore: rows.length > size }
+}
 
-  const rows = await db()
-    .select({ m: messages, a: accounts })
-    .from(messages)
-    .leftJoin(accounts, eq(accounts.id, messages.authorId))
-    .where(cursor === undefined ? eq(messages.channelId, channelId) : and(eq(messages.channelId, channelId), lt(messages.seq, cursor)))
+async function toMessages(rows: MessageRow[]): Promise<Message[]> {
+  const ids = rows.map(({ m }) => m.id)
+  const files = await attachmentsByMessage(ids)
+  const reactions = await reactionsByMessage(ids)
+  const names = await accountNames(rows.flatMap(({ m }) => parseMentions(m.content).accountIds))
+  const replies = await replyPreviews(rows.map(({ m }) => m.replyToId).filter((id): id is string => !!id))
+  return rows.map(({ m, a }) => ({
+    id: m.id,
+    channelId: m.channelId,
+    content: m.content,
+    attachments: files.get(m.id) ?? [],
+    ...(m.kind === 'tool' && m.tool ? { kind: 'tool' as const, tool: m.tool } : {}),
+    ...(m.kind === 'pin' ? { kind: 'pin' as const } : {}),
+    createdAt: m.createdAt.getTime(),
+    ...(m.editedAt ? { editedAt: m.editedAt.getTime() } : {}),
+    ...(m.pinnedAt ? { pinnedAt: m.pinnedAt.getTime() } : {}),
+    ...(reactions.get(m.id) ? { reactions: reactions.get(m.id) } : {}),
+    ...withMentions(m.content, names),
+    ...(m.replyToId ? { replyTo: replies.get(m.replyToId) ?? deletedReply(m.replyToId) } : {}),
+    author: a
+      ? { id: a.id, accountId: a.id, name: a.name, tag: a.tag, color: a.color, avatarUrl: avatarUrl(a) }
+      : {
+          id: m.authorId ?? `removido-${m.id}`,
+          accountId: m.authorId ?? '',
+          name: m.authorName,
+          tag: m.authorTag,
+          color: m.authorColor,
+          avatarUrl: null
+        }
+  }))
+}
+
+export interface SearchOptions {
+  channelIds: string[]
+  query: string
+  authorId?: string
+  before?: string
+}
+
+const likePattern = (query: string): string => `%${query.replace(/[\\%_]/g, (c) => `\\${c}`)}%`
+
+export async function searchMessages({ channelIds, query, authorId, before }: SearchOptions): Promise<{ messages: Message[]; hasMore: boolean }> {
+  const ids = channelIds.filter(isUuid)
+  if (ids.length === 0 || (authorId !== undefined && !isUuid(authorId)) || (before !== undefined && !isUuid(before))) return EMPTY_PAGE
+  const conditions = [inArray(messages.channelId, ids)]
+  if (query) conditions.push(ilike(messages.content, likePattern(query)))
+  if (authorId) conditions.push(eq(messages.authorId, authorId))
+  if (before) {
+    const [ref] = await db().select({ seq: messages.seq }).from(messages).where(eq(messages.id, before)).limit(1)
+    if (!ref) return EMPTY_PAGE
+    conditions.push(lt(messages.seq, ref.seq))
+  }
+  const rows = await selectRows()
+    .where(and(...conditions))
     .orderBy(desc(messages.seq))
-    .limit(size + 1)
+    .limit(SEARCH_PAGE_SIZE + 1)
+  return { messages: await toMessages(rows.slice(0, SEARCH_PAGE_SIZE)), hasMore: rows.length > SEARCH_PAGE_SIZE }
+}
 
-  const hasMore = rows.length > size
-  const page = rows.slice(0, size).reverse()
-  const files = await attachmentsByMessage(page.map(({ m }) => m.id))
-  const reactions = await reactionsByMessage(page.map(({ m }) => m.id))
-  const names = await accountNames(page.flatMap(({ m }) => parseMentions(m.content).accountIds))
-  const replies = await replyPreviews(page.map(({ m }) => m.replyToId).filter((id): id is string => !!id))
-  return {
-    hasMore,
-    messages: page.map(({ m, a }) => ({
-      id: m.id,
-      channelId: m.channelId,
-      content: m.content,
-      attachments: files.get(m.id) ?? [],
-      ...(m.kind === 'tool' && m.tool ? { kind: 'tool' as const, tool: m.tool } : {}),
-      createdAt: m.createdAt.getTime(),
-      ...(m.editedAt ? { editedAt: m.editedAt.getTime() } : {}),
-      ...(reactions.get(m.id) ? { reactions: reactions.get(m.id) } : {}),
-      ...withMentions(m.content, names),
-      ...(m.replyToId ? { replyTo: replies.get(m.replyToId) ?? deletedReply(m.replyToId) } : {}),
-      author: a
-        ? { id: a.id, accountId: a.id, name: a.name, tag: a.tag, color: a.color, avatarUrl: avatarUrl(a) }
-        : {
-            id: m.authorId ?? `removido-${m.id}`,
-            accountId: m.authorId ?? '',
-            name: m.authorName,
-            tag: m.authorTag,
-            color: m.authorColor,
-            avatarUrl: null
-          }
-    }))
-  }
+export async function findPinState(id: string): Promise<{ channelId: string; kind: string; pinned: boolean } | undefined> {
+  if (!isUuid(id)) return undefined
+  const [row] = await db()
+    .select({ channelId: messages.channelId, kind: messages.kind, pinnedAt: messages.pinnedAt })
+    .from(messages)
+    .where(eq(messages.id, id))
+    .limit(1)
+  return row && { channelId: row.channelId, kind: row.kind, pinned: row.pinnedAt !== null }
+}
+
+export async function countPins(channelId: string): Promise<number> {
+  const [row] = await db()
+    .select({ total: count() })
+    .from(messages)
+    .where(and(eq(messages.channelId, channelId), isNotNull(messages.pinnedAt)))
+  return row?.total ?? 0
+}
+
+export async function setPinned(id: string, pinnedBy: string | null): Promise<number | null> {
+  const pinnedAt = pinnedBy ? new Date() : null
+  await db().update(messages).set({ pinnedAt, pinnedBy }).where(eq(messages.id, id))
+  return pinnedAt ? pinnedAt.getTime() : null
+}
+
+export async function listPins(channelId: string): Promise<Message[]> {
+  if (!isUuid(channelId)) return []
+  const rows = await selectRows()
+    .where(and(eq(messages.channelId, channelId), isNotNull(messages.pinnedAt)))
+    .orderBy(desc(messages.pinnedAt), desc(messages.seq))
+  return toMessages(rows)
 }
 
 class InvalidAttachments extends Error {}

@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type DragEvent } from 'react'
-import { Hash, Loader2, Upload, Volume2 } from 'lucide-react'
+import { ArrowDown, Hash, Loader2, Pin, Upload, Volume2 } from 'lucide-react'
 import { mentionsAccount, type Channel, type DmEntry, type Message } from '@shared/types'
-import { addFiles, loadHistory, loadOlderMessages } from '@/lib/client'
+import { addFiles, clearJumpTarget, jumpToMessage, jumpToPresent, loadHistory, loadNewerMessages, loadOlderMessages } from '@/lib/client'
 import { chatLabel, findDm } from '@/lib/dms'
 import { useCan } from '@/lib/permissions'
 import { cn, formatDay, formatTime, formatTimestamp } from '@/lib/utils'
@@ -14,7 +14,9 @@ import { MessageAttachments } from './chat/MessageAttachments'
 import { MessageEditor } from './chat/MessageEditor'
 import { MessageText } from './chat/MessageText'
 import { Reactions } from './chat/Reactions'
-import { messageElementId, ReplyQuote } from './chat/ReplyPreview'
+import { PinnedMessages } from './chat/PinnedMessages'
+import { messageElementId, ReplyQuote, scrollToMessage } from './chat/ReplyPreview'
+import { SearchBox, SearchPanel } from './chat/SearchPanel'
 import { ToolResultCard } from './tools/ToolResultCard'
 import { isMusicBotMessage, MusicBotAvatar, MusicBotName } from './voice/MusicBotReply'
 import { UserAvatar } from './UserAvatar'
@@ -40,6 +42,8 @@ export function ChatView({ channelId, embedded = false }: { channelId: string; e
   const messages = useApp((s) => s.messages[channelId])
   const hasMore = useApp((s) => !!s.hasMoreHistory[channelId])
   const loadingOlder = useApp((s) => !!s.loadingOlder[channelId])
+  const hasNewer = useApp((s) => !!s.hasNewerHistory[channelId])
+  const jumpTo = useApp((s) => (s.jumpTarget?.channelId === channelId ? s.jumpTarget.messageId : null))
   const scrollRef = useRef<HTMLDivElement>(null)
   const stickToBottom = useRef(true)
   /** distância até o fim antes de entrar uma página antiga (para não pular a leitura) */
@@ -64,6 +68,12 @@ export function ChatView({ channelId, embedded = false }: { channelId: string; e
   useLayoutEffect(() => {
     const el = scrollRef.current
     if (!el) return
+    if (jumpTo && scrollToMessage(jumpTo)) {
+      stickToBottom.current = false
+      restoreFromBottom.current = null
+      clearJumpTarget()
+      return
+    }
     if (restoreFromBottom.current !== null) {
       el.scrollTop = el.scrollHeight - restoreFromBottom.current
       restoreFromBottom.current = null
@@ -72,7 +82,7 @@ export function ChatView({ channelId, embedded = false }: { channelId: string; e
     }
     // Página curta que nem enche a tela: não há como rolar, então já busca a próxima.
     if (hasMore && !loadingOlder && el.scrollHeight <= el.clientHeight) requestOlder()
-  }, [messages, channelId, hasMore, loadingOlder])
+  }, [messages, channelId, hasMore, loadingOlder, jumpTo])
 
   function requestOlder(): void {
     const el = scrollRef.current
@@ -94,85 +104,106 @@ export function ChatView({ channelId, embedded = false }: { channelId: string; e
           )}
           <h1 className="font-semibold text-accent-foreground">{dm ? dm.other.name : channel.name}</h1>
           {dm && <CallButton dm={dm} />}
+          <div className="ml-auto flex items-center gap-2">
+            <PinnedMessages channelId={channelId} />
+            <SearchBox channelId={channelId} />
+          </div>
         </header>
       )}
       {dm && !embedded && <CallPanel dm={dm} />}
 
-      <div
-        data-testid="chat-drop-zone"
-        className="relative flex min-h-0 flex-1 flex-col"
-        onDragEnter={(e) => {
-          if (!acceptsFiles(e)) return
-          e.preventDefault()
-          dragDepth.current++
-          setDragging(true)
-        }}
-        onDragOver={(e) => {
-          if (acceptsFiles(e)) e.preventDefault()
-        }}
-        onDragLeave={(e) => {
-          if (!acceptsFiles(e)) return
-          dragDepth.current = Math.max(0, dragDepth.current - 1)
-          if (dragDepth.current === 0) setDragging(false)
-        }}
-        onDrop={(e) => {
-          if (!acceptsFiles(e)) return
-          e.preventDefault()
-          dragDepth.current = 0
-          setDragging(false)
-          addFiles(channelId, Array.from(e.dataTransfer.files))
-        }}
-      >
+      <div className="flex min-h-0 flex-1">
         <div
-          ref={scrollRef}
-          onScroll={(e) => {
-            const el = e.currentTarget
-            stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
-            if (el.scrollTop < LOAD_OLDER_THRESHOLD) requestOlder()
+          data-testid="chat-drop-zone"
+          className="relative flex min-h-0 min-w-0 flex-1 flex-col"
+          onDragEnter={(e) => {
+            if (!acceptsFiles(e)) return
+            e.preventDefault()
+            dragDepth.current++
+            setDragging(true)
           }}
-          className="min-h-0 flex-1 overflow-y-auto select-text"
+          onDragOver={(e) => {
+            if (acceptsFiles(e)) e.preventDefault()
+          }}
+          onDragLeave={(e) => {
+            if (!acceptsFiles(e)) return
+            dragDepth.current = Math.max(0, dragDepth.current - 1)
+            if (dragDepth.current === 0) setDragging(false)
+          }}
+          onDrop={(e) => {
+            if (!acceptsFiles(e)) return
+            e.preventDefault()
+            dragDepth.current = 0
+            setDragging(false)
+            addFiles(channelId, Array.from(e.dataTransfer.files))
+          }}
         >
-          {messages === undefined ? (
-            <div className="flex h-full items-center justify-center text-muted-foreground">
-              <Loader2 className="size-6 animate-spin" />
-            </div>
-          ) : (
-            <div className="flex min-h-full flex-col justify-end pb-4">
-              {hasMore ? (
-                <div className="flex h-12 shrink-0 items-center justify-center text-muted-foreground">
-                  {loadingOlder && <Loader2 className="size-5 animate-spin" aria-label="Carregando mensagens antigas" />}
-                </div>
-              ) : (
-                <ChannelWelcome channel={channel} dm={dm} />
-              )}
-              {messages.map((m, i) => {
-                const prev = messages[i - 1]
-                const newDay = !prev || new Date(prev.createdAt).toDateString() !== new Date(m.createdAt).toDateString()
-                const compact =
-                  !newDay &&
-                  !!prev &&
-                  senderOf(prev) === senderOf(m) &&
-                  m.createdAt - prev.createdAt < GROUP_WINDOW_MS
-                return (
-                  <Fragment key={m.id}>
-                    {newDay && <DayDivider ts={m.createdAt} />}
-                    <MessageItem message={m} compact={compact} />
-                  </Fragment>
-                )
-              })}
+          <div
+            ref={scrollRef}
+            onScroll={(e) => {
+              const el = e.currentTarget
+              const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < LOAD_OLDER_THRESHOLD
+              stickToBottom.current = !hasNewer && el.scrollHeight - el.scrollTop - el.clientHeight < 80
+              if (el.scrollTop < LOAD_OLDER_THRESHOLD) requestOlder()
+              if (hasNewer && nearBottom) void loadNewerMessages(channelId)
+            }}
+            className="min-h-0 flex-1 overflow-y-auto select-text"
+          >
+            {messages === undefined ? (
+              <div className="flex h-full items-center justify-center text-muted-foreground">
+                <Loader2 className="size-6 animate-spin" />
+              </div>
+            ) : (
+              <div className="flex min-h-full flex-col justify-end pb-4">
+                {hasMore ? (
+                  <div className="flex h-12 shrink-0 items-center justify-center text-muted-foreground">
+                    {loadingOlder && <Loader2 className="size-5 animate-spin" aria-label="Carregando mensagens antigas" />}
+                  </div>
+                ) : (
+                  <ChannelWelcome channel={channel} dm={dm} />
+                )}
+                {messages.map((m, i) => {
+                  const prev = messages[i - 1]
+                  const newDay = !prev || new Date(prev.createdAt).toDateString() !== new Date(m.createdAt).toDateString()
+                  const compact =
+                    !newDay &&
+                    !!prev &&
+                    senderOf(prev) === senderOf(m) &&
+                    prev.kind !== 'pin' &&
+                    m.createdAt - prev.createdAt < GROUP_WINDOW_MS
+                  return (
+                    <Fragment key={m.id}>
+                      {newDay && <DayDivider ts={m.createdAt} />}
+                      {m.kind === 'pin' ? <PinNotice message={m} /> : <MessageItem message={m} compact={compact} />}
+                    </Fragment>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          {hasNewer && (
+            <button
+              type="button"
+              onClick={() => void jumpToPresent(channelId)}
+              className="mx-4 mb-1 flex items-center justify-center gap-1 rounded-md bg-panel py-1 text-sm text-muted-foreground hover:text-accent-foreground"
+            >
+              <ArrowDown className="size-4" />
+              Ir para as mensagens recentes
+            </button>
+          )}
+
+          <Composer channel={channel} />
+
+          {dragging && (
+            <div className="pointer-events-none absolute inset-2 z-10 flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-primary bg-background/90 text-accent-foreground">
+              <Upload className="size-10 text-primary" />
+              <p className="text-lg font-semibold">Solte para enviar em {label}</p>
+              <p className="text-sm text-muted-foreground">Até 10 arquivos de 25 MB</p>
             </div>
           )}
         </div>
-
-        <Composer channel={channel} />
-
-        {dragging && (
-          <div className="pointer-events-none absolute inset-2 z-10 flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-primary bg-background/90 text-accent-foreground">
-            <Upload className="size-10 text-primary" />
-            <p className="text-lg font-semibold">Solte para enviar em {label}</p>
-            <p className="text-sm text-muted-foreground">Até 10 arquivos de 25 MB</p>
-          </div>
-        )}
+        {!embedded && <SearchPanel channelId={channelId} />}
       </div>
     </>
   )
@@ -253,6 +284,29 @@ function MessageBody({ message }: { message: Message }) {
       <MessageAttachments attachments={message.attachments ?? []} />
       <Reactions message={message} />
     </>
+  )
+}
+
+function PinNotice({ message }: { message: Message }) {
+  const target = message.replyTo && !message.replyTo.deleted ? message.replyTo : null
+  return (
+    <div id={messageElementId(message.id)} className="group relative mt-4 flex items-center gap-4 px-4 py-0.5 text-sm text-muted-foreground transition-colors hover:bg-black/[0.06] data-[highlight=true]:bg-primary/15">
+      <MessageActions message={message} />
+      <span className="flex w-10 shrink-0 justify-center">
+        <Pin className="size-4" />
+      </span>
+      <p>
+        <span className="font-medium text-accent-foreground">{message.author.name}</span> fixou{' '}
+        {target ? (
+          <button type="button" onClick={() => void jumpToMessage(message.channelId, target.id)} className="font-medium text-accent-foreground hover:underline">
+            uma mensagem
+          </button>
+        ) : (
+          'uma mensagem'
+        )}
+        . <span className="text-xs">{formatTimestamp(message.createdAt)}</span>
+      </p>
+    </div>
   )
 }
 

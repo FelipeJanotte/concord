@@ -6,6 +6,7 @@
 import {
   can,
   canChangeAnyMemberRoles,
+  canPinMessages,
   displayColor,
   EVERYONE_ROLE_ID,
   type AccessState,
@@ -26,6 +27,13 @@ export function useCan(permission: Permission, channelId?: string): boolean {
   return useApp((s) => {
     if (channelId && findDm(s.dms, channelId)) return DM_PERMISSIONS.has(permission)
     return allows(s.access, s.self?.accountId, permission, channelId)
+  })
+}
+
+export function useCanPin(channelId: string): boolean {
+  return useApp((s) => {
+    if (findDm(s.dms, channelId)) return true
+    return !!s.access && !!s.self && canPinMessages(s.access, s.self.accountId)
   })
 }
 

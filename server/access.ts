@@ -118,3 +118,7 @@ export async function emitToViewers<E extends Event>(
     ;(socket.emit as (ev: string, data: unknown) => boolean)(event, data)
   }
 }
+
+export function dmChannelsOf(accountId: string): string[] {
+  return [...dmMembers].filter(([, members]) => members.includes(accountId)).map(([channelId]) => channelId)
+}

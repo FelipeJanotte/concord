@@ -80,6 +80,8 @@ export const LIMITS = {
   vote: { capacity: 20, perSecond: 2 },
   /** reações por conta: 20 seguidas, depois 2 por segundo (ligar e desligar rápido é comum) (A16) */
   reaction: { capacity: 20, perSecond: 2 },
+  search: { capacity: 10, perSecond: 1 / 2 },
+  pin: { capacity: 10, perSecond: 1 / 2 },
   /** sorteios das ferramentas do grupo por conta: 5 seguidos, depois 1 a cada 3 s (v4) */
   tool: { capacity: 5, perSecond: 1 / 3 },
   /** preferências (tema): 20 seguidas (arrastar o seletor de cor), depois 1 por segundo (v5) */

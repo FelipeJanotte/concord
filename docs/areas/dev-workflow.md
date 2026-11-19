@@ -33,6 +33,7 @@ e `UPLOAD_SWEEP_INTERVAL_MS` (intervalo da limpeza; padrão 10 min). O servidor 
   `DATA_DIR/pgdata`. Nada para instalar. O PGlite aceita **um processo por vez**: não rode dois servidores, nem o
   `db:import-json`, sobre o mesmo `pgdata`.
 - O log de inicialização mostra `Banco: PostgreSQL ...` ou `Banco: PGlite em ...`.
+- Extensão `pg_trgm` (índice da busca de mensagens, ADR 0012): o PGlite carrega sozinho (`server/db/client.ts`); um Postgres próprio precisa da contrib (a imagem oficial `postgres:17` já tem) e a migration `0015` a cria.
 - As migrations (`server/db/migrations/`) são aplicadas sozinhas ao iniciar.
 - **Banco vazio:** se existir `DATA_DIR/db.json` (versões antigas), ele é importado automaticamente (contas, sessões
   válidas, canais, mensagens; quem estava logado continua logado). Senão, cria os canais padrão. Para importar à mão:

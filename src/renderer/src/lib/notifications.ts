@@ -15,6 +15,7 @@ type St = Pick<AppState, 'self' | 'dms' | 'friends' | 'unread' | 'calls'> & Part
 
 /** Texto curto da mensagem para a notificação (anexo sem texto vira "📎 1 anexo"). */
 export function messagePreview(message: Message): string {
+  if (message.kind === 'pin') return 'Fixou uma mensagem'
   // menções (B19) aparecem como "@Nome"
   const plain = mentionsToPlain(message.content, (id) => message.mentions?.find((m) => m.accountId === id)?.name)
   const text = plain.replace(/\s+/g, ' ').trim()

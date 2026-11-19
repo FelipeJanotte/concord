@@ -34,6 +34,7 @@ describe('regras', () => {
     expect(messagePreview(msg({ content: ' oi \n  gente ' }))).toBe('oi gente')
     expect(messagePreview(msg({ content: 'a'.repeat(200) }))).toHaveLength(120)
     expect(messagePreview(msg({ content: '', attachments: [{}, {}] as never }))).toBe('📎 2 anexos')
+    expect(messagePreview(msg({ content: '', kind: 'pin' }))).toBe('Fixou uma mensagem')
   })
 
   it('conversa privada fora de foco avisa e abre a conversa; com foco ou minha, não', () => {
