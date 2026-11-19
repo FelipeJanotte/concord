@@ -8,6 +8,7 @@ import { limiters, retryText } from '../middleware/rate-limit'
 import { findChannel } from '../repo/channels'
 import { editMessage, findEditable, findReplyTarget, insertMessage, listMessages, resolveMentions } from '../repo/messages'
 import { isUuid } from '../repo/util'
+import { timeoutRefusal } from './timeouts'
 
 /** Sem a permissão `mentionEveryone`, o `<@todos>` vira texto comum (B19): ninguém é avisado. */
 async function checkEveryone(accountId: string, content: string): Promise<string> {
@@ -58,6 +59,8 @@ export const messagesModule: ServerModule = {
         return refuse('Anexos inválidos')
       }
       if (!content && attachmentIds.length === 0) return refuse('Mensagem vazia')
+      const timedOut = timeoutRefusal(user.accountId)
+      if (timedOut) return refuse(timedOut)
       const limited = limiters.message.take(user.accountId)
       if (!limited.ok) {
         socket.emit('rate:limited', { action: 'message', retryAfterMs: limited.retryAfterMs })

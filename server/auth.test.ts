@@ -20,12 +20,13 @@ const env = await vi.hoisted(async () => {
   return { dataDir }
 })
 
-import type { AuthResult, ProfileUpdate, ProfileUpdateResult } from '../src/shared/types'
+import { BANNED_MESSAGE, type AuthResult, type ProfileUpdate, type ProfileUpdateResult } from '../src/shared/types'
 import { accountFromToken, findAccount, googleLogin, login, register, revokeSession, updateProfile } from './auth'
 import { AVATAR_DIR } from './config'
 import { db } from './db/client'
 import { accounts, sessions } from './db/schema'
 import { updateAccount } from './repo/accounts'
+import { insertCommunityBan } from './repo/moderation'
 import type { Account } from './repo/types'
 import { openTestDatabase } from './tests/database'
 
@@ -393,6 +394,15 @@ describe('googleLogin', () => {
     expect(r.account).toMatchObject({ id: created.account.id, hasPassword: true, hasGoogle: true, tagLocked: true })
   })
 
+  it('recusa conta banida e e-mail banido', async () => {
+    mockGoogle()
+    const first = ok(await googleLogin(req))
+    await insertCommunityBan({ accountId: first.account.id, email: first.account.email, reason: null, bannedBy: null })
+    expect(errorOf(await googleLogin(req))).toBe(BANNED_MESSAGE)
+    mockGoogle({ sub: 'google-sub-2' })
+    expect(errorOf(await googleLogin(req))).toBe(BANNED_MESSAGE)
+  })
+
   it.each([
     ['sem code', { ...req, code: '' }],
     ['redirect fora do loopback', { ...req, redirectUri: 'http://evil.test:5000/' }],
@@ -435,5 +445,36 @@ describe('googleLogin', () => {
   it('falha de rede ao falar com o Google', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => Promise.reject(new Error('offline'))))
     expect(errorOf(await googleLogin(req))).toBe('Não foi possível falar com o Google')
+  })
+})
+
+describe('banimento da comunidade', () => {
+  async function banned(): Promise<Extract<AuthResult, { ok: true }>> {
+    const r = ok(await newAccount())
+    await insertCommunityBan({ accountId: r.account.id, email: r.account.email, reason: 'spam', bannedBy: null })
+    return r
+  }
+
+  it('login com a senha certa é recusado', async () => {
+    const r = await banned()
+    expect(errorOf(await login({ email: r.account.email, password: 'senha-segura' }))).toBe(BANNED_MESSAGE)
+  })
+
+  it('login com a senha errada não revela o banimento', async () => {
+    const r = await banned()
+    expect(errorOf(await login({ email: r.account.email, password: 'senha-errada' }))).toBe('E-mail ou senha incorretos')
+  })
+
+  it('cadastro com o e-mail banido é recusado mesmo depois de a conta sumir do e-mail', async () => {
+    const r = await banned()
+    await updateAccount(r.account.id, { email: 'outro@exemplo.test' })
+    expect(errorOf(await newAccount({ email: r.account.email }))).toBe(BANNED_MESSAGE)
+  })
+
+  it('sessão que sobrou não abre conexão', async () => {
+    const r = ok(await newAccount())
+    expect((await accountFromToken(r.token))?.id).toBe(r.account.id)
+    await insertCommunityBan({ accountId: r.account.id, email: r.account.email, reason: null, bannedBy: null })
+    expect(await accountFromToken(r.token)).toBeUndefined()
   })
 })

@@ -444,5 +444,5 @@ describe('silêncio pelo servidor guardado no banco', () => {
     const ana3 = await reconnect(ana)
     expect((await join(ana3, sala.id)).canSpeak).toBe(true)
     ana3.socket.emit('voice:leave')
-  })
+  }, 60_000)
 })

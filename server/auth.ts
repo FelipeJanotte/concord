@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import {
   AVATAR_MAX_BYTES,
+  BANNED_MESSAGE,
   NAME_MAX,
   PASSWORD_MIN,
   TAG_PATTERN,
@@ -31,6 +32,7 @@ import {
   isTagTaken,
   updateAccount
 } from './repo/accounts'
+import { findCommunityBan } from './repo/moderation'
 import { deleteSession, findValidSession, insertSession, renewSession } from './repo/sessions'
 import type { Account } from './repo/types'
 import { DuplicateError } from './repo/util'
@@ -157,12 +159,19 @@ export async function accountFromToken(token: unknown): Promise<Account | undefi
   if (!session) return undefined
   const renewedExpiry = Date.now() + SESSION_TTL_MS
   if (renewedExpiry - session.expiresAt >= SESSION_RENEW_AFTER_MS) await renewSession(tokenHash, renewedExpiry)
-  return findAccount(session.accountId)
+  const account = await findAccount(session.accountId)
+  return account && !(await isBanned(account)) ? account : undefined
 }
 
 export async function revokeSession(token: unknown): Promise<void> {
   if (typeof token !== 'string') return
   await deleteSession(sha256(token))
+}
+
+const bannedResult: AuthResult = { ok: false, error: BANNED_MESSAGE }
+
+export async function isBanned(account: Pick<Account, 'id' | 'email'>): Promise<boolean> {
+  return !!(await findCommunityBan({ accountId: account.id, email: account.email }))
 }
 
 const success = async (a: Account): Promise<AuthResult> => ({
@@ -208,6 +217,7 @@ export async function register(req: Partial<RegisterRequest>): Promise<AuthResul
   if (!name) return { ok: false, error: 'O nome precisa ter pelo menos 2 caracteres (sem "#")' }
   const tag = normalizeTag(req.tag)
   if (!tag) return { ok: false, error: 'O id precisa ter de 1 a 5 letras ou números' }
+  if (await findCommunityBan({ email })) return bannedResult
   if (await findAccountByEmail(email)) return { ok: false, error: 'Este e-mail já está cadastrado' }
   if (await isTagTaken(tag)) return { ok: false, error: `O id #${tag} já está em uso. Escolha outro.` }
 
@@ -250,6 +260,7 @@ export async function login(req: Partial<LoginRequest>): Promise<AuthResult> {
     return { ok: false, error: 'E-mail ou senha incorretos' }
   }
   failures.delete(email)
+  if (await isBanned(account)) return bannedResult
   return success(account)
 }
 
@@ -327,6 +338,7 @@ export async function googleLogin(req: Partial<GoogleLoginRequest>): Promise<Aut
   }
   const email = normalizeEmail(claims.email)
   if (!email || !claims.email_verified) return { ok: false, error: 'Sua conta Google não tem e-mail verificado' }
+  if (await findCommunityBan({ email })) return bannedResult
 
   let account = await findAccountByGoogleId(claims.sub)
   if (!account) {
@@ -362,6 +374,7 @@ export async function googleLogin(req: Partial<GoogleLoginRequest>): Promise<Aut
     }
     console.log(`[conta] criada via Google: ${account.name}#${account.tag}`)
   }
+  if (await isBanned(account)) return bannedResult
   return success(account)
 }
 

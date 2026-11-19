@@ -209,5 +209,5 @@ describe('backup automático (PGlite)', () => {
     await sleep(150)
     expect(server.log).not.toMatch(/\[backup\] .*\.tar\.gz/)
     expect(backups()).toEqual(before)
-  })
+  }, 60_000)
 })

@@ -3,6 +3,7 @@ import { and, eq, gte, lt } from 'drizzle-orm'
 import { db } from '../db/client'
 import { sessions } from '../db/schema'
 import type { Session } from './types'
+import { isUuid } from './util'
 
 /** Grava a sessão e aproveita para apagar as expiradas. */
 export async function insertSession(session: Session): Promise<void> {
@@ -37,4 +38,9 @@ export async function renewSession(tokenHash: string, expiresAt: number): Promis
 
 export async function deleteSession(tokenHash: string): Promise<void> {
   await db().delete(sessions).where(eq(sessions.tokenHash, tokenHash))
+}
+
+export async function deleteAccountSessions(accountId: string): Promise<void> {
+  if (!isUuid(accountId)) return
+  await db().delete(sessions).where(eq(sessions.accountId, accountId))
 }

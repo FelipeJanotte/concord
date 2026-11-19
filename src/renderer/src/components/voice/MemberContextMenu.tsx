@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/context-menu'
 import { RoleDot } from '@/components/settings/RoleDot'
 import { UserProfileDialog } from '@/components/UserProfileDialog'
+import { BanDialog } from './BanDialog'
 import { ModerationItems } from './ModerationMenu'
 import { messageAccount, notify, sendFriendRequest, setMemberRoles, setUserMuted, setUserVolume } from '@/lib/client'
 import { memberRoleIds, rolesByPosition } from '@/lib/permissions'
@@ -29,6 +30,7 @@ import { useApp } from '@/store'
 
 export function MemberContextMenu({ userId, children }: { userId: string; children: ReactNode }) {
   const [profileOpen, setProfileOpen] = useState(false)
+  const [banOpen, setBanOpen] = useState(false)
   const user = useApp((s) => s.users.find((u) => u.id === userId))
   const isSelf = useApp((s) => !!user && s.self?.accountId === user.accountId)
 
@@ -48,7 +50,7 @@ export function MemberContextMenu({ userId, children }: { userId: string; childr
             <>
               <VolumeControl accountId={user.accountId} name={user.name} />
               <MuteItem accountId={user.accountId} />
-              <ModerationItems accountId={user.accountId} name={user.name} />
+              <ModerationItems accountId={user.accountId} name={user.name} onBan={() => setBanOpen(true)} />
               <ContextMenuSeparator />
               <MessageItem accountId={user.accountId} name={user.name} tag={user.tag} />
             </>
@@ -61,6 +63,7 @@ export function MemberContextMenu({ userId, children }: { userId: string; childr
         </ContextMenuContent>
       </ContextMenu>
       <UserProfileDialog userId={userId} open={profileOpen} onOpenChange={setProfileOpen} />
+      <BanDialog accountId={user.accountId} name={user.name} open={banOpen} onOpenChange={setBanOpen} />
     </>
   )
 }

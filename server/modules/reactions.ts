@@ -9,6 +9,7 @@ import { guard, type ServerModule } from '../context'
 import { limiters, retryText } from '../middleware/rate-limit'
 import { findMessageMeta } from '../repo/messages'
 import { setReaction } from '../repo/reactions'
+import { timeoutRefusal } from './timeouts'
 
 export const reactionsModule: ServerModule = {
   socket(io, socket) {
@@ -25,6 +26,8 @@ export const reactionsModule: ServerModule = {
         // sem ver o canal: igual a mensagem inexistente
         if (!meta || !(await allowed(user.accountId, 'view', meta.channelId))) return ack({ ok: false, error: 'Mensagem não encontrada' })
         if (!(await allowed(user.accountId, 'send', meta.channelId))) return ack({ ok: false, error: 'Você não pode reagir neste canal' })
+        const timedOut = timeoutRefusal(user.accountId)
+        if (timedOut) return ack({ ok: false, error: timedOut })
         const limited = limiters.reaction.take(user.accountId)
         if (!limited.ok) return ack({ ok: false, error: `Muitas reações seguidas. ${retryText(limited.retryAfterMs)}` })
         const reactions = await setReaction(payload.messageId, user.accountId, emoji, payload.on)

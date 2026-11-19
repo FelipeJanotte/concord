@@ -20,7 +20,7 @@
 import type { Channel } from './channel'
 
 /** Permissões da comunidade inteira. */
-export const GLOBAL_PERMISSIONS = ['administrator', 'manageChannels', 'manageRoles', 'manageMembers', 'manageMessages', 'mentionEveryone', 'moveMembers', 'assignRoles'] as const
+export const GLOBAL_PERMISSIONS = ['administrator', 'manageChannels', 'manageRoles', 'manageMembers', 'manageMessages', 'mentionEveryone', 'moveMembers', 'assignRoles', 'kickMembers', 'banMembers', 'timeoutMembers'] as const
 /** Permissões que cada canal pode liberar ou negar por cargo. */
 export const CHANNEL_PERMISSIONS = ['view', 'send', 'attach', 'connect', 'speak', 'share', 'video'] as const
 
@@ -38,6 +38,9 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   mentionEveryone: 'Mencionar @todos (avisa todo mundo que vê o canal)',
   moveMembers: 'Mover membros (arrastar para outra sala de voz)',
   assignRoles: 'Alterar cargos dos membros (só cargos abaixo do seu)',
+  kickMembers: 'Expulsar membros da comunidade (podem voltar entrando de novo)',
+  banMembers: 'Banir membros da comunidade (e ver e tirar banimentos)',
+  timeoutMembers: 'Pôr membros de castigo (sem mensagens, reações e voz por um tempo)',
   view: 'Ver o canal',
   send: 'Enviar mensagens',
   attach: 'Enviar anexos',

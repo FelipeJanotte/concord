@@ -8,7 +8,7 @@ import { bindToolsEvents } from './actions/tools'
 import { bindPreferencesEvents, loadPreferences } from './actions/preferences'
 import { bindLimitEvents } from './actions/limits'
 import { bindMessageEvents, loadHistory } from './actions/messages'
-import { bindModerationEvents } from './actions/moderation'
+import { bindModerationEvents, loadTimeouts } from './actions/moderation'
 import { loadOverlayPreferences } from './actions/overlay'
 import { loadPushToTalkPreferences } from './actions/push-to-talk'
 import { bindNotificationEvents, stopNotifications } from './actions/notifications'
@@ -127,7 +127,7 @@ export function connect(url: string, token: string): Promise<void> {
   bindFriendsEvents(s)
   bindToolsEvents(s)
   bindPreferencesEvents(s)
-  bindModerationEvents(s)
+  bindModerationEvents(s, disconnect)
   bindCallsEvents(s)
   bindSoundsEvents(s)
   bindMusicEvents(s)
@@ -164,6 +164,7 @@ export function connect(url: string, token: string): Promise<void> {
         void loadPreferences().catch(() => {})
         void loadCalls().catch(() => {})
         void loadSounds().catch(() => {})
+        void loadTimeouts().catch(() => {})
         if (!settled) {
           settled = true
           resolve()

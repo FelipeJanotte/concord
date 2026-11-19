@@ -26,7 +26,10 @@ cargos atribuídos; cada canal pode **liberar** ou **negar** permissões por car
   `manageRoles` (cargos abaixo do seu), `manageMembers` (atribuir cargos abaixo do seu; silenciar/expulsar da voz na
   B6), `manageMessages` (apagar mensagem de outras pessoas, B6), `mentionEveryone` (mencionar @todos, B19: sem ela o `<@todos>` vira texto comum), `moveMembers` (mover quem
   está abaixo para outra sala de voz, sem ganhar silenciar/expulsar; `manageMembers` também move),
-  `assignRoles` (só dar/tirar cargos abaixo do seu, sem os poderes de moderação de `manageMembers`).
+  `assignRoles` (só dar/tirar cargos abaixo do seu, sem os poderes de moderação de `manageMembers`),
+  `kickMembers` (expulsar da comunidade, A19), `banMembers` (banir, ver e tirar banimentos, A19; também abre a engrenagem
+  da comunidade na aba Banidos) e `timeoutMembers` (castigo, A20). As três seguem a hierarquia do `canModerate`
+  (`docs/areas/moderation.md`).
 - **Por canal:** `view`, `send`, `attach`, `connect`, `speak`, `share`, `video` (câmera, B21; comunidades antigas
   ganharam `video` onde havia `share` pela migration `0010_camera_permission`).
 - **@todos:** id fixo `EVERYONE_ROLE_ID` (`00000000-…`), posição 0, sempre existe, não pode ser apagado nem
@@ -143,6 +146,9 @@ dar só isso, sem silenciar/expulsar da voz.
 | `voice:state` | cada conexão recebe só as salas que pode ver (`voiceStatesFor`) |
 | `moderation:voice-kick` / `moderation:voice-mute` | `canModerate`: `manageMembers` e cargo acima do alvo, ou Administrador em qualquer um (nunca a dona nem a si mesmo); sala que não vê = "não está numa sala" (`docs/areas/moderation.md`) |
 | `moderation:voice-move` / `tools:move-teams` (mover outra pessoa) | `canMoveMember`: `moveMembers` **ou** `manageMembers`, com a mesma hierarquia do `canModerate` (Administrador sem hierarquia); a pessoa precisa de `view` + `connect` na sala de destino |
+| `moderation:kick` / `moderation:ban` / `moderation:timeout` | `canKickMember` / `canBanMember` / `canTimeoutMember`: a permissão própria (`kickMembers`, `banMembers`, `timeoutMembers`) e cargo acima do alvo, ou Administrador (nunca a dona nem a si mesmo) |
+| `moderation:unban` / `moderation:bans` | `banMembers` |
+| `message:send` / `message:react` | castigo valendo → "Você está de castigo até HH:MM" (antes das outras regras de canal no envio) |
 | `role:*` / `member:set-roles` | tabela de eventos acima; cargo com Administrador só a dona ou um admin |
 | todos os de canal (`allowed()`) | Administrador passa como a dona; em DM, só os membros |
 | `message:delete` | `view` + (autor ou `manageMessages`); em DM só o autor |

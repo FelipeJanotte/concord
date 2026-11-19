@@ -25,6 +25,53 @@ export function canModerate(access: AccessState, actor: string, target: string):
   return outranks(access, actor, target, ['manageMembers'])
 }
 
+export function canKickMember(access: AccessState, actor: string, target: string): boolean {
+  return outranks(access, actor, target, ['kickMembers'])
+}
+
+export function canBanMember(access: AccessState, actor: string, target: string): boolean {
+  return outranks(access, actor, target, ['banMembers'])
+}
+
+export function canTimeoutMember(access: AccessState, actor: string, target: string): boolean {
+  return outranks(access, actor, target, ['timeoutMembers'])
+}
+
+export const BANNED_MESSAGE = 'Você foi banido desta comunidade'
+export const BAN_REASON_MAX_LENGTH = 200
+export const TIMEOUT_MAX_MINUTES = 7 * 24 * 60
+
+function timeoutParts(time: number, timeZone: string | undefined): { day: string; hour: string } {
+  const date = new Date(time)
+  return {
+    day: date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', timeZone }),
+    hour: date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone })
+  }
+}
+
+export function timeoutMessage(until: number, now: number, timeZone?: string): string {
+  const end = timeoutParts(until, timeZone)
+  const sameDay = end.day === timeoutParts(now, timeZone).day
+  return `Você está de castigo até ${sameDay ? end.hour : `${end.day} ${end.hour}`}`
+}
+
+export interface CommunityBan {
+  accountId: string
+  name: string
+  tag: string
+  reason: string | null
+  createdAt: number
+}
+
+export interface MemberTimeout {
+  accountId: string
+  until: number
+}
+
+export type CommunityRemoval = { kind: 'kick'; by: string } | { kind: 'ban'; reason: string | null }
+
+export type BansResult = { ok: true; bans: CommunityBan[] } | { ok: false; error: string }
+
 export function canMoveMember(access: AccessState, actor: string, target: string): boolean {
   return outranks(access, actor, target, ['moveMembers', 'manageMembers'])
 }
@@ -52,6 +99,8 @@ export interface ModerationServerEvents {
   'moderation:kicked': (payload: { channelId: string; by: string }) => void
   /** só para a conexão movida: entre na sala `channelId` (quem moveu = `by`) */
   'moderation:moved': (payload: { channelId: string; by: string }) => void
+  'moderation:removed': (payload: CommunityRemoval) => void
+  'moderation:timeout-changed': (payload: { accountId: string; until: number | null }) => void
 }
 
 export interface ModerationClientEvents {
@@ -63,4 +112,10 @@ export interface ModerationClientEvents {
   'moderation:voice-mute': (payload: { accountId: string; muted: boolean }, ack: (res: OkResult) => void) => void
   /** apaga a mensagem (autor ou manageMessages) */
   'message:delete': (payload: { messageId: string }, ack: (res: OkResult) => void) => void
+  'moderation:kick': (payload: { accountId: string }, ack: (res: OkResult) => void) => void
+  'moderation:ban': (payload: { accountId: string; reason?: string }, ack: (res: OkResult) => void) => void
+  'moderation:unban': (payload: { accountId: string }, ack: (res: OkResult) => void) => void
+  'moderation:bans': (ack: (res: BansResult) => void) => void
+  'moderation:timeout': (payload: { accountId: string; minutes: number }, ack: (res: OkResult) => void) => void
+  'moderation:timeouts': (ack: (timeouts: MemberTimeout[]) => void) => void
 }

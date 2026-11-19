@@ -31,18 +31,20 @@ import { createRole, deleteRole, reorderRoles, setMemberRoles, updateRole } from
 import { memberRoleIds, rolesByPosition } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
+import { BansTab } from './BansTab'
 import { RoleDot } from './RoleDot'
 
 export const ROLE_NAME_MAX = 32
 const DEFAULT_COLOR = '#5865f2'
 const ADMIN_WARNING_ID = 'role-administrator-warning'
 
-type Tab = 'roles' | 'members'
+type Tab = 'roles' | 'members' | 'bans'
 
 export function CommunitySettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const access = useApp((s) => s.access)
   const me = useApp((s) => s.self?.accountId)
   const [tab, setTab] = useState<Tab>('roles')
+  const seesBans = useApp((s) => !!s.access && !!s.self && can(s.access, s.self.accountId, 'banMembers'))
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -59,6 +61,11 @@ export function CommunitySettingsDialog({ open, onOpenChange }: { open: boolean;
           <TabButton active={tab === 'members'} onClick={() => setTab('members')}>
             Membros
           </TabButton>
+          {seesBans && (
+            <TabButton active={tab === 'bans'} onClick={() => setTab('bans')}>
+              Banidos
+            </TabButton>
+          )}
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
@@ -66,6 +73,8 @@ export function CommunitySettingsDialog({ open, onOpenChange }: { open: boolean;
             <p className="py-6 text-sm text-muted-foreground">Carregando permissões…</p>
           ) : tab === 'roles' ? (
             <RolesTab access={access} me={me} />
+          ) : tab === 'bans' ? (
+            <BansTab />
           ) : (
             <MembersTab access={access} me={me} />
           )}

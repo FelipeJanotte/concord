@@ -1,9 +1,22 @@
+// @vitest-environment jsdom
 // Ações de moderação (B6): mensagem apagada, expulsão da voz e os avisos de quem foi silenciado.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Channel, Message, User, VoiceState } from '@shared/types'
-import { deleteMessage, kickFromVoice, moveToVoice, setServerMuted, bindModerationEvents } from '@/lib/actions/moderation'
+import {
+  banFromCommunity,
+  bindModerationEvents,
+  deleteMessage,
+  kickFromCommunity,
+  kickFromVoice,
+  loadBans,
+  loadTimeouts,
+  moveToVoice,
+  setServerMuted,
+  timeoutMember,
+  unbanFromCommunity
+} from '@/lib/actions/moderation'
 import { bindVoiceEvents, toggleMute } from '@/lib/actions/voice'
-import { setSocket } from '@/lib/core'
+import { setSocket, TOKEN_KEY } from '@/lib/core'
 import { voice } from '@/lib/voice'
 import { initialState, useApp } from '@/store'
 import { FakeSocket } from '@/test/fake-socket'
@@ -21,12 +34,14 @@ const state = (over: Partial<VoiceState> = {}): VoiceState => ({
 })
 
 let socket: FakeSocket
+let signOut: ReturnType<typeof vi.fn<() => void>>
 
 beforeEach(() => {
   socket = new FakeSocket()
   setSocket(socket.asSocket())
   bindVoiceEvents(socket.asSocket())
-  bindModerationEvents(socket.asSocket())
+  signOut = vi.fn<() => void>(() => useApp.setState({ self: null }))
+  bindModerationEvents(socket.asSocket(), signOut)
   useApp.setState({ ...initialState, self: me, channels: [sala], messages: { geral: [msg('a'), msg('b')] } })
 })
 
@@ -139,5 +154,72 @@ describe('mover para outra sala', () => {
     socket.replyTo('moderation:voice-move', () => ({ ok: false, error: 'Você não pode mover essa pessoa' }))
     await expect(moveToVoice('sock-ana', 'outra')).rejects.toThrow('Você não pode mover essa pessoa')
     expect(socket.sent('moderation:voice-move')).toEqual([[{ userId: 'sock-ana', channelId: 'outra' }]])
+  })
+})
+
+describe('moderation:removed', () => {
+  beforeEach(() => localStorage.setItem(TOKEN_KEY, 'token'))
+
+  it('expulso: esquece a sessão, sai do servidor e diz quem expulsou', () => {
+    socket.receive('moderation:removed', { kind: 'kick', by: 'Dona' })
+    expect(localStorage.getItem(TOKEN_KEY)).toBeNull()
+    expect(signOut).toHaveBeenCalledOnce()
+    expect(useApp.getState().self).toBeNull()
+    expect(useApp.getState().notice?.text).toBe('Dona expulsou você da comunidade. Você pode entrar de novo.')
+  })
+
+  it('banido: avisa com o motivo, ou sem ele', () => {
+    socket.receive('moderation:removed', { kind: 'ban', reason: 'spam' })
+    expect(localStorage.getItem(TOKEN_KEY)).toBeNull()
+    expect(useApp.getState().notice?.text).toBe('Você foi banido desta comunidade. Motivo: spam')
+    socket.receive('moderation:removed', { kind: 'ban', reason: null })
+    expect(useApp.getState().notice?.text).toBe('Você foi banido desta comunidade.')
+  })
+})
+
+describe('castigo', () => {
+  it('moderation:timeout-changed guarda e tira o prazo da conta', () => {
+    socket.receive('moderation:timeout-changed', { accountId: 'acc-eu', until: 123 })
+    socket.receive('moderation:timeout-changed', { accountId: 'acc-ana', until: 456 })
+    expect(useApp.getState().timeouts).toEqual({ 'acc-eu': 123, 'acc-ana': 456 })
+    socket.receive('moderation:timeout-changed', { accountId: 'acc-eu', until: null })
+    expect(useApp.getState().timeouts).toEqual({ 'acc-ana': 456 })
+  })
+
+  it('loadTimeouts troca a lista pelo que o servidor diz', async () => {
+    useApp.setState({ timeouts: { velho: 1 } })
+    socket.replyTo('moderation:timeouts', () => [{ accountId: 'acc-ana', until: 99 }])
+    await loadTimeouts()
+    expect(useApp.getState().timeouts).toEqual({ 'acc-ana': 99 })
+  })
+
+  it('timeoutMember manda os minutos e vira exceção no erro', async () => {
+    socket.replyTo('moderation:timeout', () => ({ ok: false, error: 'Você não pode pôr essa pessoa de castigo' }))
+    await expect(timeoutMember('acc-ana', 10)).rejects.toThrow('Você não pode pôr essa pessoa de castigo')
+    expect(socket.emitted.at(-1)).toMatchObject({ event: 'moderation:timeout', args: [{ accountId: 'acc-ana', minutes: 10 }] })
+  })
+})
+
+describe('expulsar e banir', () => {
+  it('mandam a conta (e o motivo) e viram exceção no erro', async () => {
+    socket.replyTo('moderation:kick', () => ({ ok: true }))
+    socket.replyTo('moderation:ban', () => ({ ok: false, error: 'Você não pode banir essa pessoa' }))
+    socket.replyTo('moderation:unban', () => ({ ok: true }))
+    await kickFromCommunity('acc-ana')
+    await expect(banFromCommunity('acc-ana', 'spam')).rejects.toThrow('Você não pode banir essa pessoa')
+    await unbanFromCommunity('acc-ana')
+    expect(socket.emitted.slice(-3)).toMatchObject([
+      { event: 'moderation:kick', args: [{ accountId: 'acc-ana' }] },
+      { event: 'moderation:ban', args: [{ accountId: 'acc-ana', reason: 'spam' }] },
+      { event: 'moderation:unban', args: [{ accountId: 'acc-ana' }] }
+    ])
+  })
+
+  it('loadBans devolve a lista ou a exceção do servidor', async () => {
+    const ban = { accountId: 'acc-ana', name: 'Ana', tag: 'ana', reason: null, createdAt: 1 }
+    socket.replyTo('moderation:bans', () => ({ ok: true, bans: [ban] }))
+    expect(await loadBans()).toEqual([ban])
+    socket.replyTo('moderation:bans', () => ({ ok: false, error: 'Você não pode ver os banimentos' }))
+    await expect(loadBans()).rejects.toThrow('Você não pode ver os banimentos')
   })
 })

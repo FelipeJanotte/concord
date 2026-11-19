@@ -34,7 +34,7 @@ export function useCanAdminister(): boolean {
   return useApp((s) => {
     if (!s.access || !s.self) return false
     const me = s.self.accountId
-    return can(s.access, me, 'manageRoles') || canChangeAnyMemberRoles(s.access, me)
+    return can(s.access, me, 'manageRoles') || can(s.access, me, 'banMembers') || canChangeAnyMemberRoles(s.access, me)
   })
 }
 

@@ -1,11 +1,6 @@
-/**
- * Moderação da voz (B6) no menu de botão direito sobre uma pessoa: "Mover para" (outra sala de voz),
- * "Silenciar para todos" e "Expulsar da voz". "Mover para" exige `canMoveMember` (mover ou gerenciar membros); silenciar e
- * expulsar exigem `canModerate` (gerenciar membros); os dois com cargo acima do dela e enquanto ela está numa sala que eu vejo.
- */
-import { ArrowRightLeft, MicOff, PhoneOff, ShieldAlert, Volume2 } from 'lucide-react'
+import { ArrowRightLeft, Ban, Clock, DoorOpen, MicOff, PhoneOff, ShieldAlert, Volume2 } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
-import { canModerate, canMoveMember, type VoiceState } from '@shared/types'
+import { canBanMember, canKickMember, canModerate, canMoveMember, canTimeoutMember, type VoiceState } from '@shared/types'
 import {
   ContextMenuCheckboxItem,
   ContextMenuItem,
@@ -14,7 +9,7 @@ import {
   ContextMenuSubContent,
   ContextMenuSubTrigger
 } from '@/components/ui/context-menu'
-import { kickFromVoice, moveToVoice, notify, setServerMuted } from '@/lib/client'
+import { kickFromCommunity, kickFromVoice, moveToVoice, notify, setServerMuted, timeoutMember } from '@/lib/client'
 import { allows } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
@@ -30,9 +25,24 @@ function report(err: unknown, fallback: string): void {
   notify(err instanceof Error ? err.message : fallback)
 }
 
-export function ModerationItems({ accountId, name }: { accountId: string; name: string }) {
-  const moderates = useApp((s) => !!s.access && !!s.self && canModerate(s.access, s.self.accountId, accountId))
-  const moves = useApp((s) => !!s.access && !!s.self && canMoveMember(s.access, s.self.accountId, accountId))
+type TargetRule = typeof canModerate
+
+function useAllowedOn(rule: TargetRule, accountId: string): boolean {
+  return useApp((s) => !!s.access && !!s.self && rule(s.access, s.self.accountId, accountId))
+}
+
+export function ModerationItems({ accountId, name, onBan }: { accountId: string; name: string; onBan: () => void }) {
+  return (
+    <>
+      <VoiceModerationItems accountId={accountId} name={name} />
+      <CommunityModerationItems accountId={accountId} name={name} onBan={onBan} />
+    </>
+  )
+}
+
+function VoiceModerationItems({ accountId, name }: { accountId: string; name: string }) {
+  const moderates = useAllowedOn(canModerate, accountId)
+  const moves = useAllowedOn(canMoveMember, accountId)
   const connections = useVoiceConnections(accountId)
   if (!(moderates || moves) || connections.length === 0) return null
 
@@ -41,6 +51,69 @@ export function ModerationItems({ accountId, name }: { accountId: string; name: 
       <ContextMenuSeparator />
       {moves && <MoveToItems accountId={accountId} connections={connections} />}
       {moderates && <MuteAndKickItems accountId={accountId} name={name} connections={connections} />}
+    </>
+  )
+}
+
+const TIMEOUT_CHOICES = [
+  { label: '1 minuto', minutes: 1 },
+  { label: '10 minutos', minutes: 10 },
+  { label: '1 hora', minutes: 60 },
+  { label: '1 dia', minutes: 24 * 60 },
+  { label: '1 semana', minutes: 7 * 24 * 60 }
+]
+
+function CommunityModerationItems({ accountId, name, onBan }: { accountId: string; name: string; onBan: () => void }) {
+  const kicks = useAllowedOn(canKickMember, accountId)
+  const bans = useAllowedOn(canBanMember, accountId)
+  const timesOut = useAllowedOn(canTimeoutMember, accountId)
+  const timedOut = useApp((s) => accountId in s.timeouts)
+  if (!(kicks || bans || timesOut)) return null
+
+  const timeout = (minutes: number): void => {
+    timeoutMember(accountId, minutes).catch((err: unknown) => report(err, 'Não foi possível mudar o castigo'))
+  }
+
+  return (
+    <>
+      <ContextMenuSeparator />
+      {timesOut && (
+        <ContextMenuSub>
+          <ContextMenuSubTrigger>
+            <Clock className={cn(timedOut && 'text-destructive')} />
+            Castigo
+          </ContextMenuSubTrigger>
+          <ContextMenuSubContent aria-label="Castigo">
+            {timedOut ? (
+              <ContextMenuItem onSelect={() => timeout(0)}>Tirar castigo</ContextMenuItem>
+            ) : (
+              TIMEOUT_CHOICES.map((choice) => (
+                <ContextMenuItem key={choice.minutes} onSelect={() => timeout(choice.minutes)}>
+                  {choice.label}
+                </ContextMenuItem>
+              ))
+            )}
+          </ContextMenuSubContent>
+        </ContextMenuSub>
+      )}
+      {kicks && (
+        <ContextMenuItem
+          variant="destructive"
+          onSelect={() => {
+            if (!window.confirm(`Expulsar ${name} da comunidade? Ela pode voltar entrando de novo.`)) return
+            kickFromCommunity(accountId).catch((err: unknown) => report(err, 'Não foi possível expulsar'))
+          }}
+        >
+          <DoorOpen />
+          Expulsar da comunidade
+        </ContextMenuItem>
+      )}
+      {bans && (
+        <ContextMenuItem variant="destructive" onSelect={onBan}>
+          <Ban />
+          Banir da comunidade
+        </ContextMenuItem>
+      )}
     </>
   )
 }

@@ -1,11 +1,16 @@
 // Moderação (B6): expulsar da voz, mover para outra sala, silenciar pelo servidor e apagar mensagem.
-import type { OkResult } from '@shared/types'
-import { get, notify, requireSocket, set, type AppSocket } from '../core'
+import { BANNED_MESSAGE, type CommunityBan, type CommunityRemoval, type OkResult } from '@shared/types'
+import { get, notify, requireSocket, set, TOKEN_KEY, type AppSocket } from '../core'
 import { voice } from '../voice'
 import { joinVoice, OUT_OF_VOICE } from './voice'
 import { leftVoiceRoom } from './voice-sounds'
 
-export function bindModerationEvents(s: AppSocket): void {
+function removalText(removal: CommunityRemoval): string {
+  if (removal.kind === 'kick') return `${removal.by} expulsou você da comunidade. Você pode entrar de novo.`
+  return removal.reason ? `${BANNED_MESSAGE}. Motivo: ${removal.reason}` : `${BANNED_MESSAGE}.`
+}
+
+export function bindModerationEvents(s: AppSocket, signOut: () => void): void {
   // mensagem apagada (pelo autor ou por quem gerencia mensagens)
   s.on('message:deleted', ({ channelId, messageId }) => {
     set((st) => {
@@ -34,6 +39,46 @@ export function bindModerationEvents(s: AppSocket): void {
     const watching = view?.kind === 'voice' && view.channelId === myVoiceChannelId
     void joinVoice(channelId, { show: watching })
   })
+
+  s.on('moderation:removed', (removal) => {
+    localStorage.removeItem(TOKEN_KEY)
+    signOut()
+    notify(removalText(removal), 'info')
+  })
+
+  s.on('moderation:timeout-changed', ({ accountId, until }) => {
+    set((st) => {
+      const { [accountId]: _removed, ...rest } = st.timeouts
+      return { timeouts: until === null ? rest : { ...rest, [accountId]: until } }
+    })
+  })
+}
+
+export async function loadTimeouts(): Promise<void> {
+  const list = await requireSocket().emitWithAck('moderation:timeouts')
+  set({ timeouts: Object.fromEntries(list.map((t) => [t.accountId, t.until])) })
+}
+
+export async function timeoutMember(accountId: string, minutes: number): Promise<void> {
+  unwrap(await requireSocket().emitWithAck('moderation:timeout', { accountId, minutes }))
+}
+
+export async function kickFromCommunity(accountId: string): Promise<void> {
+  unwrap(await requireSocket().emitWithAck('moderation:kick', { accountId }))
+}
+
+export async function banFromCommunity(accountId: string, reason: string): Promise<void> {
+  unwrap(await requireSocket().emitWithAck('moderation:ban', { accountId, reason }))
+}
+
+export async function unbanFromCommunity(accountId: string): Promise<void> {
+  unwrap(await requireSocket().emitWithAck('moderation:unban', { accountId }))
+}
+
+export async function loadBans(): Promise<CommunityBan[]> {
+  const res = await requireSocket().emitWithAck('moderation:bans')
+  if (!res.ok) throw new Error(res.error)
+  return res.bans
 }
 
 function unwrap(res: OkResult): void {

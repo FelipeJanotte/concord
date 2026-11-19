@@ -1,6 +1,6 @@
-# Moderação (v2, B6)
+# Moderação (v2, B6; v8, A19 e A20)
 
-Quatro ações para manter a comunidade em ordem, todas decididas no **servidor** (a tela só esconde o que daria erro):
+As ações para manter a comunidade em ordem, todas decididas no **servidor** (a tela só esconde o que daria erro):
 
 1. **Expulsar da voz:** tira uma conexão da sala de voz (e da sala do LiveKit). Ela pode voltar, se tiver `connect`.
 1. **Mover para outra sala:** leva uma conexão para outra sala de voz (botão direito "Mover para", ou arrastar a pessoa
@@ -9,6 +9,9 @@ Quatro ações para manter a comunidade em ordem, todas decididas no **servidor*
    (`sound:play` recusa, `docs/areas/sounds.md`) em nenhuma sala até alguém tirar. Diferente
    do "Silenciar" da B4, que é só para mim e local.
 3. **Apagar mensagem:** a própria, ou de outra pessoa com `manageMessages`. Os anexos vão junto (banco e disco).
+4. **Expulsar da comunidade (A19):** derruba todas as conexões da conta e apaga as sessões. Ela volta entrando de novo.
+5. **Banir da comunidade (A19):** o mesmo, e a conta (e o e-mail dela) não entra mais até alguém tirar o banimento.
+6. **Castigo (A20):** por um prazo (1 min a 7 dias) a conta não manda mensagem, não reage e fica silenciada na voz.
 
 ## Arquivos
 
@@ -27,6 +30,18 @@ Quatro ações para manter a comunidade em ordem, todas decididas no **servidor*
 | `src/renderer/src/components/voice/ModerationMenu.tsx` | `ModerationItems` (itens do botão direito: o submenu "Mover para" de `MoveToItems` com `canMoveMember`; "Silenciar para todos" e "Expulsar da voz" de `MuteAndKickItems` com `canModerate`) e `ServerMutedIcon` (escudo vermelho na grade e na barra lateral). |
 | `src/renderer/src/components/ChannelSidebar.tsx` | Arrastar para mover: a pessoa na lista embaixo da sala é `draggable` para quem pode movê-la (`canMoveMember`; `application/x-concord-voice-user` com o `userId`); o bloco de cada sala de voz (`data-voice-room`) aceita soltar (anel de destaque) e chama `moveToVoice`. Soltar na própria sala não faz nada. |
 | `src/renderer/src/components/chat/MessageActions.tsx` | (Junto com Responder e Editar, `docs/areas/messages.md`.) Lixeira ao passar o mouse na mensagem. |
+| `src/shared/types/moderation.ts` (A19/A20) | `canKickMember`, `canBanMember`, `canTimeoutMember` (mesma `outranks` do `canModerate`, cada uma com a sua permissão), `BANNED_MESSAGE`, `BAN_REASON_MAX_LENGTH` (200), `TIMEOUT_MAX_MINUTES` (10080), `timeoutMessage(until, now, timeZone?)`, `CommunityBan`, `MemberTimeout`, `CommunityRemoval`, `BansResult`. |
+| `server/modules/moderation.ts` (A19/A20) | `moderation:kick`, `moderation:ban`, `moderation:unban`, `moderation:bans`, `moderation:timeout`; `removeFromCommunity` (apaga as sessões e derruba as conexões com `moderation:removed`). |
+| `server/modules/timeouts.ts` | Castigos em memória (cache de `server_timeouts`, carregado no `init`, vencidos apagados), um `setTimeout` por conta que tira o castigo no prazo, `setTimedOut`, `isTimedOut`, `timeoutRefusal` (texto da recusa), `onTimeoutsChange` (a voz reaplica as permissões) e o evento `moderation:timeouts`. |
+| `server/db/schema/moderation.ts` (A19/A20) | `community_bans` (`account_id` chave, `email` com índice, `reason`, `banned_by`, `created_at`) e `server_timeouts` (`account_id` chave, `until`, `timed_out_by`, `created_at`). Apagar a conta apaga as duas linhas. Migration `0015_community_bans`. |
+| `server/repo/moderation.ts` (A19/A20) | `insertCommunityBan`, `deleteCommunityBan`, `findCommunityBan({ accountId?, email? })`, `listCommunityBans` (com nome e id), `listServerTimeouts`, `setServerTimeout(accountId, until ou null, by)`. `server/repo/sessions.ts`: `deleteAccountSessions`. |
+| `server/auth.ts` | `isBanned` e as recusas de login, Google, cadastro e `accountFromToken` (`docs/areas/accounts.md`, regra 7). |
+| `server/modules/{messages,reactions}.ts` | Uma linha cada: `timeoutRefusal` antes de enviar/reagir. |
+| `server/modules/voice.ts` | `isServerMuted` = silêncio do moderador **ou** castigo: o castigo usa o mesmo caminho (`voicePermissions`, `VoiceState.serverMuted`, LiveKit sem microfone). |
+| `src/renderer/src/lib/actions/moderation.ts` (A19/A20) | `kickFromCommunity`, `banFromCommunity`, `unbanFromCommunity`, `loadBans`, `timeoutMember`, `loadTimeouts` (chamada depois do `hello`), listeners `moderation:removed` (apaga o token, chama o `disconnect` recebido de `client.ts` e avisa) e `moderation:timeout-changed`. Estado em `store/moderation.ts` (`timeouts`: conta → prazo). |
+| `src/renderer/src/components/voice/ModerationMenu.tsx`, `BanDialog.tsx` | Itens "Castigo ▸", "Expulsar da comunidade" e "Banir da comunidade" (abre o `BanDialog`, montado pelo `MemberContextMenu`, com o motivo opcional). |
+| `src/renderer/src/components/settings/BansTab.tsx` | Aba "Banidos" das Configurações da comunidade (só com `banMembers`): lista com o motivo e "Tirar banimento". |
+| `src/renderer/src/components/chat/Composer.tsx` | Com castigo, o campo some e aparece "Você está de castigo até HH:MM." |
 
 ## Regras
 
@@ -43,6 +58,12 @@ para o "Mover para as salas" do sorteador (`tools:move-teams`, `docs/areas/tools
 **Quem pode apagar (`canDeleteMessage`)**: o autor (`author_id` = minha conta) ou quem tem `manageMessages`. Nos dois
 casos precisa **ver** o canal. Em **conversa privada (`dm`)** não há moderação: só o autor apaga (nem a dona, porque
 ela nem vê a conversa; `docs/areas/dms.md`).
+
+**Expulsar, banir e castigar (A19/A20):** `canKickMember` (`kickMembers`), `canBanMember` (`banMembers`) e
+`canTimeoutMember` (`timeoutMembers`) usam a mesma hierarquia do `canModerate`: nem a si mesmo, nem a dona, só alvo
+abaixo do meu cargo mais alto; Administrador sem hierarquia. Cada permissão vale só para a sua ação (`manageMembers`
+não dá nenhuma delas). Tirar banimento e ver a lista: só `banMembers` (sem alvo, sem hierarquia). Valem para qualquer
+conta, online ou não, dentro ou fora da voz.
 
 **Mover:** além do `canMoveMember`, a sala de destino tem de ser de **voz** e visível para quem move ("Sala de voz não
 encontrada"), diferente da atual ("Essa pessoa já está nessa sala"), e a pessoa movida tem de poder **ver e entrar**
@@ -63,6 +84,39 @@ está numa sala de voz"; apagar mensagem de canal que eu não vejo responde "Men
 | `message:delete` | `{ messageId }` | `OkResult` | apaga (anexos por cascade + arquivos do disco) → `message:deleted { channelId, messageId }` por `emitToViewers` |
 
 Silenciar exige que a pessoa esteja numa sala que eu vejo; **tirar** o silêncio vale sempre (ela pode ter saído).
+
+| Evento (app → servidor, A19/A20) | Payload | Ack | Efeito |
+|---|---|---|---|
+| `moderation:kick` | `{ accountId }` | `OkResult` | apaga as sessões; cada conexão da conta recebe `moderation:removed { kind: 'kick', by }` e cai (`disconnect(true)`) |
+| `moderation:ban` | `{ accountId, reason? }` | `OkResult` | motivo aparado, vazio vira null, mais de 200 recusa; grava `community_bans` com o e-mail atual e faz o mesmo do kick com `{ kind: 'ban', reason }`. Banir de novo mantém o primeiro registro |
+| `moderation:unban` | `{ accountId }` | `OkResult` | apaga a linha; sem linha → "Essa pessoa não está banida" |
+| `moderation:bans` | — | `BansResult` | lista do mais novo para o mais antigo |
+| `moderation:timeout` | `{ accountId, minutes }` | `OkResult` | inteiro de 0 a 10080 ("Escolha de 1 minuto a 7 dias"); 0 tira. Grava `server_timeouts` e emite `moderation:timeout-changed { accountId, until }` (`until` null = sem castigo) para **todos** |
+| `moderation:timeouts` | — | `MemberTimeout[]` | castigos valendo agora |
+
+## Expulsar e banir da comunidade (A19)
+
+1. O servidor confere a regra e se a conta existe ("Pessoa não encontrada"). No ban, grava antes de derrubar.
+2. `deleteAccountSessions` apaga todas as sessões: o token salvo no app não reconecta (`unauthorized`).
+3. Cada conexão da conta recebe `moderation:removed` e é desconectada. Sair da voz e da presença acontece pelo
+   `disconnect` de sempre.
+4. No app: o listener apaga o token, chama o `disconnect()` de `lib/client.ts` (volta à tela de login) e avisa
+   "<nome> expulsou você da comunidade. Você pode entrar de novo." ou "Você foi banido desta comunidade. Motivo: …".
+5. Banida: login, Google e cadastro com o mesmo e-mail respondem "Você foi banido desta comunidade" (a tela de login
+   mostra o erro). Ban é por **conta e e-mail**, não por IP (ADR `docs/decisions/0011-ban-por-conta-e-email.md`).
+
+## Castigo (A20)
+
+1. `setTimedOut(io, conta, prazo, quem)` grava em `server_timeouts`, agenda o fim (`setTimeout` até o prazo), emite
+   `moderation:timeout-changed` e chama os ouvintes de `onTimeoutsChange`. Trocar o prazo cancela o agendamento antigo.
+2. Voz: `isServerMuted` passa a ser verdade, `applyVoiceAccess` tira o microfone no LiveKit e marca
+   `serverMuted`/`muted` (mesmo fluxo do silêncio pelo servidor, acima, inclusive voltar desmutada no fim).
+3. Mensagem (`message:send`) e reação (`message:react`, pôr ou tirar) respondem `timeoutMessage`: "Você está de castigo
+   até HH:MM", ou "até DD/MM HH:MM" se o prazo é em outro dia. A hora é a do **fuso do servidor** (`TZ`).
+4. No prazo, o próprio servidor tira (banco, memória, evento e voz). Ao reiniciar, carrega os que ainda valem e apaga
+   os vencidos. Em conversa privada também vale (o castigo é da conta).
+5. App: `timeouts` na store; o `Composer` troca o campo pelo aviso com a hora local, e volta sozinho com o
+   `moderation:timeout-changed` do fim.
 
 ## Fluxo do silêncio pelo servidor
 
@@ -104,6 +158,10 @@ Silenciar exige que a pessoa esteja numa sala que eu vejo; **tirar** o silêncio
   olhando a sala antiga; no chat de texto (ou na Home), a voz troca e a tela fica onde estava.
 - **Expulso:** o app sai da sala na hora (antes do `voice:state`) e avisa "<nome> tirou você da sala de voz."; o
   `voice:state` seguinte não repete o aviso.
+- **Comunidade (A19/A20)**, em qualquer pessoa da lista (não precisa estar na voz): "Castigo ▸" (1 minuto, 10
+  minutos, 1 hora, 1 dia, 1 semana; com castigo valendo, só "Tirar castigo"), "Expulsar da comunidade" (confirma) e
+  "Banir da comunidade" (janela com motivo opcional). Cada item só aparece com a regra do contrato.
+- **Banidos:** Configurações da comunidade → aba "Banidos" (só com `banMembers`; quem tem só ela também vê a engrenagem).
 - **Mensagens:** lixeira no canto ao passar o mouse (autor; ou `manageMessages` fora de DM), com confirmação. Para
   todos que veem o canal, a mensagem some da lista na hora (`message:deleted`).
 
@@ -116,7 +174,12 @@ Silenciar exige que a pessoa esteja numa sala que eu vejo; **tirar** o silêncio
   das telas.
 - O silêncio pelo servidor fica no banco (`server_mutes`) e vale até alguém tirar, mesmo depois de reiniciar o servidor.
   O `muted_by` é guardado para um futuro log de moderação; ainda não aparece na tela.
-- Não há "expulsar da comunidade" nem banimento: só da sala de voz.
+- Ban por conta e e-mail: outra conta com outro e-mail entra (não há ban por IP, ADR 0011). Trocar o e-mail da conta
+  não escapa (a conta continua banida), mas o e-mail novo pode ser usado num cadastro novo.
+- Castigo: o fim depende de um `setTimeout` no processo; se o servidor estiver fora no prazo, o castigo sai no boot.
+  A hora do aviso do servidor segue o `TZ` do processo (em Docker, defina `TZ=America/Sao_Paulo`); o composer usa a
+  hora local do app.
+- `banned_by`/`timed_out_by` ficam guardados para um futuro log de moderação; não aparecem na tela.
 - Apagar não tem "desfazer" nem registro de quem apagou (log de moderação fica para depois).
 
 ## Testes
@@ -125,9 +188,13 @@ Silenciar exige que a pessoa esteja numa sala que eu vejo; **tirar** o silêncio
 |---|---|
 | `server/tests/moderation.test.ts` | Servidor real + LiveKit falso: expulsar (aviso com o nome, sai da lista, `RemoveParticipant`), hierarquia (sem permissão, dona, cargo igual, si mesmo), quem não está em sala; mover (só a pessoa recebe `moderation:moved` com a sala e quem moveu, entra de novo pelo `voice:join`; recusas: mesma sala, fora da voz, sala de texto/inexistente, sem permissão, sobre a dona, sala em que ela não pode entrar); `moveMembers` (move quem está abaixo, mas não expulsa nem silencia; sem ela recusa; não move a dona nem cargo igual); silenciar (lista e `UpdateParticipant` sem microfone, não se dessilencia, vale ao voltar, tirar devolve a fala, **tirar desmuta na hora sem a pessoa mandar nada** (mesmo com `voice:update` "mutado" durante o silêncio), quem já estava mutado continua mutado, entrou silenciada volta como entrou, **continua depois de reiniciar o servidor e tirar também fica guardado**), validação; apagar (autor, `manageMessages`, canal que não vê sem vazar evento, arquivo do anexo apagado, id inválido). |
 | `server/repo/moderation.test.ts` | Repo no banco de verdade: gravar/repetir/tirar, id inválido e conta inexistente, apagar a conta silenciada (some) e a de quem silenciou (fica). |
-| `src/shared/types/moderation.test.ts` | `canMoveMember` puro: `moveMembers` move quem está abaixo sem ganhar `canModerate`; `manageMembers` continua movendo; nem a si, nem a dona, nem cargo igual/acima; sem as duas permissões ninguém; a dona move todos. |
+| `server/tests/community-moderation.test.ts` | Servidor real (A19/A20): expulsar (todas as conexões recebem o aviso e caem, token velho não conecta, login volta), hierarquia de `kickMembers`, conta inexistente; banir (motivo, login/cadastro recusados com `BANNED_MESSAGE`, lista, tirar, motivo longo, sem motivo), `banMembers` x `kickMembers`; castigo (evento com prazo para todos, mensagem e reação recusadas, lista, 0 tira, voz silenciada no LiveKit e de volta, hierarquia, minutos inválidos, 7 dias e reiniciar o servidor). |
+| `server/modules/timeouts.test.ts` | Fim sozinho no prazo (memória, banco, evento, ouvintes), trocar o prazo cancela o fim antigo, boot carrega os válidos e apaga os vencidos. |
+| `server/auth.test.ts` ("banimento da comunidade") | Login (senha certa recusa; errada não revela), Google por conta e por e-mail, cadastro com e-mail banido, sessão que sobrou. |
+| `src/shared/types/moderation.test.ts` | `canKickMember`/`canBanMember`/`canTimeoutMember` (cada permissão só na sua ação, hierarquia) e `timeoutMessage` (mesmo dia, outro dia, fuso). `canMoveMember` puro: `moveMembers` move quem está abaixo sem ganhar `canModerate`; `manageMembers` continua movendo; nem a si, nem a dona, nem cargo igual/acima; sem as duas permissões ninguém; a dona move todos. |
 | `src/renderer/src/lib/actions/voice-permissions.test.ts` + `lib/voice.test.ts` | Fim do silêncio no app: relê as permissões (já e depois, se faltar), não relê se o LiveKit já avisou, manda `voice:update` desmutado; `syncPermissions` reabre e publica o microfone. |
 | `src/renderer/src/lib/actions/moderation.test.ts` | `message:deleted` na store, `moderation:kicked` (sai e avisa uma vez; de outra sala ignora), `moderation:moved` (troca de sala com aviso; a tela acompanha só se eu olhava a sala antiga; fora da voz ou já na sala, ignora), `moveToVoice`, avisos de "silenciado por moderador" e o payload das ações. |
+| `src/renderer/src/components/voice/community-moderation.test.tsx` | Itens Castigo/Expulsar/Banir pela permissão e hierarquia, confirmação, janela do ban com motivo, prazos do castigo e "Tirar castigo", composer de castigo, aba Banidos (lista, tirar, vazia, sem permissão). |
 | `src/renderer/src/components/voice/moderation.test.tsx` | Itens do botão direito (aparecem/somem pela hierarquia, mandam os eventos, confirmação), "Mover para" (só salas em que a pessoa pode entrar, menos a atual), arrastar na barra lateral (soltar em outra sala move; na mesma, nada; sem poder mover, não arrasta), só "Mover membros" (vê "Mover para" e arrasta, sem silenciar/expulsar), escudo na grade, lixeira (autor, `manageMessages`, DM sem moderação). |
 
 À mão (duas contas, `docs/areas/dev-workflow.md`): a dona entra numa sala com B; botão direito em B → "Silenciar
@@ -147,4 +214,6 @@ de voz.". Com B numa sala, arrastar B para outra sala na barra lateral (ou "Move
 | Pessoa silenciada continua falando | O LiveKit não recebeu o `UpdateParticipant`: veja o log `[livekit]` do servidor (`LIVEKIT_API_URL`, chave). |
 | Continua mutado depois de tirar o silêncio | O servidor volta para a escolha da pessoa (`selfMuted`): se ela tinha se mutado antes, continua (é o esperado). Se a lista mostra desmutada mas ninguém a ouve, o microfone não foi republicado: veja o console `[voz]` dela ("não foi possível ligar o microfone depois de ganhar permissão"). |
 | Silêncio sumiu sozinho | Alguém tirou, ou a conta foi apagada. Confira a tabela `server_mutes` (o servidor só lê no boot: editar o banco à mão exige reiniciar). |
+| "Você foi banido desta comunidade" no login | Há linha em `community_bans` com a conta ou o e-mail. Tire pela aba Banidos (ou apague a linha). |
+| Castigo não acabou na hora | O fim é um `setTimeout` do servidor; confira `server_timeouts.until`. Hora estranha no aviso: `TZ` do servidor. |
 | Mensagem apagada continua na tela de alguém | Essa conexão não vê o canal agora ou estava sem histórico carregado (ao carregar, ela já não vem). |
