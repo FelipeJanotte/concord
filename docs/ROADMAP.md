@@ -323,6 +323,33 @@ A17 (pausa e playlists) — começa depois do merge dela.
 reabrir a faixa ao retomar. Os limiares da borda (liga perto de -50 dBFS, desliga perto de -56, segura ~300 ms) são
 ponto de partida; ajustar medindo com voz baixa real.
 
+## v8 — Moderação da comunidade, chat que lembra e presença
+
+Com a v7 na `main`, sete pedidos do grupo em três frentes: **tirar alguém da comunidade** (hoje a moderação só age na
+voz e nas mensagens), **chat que lembra e acha** (não lido que sobrevive a reiniciar, formatação, busca e fixar) e
+**presença** (ausente e não perturbe). Cada task segue as regras de sempre (contrato primeiro, testes antes, doc da
+área no mesmo PR).
+
+| Task | Dev | O que faz | Arquivos (dono) | Tamanho |
+|---|---|---|---|---|
+| **A18 Não lido guardado no servidor** | A | Tabela `channel_reads` (conta, canal, última mensagem lida); `channel:read { channelId, messageId }` (só avança, com limite de requisições) e a lista de canais/DMs passa a vir com `lastReadId` e "tem não lido". O `unread` da store deixa de ser só memória: reiniciar o app mantém o estado e ler numa janela apaga o não lido nas outras janelas da mesma conta (`channel:read-sync` para as conexões da conta). Linha "Novas mensagens" no chat no ponto onde parei. | `server/modules/reads.ts`, `server/repo/reads.ts`, `server/db/schema/reads.ts`, `shared/types/reads.ts`, `store/channels.ts` (`unread`), `lib/actions/reads.ts`, `lib/home.ts` | médio |
+| **A19 Expulsar e banir da comunidade** | A | Permissões novas `kickMembers` e `banMembers` (hierarquia de cargos e a dona como na B6). `moderation:kick` derruba as conexões da conta e apaga as sessões (pode voltar com cadastro/login); `moderation:ban { accountId, reason? }` faz o mesmo e grava em `community_bans` — login, cadastro com o mesmo e-mail e `hello` são recusados com "Você foi banido desta comunidade". `moderation:unban` e a lista de banidos nas Configurações da comunidade. Ban é por conta e e-mail, não por IP. | `server/modules/moderation.ts`, `server/repo/moderation.ts`, `server/db/schema/moderation.ts`, `server/auth.ts` (recusa), `shared/types/{moderation,permissions}.ts`, `components/voice/ModerationMenu.tsx`, `components/settings/CommunitySettingsDialog.tsx` | médio |
+| **A20 Castigo (timeout)** | A | `moderation:timeout { accountId, minutes }` (1 min a 7 dias; `0` tira) com a permissão nova `timeoutMembers`: até o prazo a conta não manda mensagem, não reage e fica silenciada na voz (mesmo caminho do silêncio pelo servidor), e o servidor recusa com "Você está de castigo até HH:MM". Guardado no banco (`server_timeouts`, sobrevive a reiniciar), acaba sozinho no prazo e avisa `moderation:timeout-changed`. Na tela: "Castigo" no `ModerationMenu` com 1 min/10 min/1 h/1 dia/1 semana e o composer desligado com o aviso. | mesmos de A19 + `server/modules/{messages,reactions,voice}.ts` (checagem), `components/chat/Composer.tsx` | pequeno |
+| **B25 Formatação no chat** | B | Subconjunto de markdown: `**negrito**`, `*itálico*`, `~~riscado~~`, `` `código` ``, bloco ```` ``` ```` (sem destaque de linguagem), `> citação` e `\|\|spoiler\|\|` (clica para ver). Pura `parseMarkdown` em `src/shared/markdown.ts` que devolve nós (nunca HTML: nada de `dangerouslySetInnerHTML`), combinada com menções e links que o `MessageText` já desenha; dentro de código não há menção nem link. Só no app: o servidor guarda o texto como veio. | `src/shared/markdown.ts`, `components/chat/MessageText.tsx` | pequeno |
+| **B26 Buscar mensagens** | B | `message:search { query, channelId?, authorId?, before? }` → até 25 resultados por página, só dos canais e DMs que a conta vê (`visibleChannels`), mais novos primeiro; `ILIKE` no Postgres com limite de requisições (busca por relevância só se ficar lenta, com ADR). Na tela: campo "Buscar" no topo do chat (filtro `de:` pessoa e "neste canal"), painel de resultados com o trecho destacado; clicar abre o canal e rola até a mensagem, carregando o histórico em volta dela (`message:history` com `around`). | `server/modules/messages.ts` (handler novo), `server/repo/messages.ts`, `shared/types/message.ts`, `components/chat/SearchPanel.tsx`, `lib/actions/search.ts` | médio |
+| **B27 Fixar mensagens** | B | Colunas `pinned_at`/`pinned_by` na mensagem; `message:pin { messageId, on }` para quem tem `manageMessages` (em DM, qualquer um dos dois), até 50 por canal; `message:pinned` por `emitToViewers` e `message:pins { channelId }`. Na tela: "Fixar" no menu da mensagem, ícone de alfinete no topo do chat com a lista (clicar rola até a mensagem, mesmo caminho da B26) e mensagem de sistema "Fulano fixou uma mensagem". | `server/modules/messages.ts`, `server/repo/messages.ts`, `server/db/schema/messages.ts`, `shared/types/message.ts`, `components/chat/PinnedMessages.tsx` | pequeno |
+| **B28 Ausente automático e Não perturbe** | B | Status `online \| idle \| dnd` (offline continua sendo sem conexão) no contrato da presença: `presence:set-status` e o status vai junto onde o online já vai (membros e amigos). Ausente sozinho depois de 10 min sem mexer no computador (`powerMonitor.getSystemIdleTime()` no main, não só no app) e volta ao mexer; Não perturbe é escolhido no `UserPanel`, fica salvo nas preferências da conta e **silencia as notificações** (B9) e os sons de mensagem, menos chamada. Bolinha amarela (ausente) e vermelha (não perturbe) nos avatares. | `shared/types/presence.ts`, `server/modules/presence.ts`, `src/main/idle.ts`, `src/preload/*`, `lib/actions/presence.ts`, `lib/notifications.ts` (regra), `components/UserAvatar.tsx`, `components/UserPanel.tsx` | pequeno |
+
+Ordem: A19 antes de A20 (mesmo contrato de moderação, um PR de tipos para as duas). B26 e B27 mexem em
+`shared/types/message.ts` e `server/repo/messages.ts` — contrato das duas num PR só; o "rolar até a mensagem fora do
+histórico carregado" é feito uma vez na B26 e reusado na B27. B25 e B28 são independentes. A18 é independente, mas
+avisa o Dev B antes de mexer em `lib/home.ts`.
+
+**Riscos:** `ILIKE` varre a tabela inteira; medir com 100 mil mensagens antes de mergear e, se passar de ~200 ms,
+trocar por índice `pg_trgm` (confirmar que o PGlite tem a extensão). Ban por conta não impede conta nova com outro
+e-mail; se virar problema, o caminho é convite para entrar (fora desta versão). O ausente pelo sistema precisa de
+teste manual no Windows (o `powerMonitor` não roda no vitest; a regra de quando ficar ausente é pura e testada).
+
 ## Verificação (em toda task)
 
 - `npm run typecheck` e `npm test` (vitest: `can()`, sorteador, validação de upload, repos contra Postgres de teste).
@@ -346,3 +373,4 @@ ponto de partida; ajustar medindo com voz baixa real.
 - A17/B22: pausar numa janela mostra "Pausado" na outra e o som para para os dois; retomar continua do mesmo ponto (também depois de 10 min); `/skip` pausado continua pausado; salvar playlist do Spotify e do YouTube aparece para a outra conta e toca pelo botão; apagar só para quem salvou ou modera.
 - B23: duas contas na sala, falar baixo e a borda acende na cor do tema; trocar o tema muda a cor (inclusive no overlay); silêncio apaga sem piscar.
 - B24: no Windows, em chamada, a miniatura da barra de tarefas mostra os 3 botões; silenciar, desativar áudio e sair funcionam e o ícone troca; fora de chamada os botões somem.
+- v8: banido não entra nem cadastrando de novo com o mesmo e-mail; de castigo não manda mensagem nem fala até o prazo, e volta sozinho; não lido continua depois de reiniciar e some na outra janela ao ler; `**a**` vira negrito e `<b>` aparece como texto; busca não traz mensagem de canal privado que a conta não vê; fixar aparece para todos; sem mexer no computador por 10 min vira ausente e Não perturbe não mostra notificação de mensagem.
