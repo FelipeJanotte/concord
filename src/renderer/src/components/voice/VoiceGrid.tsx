@@ -111,7 +111,7 @@ export function ParticipantTile({ state, compact = false, onWatch }: { state: Vo
       <div
         className={cn(
           'relative flex aspect-video items-center justify-center rounded-lg bg-background ring-2 ring-transparent transition-shadow',
-          speaking && 'ring-success'
+          speaking && 'ring-primary'
         )}
       >
         {camera ? <CameraVideo userId={state.userId} name={user.name} self={isSelf} /> : <UserAvatar user={user} size={compact ? 'lg' : 'xl'} />}

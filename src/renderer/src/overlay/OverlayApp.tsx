@@ -170,7 +170,7 @@ function MemberRow({ member, line, avatar, text }: { member: OverlayMember; line
         className={cn(
           'flex shrink-0 items-center justify-center overflow-hidden rounded-full font-bold ring-2 transition-shadow',
           text.initial,
-          member.speaking ? 'ring-success' : 'ring-transparent'
+          member.speaking ? 'ring-primary' : 'ring-transparent'
         )}
         style={{ width: avatar, height: avatar, ...(member.avatarUrl ? {} : { backgroundColor: member.color }) }}
       >

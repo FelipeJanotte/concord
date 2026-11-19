@@ -6,6 +6,39 @@ import { initialState, useApp } from '@/store'
 import { FakeSocket } from '@/test/fake-socket'
 import { MUSIC_BOT_VOLUME_ID, VoiceClient } from './voice'
 import type { VoiceLeveler } from './leveler/leveler'
+import type { TrackSource } from './speaking/detector'
+
+const detectors = vi.hoisted(() => {
+  class FakeSpeakingDetector {
+    onChange: ((ids: string[]) => void) | null = null
+    watched = new Map<string, TrackSource>()
+    destroyed = false
+    watch(id: string, trackOf: TrackSource): void {
+      this.watched.set(id, trackOf)
+    }
+    unwatch(id: string): void {
+      this.watched.delete(id)
+    }
+    destroy(): void {
+      this.destroyed = true
+    }
+    emit(ids: string[]): void {
+      this.onChange?.(ids)
+    }
+  }
+  return { FakeSpeakingDetector, created: [] as FakeSpeakingDetector[] }
+})
+
+vi.mock('./speaking/detector', () => ({
+  SpeakingDetector: class extends detectors.FakeSpeakingDetector {
+    constructor() {
+      super()
+      detectors.created.push(this)
+    }
+  }
+}))
+
+const detector = () => detectors.created[detectors.created.length - 1]
 
 type Listener = (...args: unknown[]) => void
 
@@ -125,7 +158,6 @@ function makeClient(): VoiceClient {
 }
 
 const lastRoom = (): FakeRoom => rooms[rooms.length - 1]
-const speaker = (identity: string): { identity: string } => ({ identity })
 
 beforeEach(() => {
   useApp.setState({ ...initialState, self: { id: 'eu', accountId: 'a', name: 'Eu', tag: 'eu', color: '#000', avatarUrl: null } })
@@ -299,17 +331,51 @@ describe('áudio, mute e deafen', () => {
 })
 
 describe('quem está falando', () => {
-  it('vem do ActiveSpeakersChanged do LiveKit', async () => {
+  it('mede o meu microfone (a faixa atual, já com o filtro) desde a entrada na sala', async () => {
     await client.join('sala-1')
-    lastRoom().fire(RoomEvent.ActiveSpeakersChanged, [speaker('eu'), speaker('outro')])
+    const mine = detector().watched.get('eu')
+    expect(mine?.()).toBe(mic!.mediaStreamTrack)
+    const filtered = { id: 'filtrada' }
+    mic!.mediaStreamTrack = filtered as never
+    expect(mine?.()).toBe(filtered)
+  })
+
+  it('mede o microfone de cada pessoa da sala e para quando a faixa sai', async () => {
+    await client.join('sala-1')
+    const ana = new FakeRemoteTrack()
+    lastRoom().fire(RoomEvent.TrackSubscribed, ana, {}, { identity: 'ana', attributes: { accountId: 'acc-ana' } })
+    expect(detector().watched.get('ana')?.()).toBe(ana.mediaStreamTrack)
+
+    lastRoom().fire(RoomEvent.TrackUnsubscribed, ana, {}, { identity: 'ana' })
+    expect(detector().watched.has('ana')).toBe(false)
+  })
+
+  it('o bot de música também acende; áudio da tela não conta como fala', async () => {
+    await client.join('sala-1')
+    lastRoom().fire(RoomEvent.TrackSubscribed, new FakeRemoteTrack(), {}, { identity: 'musica', attributes: { bot: 'music' } })
+    const screenAudio = new FakeRemoteTrack(Track.Kind.Audio, Track.Source.ScreenShareAudio)
+    lastRoom().fire(RoomEvent.TrackSubscribed, screenAudio, {}, { identity: 'bia', attributes: { accountId: 'acc-bia' } })
+    expect([...detector().watched.keys()].sort()).toEqual(['eu', 'musica'])
+  })
+
+  it('sair desliga a medição', async () => {
+    await client.join('sala-1')
+    const used = detector()
+    client.leave()
+    expect(used.destroyed).toBe(true)
+  })
+
+  it('vem da medição no app', async () => {
+    await client.join('sala-1')
+    detector().emit(['eu', 'outro'])
     expect(useApp.getState().speaking).toEqual({ eu: true, outro: true })
-    lastRoom().fire(RoomEvent.ActiveSpeakersChanged, [])
+    detector().emit([])
     expect(useApp.getState().speaking).toEqual({})
   })
 
   it('mute esconde a própria pessoa; deafen esconde os outros', async () => {
     await client.join('sala-1')
-    lastRoom().fire(RoomEvent.ActiveSpeakersChanged, [speaker('eu'), speaker('outro')])
+    detector().emit(['eu', 'outro'])
     client.setMuted(true)
     expect(useApp.getState().speaking).toEqual({ outro: true })
     client.setMuted(false)
@@ -319,15 +385,15 @@ describe('quem está falando', () => {
 
   it('não atualiza a store se nada mudou', async () => {
     await client.join('sala-1')
-    lastRoom().fire(RoomEvent.ActiveSpeakersChanged, [speaker('outro')])
+    detector().emit(['outro'])
     const before = useApp.getState().speaking
-    lastRoom().fire(RoomEvent.ActiveSpeakersChanged, [speaker('outro')])
+    detector().emit(['outro'])
     expect(useApp.getState().speaking).toBe(before)
   })
 
   it('sair limpa quem está falando', async () => {
     await client.join('sala-1')
-    lastRoom().fire(RoomEvent.ActiveSpeakersChanged, [speaker('outro')])
+    detector().emit(['outro'])
     client.leave()
     expect(useApp.getState().speaking).toEqual({})
   })
@@ -1121,7 +1187,7 @@ describe('pressione para falar (B20)', () => {
 
   it('abrir e fechar o portão liga e desliga o microfone e o "falando" da própria pessoa', async () => {
     await client.join('sala-1')
-    lastRoom().fire(RoomEvent.ActiveSpeakersChanged, [speaker('eu'), speaker('outro')])
+    detector().emit(['eu', 'outro'])
     client.setMicGate(false)
     expect(mic!.mute).toHaveBeenCalled()
     expect(useApp.getState().speaking).toEqual({ outro: true })

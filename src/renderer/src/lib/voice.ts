@@ -43,6 +43,7 @@ import { loadRnnoiseEngine } from './noise/engine'
 import { AutoNoiseProcessor, type NoiseMode } from './noise/processor'
 import { clampMicGain, clampOutputVolume, MicGainProcessor, type GainControl } from './mic-gain'
 import { AudioClockWatchdog } from './audio-clock'
+import { SpeakingDetector } from './speaking/detector'
 import { VoiceLeveler, type LevelerGains } from './leveler/leveler'
 import type { LevelerTarget } from './leveler/level'
 import { useApp } from '@/store'
@@ -173,8 +174,8 @@ export class VoiceClient {
    */
   private gateClosed = false
   private deafened = false
-  /** ids que o LiveKit diz estarem falando (antes do filtro de mute/deafen) */
-  private activeSpeakers: string[] = []
+  private measuredSpeakers: string[] = []
+  private speakingDetector: SpeakingDetector | null = null
   /** identidade → faixa de vídeo da tela (remota ou a própria, como prévia) */
   private screens = new Map<string, Track>()
   /** câmera ligada de cada conexão da sala (B21), a própria inclusa como prévia */
@@ -292,6 +293,7 @@ export class VoiceClient {
       this.connecting = null
       // Saiu, trocou de sala ou a conexão com o Concord caiu enquanto conectava: não é sucesso.
       if (this.room !== room) return { micError, cancelled: true, ...permissions }
+      this.detector().watch(room.localParticipant.identity, () => this.mic?.mediaStreamTrack)
       // O filtro entra antes de publicar: ninguém chega a ouvir o áudio cru.
       if (mic) await this.attachProcessor(mic)
       if (mic) await room.localParticipant.publishTrack(mic, MIC_PUBLISH)
@@ -345,6 +347,8 @@ export class VoiceClient {
       void room.disconnect()
     }
     this.destroyLeveler()
+    this.speakingDetector?.destroy()
+    this.speakingDetector = null
     for (const track of this.remoteAudio) track.detach().forEach((el) => el.remove())
     this.remoteAudio.clear()
     this.voices.clear()
@@ -355,7 +359,7 @@ export class VoiceClient {
     this.gainControl = null
     this.onNoiseModeChange?.(null)
     this.mic = null
-    this.activeSpeakers = []
+    this.measuredSpeakers = []
     if (Object.keys(useApp.getState().speaking).length) useApp.setState({ speaking: {} })
     this.screens.clear()
     this.publishScreens()
@@ -725,6 +729,9 @@ export class VoiceClient {
         const el = track.attach()
         el.muted = this.deafened
         this.remoteAudio.add(track)
+        if (track.source === Track.Source.Microphone && participant) {
+          this.detector().watch(participant.identity, () => track.mediaStreamTrack)
+        }
         const accountId = volumeIdOf(participant)
         if (track.source === Track.Source.Microphone && accountId) {
           this.voices.set(track, accountId)
@@ -743,6 +750,7 @@ export class VoiceClient {
           if (track.source === Track.Source.Camera) return this.removeCamera(participant.identity, track)
           return this.removeScreen(participant.identity, track)
         }
+        if (track.source === Track.Source.Microphone && participant) this.speakingDetector?.unwatch(participant.identity)
         this.voices.delete(track)
         if (this.screenAudio.delete(track)) this.publishScreenAudio()
         if (this.leveled.delete(track)) this.leveler?.remove(track)
@@ -775,10 +783,6 @@ export class VoiceClient {
       .on(RoomEvent.ParticipantPermissionsChanged, (_prev: unknown, participant: Participant) => {
         if (this.room !== room || participant !== room.localParticipant) return
         void this.applyPermissions(room, permissionsFrom(room.localParticipant.permissions))
-      })
-      .on(RoomEvent.ActiveSpeakersChanged, (speakers: Participant[]) => {
-        this.activeSpeakers = speakers.map((p) => p.identity)
-        this.publishSpeaking()
       })
       .on(RoomEvent.Reconnecting, () => console.warn('[voz] conexão instável, reconectando...'))
       .on(RoomEvent.Reconnected, () => console.info('[voz] reconectado'))
@@ -840,11 +844,23 @@ export class VoiceClient {
     if (prev.length !== next.length || next.some((id, i) => prev[i] !== id)) useApp.setState({ screens: next })
   }
 
+  private detector(): SpeakingDetector {
+    if (!this.speakingDetector) {
+      const detector = new SpeakingDetector()
+      detector.onChange = (ids) => {
+        this.measuredSpeakers = ids
+        this.publishSpeaking()
+      }
+      this.speakingDetector = detector
+    }
+    return this.speakingDetector
+  }
+
   /** Atualiza `store.speaking` (só quando muda, para não re-renderizar à toa). */
   private publishSpeaking(): void {
     const selfId = useApp.getState().self?.id
     const next: Record<string, boolean> = {}
-    for (const id of this.activeSpeakers) {
+    for (const id of this.measuredSpeakers) {
       const silenced = id === selfId ? this.micSilenced : this.deafened
       if (!silenced) next[id] = true
     }

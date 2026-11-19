@@ -97,7 +97,7 @@ Mudanças em contas/perfil seguem a `docs/areas/accounts.md`.
 
 - **shadcn/ui**: `npx shadcn@latest add <componente>` gera os arquivos em `src/renderer/src/components/ui/`. Os componentes importam de `radix-ui` (pacote único) e usam `cn()` de `@/lib/utils`.
 - **Botão de ícone com tooltip**: use `IconButton` (`components/IconButton.tsx`).
-- **Avatar**: use `UserAvatar` (foto da conta via `avatarUrl`, com as iniciais sobre a cor do usuário como fallback; `speaking` mostra o anel verde). Para identificar a pessoa na tela, mostre `nome#tag` (ex.: `title`).
+- **Avatar**: use `UserAvatar` (foto da conta via `avatarUrl`, com as iniciais sobre a cor do usuário como fallback; `speaking` mostra o anel na cor de destaque do tema, B23). Para identificar a pessoa na tela, mostre `nome#tag` (ex.: `title`).
 - **Tokens de cor** (em `assets/globals.css`): `bg-background` (chat), `bg-sidebar`, `bg-rail` (barra de servidores e fundo da voz), `bg-panel` (painel do usuário), `bg-composer` (campo de mensagem), `bg-accent` (hover e item selecionado), `text-muted-foreground`, `text-accent-foreground`, `text-success`, `text-destructive`, `bg-primary` (azul do Discord). Para um token novo, adicione a variável em `:root` **e** em `@theme inline`.
 - Títulos de seção: `text-xs font-bold tracking-wide uppercase text-muted-foreground`.
 - Elementos clicáveis que contêm outros botões (itens de canal) são `div` com `role="button"` (veja `onActivate` em `ChannelSidebar.tsx`), porque botão dentro de botão é HTML inválido.
