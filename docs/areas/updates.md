@@ -69,6 +69,21 @@ baixar (aí o botão some e aparece o de progresso no topo).
 A primeira versão com a A13 precisa ser instalada à mão (as anteriores não sabem se atualizar). Um instalador gerado
 à mão (`npm run dist`) também se atualiza pelas releases, desde que a versão dele seja menor que a publicada.
 
+## Pré-ponte para o Tauri (M0)
+
+Última versão Electron antes da troca pelo Tauri (ADR 0013, "Troca do Electron"). Prepara quem já tem o app instalado.
+
+| Item | Como é |
+|---|---|
+| Arquivo | `<userData>/migrate.json`, escrito em `migrate.json.tmp` e renomeado (nunca fica pela metade). |
+| Quando | A cada partida, no `did-finish-load` da janela principal (`setupMigration` em `src/main/migration.ts`). |
+| Formato | `{ "version": 1, "exportedAt": "<ISO>", "entries": { "<chave>": "<valor cru do localStorage>" } }`; só chaves `concord:*`. |
+| Para quê | O app Tauri tem outra origem e não enxerga o localStorage do Electron: ele lê este arquivo na primeira execução. |
+| Pasta de instalação | `autoUpdater.installDirectory` = pasta de `app.getPath('exe')` (só empacotado), para o instalador do Tauri cair na mesma pasta. |
+| Falha | Só `console.error`; o app segue normalmente. |
+
+Testes: `src/main/migration.test.ts` (filtro `concord:`, formato, temporário + rename, falha logada) e `src/main/updater.test.ts` (pasta de instalação fixada só no app instalado).
+
 ## Testes
 
 | Arquivo | Cobre |

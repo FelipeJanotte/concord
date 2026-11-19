@@ -8,12 +8,14 @@
  * `createUpdaterController` tem a lógica, testável com um atualizador falso.
  */
 import { app, ipcMain, type BrowserWindow } from 'electron'
+import { dirname } from 'path'
 import { UPDATE_CHECK_INTERVAL_MS, type UpdateStatus } from '../shared/updater'
 
 /** O pedaço do `autoUpdater` (electron-updater) que usamos. */
 export interface UpdaterLike {
   autoDownload: boolean
   autoInstallOnAppQuit: boolean
+  installDirectory?: string
   on(event: 'checking-for-update', fn: () => void): unknown
   on(event: 'update-available', fn: (info: { version: string }) => void): unknown
   on(event: 'update-not-available', fn: () => void): unknown
@@ -28,13 +30,14 @@ export interface UpdaterDeps {
   updater: UpdaterLike
   /** app instalado (no dev não atualiza) */
   isPackaged: boolean
+  installDirectory?: string
   /** manda a situação para a janela */
   send: (status: UpdateStatus) => void
   setInterval?: (fn: () => void, ms: number) => unknown
   log?: (message: string) => void
 }
 
-export function createUpdaterController({ updater, isPackaged, send, setInterval: every = setInterval, log = console.warn }: UpdaterDeps) {
+export function createUpdaterController({ updater, isPackaged, installDirectory, send, setInterval: every = setInterval, log = console.warn }: UpdaterDeps) {
   let status: UpdateStatus = { state: 'idle' }
   let pendingVersion = ''
 
@@ -47,6 +50,7 @@ export function createUpdaterController({ updater, isPackaged, send, setInterval
 
   updater.autoDownload = true
   updater.autoInstallOnAppQuit = true
+  if (isPackaged && installDirectory) updater.installDirectory = installDirectory
   updater.on('checking-for-update', () => set({ state: 'checking' }))
   updater.on('update-available', (info) => {
     pendingVersion = info.version
@@ -102,6 +106,7 @@ export async function setupUpdater(getWindow: () => BrowserWindow | null): Promi
   const controller = createUpdaterController({
     updater: pickAutoUpdater(await import('electron-updater')),
     isPackaged: app.isPackaged,
+    installDirectory: dirname(app.getPath('exe')),
     send: (status) => getWindow()?.webContents.send('update-status', status)
   })
   ipcMain.handle('update-get', () => controller.status())
