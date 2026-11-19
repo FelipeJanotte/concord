@@ -14,14 +14,14 @@ const { TOKEN_KEY } = await import('@/lib/core')
 
 const raw = (event: string, ...args: unknown[]): void => (fake.receive as (e: string, ...a: unknown[]) => void)(event, ...args)
 
-function serverAccepts(): void {
+function serverAccepts(state: Partial<HelloResponse['state']> = {}): void {
   raw('connect')
   const calls = fake.sent('hello')
   const [hello] = calls[calls.length - 1] as [(res: HelloResponse) => void]
   hello({
     self: { id: 's', accountId: 'me', name: 'Eu', tag: 'eu1', color: '#000', avatarUrl: null },
     account: {} as HelloResponse['account'],
-    state: { channels: [], users: [], voice: [], access: { ownerAccountId: 'me', roles: [], members: [], overrides: [] }, statuses: {} }
+    state: { channels: [], users: [], voice: [], access: { ownerAccountId: 'me', roles: [], members: [], overrides: [] }, statuses: {}, ...state }
   } as HelloResponse)
 }
 
@@ -88,6 +88,15 @@ describe('reconexão', () => {
     raw('connect_error', new Error('websocket error'))
     await vi.advanceTimersByTimeAsync(10000)
     expect(fake.connectCalls).toBe(0)
+  })
+})
+
+describe('servidor de versão anterior', () => {
+  it('hello sem statuses entra com os status vazios em vez de undefined', async () => {
+    const done = connect('http://localhost:3001', 'token-salvo')
+    serverAccepts({ statuses: undefined })
+    await done
+    expect(useApp.getState().statuses).toEqual({})
   })
 })
 

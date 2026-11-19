@@ -78,3 +78,4 @@ vermelha em B; minimize A e mande mensagem de B → sem notificação nem som; l
 | Fica ausente com outra janela aberta em uso | Não deveria: é por conta e exige todas as conexões paradas. Confira se a outra janela é da mesma conta. |
 | Bolinha vermelha some ao reabrir | Não deveria: Não perturbe está em `account_preferences.do_not_disturb`; confira o `preferences:get`. |
 | Status atrasado depois de muitas trocas | `LIMITS.presence` ignorou o excesso; o próximo envio (próxima mudança) corrige. |
+| Tela em branco logo depois de entrar (app atualizado) | Servidor de versão anterior à B28 não manda `statuses` no `hello`. O app trata como `{}` (`lib/client.ts`, teste em `lib/client-session.test.ts`), e todo mundo aparece online. Atualize o servidor para ver ausente e Não perturbe. |
