@@ -1,11 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "overlay",
-  "description": "Janela do overlay: s\u00f3 eventos",
+  "description": "Janela do overlay: eventos e os dois comandos da página (concluir o modo de mover e redimensionar)",
   "windows": [
     "overlay"
   ],
   "permissions": [
-    "core:event:default"
+    "core:event:default",
+    "allow-overlay-edit",
+    "allow-overlay-resize"
   ]
 }
