@@ -1,0 +1,36 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "Janela principal",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:event:default",
+    "allow-google-sign-in",
+    "allow-screen-sources",
+    "allow-screen-select",
+    "allow-overlay-config",
+    "allow-overlay-room",
+    "allow-overlay-edit",
+    "allow-overlay-shortcuts",
+    "allow-overlay-shortcuts-pause",
+    "allow-overlay-theme",
+    "allow-overlay-resize",
+    "allow-ptt-config",
+    "allow-ptt-capture",
+    "allow-idle-get",
+    "allow-notify",
+    "allow-badge",
+    "allow-thumbar-buttons",
+    "allow-update-get",
+    "allow-update-check",
+    "allow-update-install",
+    "allow-window-translucency",
+    "allow-startup-get",
+    "allow-startup-set",
+    "allow-window-control",
+    "allow-window-maximized-get",
+    "allow-show-main-window"
+  ]
+}
