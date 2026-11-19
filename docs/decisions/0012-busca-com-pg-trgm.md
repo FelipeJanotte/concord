@@ -12,7 +12,7 @@ e o Postgres 17 do compose também (é uma extensão confiável: o dono do banco
 
 ## Decisão
 Continuar com `ILIKE` (mesma semântica de "contém", `%` e `_` escapados) e criar a extensão `pg_trgm` com o índice
-GIN `messages_content_trgm_idx` (`content gin_trgm_ops`) na migration `0015_search_pins`; o PGlite carrega a extensão
+GIN `messages_content_trgm_idx` (`content gin_trgm_ops`) na migration `0015_v8`; o PGlite carrega a extensão
 em `server/db/client.ts`.
 
 Depois do índice, no mesmo teste: termo raro 8–19 ms, termo presente em 1/6 das mensagens ~100 ms, busca num canal só

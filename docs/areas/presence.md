@@ -20,7 +20,7 @@ Quem está conectado e **como** está: `online`, `idle` (ausente) ou `dnd` (Não
 | `src/main/idle.ts` | `createIdleWatcher` (confere o tempo parado a cada `IDLE_CHECK_MS` e avisa só quando muda; dependências injetadas) e `setupIdle(getWindow)` (usa o `powerMonitor`, manda `idle-change` para a janela e responde `idle-get`). Chamado em `src/main/index.ts`, parado no `will-quit`. |
 | `src/preload/index.ts` / `index.d.ts` | `window.api.idle` (`isIdle()`, `onChange(listener)`). |
 | `server/modules/presence.ts` | `hello` (devolve `statuses`), `presence:set-status`, saída; guarda em memória as conexões paradas e as contas em Não perturbe; `setDoNotDisturb(io, accountId, on)` (chamado pelas preferências). |
-| `server/modules/preferences.ts`, `server/repo/preferences.ts`, `server/db/schema/preferences.ts` | `Preferences.doNotDisturb` (coluna `do_not_disturb`, migration `0015_do_not_disturb`). |
+| `server/modules/preferences.ts`, `server/repo/preferences.ts`, `server/db/schema/preferences.ts` | `Preferences.doNotDisturb` (coluna `do_not_disturb`, migration `0015_v8`). |
 | `src/renderer/src/lib/actions/presence.ts` | `bindPresenceEvents` (`user:*`, `presence:status`, escuta a ponte `idle` uma vez), `syncActivityStatus` (depois do `hello`), `setDoNotDisturb`. `idleEnv.bridge` é trocado nos testes. |
 | `src/renderer/src/lib/presence.ts` | `DotStatus`, `STATUS_LABEL` e o hook `usePresence(accountId, online?)`. |
 | `src/renderer/src/components/UserAvatar.tsx` | `StatusDot` (bolinha com `role="img"` e nome: "Online", "Ausente", "Não perturbe", "Offline"). Usado em `MemberList`, `UserPanel`, `DmList`, `FriendsView` e `UserProfileDialog`. |

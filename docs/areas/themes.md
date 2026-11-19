@@ -12,7 +12,7 @@ os tokens de cada parte da tela são **derivados** dela no app (`deriveTokens`, 
 | `src/shared/types/preferences.ts` | `Preferences { theme, savedThemes, mutedChannels }` (canais silenciados: `docs/areas/notifications.md`), `PreferencesUpdate`, eventos `preferences:*`. |
 | `server/modules/preferences.ts` | `preferences:get`, `preferences:update` (valida tudo com o contrato; avisa as outras janelas da mesma conta). |
 | `server/repo/preferences.ts` | `getPreferences` (sem registro → padrão) e `updatePreferences` (grava só o que veio; cria na primeira vez). |
-| `server/db/schema/preferences.ts` | Tabela `account_preferences` (migration `0004_preferences`): `theme` e `saved_themes` em jsonb (`muted_channels` na `0013_muted_channels`, `do_not_disturb` na `0015_do_not_disturb`, `docs/areas/presence.md`); apagar a conta apaga junto. |
+| `server/db/schema/preferences.ts` | Tabela `account_preferences` (migration `0004_preferences`): `theme` e `saved_themes` em jsonb (`muted_channels` na `0013_muted_channels`, `do_not_disturb` na `0015_v8`, `docs/areas/presence.md`); apagar a conta apaga junto. |
 
 ## Contrato
 

@@ -16,7 +16,7 @@ beforeEach(() => {
   socket = new FakeSocket()
   setSocket(socket.asSocket())
   bindPinsEvents(socket.asSocket())
-  bindModerationEvents(socket.asSocket())
+  bindModerationEvents(socket.asSocket(), () => {})
   useApp.setState({ ...initialState, messages: { geral: [msg('m1'), msg('m2')] } })
 })
 afterEach(() => setSocket(null))
