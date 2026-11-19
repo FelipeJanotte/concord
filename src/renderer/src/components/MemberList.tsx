@@ -4,7 +4,8 @@ import type { User } from '@shared/types'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { rolesByPosition, topRole, useNameColor } from '@/lib/permissions'
 import { useApp } from '@/store'
-import { UserAvatar } from './UserAvatar'
+import { usePresence } from '@/lib/presence'
+import { StatusDot, UserAvatar } from './UserAvatar'
 import { MemberContextMenu } from './voice/MemberContextMenu'
 
 /** Grupo da lista: um por cargo (pelo cargo mais alto de cada pessoa) e "Online" para quem não tem cargo. */
@@ -60,13 +61,14 @@ function MemberItem({ user }: { user: User }) {
   const inVoice = useApp((s) => s.voice.some((v) => s.users.find((u) => u.id === v.userId)?.accountId === user.accountId))
   const isSelf = useApp((s) => s.self?.accountId === user.accountId)
   const color = useNameColor(user.accountId, user.color)
+  const status = usePresence(user.accountId)
 
   return (
     <MemberContextMenu userId={user.id}>
       <div className="flex h-11 items-center gap-3 rounded-md px-2 hover:bg-accent/50">
         <div className="relative">
           <UserAvatar user={user} />
-          <span className="absolute -right-0.5 -bottom-0.5 size-3.5 rounded-full border-[3px] border-sidebar bg-success" />
+          <StatusDot status={status} className="border-sidebar" />
         </div>
         <span className="flex-1 truncate font-medium" style={{ color }} title={`${user.name}#${user.tag}`}>
           {user.name}

@@ -11,7 +11,7 @@ import type { NotificationSoundKind } from '@/store/notifications'
 import { findDm } from './dms'
 import { homeBadge } from './home'
 
-type St = Pick<AppState, 'self' | 'dms' | 'friends' | 'unread' | 'calls'> & Partial<Pick<AppState, 'channels' | 'channelNotifications' | 'mutedChannels'>>
+type St = Pick<AppState, 'self' | 'dms' | 'friends' | 'unread' | 'calls' | 'doNotDisturb'> & Partial<Pick<AppState, 'channels' | 'channelNotifications' | 'mutedChannels'>>
 
 /** Texto curto da mensagem para a notificação (anexo sem texto vira "📎 1 anexo"). */
 export function messagePreview(message: Message): string {
@@ -30,7 +30,7 @@ export function messagePreview(message: Message): string {
  * @todos, B19) ou nada. O que não notifica fica só na bolinha de não lido.
  */
 export function messageNotification(message: Message, st: St, focused: boolean): NativeNotification | null {
-  if (focused || !st.self || message.author.accountId === st.self.accountId || st.mutedChannels?.includes(message.channelId)) return null
+  if (focused || st.doNotDisturb || !st.self || message.author.accountId === st.self.accountId || st.mutedChannels?.includes(message.channelId)) return null
   const dm = findDm(st.dms, message.channelId)
   if (dm) return { title: dm.other.name, body: messagePreview(message), target: { kind: 'dm', channelId: dm.channel.id } }
   const mode = st.channelNotifications ?? 'all'
@@ -55,8 +55,8 @@ export function callNotification(call: CallInfo, st: St, focused: boolean): Nati
 }
 
 /** Pedido de amizade recebido, com a janela fora de foco. */
-export function friendRequestNotification(entry: FriendEntry, focused: boolean): NativeNotification | null {
-  if (focused || entry.status !== 'incoming') return null
+export function friendRequestNotification(entry: FriendEntry, st: Pick<AppState, 'doNotDisturb'>, focused: boolean): NativeNotification | null {
+  if (focused || st.doNotDisturb || entry.status !== 'incoming') return null
   return {
     title: 'Pedido de amizade',
     body: `${entry.account.name}#${entry.account.tag} enviou um pedido de amizade.`,
@@ -64,16 +64,16 @@ export function friendRequestNotification(entry: FriendEntry, focused: boolean):
   }
 }
 
-type SoundSt = Pick<AppState, 'self' | 'dms' | 'mutedChannels' | 'deafened' | 'notificationSounds'>
+type SoundSt = Pick<AppState, 'self' | 'dms' | 'mutedChannels' | 'deafened' | 'notificationSounds' | 'doNotDisturb'>
 
 export function messageSound(message: Message, st: SoundSt, seen: boolean): NotificationSoundKind | null {
-  if (seen || st.deafened || !st.self || message.author.accountId === st.self.accountId || st.mutedChannels.includes(message.channelId)) return null
+  if (seen || st.deafened || st.doNotDisturb || !st.self || message.author.accountId === st.self.accountId || st.mutedChannels.includes(message.channelId)) return null
   const kind: NotificationSoundKind | null = findDm(st.dms, message.channelId) ? 'dm' : mentionsAccount(message.content, st.self.accountId) ? 'mention' : null
   return kind && st.notificationSounds[kind] ? kind : null
 }
 
-export function friendRequestSound(entry: FriendEntry, st: Pick<SoundSt, 'deafened' | 'notificationSounds'>): NotificationSoundKind | null {
-  return entry.status === 'incoming' && !st.deafened && st.notificationSounds.friend ? 'friend' : null
+export function friendRequestSound(entry: FriendEntry, st: Pick<SoundSt, 'deafened' | 'notificationSounds' | 'doNotDisturb'>): NotificationSoundKind | null {
+  return entry.status === 'incoming' && !st.deafened && !st.doNotDisturb && st.notificationSounds.friend ? 'friend' : null
 }
 
 /** Número do selo: o mesmo da Home (pedidos + conversas não lidas) + chamadas tocando para mim. */

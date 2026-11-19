@@ -87,7 +87,7 @@ export function bindNotificationEvents(s: AppSocket): void {
     if (announcedRequests.has(entry.account.id)) return
     announcedRequests.add(entry.account.id)
     const soundPlayed = playSound(friendRequestSound(entry, get()))
-    show(friendRequestNotification(entry, notificationEnv.isFocused()), soundPlayed)
+    show(friendRequestNotification(entry, get(), notificationEnv.isFocused()), soundPlayed)
   })
 
   if (!stopBadge) {

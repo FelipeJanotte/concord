@@ -9,11 +9,13 @@ export interface PreferencesState {
   /** false até as preferências da conta chegarem */
   preferencesLoaded: boolean
   mutedChannels: string[]
+  doNotDisturb: boolean
 }
 
 export const preferencesInitial: PreferencesState = {
   theme: DEFAULT_THEME,
   savedThemes: [],
   preferencesLoaded: false,
-  mutedChannels: []
+  mutedChannels: [],
+  doNotDisturb: false
 }

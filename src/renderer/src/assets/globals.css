@@ -34,6 +34,7 @@
   --panel: #232428;
   --composer: #383a40;
   --success: #23a55a;
+  --idle: #f0b232;
 }
 
 @theme inline {
@@ -61,6 +62,7 @@
   --color-panel: var(--panel);
   --color-composer: var(--composer);
   --color-success: var(--success);
+  --color-idle: var(--idle);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);

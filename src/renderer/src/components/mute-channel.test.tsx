@@ -30,7 +30,7 @@ beforeEach(() => {
   socket = new FakeSocket()
   setSocket(socket.asSocket())
   socket.replyTo('preferences:update', (u) => {
-    const preferences: Preferences = { theme: DEFAULT_THEME, savedThemes: [], mutedChannels: (u as PreferencesUpdate).mutedChannels ?? [] }
+    const preferences: Preferences = { theme: DEFAULT_THEME, savedThemes: [], mutedChannels: (u as PreferencesUpdate).mutedChannels ?? [], doNotDisturb: false }
     return { ok: true, preferences }
   })
   useApp.setState({ ...initialState, self: me, users: [me], channels: [geral, sala], dms: [dmAna], friendsLoaded: true, section: 'community' })

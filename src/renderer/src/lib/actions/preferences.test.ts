@@ -20,7 +20,7 @@ import { FakeSocket } from '@/test/fake-socket'
 const ocean: ThemeConfig = { base: 'escuro', accent: '#38bdf8', background: { stops: ['#0c2a4a', '#1fa2b8'], angle: 180 }, intensity: 70 }
 const forest: ThemeConfig = { base: 'escuro', accent: '#7bc96f', background: { stops: ['#1b3022'], angle: 90 }, intensity: 40 }
 const saved: SavedTheme = { id: '11111111-1111-4111-8111-111111111111', name: 'Meu', theme: ocean }
-const prefs = (theme: ThemeConfig, savedThemes: SavedTheme[] = [], mutedChannels: string[] = []): Preferences => ({ theme, savedThemes, mutedChannels })
+const prefs = (theme: ThemeConfig, savedThemes: SavedTheme[] = [], mutedChannels: string[] = []): Preferences => ({ theme, savedThemes, mutedChannels, doNotDisturb: false })
 const primary = (): string => document.documentElement.style.getPropertyValue('--primary')
 
 let socket: FakeSocket

@@ -2,7 +2,8 @@
 import { Volume2 } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { useApp } from '@/store'
-import { UserAvatar } from './UserAvatar'
+import { STATUS_LABEL, usePresence } from '@/lib/presence'
+import { StatusDot, UserAvatar } from './UserAvatar'
 
 interface Props {
   userId: string
@@ -13,6 +14,7 @@ interface Props {
 export function UserProfileDialog({ userId, open, onOpenChange }: Props) {
   const user = useApp((s) => s.users.find((u) => u.id === userId))
   const isSelf = useApp((s) => s.self?.accountId === user?.accountId)
+  const status = usePresence(user?.accountId ?? '')
   const voiceChannel = useApp((s) => {
     const state = s.voice.find((v) => v.userId === userId)
     return state ? s.channels.find((c) => c.id === state.channelId) : undefined
@@ -40,8 +42,10 @@ export function UserProfileDialog({ userId, open, onOpenChange }: Props) {
               </div>
               <div className="space-y-1.5 rounded-md bg-sidebar p-3 text-sm">
                 <div className="flex items-center gap-2 text-foreground">
-                  <span className="size-2.5 rounded-full bg-success" />
-                  Online
+                  <span className="relative size-2.5">
+                    <StatusDot status={status} className="inset-0 size-2.5 border-0" />
+                  </span>
+                  {STATUS_LABEL[status]}
                 </div>
                 {voiceChannel && (
                   <div className="flex items-center gap-2 text-foreground">

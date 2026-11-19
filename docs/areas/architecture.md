@@ -84,7 +84,7 @@ unicidade (e-mail, `lower(tag)`, Google id, `type + lower(name)` do canal), tama
 (canal → mensagens; conta → sessões; conta apagada deixa a mensagem com a cópia `author_*`). `seed.ts` cria os
 canais padrão ou importa o `db.json` antigo quando o banco está vazio.
 - `VoiceState { userId, channelId, muted, deafened, sharing, serverMuted?, watching? }`: quem está em qual sala de voz; `watching` (telas que a pessoa assiste) só vem para quem está na mesma sala.
-- `ServerState { channels, users, voice }`: snapshot enviado no `hello`.
+- `ServerState { channels, users, voice, access, statuses }`: snapshot enviado no `hello`; `statuses[accountId]` é `online | idle | dnd` de cada conta online (`docs/areas/presence.md`).
 
 ## Eventos
 
@@ -98,7 +98,8 @@ Cliente → servidor (`ClientToServerEvents`):
 
 | Evento | Payload | Ack | Efeito |
 |---|---|---|---|
-| `hello` | — | `{ self, account, state }` | registra a conexão da conta (vinda do token); broadcast `user:joined` |
+| `hello` | — | `{ self, account, state }` | registra a conexão da conta (vinda do token); broadcast `user:joined`; `state.statuses` e `presence:status` na primeira janela da conta |
+| `presence:set-status` | `'online' | 'idle'` | — | atividade desta conexão (ausente pelo sistema, B28); a conta fica `idle` só com todas as conexões paradas; `LIMITS.presence`; `presence:status` para todos quando muda — `docs/areas/presence.md` |
 | `account:update` | `ProfileUpdate { name, tag?, avatar? }` | `ProfileUpdateResult` | troca nome/foto (o id só se `tagLocked` for false); `user:updated` para todos |
 | `channel:create` | `{ name, type }` | `CreateChannelResult` | normaliza o nome (texto: minúsculo e com hífens, até 32 caracteres), bloqueia duplicado e mais de 100 canais; `channel:created` para todos |
 | `channel:delete` | `channelId` | — | apaga o canal e as mensagens, tira todo mundo da sala de voz; `channel:deleted` + `voice:state` |
@@ -118,7 +119,7 @@ Cliente → servidor (`ClientToServerEvents`):
 | `playlist:delete` | `id` | `PlaylistDeleteResult` | quem salvou ou `manageMessages`; `playlist:deleted` para todos |
 | `music:queue` | `channelId` | `MusicResult` | estado da sala (tocando agora e fila); só `view` |
 | `preferences:get` | — | `Preferences` | tema ativo, temas salvos e canais silenciados da conta (padrão se nada salvo) — `docs/areas/themes.md` |
-| `preferences:update` | `{ theme?, savedThemes?, mutedChannels? }` | `PreferencesResult` | valida com `validateTheme`; `mutedChannels`: até 500 uuids (silenciar canal, `docs/areas/notifications.md`); `preferences:updated` para as outras janelas da mesma conta |
+| `preferences:update` | `{ theme?, savedThemes?, mutedChannels?, doNotDisturb? }` | `PreferencesResult` | valida com `validateTheme`; `mutedChannels`: até 500 uuids (silenciar canal, `docs/areas/notifications.md`); `doNotDisturb`: booleano (Não perturbe, B28: muda o status para `dnd` com `presence:status`, `docs/areas/presence.md`); `preferences:updated` para as outras janelas da mesma conta |
 | `friend:list` / `friend:request` / `friend:accept` / `friend:decline` / `friend:remove` / `friend:block` / `friend:unblock` | `"nome#id"` ou `accountId` | `FriendEntry[]` / `FriendResult` | amizades (v3) — `docs/areas/friends.md` |
 | `dm:list` / `dm:open` | — / `accountId` | `DmEntry[]` / `DmOpenResult` | conversas privadas (v3): abrir só entre amigos ou se já existe; mensagens usam os `message:*` de sempre — `docs/areas/dms.md` |
 | `tools:teams` | `{ channelId, players, teamCount, lanes?, laneSet? }` | `ToolResult` | sorteio no servidor; posta mensagem `kind: 'tool'` (`message:new` para quem vê o canal) — `docs/areas/tools.md` |
@@ -156,6 +157,7 @@ Cliente → servidor (`ClientToServerEvents`):
 | `message:delete` | `{ messageId }` | `OkResult` | o autor ou `manageMessages` (em DM só o autor); apaga os anexos; `message:deleted` para quem vê o canal |
 
 Servidor → cliente (`ServerToClientEvents`): `channel:created`, `channel:deleted`, `user:joined`, `user:left`,
+`presence:status` (`{ accountId, status }`, para todos: online, ausente ou Não perturbe, B28),
 `user:updated` (por `accountId`), `message:new`, `voice:state` (sempre a **lista completa** das salas que a pessoa
 vê), `typing`, `rate:limited`, `access:updated` e `channels:visible` (v2), `sound:created`, `sound:deleted` e
 `sound:played` (soundboard; o último só para a sala), `music:state` (bot de música: tocando agora, fila, `paused` e `elapsedMs`, para quem vê a sala), `playlist:created` e `playlist:deleted` (playlists salvas, para todos), `preferences:updated` e `channel:read-sync` (outras janelas da mesma conta), `friend:updated`, `friend:removed` e `friend:presence` (amizades; online só para amigos), `poll:updated` (enquete: contagens novas, para quem vê o canal), `tools:moved` (só para a conexão levada à sala do time), `dm:created` (conversa nova, para a outra pessoa e as minhas outras janelas), `message:deleted` e `message:pinned` (para quem vê o canal) , `moderation:kicked` (só para a conexão expulsa da voz), `moderation:moved` (só para a conexão movida para outra sala), `moderation:removed` (só para as conexões da conta expulsa/banida da comunidade, logo antes de cair) e `moderation:timeout-changed` (castigo posto, tirado ou vencido, para todos), `call:updated` e `call:ended` (chamadas privadas, para as duas contas; o fim chega antes do `voice:state`).
@@ -175,6 +177,7 @@ vê), `typing`, `rate:limited`, `access:updated` e `channels:visible` (v2), `sou
 - `musicRooms[channelId]`, `musicSyncedAt`, `musicQueueChannelId`, `lastCollection` (`store/music.ts`) e `playlists`, `playlistsLoaded` (`store/playlists.ts`): bot de música e playlists salvas (`docs/areas/music.md`).
 - `myVoiceChannelId`, `joiningVoice`, `muted`, `deafened`, `speaking[userId]`, `sharing`, `screens`, `screenPickerOpen`.
 - `access` (`store/permissions.ts`): `AccessState` do `hello`/`access:updated`, `null` antes de chegar; a tela lê com `useCan`/`useNameColor` de `lib/permissions.ts` (`docs/areas/permissions.md`).
+- `statuses[accountId]` (`store/session.ts`, B28): status de cada conta online (`hello` + `presence:status`); `doNotDisturb` (`store/preferences.ts`): o meu Não perturbe, que cala notificações e sons de mensagem (`docs/areas/presence.md`).
 - `theme`, `savedThemes`, `preferencesLoaded` (`store/preferences.ts`, v5): tema da conta, carregado depois do `hello` e aplicado como variáveis CSS (`lib/theme`, `docs/areas/themes.md`); antes do login vale o último tema da máquina.
 - `audioInputId`, `audioOutputId`, `userVolumes[accountId]`, `userMuted[accountId]`, `voiceSoundsEnabled`, `voiceSoundsVolume`, `noiseSuppression`, `noiseMode` (`store/devices.ts`; preferência da máquina, salva em `concord:audio` no `localStorage`).
 - `friends`, `dms`, `friendsLoaded` (`store/friends.ts`, v3): carregados por `loadFriendsAndDms` logo depois do `hello`; `friend:*`, `dm:created` e `message:new` (a conversa sobe para o topo) mantêm em dia. Abas da tela "Amigos" com `friendGroups` (`lib/friends.ts`).

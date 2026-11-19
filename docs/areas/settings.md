@@ -18,11 +18,11 @@ O conteúdo de cada seção continua documentado na área dela (links abaixo); a
 | `src/renderer/src/components/settings/WindowsSettings.tsx` | "Windows": interruptor "Iniciar o Concord com o Windows" — [abaixo](#iniciar-com-o-windows). |
 | `src/renderer/src/store/settings.ts` | `settingsSection: 'account' \| 'voice' \| 'appearance' \| 'notifications' \| 'windows' \| null` (null = fechada). Não é salvo. |
 | `src/renderer/src/lib/actions/settings.ts` | `openSettings(section = 'account')`, `closeSettings()` (fecha e manda o tema pendente: `flushPendingTheme`). `openDeviceSettings()` (em `lib/actions/devices.ts`) = `openSettings('voice')`. |
-| `src/renderer/src/components/UserPanel.tsx` | Engrenagem "Configurações" (e clicar no próprio nome) → "Minha conta"; monta o `UserSettingsDialog` uma vez só. O botão de paleta separado saiu. |
+| `src/renderer/src/components/UserPanel.tsx` | Engrenagem "Configurações" → "Minha conta"; clicar no próprio nome abre o menu "Status e conta" (Online / Não perturbe e "Minha conta", `docs/areas/presence.md`); monta o `UserSettingsDialog` uma vez só. O botão de paleta separado saiu. |
 
 ## Como se abre
 
-- Engrenagem do painel da conta, ou clicar no próprio nome → **Minha conta**.
+- Engrenagem do painel da conta, ou clicar no próprio nome → menu "Status e conta" → **Minha conta**.
 - Botões "Configurações de voz" (controles da sala, painel da chamada privada e "Voz conectada") → **Voz e vídeo**.
 - **Conta nova do Google** (`account.tagLocked === false`): o `UserPanel` abre sozinho em "Minha conta" e a janela
   mostra só ela ("Escolha seu id"), **sem o menu**, até salvar o id.

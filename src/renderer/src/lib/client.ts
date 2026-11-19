@@ -14,8 +14,8 @@ import { loadPushToTalkPreferences } from './actions/push-to-talk'
 import { bindNotificationEvents, stopNotifications } from './actions/notifications'
 import { bindCallsEvents, loadCalls } from './actions/calls'
 import { bindPermissionsEvents } from './actions/permissions'
-import { bindPresenceEvents } from './actions/presence'
 import { bindPinsEvents } from './actions/pins'
+import { bindPresenceEvents, syncActivityStatus } from './actions/presence'
 import { bindReactionsEvents } from './actions/reactions'
 import { bindReadsEvents, loadReads } from './actions/reads'
 import { bindSoundsEvents, loadSounds } from './actions/sounds'
@@ -152,6 +152,7 @@ export function connect(url: string, token: string): Promise<void> {
           account,
           channels: state.channels,
           users: state.users,
+          statuses: state.statuses,
           voice: state.voice,
           access: state.access,
           messages: {},
@@ -170,6 +171,7 @@ export function connect(url: string, token: string): Promise<void> {
         void loadReads().catch(() => {})
         void loadPreferences().catch(() => {})
         void loadCalls().catch(() => {})
+        void syncActivityStatus().catch(() => {})
         void loadSounds().catch(() => {})
         void loadTimeouts().catch(() => {})
         if (!settled) {
@@ -239,6 +241,7 @@ export * from './actions/devices'
 export * from './actions/friends'
 export * from './actions/tools'
 export * from './actions/preferences'
+export { setDoNotDisturb } from './actions/presence'
 export * from './actions/settings'
 export * from './actions/sounds'
 export { closeMusicQueue, dismissCollection, loadMusicQueue, openMusicQueue, pauseMusic, playMusic, resumeMusic, runMusicCommand, skipMusic, stopMusic, trackDuration } from './actions/music'

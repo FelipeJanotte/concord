@@ -36,7 +36,8 @@ export const THEME_TOKENS = [
   'rail',
   'panel',
   'composer',
-  'success'
+  'success',
+  'idle'
 ] as const
 
 export type ThemeToken = (typeof THEME_TOKENS)[number]
@@ -74,7 +75,8 @@ const DARK: Palette = {
   rail: '#1e1f22',
   panel: '#232428',
   composer: '#383a40',
-  success: '#23a55a'
+  success: '#23a55a',
+  idle: '#f0b232'
 }
 
 const LIGHT: Palette = {
@@ -98,7 +100,8 @@ const LIGHT: Palette = {
   rail: '#e3e5e8',
   panel: '#ebedef',
   composer: '#ebedef',
-  success: '#1f8b4c'
+  success: '#1f8b4c',
+  idle: '#c27c0e'
 }
 
 const PALETTES: Record<ThemeBase, Palette> = { escuro: DARK, claro: LIGHT }

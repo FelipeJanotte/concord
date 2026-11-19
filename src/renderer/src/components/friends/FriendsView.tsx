@@ -20,9 +20,10 @@ import {
   unblockAccount
 } from '@/lib/client'
 import { friendGroups, type FriendGroups } from '@/lib/friends'
+import { STATUS_LABEL, usePresence } from '@/lib/presence'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
-import { UserAvatar } from '../UserAvatar'
+import { StatusDot, UserAvatar } from '../UserAvatar'
 
 type Tab = keyof FriendGroups | 'add'
 
@@ -128,20 +129,14 @@ const STATUS_TEXT: Record<FriendEntry['status'], string> = {
 
 function FriendRow({ entry }: { entry: FriendEntry }) {
   const { account, status, online } = entry
-  const subtitle = status === 'friend' ? (online ? 'Online' : 'Offline') : STATUS_TEXT[status]
+  const presence = usePresence(account.id, online)
+  const subtitle = status === 'friend' ? STATUS_LABEL[presence] : STATUS_TEXT[status]
 
   return (
     <li className="group flex items-center gap-3 rounded-md px-2 py-2.5 hover:bg-accent/40">
       <span className="relative shrink-0">
         <UserAvatar user={account} />
-        {status === 'friend' && (
-          <span
-            className={cn(
-              'absolute -right-0.5 -bottom-0.5 size-3.5 rounded-full border-[3px] border-background',
-              online ? 'bg-success' : 'bg-muted-foreground'
-            )}
-          />
-        )}
+        {status === 'friend' && <StatusDot status={presence} className="border-background" />}
       </span>
       <div className="min-w-0 flex-1">
         <div className="truncate font-semibold text-accent-foreground">

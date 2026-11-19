@@ -16,6 +16,7 @@ import { guard, type ServerModule } from '../context'
 import { limiters, retryText } from '../middleware/rate-limit'
 import { getPreferences, updatePreferences } from '../repo/preferences'
 import { isUuid } from '../repo/util'
+import { setDoNotDisturb } from './presence'
 
 /** Valida a lista de temas salvos inteira; null se algo estiver errado. */
 function cleanSavedThemes(raw: unknown): SavedTheme[] | null {
@@ -70,11 +71,16 @@ export const preferencesModule: ServerModule = {
           if (!muted) return ack({ ok: false, error: `Canais silenciados inválidos (até ${MUTED_CHANNELS_MAX})` })
           update.mutedChannels = muted
         }
+        if (payload?.doNotDisturb !== undefined) {
+          if (typeof payload.doNotDisturb !== 'boolean') return ack({ ok: false, error: 'Não perturbe inválido' })
+          update.doNotDisturb = payload.doNotDisturb
+        }
         if (Object.keys(update).length === 0) return ack({ ok: false, error: 'Nada para mudar' })
         const limited = limiters.preferences.take(user.accountId)
         if (!limited.ok) return ack({ ok: false, error: `Muitas alterações seguidas. ${retryText(limited.retryAfterMs)}` })
 
         const preferences = await updatePreferences(user.accountId, update)
+        if (update.doNotDisturb !== undefined) setDoNotDisturb(io, user.accountId, update.doNotDisturb)
         // as outras janelas da mesma conta mudam junto
         for (const other of io.sockets.sockets.values()) {
           if (other.id !== socket.id && other.data.user?.accountId === user.accountId) other.emit('preferences:updated', preferences)

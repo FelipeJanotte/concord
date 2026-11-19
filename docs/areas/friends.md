@@ -22,7 +22,7 @@ mesmo e status desconhecido (`check`); apagar uma conta apaga as relações (cas
 | `server/modules/friends.ts` | Eventos `friend:*`, `isOnline`, `announcePresence` (chamado pela presença), avisos para as duas contas (`notifyPair`). |
 | `server/repo/friends.ts` | `getRelation`, `listRelations`, `friendIds`, `countOutgoing`, `sendRequest`, `makeFriends`, `deletePair`, `block`, `unblock`, `findAccountByTag`. |
 | `server/db/schema/friends.ts` | Tabela `friendships` (migration `0005_friends`). |
-| `server/modules/presence.ts` | Na **primeira** janela da conta (`hello`) e quando a **última** fecha, chama `announcePresence`. |
+| `server/modules/presence.ts` | Na **primeira** janela da conta (`hello`) e quando a **última** fecha, chama `announcePresence`. O status (ausente, Não perturbe) é de `docs/areas/presence.md`: a tela Amigos/Conversas só mostra o status de amigo com `online: true`. |
 
 ## Eventos
 

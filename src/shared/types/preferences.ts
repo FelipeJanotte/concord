@@ -12,6 +12,7 @@ export interface Preferences {
   theme: ThemeConfig
   savedThemes: SavedTheme[]
   mutedChannels: string[]
+  doNotDisturb: boolean
 }
 
 /** Só os campos enviados mudam; `savedThemes` substitui a lista inteira. */
@@ -19,6 +20,7 @@ export interface PreferencesUpdate {
   theme?: ThemeConfig
   savedThemes?: SavedTheme[]
   mutedChannels?: string[]
+  doNotDisturb?: boolean
 }
 
 export type PreferencesResult = { ok: true; preferences: Preferences } | { ok: false; error: string }

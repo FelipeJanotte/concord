@@ -1,6 +1,7 @@
 import type { User } from '@shared/types'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { resolveAvatarUrl } from '@/lib/client'
+import { STATUS_LABEL, type DotStatus } from '@/lib/presence'
 import { cn, initials } from '@/lib/utils'
 import { useApp } from '@/store'
 
@@ -36,5 +37,23 @@ export function UserAvatar({ user, size = 'md', speaking = false, className }: P
         {initials(user.name)}
       </AvatarFallback>
     </Avatar>
+  )
+}
+
+const DOT_COLOR: Record<DotStatus, string> = {
+  online: 'bg-success',
+  idle: 'bg-idle',
+  dnd: 'bg-destructive',
+  offline: 'bg-muted-foreground'
+}
+
+export function StatusDot({ status, className }: { status: DotStatus; className?: string }) {
+  return (
+    <span
+      role="img"
+      aria-label={STATUS_LABEL[status]}
+      title={STATUS_LABEL[status]}
+      className={cn('absolute -right-0.5 -bottom-0.5 size-3.5 rounded-full border-[3px]', DOT_COLOR[status], className)}
+    />
   )
 }
