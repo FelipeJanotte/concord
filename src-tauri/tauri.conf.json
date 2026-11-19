@@ -46,5 +46,8 @@
       "webviewInstallMode": { "type": "downloadBootstrapper", "silent": true },
       "nsis": { "installMode": "currentUser" }
     }
+  },
+  "plugins": {
+    "deep-link": { "desktop": { "schemes": ["concord"] } }
   }
 }

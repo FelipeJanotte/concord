@@ -1,4 +1,15 @@
+pub mod data_url;
 pub mod environment;
+pub mod google_auth;
+pub mod idle;
 pub mod links;
+pub mod logging;
+pub mod main_window_events;
+pub mod notifications;
 pub mod permissions;
+pub mod push_to_talk;
+pub mod startup;
+pub mod thumbar;
+pub mod translucency;
 pub mod window_controls;
+pub mod windows_version;
