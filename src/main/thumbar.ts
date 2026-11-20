@@ -30,16 +30,29 @@ function iconFrom(dataUrl: string): Electron.NativeImage {
   return nativeImage.createFromBuffer(bytes, { scaleFactor: ICON_SCALE_FACTOR })
 }
 
+function applyButtons(win: BrowserWindow, buttons: ThumbarButton[]): void {
+  win.setThumbarButtons(
+    buttons.map((button) => ({
+      tooltip: button.tooltip,
+      icon: iconFrom(button.icon),
+      click: () => win.webContents.send('thumbar-click', button.action)
+    }))
+  )
+}
+
 export function setupThumbar(getWindow: () => BrowserWindow | null): void {
+  let waitingForShow: ThumbarButton[] | null = null
   ipcMain.on('thumbar-buttons', (_event, raw: unknown) => {
     const win = getWindow()
     if (process.platform !== 'win32' || !win) return
-    win.setThumbarButtons(
-      cleanThumbarButtons(raw).map((button) => ({
-        tooltip: button.tooltip,
-        icon: iconFrom(button.icon),
-        click: () => win.webContents.send('thumbar-click', button.action)
-      }))
-    )
+    const buttons = cleanThumbarButtons(raw)
+    if (win.isVisible()) return applyButtons(win, buttons)
+    if (!waitingForShow) {
+      win.once('show', () => {
+        if (waitingForShow) applyButtons(win, waitingForShow)
+        waitingForShow = null
+      })
+    }
+    waitingForShow = buttons
   })
 }

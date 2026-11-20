@@ -22,11 +22,22 @@ interface ElectronThumbarButton {
   click: () => void
 }
 
-function fakeWindow() {
-  return {
+function fakeWindow(visible = true) {
+  const showListeners: Array<() => void> = []
+  const win = {
+    visible,
+    isVisible: () => win.visible,
+    once: (event: string, fn: () => void) => {
+      if (event === 'show') showListeners.push(fn)
+    },
+    show: () => {
+      win.visible = true
+      showListeners.splice(0).forEach((fn) => fn())
+    },
     setThumbarButtons: vi.fn((_buttons: ElectronThumbarButton[]) => true),
     webContents: { send: vi.fn() }
   }
+  return win
 }
 
 const realPlatform = process.platform
@@ -86,6 +97,19 @@ describe('setupThumbar', () => {
     setupThumbar(() => win as never)
     handlers.get('thumbar-buttons')?.({}, [])
     expect(win.setThumbarButtons).toHaveBeenCalledWith([])
+  })
+
+  it('com a janela escondida espera ela aparecer e aplica só a última lista', () => {
+    setPlatform('win32')
+    const win = fakeWindow(false)
+    setupThumbar(() => win as never)
+    handlers.get('thumbar-buttons')?.({}, [])
+    handlers.get('thumbar-buttons')?.({}, [button('mute', 'Silenciar')])
+    expect(win.setThumbarButtons).not.toHaveBeenCalled()
+
+    win.show()
+    expect(win.setThumbarButtons).toHaveBeenCalledTimes(1)
+    expect(win.setThumbarButtons.mock.calls[0]?.[0].map((b) => b.tooltip)).toEqual(['Silenciar'])
   })
 
   it('fora do Windows não mexe na janela', () => {
