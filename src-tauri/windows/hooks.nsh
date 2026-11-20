@@ -12,6 +12,7 @@
 !define ELECTRON_APP_ARCHIVE "resources\app.asar"
 !define ELECTRON_UNINSTALLER_COPY "$TEMP\concord-electron-uninstaller.exe"
 !define BRIDGE_LOG "$TEMP\concord-bridge.log"
+!define CONCORD_DATA_FOLDER "$APPDATA\com.concord.app"
 
 Var ElectronUninstaller
 Var ElectronInstallDir
@@ -128,13 +129,13 @@ Function ConcordKeepAutostartOffUnlessElectronHadIt
   StrCpy $ElectronRunEntryAction "find"
   Call ConcordScanElectronRunEntries
   ${If} $ElectronRunEntryFound == "0"
-    CreateDirectory "$APPDATA\${BUNDLEID}"
-    FileOpen $0 "$APPDATA\${BUNDLEID}\startup-default-applied" w
+    CreateDirectory "${CONCORD_DATA_FOLDER}"
+    FileOpen $0 "${CONCORD_DATA_FOLDER}\startup-default-applied" w
     FileClose $0
-    ${If} ${FileExists} "$APPDATA\${BUNDLEID}\startup-default-applied"
-      !insertmacro ConcordLog "marcador de iniciar com o Windows criado em $APPDATA\${BUNDLEID}"
+    ${If} ${FileExists} "${CONCORD_DATA_FOLDER}\startup-default-applied"
+      !insertmacro ConcordLog "marcador de iniciar com o Windows criado em ${CONCORD_DATA_FOLDER}"
     ${Else}
-      !insertmacro ConcordLog "marcador de iniciar com o Windows nao foi criado em $APPDATA\${BUNDLEID}"
+      !insertmacro ConcordLog "marcador de iniciar com o Windows nao foi criado em ${CONCORD_DATA_FOLDER}"
     ${EndIf}
   ${EndIf}
 FunctionEnd
@@ -205,12 +206,12 @@ Function ConcordReplaceElectronInstall
   DetailPrint "taskkill terminou com o código $0"
   !insertmacro ConcordLog "taskkill terminou com o codigo $0"
   ${If} ${FileExists} "$APPDATA\Concord\migrate.json"
-    CreateDirectory "$APPDATA\${BUNDLEID}"
-    CopyFiles /SILENT "$APPDATA\Concord\migrate.json" "$APPDATA\${BUNDLEID}\migrate.json"
-    ${If} ${FileExists} "$APPDATA\${BUNDLEID}\migrate.json"
-      !insertmacro ConcordLog "migrate.json copiado para $APPDATA\${BUNDLEID}"
+    CreateDirectory "${CONCORD_DATA_FOLDER}"
+    CopyFiles /SILENT "$APPDATA\Concord\migrate.json" "${CONCORD_DATA_FOLDER}\migrate.json"
+    ${If} ${FileExists} "${CONCORD_DATA_FOLDER}\migrate.json"
+      !insertmacro ConcordLog "migrate.json copiado para ${CONCORD_DATA_FOLDER}"
     ${Else}
-      !insertmacro ConcordLog "migrate.json nao foi copiado para $APPDATA\${BUNDLEID}"
+      !insertmacro ConcordLog "migrate.json nao foi copiado para ${CONCORD_DATA_FOLDER}"
     ${EndIf}
   ${Else}
     !insertmacro ConcordLog "migrate.json nao existe"

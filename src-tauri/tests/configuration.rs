@@ -17,3 +17,12 @@ fn the_whole_c_runtime_is_linked_statically_like_libwebrtc() {
     let cargo_configuration = include_str!("../../.cargo/config.toml");
     assert!(cargo_configuration.contains("target-feature=+crt-static"));
 }
+
+#[test]
+fn the_installer_bridge_writes_into_the_data_folder_of_the_app_identifier() {
+    let configuration: serde_json::Value = serde_json::from_str(CONFIGURATION).unwrap();
+    let identifier = configuration["identifier"].as_str().unwrap();
+    let bridge = include_str!("../windows/hooks.nsh");
+    assert!(bridge.contains(&format!("!define CONCORD_DATA_FOLDER \"$APPDATA\\{identifier}\"")));
+    assert!(!bridge.contains("BUNDLEID"));
+}
