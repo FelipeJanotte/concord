@@ -3,7 +3,7 @@ import { act, cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { OpenAtLogin, StartupBridge } from '@shared/startup'
-import { loadStartup, openSettings, startupEnv } from '@/lib/client'
+import { disableOpenAtLogin, enableOpenAtLogin, loadStartup, openSettings, startupEnv } from '@/lib/client'
 import { initialState, useApp } from '@/store'
 import { UserSettingsDialog } from './UserSettingsDialog'
 
@@ -55,6 +55,15 @@ describe('Iniciar com o Windows', () => {
     await userEvent.click(toggle)
     expect(bridge.enable).toHaveBeenCalledTimes(1)
     expect(toggle.checked).toBe(true)
+  })
+
+  it('ações nomeadas ligam e desligam pelo processo principal', async () => {
+    const bridge = fakeBridge({ supported: true, enabled: false })
+    vi.spyOn(startupEnv, 'bridge').mockReturnValue(bridge)
+    await enableOpenAtLogin()
+    expect(useApp.getState().openAtLogin).toEqual({ supported: true, enabled: true })
+    await disableOpenAtLogin()
+    expect(useApp.getState().openAtLogin).toEqual({ supported: true, enabled: false })
   })
 
   it('falha ao mudar: avisa e o interruptor continua como estava', async () => {
