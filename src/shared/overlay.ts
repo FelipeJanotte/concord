@@ -163,18 +163,21 @@ export interface OverlayBridge {
   setConfig: (config: OverlayConfig) => void
   setRoom: (room: OverlayRoom | null) => void
   onToggled: (listener: (enabled: boolean) => void) => () => void
-  setEditing: (editing: boolean) => void
+  startEditing: () => void
+  finishEditing: () => void
   onEditing: (listener: (editing: boolean) => void) => () => void
   onMoved: (listener: (position: OverlayPosition) => void) => () => void
   onResized: (listener: (width: number) => void) => () => void
   setShortcuts: (shortcuts: OverlayShortcuts) => Promise<OverlayShortcutStatus>
-  pauseShortcuts: (paused: boolean) => void
+  pauseShortcuts: () => void
+  resumeShortcuts: () => void
   setTheme: (theme: ThemeConfig) => void
 }
 
 export interface OverlayViewBridge {
   onUpdate: (listener: (room: OverlayRoom | null, config: OverlayConfig, editing: boolean) => void) => () => void
   finishEditing: () => void
-  resize: (width: number, done: boolean) => void
+  resizing: (width: number) => void
+  resized: (width: number) => void
   onTheme: (listener: (theme: ThemeConfig) => void) => () => void
 }

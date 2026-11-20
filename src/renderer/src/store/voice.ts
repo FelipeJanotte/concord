@@ -1,5 +1,9 @@
 import type { VoiceState } from '@shared/types'
 
+export type OwnScreenShare = { kind: 'none' } | { kind: 'browser' } | { kind: 'native'; thumbnail: string }
+
+export const NO_OWN_SCREEN_SHARE: OwnScreenShare = { kind: 'none' }
+
 export interface VoiceSliceState {
   voice: VoiceState[]
   myVoiceChannelId: string | null
@@ -10,7 +14,7 @@ export interface VoiceSliceState {
   speaking: Record<string, boolean>
   sharing: boolean
   screens: string[]
-  ownScreenThumbnail: string | null
+  ownScreenShare: OwnScreenShare
   screenAudio: string[]
   cameraOn: boolean
   cameras: string[]
@@ -30,7 +34,7 @@ export const voiceInitial: VoiceSliceState = {
   speaking: {},
   sharing: false,
   screens: [],
-  ownScreenThumbnail: null,
+  ownScreenShare: NO_OWN_SCREEN_SHARE,
   screenAudio: [],
   cameraOn: false,
   cameras: [],

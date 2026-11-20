@@ -97,11 +97,18 @@ export function setOverlayCorner(corner: OverlayCorner): void {
   save()
 }
 
-export function setOverlayEditing(editing: boolean): void {
+export function startOverlayEditing(): void {
   const bridge = overlayEnv.bridge()
   if (!bridge) return
   syncOverlay()
-  bridge.setEditing(editing)
+  bridge.startEditing()
+}
+
+export function finishOverlayEditing(): void {
+  const bridge = overlayEnv.bridge()
+  if (!bridge) return
+  syncOverlay()
+  bridge.finishEditing()
 }
 
 function overlayMoved(raw: unknown): void {
@@ -143,13 +150,13 @@ const ALREADY_USED_BY: Record<OverlayShortcutAction, string> = {
 
 export function startOverlayShortcutRecording(action: OverlayShortcutAction): void {
   set({ overlayRecording: action })
-  overlayEnv.bridge()?.pauseShortcuts(true)
+  overlayEnv.bridge()?.pauseShortcuts()
 }
 
 export function cancelOverlayShortcutRecording(): void {
   if (!get().overlayRecording) return
   set({ overlayRecording: null })
-  overlayEnv.bridge()?.pauseShortcuts(false)
+  overlayEnv.bridge()?.resumeShortcuts()
 }
 
 export function recordOverlayShortcutKey(event: ShortcutKeyEvent & { key: string }): void {

@@ -87,16 +87,22 @@ describe('miniaturas da tela nativa', () => {
   })
 
   it('compartilhando pela tela nativa, manda a miniatura nova do Rust no mesmo ritmo', async () => {
-    useApp.setState({ sharing: true, ownScreenThumbnail: 'data:image/png;base64,AAAA' })
+    useApp.setState({ sharing: true, ownScreenShare: { kind: 'native', thumbnail: 'data:image/png;base64,AAAA' } })
     await vi.advanceTimersByTimeAsync(SCREEN_PREVIEW_FIRST_MS)
     expect(socket.sent('voice:preview')).toEqual([['data:image/jpeg;base64,UM==']])
     await vi.advanceTimersByTimeAsync(SCREEN_PREVIEW_INTERVAL_MS)
     expect(socket.sent('voice:preview')).toEqual([['data:image/jpeg;base64,UM=='], ['data:image/jpeg;base64,RE9JUw==']])
   })
 
+  it('compartilhando pelo navegador mesmo com a ponte nativa, não pede miniatura ao Rust', async () => {
+    useApp.setState({ sharing: true, ownScreenShare: { kind: 'browser' } })
+    await vi.advanceTimersByTimeAsync(SCREEN_PREVIEW_FIRST_MS)
+    expect(socket.sent('voice:preview')).toEqual([])
+  })
+
   it('a miniatura nativa falha: não manda nada e avisa no console', async () => {
     previewFailure = new Error('Nenhuma tela está sendo compartilhada')
-    useApp.setState({ sharing: true, ownScreenThumbnail: 'data:image/png;base64,AAAA' })
+    useApp.setState({ sharing: true, ownScreenShare: { kind: 'native', thumbnail: 'data:image/png;base64,AAAA' } })
     await vi.advanceTimersByTimeAsync(SCREEN_PREVIEW_FIRST_MS)
     expect(socket.sent('voice:preview')).toEqual([])
     expect(console.warn).toHaveBeenCalledWith('[tela] não foi possível gerar a prévia:', previewFailure)

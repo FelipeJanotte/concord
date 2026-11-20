@@ -1,6 +1,7 @@
-export type OpenAtLogin = boolean | null
+export type OpenAtLogin = { supported: false } | { supported: true; enabled: boolean }
 
 export interface StartupBridge {
   get: () => Promise<OpenAtLogin>
-  set: (openAtLogin: boolean) => Promise<OpenAtLogin>
+  enable: () => Promise<OpenAtLogin>
+  disable: () => Promise<OpenAtLogin>
 }

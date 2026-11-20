@@ -16,9 +16,9 @@ function nativeScreen() {
 }
 
 async function ownScreenImage(): Promise<string | null> {
-  const { self, ownScreenThumbnail } = get()
+  const { self, ownScreenShare } = get()
   const native = nativeScreen()
-  if (native && ownScreenThumbnail !== null) return snapshotImage(await native.preview())
+  if (native && ownScreenShare.kind === 'native') return snapshotImage(await native.preview())
   const track = self ? voice.screenMediaTrack(self.id) : undefined
   return track ? snapshotScreen(track) : null
 }

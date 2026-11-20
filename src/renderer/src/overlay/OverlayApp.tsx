@@ -131,11 +131,11 @@ function ResizeGrip({ bridge, startWidth, leftSide }: { bridge: OverlayViewBridg
         dragStart.current = { screenX: e.screenX, width: startWidth }
       }}
       onPointerMove={(e) => {
-        if (dragStart.current) bridge?.resize(widthAt(e), false)
+        if (dragStart.current) bridge?.resizing(widthAt(e))
       }}
       onPointerUp={(e) => {
         if (!dragStart.current) return
-        bridge?.resize(widthAt(e), true)
+        bridge?.resized(widthAt(e))
         dragStart.current = null
       }}
     >

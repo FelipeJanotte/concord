@@ -462,12 +462,12 @@ describe('tela', () => {
 
   it('publica a tela pelo LiveKit com o áudio pedido', async () => {
     await client.join('sala-1')
-    await client.startScreenShare(true)
+    await client.startScreenShare('with-system-audio')
     expect(lastRoom().localParticipant.setScreenShareEnabled).toHaveBeenCalledWith(
       true,
       expect.objectContaining({ audio: true, systemAudio: 'include', contentHint: 'detail' })
     )
-    await client.startScreenShare(false)
+    await client.startScreenShare('without-audio')
     expect(lastRoom().localParticipant.setScreenShareEnabled).toHaveBeenLastCalledWith(
       true,
       expect.objectContaining({ audio: false, systemAudio: 'exclude' })
@@ -475,7 +475,7 @@ describe('tela', () => {
   })
 
   it('fora da sala não dá para compartilhar', async () => {
-    await expect(client.startScreenShare(false)).rejects.toThrow('Entre numa sala de voz')
+    await expect(client.startScreenShare('without-audio')).rejects.toThrow('Entre numa sala de voz')
   })
 
   it('parar desliga a publicação', async () => {
@@ -567,6 +567,12 @@ describe('screenOwnerOf', () => {
     expect(screenOwnerOf('acc-ana:screen', JSON.stringify({ screenOf: 42 }))).toBe('acc-ana')
   })
 
+  it('metadata que não é JSON avisa no console com a identidade e mantém a conta da identidade', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(screenOwnerOf('acc-ana:screen', 'não é json')).toBe('acc-ana')
+    expect(warn).toHaveBeenCalledWith('[tela] metadata inválido no participante', 'acc-ana:screen', expect.any(SyntaxError))
+  })
+
   it('quem não termina em :screen não é tela de ninguém', () => {
     expect(screenOwnerOf('socket-ana', JSON.stringify({ screenOf: 'acc-ana' }))).toBeNull()
     expect(screenOwnerOf('music-bot:sala-1')).toBeNull()
@@ -656,13 +662,13 @@ describe('tela nativa (participante <conta>:screen)', () => {
 
   it('a própria tela nativa aparece como a minha tela (miniatura) e some ao parar ou sair', async () => {
     await client.join('sala-1')
-    client.showOwnScreen('data:image/png;base64,AAAA')
-    expect(useApp.getState()).toMatchObject({ screens: ['eu'], ownScreenThumbnail: 'data:image/png;base64,AAAA' })
-    client.showOwnScreen(null)
-    expect(useApp.getState()).toMatchObject({ screens: [], ownScreenThumbnail: null })
-    client.showOwnScreen('data:image/png;base64,AAAA')
+    client.showOwnScreen({ kind: 'native', thumbnail: 'data:image/png;base64,AAAA' })
+    expect(useApp.getState()).toMatchObject({ screens: ['eu'], ownScreenShare: { kind: 'native', thumbnail: 'data:image/png;base64,AAAA' } })
+    client.showOwnScreen({ kind: 'none' })
+    expect(useApp.getState()).toMatchObject({ screens: [], ownScreenShare: { kind: 'none' } })
+    client.showOwnScreen({ kind: 'native', thumbnail: 'data:image/png;base64,AAAA' })
     client.leave()
-    expect(useApp.getState()).toMatchObject({ screens: [], ownScreenThumbnail: null })
+    expect(useApp.getState()).toMatchObject({ screens: [], ownScreenShare: { kind: 'none' } })
   })
 })
 

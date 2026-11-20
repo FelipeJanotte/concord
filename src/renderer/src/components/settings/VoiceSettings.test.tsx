@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-// Configurações → "Voz e vídeo" (B4 e seguintes): dispositivos, volumes, ruído, sons e sobreposição.
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -25,7 +24,7 @@ beforeEach(() => {
     users: [
       user('eu', 'acc-eu', 'Eu'),
       user('ana1', 'acc-ana', 'Ana'),
-      user('ana2', 'acc-ana', 'Ana'), // a mesma conta em duas janelas
+      user('ana2', 'acc-ana', 'Ana'),
       user('bia', 'acc-bia', 'Bia'),
       user('caio', 'acc-caio', 'Caio')
     ],
@@ -182,9 +181,10 @@ describe('sobreposição em jogos (B15)', () => {
   })
 
   it("Mover: só no app, com o overlay ligado; vira Concluir no modo de mover; posição arrastada aparece no seletor", async () => {
-    const setEditing = vi.fn()
+    const startEditing = vi.fn()
+    const finishEditing = vi.fn()
     const w = window as unknown as { api?: unknown }
-    w.api = { overlay: { setEditing, setConfig: vi.fn(), setRoom: vi.fn() } }
+    w.api = { overlay: { startEditing, finishEditing, setConfig: vi.fn(), setRoom: vi.fn() } }
     try {
       useApp.setState({ overlayEnabled: false })
       render(<VoiceSettings />)
@@ -192,11 +192,11 @@ describe('sobreposição em jogos (B15)', () => {
       expect(move.disabled).toBe(true)
       act(() => useApp.setState({ overlayEnabled: true }))
       await userEvent.click(move)
-      expect(setEditing).toHaveBeenLastCalledWith(true)
+      expect(startEditing).toHaveBeenCalledTimes(1)
       act(() => useApp.setState({ overlayEditing: true, overlayPosition: { x: 300, y: 200 } }))
       expect(screen.getByText(/Arraste a sobreposição para onde quiser/)).toBeTruthy()
       await userEvent.click(screen.getByRole("button", { name: "Concluir" }))
-      expect(setEditing).toHaveBeenLastCalledWith(false)
+      expect(finishEditing).toHaveBeenCalledTimes(1)
       const corner = screen.getByLabelText("Posição do overlay") as HTMLSelectElement
       expect(corner.value).toBe("__custom__")
       expect(screen.getByRole("option", { name: "Onde você arrastou" })).toBeTruthy()
@@ -215,13 +215,17 @@ describe('sobreposição em jogos (B15)', () => {
   })
 
   describe('atalhos', () => {
-    function withBridge(run: (bridge: { setShortcuts: ReturnType<typeof vi.fn>; pauseShortcuts: ReturnType<typeof vi.fn> }) => Promise<void>) {
+    function withBridge(run: (bridge: { setShortcuts: ReturnType<typeof vi.fn>; pauseLog: string[] }) => Promise<void>) {
+      const pauseLog: string[] = []
       const bridge = {
         setConfig: vi.fn(),
         setRoom: vi.fn(),
-        setEditing: vi.fn(),
+        startEditing: vi.fn(),
+        finishEditing: vi.fn(),
         setShortcuts: vi.fn(async () => ({ toggle: true, edit: true })),
-        pauseShortcuts: vi.fn()
+        pauseShortcuts: () => pauseLog.push('pause'),
+        resumeShortcuts: () => pauseLog.push('resume'),
+        pauseLog
       }
       const w = window as unknown as { api?: unknown }
       w.api = { overlay: bridge }
@@ -236,7 +240,7 @@ describe('sobreposição em jogos (B15)', () => {
         expect(screen.getByLabelText('Atalho para ligar e desligar').textContent).toBe('Shift + `')
         expect(screen.getByLabelText('Atalho do modo de mover').textContent).toBe('Ctrl + Shift + `')
         await userEvent.click(screen.getByRole('button', { name: 'Trocar atalho para ligar e desligar' }))
-        expect(bridge.pauseShortcuts).toHaveBeenLastCalledWith(true)
+        expect(bridge.pauseLog.at(-1)).toBe('pause')
         expect(screen.getByText(/Pressione a nova combinação/)).toBeTruthy()
         fireEvent.keyDown(window, { key: 'O', code: 'KeyO', ctrlKey: true, altKey: true })
         expect(screen.getByLabelText('Atalho para ligar e desligar').textContent).toBe('Ctrl + Alt + O')
@@ -252,11 +256,11 @@ describe('sobreposição em jogos (B15)', () => {
         await userEvent.click(screen.getByRole('button', { name: 'Trocar atalho do modo de mover' }))
         fireEvent.keyDown(window, { key: 'Escape', code: 'Escape' })
         expect(useApp.getState().overlayRecording).toBeNull()
-        expect(bridge.pauseShortcuts).toHaveBeenLastCalledWith(false)
+        expect(bridge.pauseLog.at(-1)).toBe('resume')
         await userEvent.click(screen.getByRole('button', { name: 'Trocar atalho do modo de mover' }))
         unmount()
         expect(useApp.getState().overlayRecording).toBeNull()
-        expect(bridge.pauseShortcuts.mock.calls).toEqual([[true], [false], [true], [false]])
+        expect(bridge.pauseLog).toEqual(['pause', 'resume', 'pause', 'resume'])
       }))
 
     it('avisa quando outro programa já usa o atalho', () =>

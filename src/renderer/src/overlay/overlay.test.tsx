@@ -12,14 +12,16 @@ function fakeBridge() {
   let listener: ((room: OverlayRoom | null, config: OverlayConfig, editing: boolean) => void) | null = null
   let themeListener: ((theme: ThemeConfig) => void) | null = null
   const finishEditing = vi.fn()
-  const resize = vi.fn()
+  const resizing = vi.fn()
+  const resized = vi.fn()
   const bridge: OverlayViewBridge = {
     onUpdate: (fn) => {
       listener = fn
       return () => (listener = null)
     },
     finishEditing,
-    resize,
+    resizing,
+    resized,
     onTheme: (fn) => {
       themeListener = fn
       return () => (themeListener = null)
@@ -28,7 +30,8 @@ function fakeBridge() {
   return {
     bridge,
     finishEditing,
-    resize,
+    resizing,
+    resized,
     pushTheme: (theme: unknown) => act(() => themeListener?.(theme as ThemeConfig)),
     push: (room: OverlayRoom | null, config: OverlayConfig = CONFIG, editing = false) => act(() => listener?.(room, config, editing)),
     has: () => !!listener
@@ -150,7 +153,7 @@ describe('modo de mover', () => {
 
 describe('redimensionar arrastando', () => {
   it('só no modo de mover: arrastar a alça manda a largura nova e, ao soltar, a final', () => {
-    const { bridge, push, resize } = fakeBridge()
+    const { bridge, push, resizing, resized } = fakeBridge()
     render(<OverlayApp bridge={bridge} />)
     push({ members: [member('a', 'Ana')], more: 0 })
     expect(screen.queryByRole('separator', { name: 'Redimensionar' })).toBeNull()
@@ -158,22 +161,23 @@ describe('redimensionar arrastando', () => {
     const grip = screen.getByRole('separator', { name: 'Redimensionar' })
     fireEvent.pointerDown(grip, { screenX: 100, pointerId: 1 })
     fireEvent.pointerMove(grip, { screenX: 160, pointerId: 1 })
-    expect(resize).toHaveBeenLastCalledWith(OVERLAY_METRICS.medium.width + 60, false)
+    expect(resizing).toHaveBeenLastCalledWith(OVERLAY_METRICS.medium.width + 60)
     fireEvent.pointerUp(grip, { screenX: 170, pointerId: 1 })
-    expect(resize).toHaveBeenLastCalledWith(OVERLAY_METRICS.medium.width + 70, true)
+    expect(resized).toHaveBeenLastCalledWith(OVERLAY_METRICS.medium.width + 70)
     fireEvent.pointerMove(grip, { screenX: 400, pointerId: 1 })
-    expect(resize).toHaveBeenCalledTimes(2)
+    expect(resizing).toHaveBeenCalledTimes(1)
+    expect(resized).toHaveBeenCalledTimes(1)
   })
 
   it('no canto da direita a alça fica à esquerda e arrastar para a esquerda alarga', () => {
-    const { bridge, push, resize } = fakeBridge()
+    const { bridge, push, resized } = fakeBridge()
     render(<OverlayApp bridge={bridge} />)
     push({ members: [member('a', 'Ana')], more: 0 }, { ...CONFIG, corner: 'top-right', width: 400 }, true)
     const grip = screen.getByRole('separator', { name: 'Redimensionar' })
     expect(grip.className).toContain('left-0')
     fireEvent.pointerDown(grip, { screenX: 500, pointerId: 1 })
     fireEvent.pointerUp(grip, { screenX: 450, pointerId: 1 })
-    expect(resize).toHaveBeenLastCalledWith(450, true)
+    expect(resized).toHaveBeenLastCalledWith(450)
   })
 })
 

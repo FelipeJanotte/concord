@@ -30,8 +30,7 @@ function show(n: NativeNotification | null, soundPlayed = false): void {
   notificationEnv.bridge()?.show(soundPlayed ? { ...n, silent: true } : n)
 }
 
-export function openNotificationTarget(target: NotificationTarget | null): void {
-  if (!target) return
+export function openNotificationTarget(target: NotificationTarget): void {
   if (target.kind === 'friends') showFriends()
   else if (target.kind === 'channel') {
     const channel = get().channels.find((c) => c.id === target.channelId)
@@ -83,7 +82,7 @@ export function bindNotificationEvents(s: AppSocket): void {
     stopBadge = useApp.subscribe(syncBadge)
     syncBadge()
   }
-  if (!stopClick) stopClick = notificationEnv.bridge()?.onClick(openNotificationTarget) ?? null
+  if (!stopClick) stopClick = notificationEnv.bridge()?.onClick((click) => click.kind === 'target' && openNotificationTarget(click.target)) ?? null
 }
 
 const STORAGE_KEY = 'concord:notifications'

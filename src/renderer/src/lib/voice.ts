@@ -22,7 +22,9 @@ import { AudioClockWatchdog } from './audio-clock'
 import { SpeakingDetector } from './speaking/detector'
 import { VoiceLeveler, type LevelerGains } from './leveler/leveler'
 import type { LevelerTarget } from './leveler/level'
+import type { ScreenAudioChoice } from '@shared/screen'
 import { useApp } from '@/store'
+import { NO_OWN_SCREEN_SHARE, type OwnScreenShare } from '@/store/voice'
 import type { AppSocket } from './core'
 
 const AUDIO_CAPTURE = { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
@@ -42,20 +44,21 @@ const volumeIdOf = (participant: ScreenOwner | undefined): string | undefined =>
 
 const SCREEN_IDENTITY_SUFFIX = ':screen'
 
-function screenOfMetadata(metadata: string | undefined): string | null {
+function screenOfMetadata(identity: string, metadata: string | undefined): string | null {
   if (!metadata) return null
   try {
     const parsed: unknown = JSON.parse(metadata)
     const screenOf = typeof parsed === 'object' && parsed !== null ? (parsed as { screenOf?: unknown }).screenOf : undefined
     return typeof screenOf === 'string' && screenOf ? screenOf : null
-  } catch {
+  } catch (error) {
+    console.warn('[tela] metadata inválido no participante', identity, error)
     return null
   }
 }
 
 export function screenOwnerOf(identity: string, metadata?: string): string | null {
   if (!identity.endsWith(SCREEN_IDENTITY_SUFFIX)) return null
-  return screenOfMetadata(metadata) ?? (identity.slice(0, -SCREEN_IDENTITY_SUFFIX.length) || null)
+  return screenOfMetadata(identity, metadata) ?? (identity.slice(0, -SCREEN_IDENTITY_SUFFIX.length) || null)
 }
 
 type ScreenOwner = Pick<Participant, 'identity' | 'attributes'>
@@ -293,7 +296,7 @@ export class VoiceClient {
     this.measuredSpeakers = []
     if (Object.keys(useApp.getState().speaking).length) useApp.setState({ speaking: {} })
     this.screens.clear()
-    if (useApp.getState().ownScreenThumbnail !== null) useApp.setState({ ownScreenThumbnail: null })
+    if (useApp.getState().ownScreenShare.kind !== 'none') useApp.setState({ ownScreenShare: NO_OWN_SCREEN_SHARE })
     this.publishScreens()
     this.cameras.clear()
     this.publishCameras()
@@ -566,18 +569,19 @@ export class VoiceClient {
     return (this.volumes.get(accountId) ?? 1) * this.outputVolume
   }
 
-  async startScreenShare(audio: boolean): Promise<void> {
+  async startScreenShare(audioChoice: ScreenAudioChoice): Promise<void> {
     const room = this.room
     if (!room) throw new Error('Entre numa sala de voz para compartilhar a tela')
-    await room.localParticipant.setScreenShareEnabled(true, { ...SCREEN_CAPTURE, audio, systemAudio: audio ? 'include' : 'exclude' })
+    const withAudio = audioChoice === 'with-system-audio'
+    await room.localParticipant.setScreenShareEnabled(true, { ...SCREEN_CAPTURE, audio: withAudio, systemAudio: withAudio ? 'include' : 'exclude' })
   }
 
   async stopScreenShare(): Promise<void> {
     await this.room?.localParticipant.setScreenShareEnabled(false)
   }
 
-  showOwnScreen(thumbnail: string | null): void {
-    useApp.setState({ ownScreenThumbnail: thumbnail })
+  showOwnScreen(ownScreenShare: OwnScreenShare): void {
+    useApp.setState({ ownScreenShare })
     this.publishScreens()
   }
 
@@ -761,8 +765,8 @@ export class VoiceClient {
   }
 
   private publishScreens(): void {
-    const { self, ownScreenThumbnail } = useApp.getState()
-    const ownNativeScreen = ownScreenThumbnail !== null && self && !this.screens.has(self.id) ? [self.id] : []
+    const { self, ownScreenShare } = useApp.getState()
+    const ownNativeScreen = ownScreenShare.kind === 'native' && self && !this.screens.has(self.id) ? [self.id] : []
     const next = [...this.screens.keys(), ...ownNativeScreen]
     const prev = useApp.getState().screens
     if (prev.length !== next.length || next.some((id, i) => prev[i] !== id)) useApp.setState({ screens: next })

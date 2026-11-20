@@ -4,6 +4,7 @@ import { attachScreen } from '@/lib/client'
 import { useFullscreen } from '@/lib/fullscreen'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
+import { NO_OWN_SCREEN_SHARE } from '@/store/voice'
 import { ScreenAudioControl } from './ScreenAudioControl'
 import { ScreenViewers } from './ScreenViewers'
 
@@ -36,8 +37,8 @@ function useScreenLabels(userIds: string[]): string {
 }
 
 function ScreenVideo({ userId, label, onDoubleClick }: { userId: string; label: string; onDoubleClick?: () => void }) {
-  const ownThumbnail = useApp((s) => (s.self?.id === userId ? s.ownScreenThumbnail : null))
-  if (ownThumbnail) return <OwnScreenCard thumbnail={ownThumbnail} label={label} onDoubleClick={onDoubleClick} />
+  const ownScreenShare = useApp((s) => (s.self?.id === userId ? s.ownScreenShare : NO_OWN_SCREEN_SHARE))
+  if (ownScreenShare.kind === 'native') return <OwnScreenCard thumbnail={ownScreenShare.thumbnail} label={label} onDoubleClick={onDoubleClick} />
   return <LiveScreenVideo userId={userId} label={label} onDoubleClick={onDoubleClick} />
 }
 

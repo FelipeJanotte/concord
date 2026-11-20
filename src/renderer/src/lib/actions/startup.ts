@@ -11,7 +11,7 @@ export async function loadStartup(): Promise<void> {
   try {
     set({ openAtLogin: await bridge.get() })
   } catch {
-    set({ openAtLogin: null })
+    set({ openAtLogin: { supported: false } })
   }
 }
 
@@ -19,7 +19,7 @@ export async function setOpenAtLogin(openAtLogin: boolean): Promise<void> {
   const bridge = startupEnv.bridge()
   if (!bridge) return
   try {
-    set({ openAtLogin: await bridge.set(openAtLogin) })
+    set({ openAtLogin: await (openAtLogin ? bridge.enable() : bridge.disable()) })
   } catch {
     notify('Não foi possível mudar o início com o Windows.')
   }
