@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 
 type Stopper = Box<dyn FnOnce() + Send>;
 
@@ -9,16 +9,15 @@ pub struct Shutdown {
 
 impl Shutdown {
     pub fn register(&self, stopper: impl FnOnce() + Send + 'static) {
-        if let Ok(mut stoppers) = self.stoppers.lock() {
-            stoppers.push(Box::new(stopper));
-        }
+        self.stoppers
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(Box::new(stopper));
     }
 
     pub fn run_all(&self) {
-        let stoppers = match self.stoppers.lock() {
-            Ok(mut stoppers) => std::mem::take(&mut *stoppers),
-            Err(poisoned) => std::mem::take(&mut *poisoned.into_inner()),
-        };
+        let stoppers =
+            std::mem::take(&mut *self.stoppers.lock().unwrap_or_else(PoisonError::into_inner));
         for stopper in stoppers.into_iter().rev() {
             stopper();
         }
@@ -27,7 +26,7 @@ impl Shutdown {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
+    use std::sync::{Arc, Mutex, PoisonError};
 
     use super::Shutdown;
 
@@ -46,6 +45,25 @@ mod tests {
         shutdown.run_all();
         let order = order.lock().map(|order| order.clone()).unwrap_or_default();
         assert_eq!(order, vec!["third", "second", "first"]);
+    }
+
+    #[test]
+    fn registers_and_runs_stoppers_after_the_lock_was_poisoned() {
+        let shutdown = Arc::new(Shutdown::default());
+        let poisoner = Arc::clone(&shutdown);
+        let poisoning = std::thread::spawn(move || {
+            let _held = poisoner.stoppers.lock();
+            panic!("poison the stopper list");
+        })
+        .join();
+        assert!(poisoning.is_err());
+        let ran = Arc::new(Mutex::new(false));
+        let flag = Arc::clone(&ran);
+        shutdown.register(move || {
+            *flag.lock().unwrap_or_else(PoisonError::into_inner) = true;
+        });
+        shutdown.run_all();
+        assert!(*ran.lock().unwrap_or_else(PoisonError::into_inner));
     }
 
     #[test]

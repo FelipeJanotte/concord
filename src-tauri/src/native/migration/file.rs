@@ -58,61 +58,71 @@ mod tests {
     struct Scratch(PathBuf);
 
     impl Scratch {
-        fn new(name: &str) -> Self {
+        fn new(name: &str) -> io::Result<Self> {
             let dir = std::env::temp_dir()
                 .join(format!("concord-migration-{name}-{}", std::process::id()));
-            let _ = fs::remove_dir_all(&dir);
-            let _ = fs::create_dir_all(&dir);
-            Scratch(dir)
+            match fs::remove_dir_all(&dir) {
+                Err(error) if error.kind() != io::ErrorKind::NotFound => return Err(error),
+                _ => {}
+            }
+            fs::create_dir_all(&dir)?;
+            Ok(Scratch(dir))
         }
 
-        fn file(&self, body: &str) -> PathBuf {
+        fn file(&self, body: &str) -> io::Result<PathBuf> {
             let path = self.0.join(FILE_NAME);
-            let _ = fs::write(&path, body);
-            path
+            fs::write(&path, body)?;
+            Ok(path)
         }
     }
 
     impl Drop for Scratch {
         fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
+            if let Err(error) = fs::remove_dir_all(&self.0) {
+                log::warn!("scratch directory not removed: {error}");
+            }
         }
     }
 
     #[test]
-    fn a_missing_file_yields_no_script() {
-        let scratch = Scratch::new("missing");
+    fn a_missing_file_yields_no_script() -> io::Result<()> {
+        let scratch = Scratch::new("missing")?;
         assert_eq!(script_from_file(&scratch.0.join(FILE_NAME)), None);
+        Ok(())
     }
 
     #[test]
-    fn a_valid_file_yields_a_script_and_is_kept_until_the_page_confirms() {
-        let scratch = Scratch::new("valid");
-        let path = scratch.file(r#"{"version":1,"entries":{"concord:a":"1"}}"#);
+    fn a_valid_file_yields_a_script_and_is_kept_until_the_page_confirms() -> io::Result<()> {
+        let scratch = Scratch::new("valid")?;
+        let path = scratch.file(r#"{"version":1,"entries":{"concord:a":"1"}}"#)?;
         let script = script_from_file(&path);
         assert!(script.is_some_and(|text| text.contains("concord:a")));
         assert!(path.exists());
+        Ok(())
     }
 
     #[test]
-    fn a_malformed_file_yields_no_script_and_is_deleted() {
-        let scratch = Scratch::new("malformed");
-        let path = scratch.file(r#"{"version":1,"entries":{"token":"x"}}"#);
+    fn a_malformed_file_yields_no_script_and_is_deleted() -> io::Result<()> {
+        let scratch = Scratch::new("malformed")?;
+        let path = scratch.file(r#"{"version":1,"entries":{"token":"x"}}"#)?;
         assert_eq!(script_from_file(&path), None);
         assert!(!path.exists());
+        Ok(())
     }
 
     #[test]
-    fn remove_deletes_the_file() {
-        let scratch = Scratch::new("remove");
-        let path = scratch.file("{}");
+    fn remove_deletes_the_file() -> io::Result<()> {
+        let scratch = Scratch::new("remove")?;
+        let path = scratch.file("{}")?;
         assert!(remove(&path).is_ok());
         assert!(!path.exists());
+        Ok(())
     }
 
     #[test]
-    fn remove_of_a_missing_file_is_fine() {
-        let scratch = Scratch::new("remove-missing");
+    fn remove_of_a_missing_file_is_fine() -> io::Result<()> {
+        let scratch = Scratch::new("remove-missing")?;
         assert!(remove(&scratch.0.join(FILE_NAME)).is_ok());
+        Ok(())
     }
 }

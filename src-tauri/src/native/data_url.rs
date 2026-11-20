@@ -23,9 +23,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn decodes_the_bytes_after_the_png_prefix() {
-        let bytes = png_bytes("data:image/png;base64,iVBORw0K").unwrap_or_default();
+    fn decodes_the_bytes_after_the_png_prefix() -> Result<(), DataUrlError> {
+        let bytes = png_bytes("data:image/png;base64,iVBORw0K")?;
         assert_eq!(bytes, vec![0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a]);
+        Ok(())
     }
 
     #[test]
