@@ -23,7 +23,8 @@ macro_rules! command_registry {
 command_registry! {
     google::google_sign_in,
     screen::screen_sources,
-    screen::screen_select,
+    screen::screen_start,
+    screen::screen_stop,
     overlay::overlay_config,
     overlay::overlay_room,
     overlay::overlay_edit,

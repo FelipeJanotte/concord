@@ -15,8 +15,10 @@ pub fn run() -> Result<(), tauri::Error> {
                 .build(),
         )
         .manage(shutdown::Shutdown::default())
+        .manage(commands::screen::ScreenShareState::default())
         .setup(|app| {
             windows::main_window::create(app.handle())?;
+            commands::screen::stop_share_on_shutdown(app.handle());
             Ok(())
         })
         .invoke_handler(commands::handler())

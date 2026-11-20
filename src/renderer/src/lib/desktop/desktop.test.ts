@@ -91,8 +91,11 @@ describe('comandos', () => {
   it('screen', async () => {
     replies['screen_sources'] = [{ id: 'screen:0:0', name: 'Tela', kind: 'screen', thumbnail: 't', appIcon: null }]
     await expect(api.screen.getSources()).resolves.toHaveLength(1)
-    await api.screen.select('screen:0:0', true)
-    expect(lastCall()).toEqual({ command: 'screen_select', args: { sourceId: 'screen:0:0', audio: true } })
+    const request = { sourceId: 'screen:65537', audio: true, url: 'ws://livekit.test', token: 'jwt' }
+    await api.screen.start(request)
+    expect(lastCall()).toEqual({ command: 'screen_start', args: { request } })
+    await api.screen.stop()
+    expect(lastCall()).toEqual({ command: 'screen_stop', args: {} })
   })
 
   it('overlay (janela principal)', async () => {
@@ -196,6 +199,15 @@ describe('eventos', () => {
     expect(listener).toHaveBeenCalledWith(null, config, true)
   })
 
+  it('screen-ended entrega o motivo do fim da tela', async () => {
+    mockIPC(() => undefined, { shouldMockEvents: true })
+    const ended = vi.fn()
+    buildDesktopApi(environment).screen.onEnded(ended)
+    await settle()
+    await emit('screen-ended', 'source-closed')
+    expect(ended).toHaveBeenCalledWith('source-closed')
+  })
+
   it('ppt-unavailable e notification-click', async () => {
     mockIPC(() => undefined, { shouldMockEvents: true })
     const api = buildDesktopApi(environment)
@@ -218,7 +230,8 @@ describe('canais compartilhados', () => {
     await Promise.allSettled([
       api.googleSignIn('x'),
       api.screen.getSources(),
-      api.screen.select('s', false),
+      api.screen.start({ sourceId: 's', audio: false, url: 'u', token: 't' }),
+      api.screen.stop(),
       api.overlay.setShortcuts({ toggle: 'F1', edit: 'F2' }),
       api.pushToTalk.capture(),
       api.idle.isIdle(),
@@ -256,6 +269,7 @@ describe('canais compartilhados', () => {
     api.thumbar.onClick(noop)
     api.updater.onStatus(noop)
     api.windowControls.onMaximizedChange(noop)
+    api.screen.onEnded(noop)
     await settle()
 
     const kebab = (snake: string): string => snake.replaceAll('_', '-')

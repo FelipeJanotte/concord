@@ -1,4 +1,3 @@
-// Seletor de tela/janela para compartilhar (Electron). No navegador, o próprio navegador pergunta.
 import { useCallback, useEffect, useState } from 'react'
 import { AppWindow, Loader2, Monitor, RefreshCw } from 'lucide-react'
 import type { ScreenSource } from '@shared/screen'
@@ -24,7 +23,6 @@ export function ScreenPicker() {
     try {
       const list = await window.api.screen.getSources()
       setSources(list)
-      // Mantém a escolha se a fonte ainda existe; senão, pré-seleciona a primeira tela.
       setSelected((cur) => (cur && list.some((s) => s.id === cur) ? cur : (list.find((s) => s.kind === 'screen')?.id ?? null)))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Não foi possível listar as telas.')
@@ -82,7 +80,7 @@ export function ScreenPicker() {
                   role="option"
                   aria-selected={s.id === selected}
                   onClick={() => setSelected(s.id)}
-                  onDoubleClick={() => void startScreenShare(s.id, audio)}
+                  onDoubleClick={() => void startScreenShare(s, audio)}
                   className={cn(
                     'flex flex-col gap-1.5 rounded-lg p-2 text-left ring-2 ring-transparent transition-colors hover:bg-accent/50',
                     s.id === selected && 'bg-accent/60 ring-primary'
@@ -112,7 +110,7 @@ export function ScreenPicker() {
             <Button variant="ghost" onClick={closeScreenPicker}>
               Cancelar
             </Button>
-            <Button disabled={!choice} onClick={() => choice && void startScreenShare(choice.id, audio)}>
+            <Button disabled={!choice} onClick={() => choice && void startScreenShare(choice, audio)}>
               Compartilhar
             </Button>
           </div>

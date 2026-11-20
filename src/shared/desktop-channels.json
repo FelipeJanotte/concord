@@ -2,7 +2,8 @@
   "commands": [
     "google-sign-in",
     "screen-sources",
-    "screen-select",
+    "screen-start",
+    "screen-stop",
     "overlay-config",
     "overlay-room",
     "overlay-edit",
@@ -39,6 +40,7 @@
     "idle-change",
     "notification-click",
     "thumbar-click",
-    "update-status"
+    "update-status",
+    "screen-ended"
   ]
 }

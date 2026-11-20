@@ -182,17 +182,22 @@ describe('fim da tela pelo servidor', () => {
 })
 
 describe('limite', () => {
+  let limited: TestServer
+
+  beforeAll(async () => {
+    limited = await TestServer.start({ env: { ...liveKitEnv(apiUrl), RATE_LIMIT_MULTIPLIER: '1' } })
+  })
+
+  afterAll(async () => {
+    await limited?.destroy()
+  })
+
   it('pedir credenciais rápido demais é recusado (LIMITS.screenCredentials)', async () => {
-    const limited = await TestServer.start({ env: { ...liveKitEnv(apiUrl), RATE_LIMIT_MULTIPLIER: '1' } })
-    try {
-      const ana = await user(undefined, limited)
-      await join(ana, (await voiceRoom(limited)).id)
-      const results: ScreenCredentialsResult[] = []
-      for (let attempt = 0; attempt < 6; attempt++) results.push(await screenCredentials(ana))
-      expect(results.slice(0, 5).every((result) => result.ok)).toBe(true)
-      expect(results[5]).toEqual({ ok: false, error: expect.stringMatching(/^Muitos pedidos para compartilhar a tela\. Tente de novo em \d+ s\.$/) })
-    } finally {
-      await limited.destroy()
-    }
+    const ana = await user(undefined, limited)
+    await join(ana, (await voiceRoom(limited)).id)
+    const results: ScreenCredentialsResult[] = []
+    for (let attempt = 0; attempt < 6; attempt++) results.push(await screenCredentials(ana))
+    expect(results.slice(0, 5).every((result) => result.ok)).toBe(true)
+    expect(results[5]).toEqual({ ok: false, error: expect.stringMatching(/^Muitos pedidos para compartilhar a tela\. Tente de novo em \d+ s\.$/) })
   })
 })

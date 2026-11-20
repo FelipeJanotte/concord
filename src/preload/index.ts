@@ -13,20 +13,12 @@ import type { ThemeConfig } from '../shared/types/theme'
 import type { IdleBridge } from '../shared/idle'
 import type { PttBinding, PttConfig, PushToTalkBridge } from '../shared/push-to-talk'
 import type { NativeNotification, NotificationsBridge, NotificationTarget } from '../shared/notifications'
-import type { ScreenShareBridge, ScreenSource } from '../shared/screen'
 import type { OpenAtLogin, StartupBridge } from '../shared/startup'
 import type { ThumbarAction, ThumbarBridge, ThumbarButton } from '../shared/thumbar'
 import { hasOwnWindowButtons, type WindowControlAction, type WindowControlsBridge } from '../shared/window-controls'
 import { supportsTranslucency, type TranslucencyBridge, type TranslucencyRequest } from '../shared/translucency'
 import type { UpdaterBridge, UpdateStatus } from '../shared/updater'
 
-const screen: ScreenShareBridge = {
-  getSources: (): Promise<ScreenSource[]> => ipcRenderer.invoke('screen-sources'),
-  select: (sourceId: string, audio: boolean): Promise<void> => ipcRenderer.invoke('screen-select', sourceId, audio),
-  canShareAudio: process.platform === 'win32'
-}
-
-/** Overlay (B15), lado da janela principal: manda configuração e a sala; ouve o atalho e o modo de mover. */
 const overlay: OverlayBridge = {
   setConfig: (config: OverlayConfig): void => ipcRenderer.send('overlay-config', config),
   setRoom: (room: OverlayRoom | null): void => ipcRenderer.send('overlay-room', room),
@@ -56,7 +48,6 @@ const overlay: OverlayBridge = {
   setTheme: (theme: ThemeConfig): void => ipcRenderer.send('overlay-theme', theme)
 }
 
-/** Overlay (B15), lado da página do overlay: recebe a sala, a configuração e o modo de mover. */
 const overlayView: OverlayViewBridge = {
   onUpdate: (listener) => {
     const handler = (_e: unknown, room: OverlayRoom | null, config: OverlayConfig, editing: boolean): void =>
@@ -73,7 +64,6 @@ const overlayView: OverlayViewBridge = {
   }
 }
 
-/** Pressione para falar (B20): configura a escuta e recebe pressionado/solto. */
 const pushToTalk: PushToTalkBridge = {
   setConfig: (config: PttConfig): void => ipcRenderer.send('ptt-config', config),
   capture: (): Promise<PttBinding | null> => ipcRenderer.invoke('ptt-capture'),
@@ -117,7 +107,6 @@ const thumbar: ThumbarBridge = {
   }
 }
 
-/** Atualização automática (A13, ver src/main/updater.ts). */
 const updater: UpdaterBridge = {
   getStatus: (): Promise<UpdateStatus> => ipcRenderer.invoke('update-get'),
   onStatus: (listener) => {
@@ -129,7 +118,6 @@ const updater: UpdaterBridge = {
   install: (): void => ipcRenderer.send('update-install')
 }
 
-/** Tema translúcido (vidro): se o sistema tem o efeito e liga/desliga na janela (ver src/main/translucency.ts). */
 const translucency: TranslucencyBridge = {
   supported: supportsTranslucency(process.platform, release()),
   set: (request: TranslucencyRequest): void => ipcRenderer.send('window-translucency', request)
@@ -153,19 +141,13 @@ const windowControls: WindowControlsBridge = {
 
 const api = {
   platform: process.platform,
-  /** Abre o navegador para o login com Google e devolve o código (fluxo loopback + PKCE). */
   googleSignIn: (clientId: string): Promise<{ code: string; codeVerifier: string; redirectUri: string }> =>
     ipcRenderer.invoke('google-sign-in', clientId),
-  /** Compartilhamento de tela: lista telas/janelas e escolhe a fonte (ver src/main/screen-share.ts). */
-  screen,
-  /** Sobreposição em jogos (ver src/main/overlay.ts). */
   overlay,
   overlayView,
-  /** Notificações nativas e selo no ícone (ver src/main/notifications.ts). */
   notifications,
   thumbar,
   updater,
-  /** Pressione para falar (ver src/main/push-to-talk.ts). */
   pushToTalk,
   idle,
   translucency,
@@ -176,6 +158,5 @@ const api = {
 if (process.contextIsolated) {
   contextBridge.exposeInMainWorld('api', api)
 } else {
-  // @ts-ignore (definido em index.d.ts)
-  window.api = api
+  ;(globalThis as unknown as { api: typeof api }).api = api
 }

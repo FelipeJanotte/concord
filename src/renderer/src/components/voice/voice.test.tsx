@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
-// Componentes da tela compartilhada: seletor, miniatura/destaque da tela (escolher qual ver, grade, tela cheia) e grade da sala.
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ScreenShareBridge, ScreenSource } from '@shared/screen'
+import type { ScreenShareBridge, ScreenShareStart, ScreenSource } from '@shared/screen'
 import type { User, VoiceState } from '@shared/types'
 import { setSocket } from '@/lib/core'
 import { voice } from '@/lib/voice'
@@ -25,11 +24,11 @@ const state = (userId: string, extra: Partial<VoiceState> = {}): VoiceState => (
 
 const SOURCES: ScreenSource[] = [
   { id: 'screen:0:0', name: 'Tela 1', kind: 'screen', thumbnail: 'data:image/png;base64,AA==', appIcon: null },
-  { id: 'screen:1:0', name: 'Tela 2', kind: 'screen', thumbnail: 'data:image/png;base64,AA==', appIcon: null },
+  { id: 'screen:1:0', name: 'Tela 2', kind: 'screen', thumbnail: 'data:image/png;base64,Mg==', appIcon: null },
   { id: 'window:7:0', name: 'Navegador', kind: 'window', thumbnail: 'data:image/png;base64,AA==', appIcon: 'data:image/png;base64,AA==' }
 ]
 
-let bridge: ScreenShareBridge & { getSources: ReturnType<typeof vi.fn>; select: ReturnType<typeof vi.fn> }
+let bridge: ScreenShareBridge & { getSources: ReturnType<typeof vi.fn>; sharing: ScreenShareStart | null }
 let socket: FakeSocket
 
 beforeEach(() => {
@@ -41,7 +40,19 @@ beforeEach(() => {
   })
   socket = new FakeSocket()
   setSocket(socket.asSocket())
-  bridge = { getSources: vi.fn(async () => SOURCES), select: vi.fn(async () => {}), canShareAudio: true }
+  bridge = {
+    getSources: vi.fn(async () => SOURCES),
+    sharing: null,
+    start: async (request) => {
+      bridge.sharing = request
+    },
+    stop: async () => {
+      bridge.sharing = null
+    },
+    onEnded: () => () => {},
+    canShareAudio: true
+  }
+  socket.replyTo('voice:screen-credentials', () => ({ ok: true, url: 'ws://livekit.test', token: 'jwt-tela' }))
   ;(window as unknown as { api: unknown }).api = { platform: 'win32', screen: bridge }
   vi.spyOn(voice, 'startScreenShare').mockResolvedValue()
   vi.spyOn(voice, 'attachScreen').mockReturnValue(() => {})
@@ -76,16 +87,15 @@ describe('ScreenPicker', () => {
     await userEvent.click(within(list).getByRole('option', { name: /Tela 2/ }))
     await userEvent.click(screen.getByRole('checkbox', { name: /áudio do computador/ }))
     await userEvent.click(screen.getByRole('button', { name: 'Compartilhar' }))
-    expect(bridge.select).toHaveBeenCalledWith('screen:1:0', true)
-    expect(voice.startScreenShare).toHaveBeenCalledWith(true)
     await vi.waitFor(() => expect(useApp.getState().sharing).toBe(true))
-    expect(useApp.getState().screenPickerOpen).toBe(false)
+    expect(bridge.sharing).toEqual({ sourceId: 'screen:1:0', audio: true, url: 'ws://livekit.test', token: 'jwt-tela' })
+    expect(useApp.getState()).toMatchObject({ screenPickerOpen: false, ownScreenThumbnail: 'data:image/png;base64,Mg==' })
   })
 
   it('duplo clique compartilha direto', async () => {
     const list = await openPicker()
     await userEvent.dblClick(within(list).getByRole('option', { name: /Tela 1/ }))
-    expect(bridge.select).toHaveBeenCalledWith('screen:0:0', false)
+    await vi.waitFor(() => expect(bridge.sharing).toMatchObject({ sourceId: 'screen:0:0', audio: false }))
   })
 
   it('sem suporte a áudio do sistema, não mostra a opção', async () => {
@@ -98,7 +108,7 @@ describe('ScreenPicker', () => {
     await openPicker()
     await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
     expect(useApp.getState().screenPickerOpen).toBe(false)
-    expect(voice.startScreenShare).not.toHaveBeenCalled()
+    expect(bridge.sharing).toBeNull()
   })
 
   it('erro ao listar aparece no seletor; Atualizar tenta de novo', async () => {
@@ -137,6 +147,23 @@ describe('ScreenTile', () => {
   it('a própria tela aparece como "Sua tela"', () => {
     render(<ScreenTile userId="eu" onSelect={() => {}} />)
     expect(screen.getByText('Sua tela')).toBeTruthy()
+  })
+
+  it('a própria tela nativa mostra a miniatura da fonte e "Você está compartilhando", sem vídeo', () => {
+    useApp.setState({ ownScreenThumbnail: 'data:image/png;base64,Mg==' })
+    render(<ScreenTile userId="eu" onSelect={() => {}} />)
+    const card = screen.getByRole('img', { name: 'Sua tela' })
+    expect(card.getAttribute('src')).toBe('data:image/png;base64,Mg==')
+    expect(screen.getByText('Você está compartilhando')).toBeTruthy()
+    expect(document.querySelector('video')).toBeNull()
+    expect(voice.attachScreen).not.toHaveBeenCalled()
+  })
+
+  it('a tela de outra pessoa continua ao vivo enquanto eu compartilho pela tela nativa', () => {
+    useApp.setState({ ownScreenThumbnail: 'data:image/png;base64,Mg==' })
+    render(<ScreenTile userId="ana" onSelect={() => {}} />)
+    expect(voice.attachScreen).toHaveBeenCalledWith('ana', screen.getByLabelText('Tela de Ana'))
+    expect(screen.queryByText('Você está compartilhando')).toBeNull()
   })
 })
 
@@ -403,7 +430,6 @@ describe('VoiceGrid', () => {
 })
 
 describe('grade centralizada com tamanho automático', () => {
-  /** Simula a área medida da grade (o jsdom não tem layout nem ResizeObserver). */
   function withArea(width: number, height: number): () => void {
     const observers: Array<() => void> = []
     vi.stubGlobal(
@@ -432,7 +458,7 @@ describe('grade centralizada com tamanho automático', () => {
       render(<VoiceGrid members={[state('eu'), state('ana')]} />)
       const el = grid()
       expect(el.dataset.columns).toBe('2')
-      expect(el.style.getPropertyValue('--tile-w')).toBe('592px') // (1200 - 16) / 2
+      expect(el.style.getPropertyValue('--tile-w')).toBe('592px')
       expect(el.className).toContain('justify-center')
       expect(el.className).toContain('[align-content:safe_center]')
     } finally {
