@@ -367,6 +367,7 @@ de notificação com o app fechado só se provam num Windows real.
 **Checklist manual da M1 (só num Windows real, portão 6 do ADR 0013; a CI não prova):**
 
 - [ ] Compartilhar tela com GPU NVIDIA, AMD e Intel (tela e janela, com e sem áudio): quadro-chave, fluidez, e o log não diz "Codificador de vídeo da placa indisponível".
+- [ ] Numa máquina com GPU: `cargo test -p concord-capture -- --ignored` (conversão para NV12 na GPU, que o CI sem vídeo na GPU não roda); sem vídeo na GPU a tela cai para a codificação por CPU.
 - [ ] Participante `<accountId>:screen` não aparece como membro nem como "falando" para quem assiste; sem eco da chamada no áudio da tela.
 - [ ] Pressione para falar com um jogo em primeiro plano e com uma janela rodando como administrador.
 - [ ] Overlay sobre um jogo em tela cheia sem bordas: aparece, não rouba clique nem foco, volta ao topo quando outra janela ganha o foco; atalhos e modo de mover.

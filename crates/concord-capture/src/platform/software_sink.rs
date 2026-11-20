@@ -14,18 +14,47 @@ use windows::Win32::Graphics::Direct3D11::{
 };
 use windows::Win32::Graphics::Dxgi::Common::{DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC};
 
-pub(crate) struct SoftwareVideoSink {
+pub(crate) trait I420Publisher {
+    fn publish(&self, frame: &VideoFrame<I420Buffer>);
+}
+
+impl I420Publisher for NativeVideoSource {
+    fn publish(&self, frame: &VideoFrame<I420Buffer>) {
+        self.capture_frame(frame);
+    }
+}
+
+pub(crate) fn bgra_to_i420(bgra: &[u8], row_pitch: u32, size: FrameSize) -> I420Buffer {
+    let mut i420 = I420Buffer::new(size.width, size.height);
+    let (stride_y, stride_u, stride_v) = i420.strides();
+    let (y, u, v) = i420.data_mut();
+    argb_to_i420(
+        bgra,
+        row_pitch,
+        y,
+        stride_y,
+        u,
+        stride_u,
+        v,
+        stride_v,
+        size.width as i32,
+        size.height as i32,
+    );
+    i420
+}
+
+pub(crate) struct SoftwareVideoSink<P> {
     gpu: GpuDevice,
-    source: NativeVideoSource,
+    publisher: P,
     preset: QualityPreset,
     staging: Option<(FrameSize, ID3D11Texture2D)>,
 }
 
-impl SoftwareVideoSink {
-    pub fn new(gpu: GpuDevice, source: NativeVideoSource, preset: QualityPreset) -> Self {
+impl<P: I420Publisher> SoftwareVideoSink<P> {
+    pub fn new(gpu: GpuDevice, publisher: P, preset: QualityPreset) -> Self {
         Self {
             gpu,
-            source,
+            publisher,
             preset,
             staging: None,
         }
@@ -65,35 +94,25 @@ impl SoftwareVideoSink {
     }
 }
 
-impl VideoSink<CapturedFrame> for SoftwareVideoSink {
+impl<P: I420Publisher> VideoSink<CapturedFrame> for SoftwareVideoSink<P> {
     fn send(&mut self, frame: &CapturedFrame, timestamp: Duration) -> Result<(), CaptureError> {
         let staging = self.staging_texture(frame.size)?;
         unsafe { self.gpu.context.CopyResource(&staging, &frame.texture) };
-        let mut i420 = I420Buffer::new(frame.size.width, frame.size.height);
-        {
+        let mut i420 = {
             let mapping = MappedTexture::map(&self.gpu.context, &staging)?;
-            let (stride_y, stride_u, stride_v) = i420.strides();
-            let (y, u, v) = i420.data_mut();
-            argb_to_i420(
+            bgra_to_i420(
                 mapping.bytes(frame.size.height),
                 mapping.row_pitch(),
-                y,
-                stride_y,
-                u,
-                stride_u,
-                v,
-                stride_v,
-                frame.size.width as i32,
-                frame.size.height as i32,
-            );
-        }
+                frame.size,
+            )
+        };
         let target = target_size(frame.size, &self.preset);
         let buffer = if target == frame.size {
             i420
         } else {
             i420.scale(target.width as i32, target.height as i32)
         };
-        self.source.capture_frame(&VideoFrame {
+        self.publisher.publish(&VideoFrame {
             rotation: VideoRotation::VideoRotation0,
             timestamp_us: i64::try_from(timestamp.as_micros()).unwrap_or(i64::MAX),
             frame_metadata: None,

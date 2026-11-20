@@ -78,7 +78,7 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Testes
-        run: cargo test --workspace
+        run: cargo test --workspace --no-fail-fast
 
       - name: Instalar dependências
         run: npm ci

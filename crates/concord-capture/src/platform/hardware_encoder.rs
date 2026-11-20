@@ -56,7 +56,7 @@ impl EncoderFactory for HardwareEncoderFactory {
     ) -> Result<HardwareVideoEncoder, CaptureError> {
         Ok(HardwareVideoEncoder {
             converter: Nv12Converter::new(&self.gpu, source, target, self.frames_per_second)?,
-            transform: H264Transform::new(&self.gpu, target, rate, TransformKind::Hardware)?,
+            transform: H264Transform::new(TransformKind::Hardware(&self.gpu), target, rate)?,
         })
     }
 }

@@ -179,6 +179,7 @@ Alguns avisos de plugin saem por `eprintln!` (terminal do dev) e não chegam ao 
   Intel; pressione para falar com jogo e com janela de administrador em foco; overlay sobre jogo; clique de
   notificação com o app fechado; botões da miniatura; vidro; troca de uma instalação Electron real.
 - O CI compila e testa o encoder de software; o encoder de hardware só roda numa máquina com GPU.
+- Sem vídeo na GPU (VM, RDP, runner do GitHub, "Microsoft Basic Render Driver") a tela cai sozinha para a codificação por CPU (aviso `HardwareEncoderUnavailable`); os testes que exigem GPU com vídeo ficam com `#[ignore]` e rodam com `cargo test -p concord-capture -- --ignored` numa máquina com GPU.
 - `unwrap`/`expect` são negados pelo Clippy: erro vira `Result` ou log.
 
 ## Problemas conhecidos

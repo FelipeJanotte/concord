@@ -53,7 +53,7 @@ impl Session {
         let gpu = GpuDevice::for_monitor(target.monitor())?;
         let source_size = target.size()?;
         let probe_gpu = gpu.clone();
-        let choice = select_encoder(|| {
+        let choice = select_encoder(&gpu.video_support, || {
             in_com_thread(move || probe_hardware_encoder(&probe_gpu, source_size, &preset))
         });
         let mut session = Self {

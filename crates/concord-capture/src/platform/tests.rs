@@ -1,14 +1,22 @@
+use super::capture::CapturedFrame;
 use super::com::ComApartment;
 use super::device::GpuDevice;
 use super::hardware_encoder::solid_bgra_texture;
 use super::media_foundation::{H264Transform, TransformKind, pack_pair};
+use super::software_sink::{I420Publisher, SoftwareVideoSink, bgra_to_i420};
 use super::video_processor::Nv12Converter;
 use crate::annex_b::{NAL_TYPE_IDR, NAL_TYPE_PPS, NAL_TYPE_SPS, is_keyframe, nal_unit_types};
+use crate::encoder_selection::{VideoSupport, select_encoder};
 use crate::error::CaptureError;
+use crate::events::EncoderKind;
 use crate::frame_size::FrameSize;
-use crate::pipeline::EncodedUnit;
+use crate::pipeline::{EncodedUnit, VideoSink};
+use crate::quality::QualityPreset;
 use crate::rate_control::EncoderRate;
+use livekit::webrtc::video_frame::{I420Buffer, VideoBuffer, VideoFrame};
+use std::cell::RefCell;
 use std::mem::ManuallyDrop;
+use std::rc::Rc;
 use std::time::Duration;
 use windows::Win32::Graphics::Direct3D11::{
     D3D11_CPU_ACCESS_READ, D3D11_MAP_READ, D3D11_MAPPED_SUBRESOURCE, D3D11_TEXTURE2D_DESC,
@@ -16,10 +24,11 @@ use windows::Win32::Graphics::Direct3D11::{
 };
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_NV12;
 use windows::Win32::Media::MediaFoundation::{
-    CLSID_MSH264DecoderMFT, IMFSample, IMFTransform, MF_E_TRANSFORM_NEED_MORE_INPUT,
-    MF_E_TRANSFORM_STREAM_CHANGE, MF_MT_FRAME_SIZE, MF_MT_MAJOR_TYPE, MF_MT_SUBTYPE,
-    MFCreateMediaType, MFCreateMemoryBuffer, MFCreateSample, MFMediaType_Video,
-    MFT_MESSAGE_COMMAND_DRAIN, MFT_OUTPUT_DATA_BUFFER, MFVideoFormat_H264, MFVideoFormat_NV12,
+    CLSID_MSH264DecoderMFT, IMFMediaBuffer, IMFSample, IMFTransform,
+    MF_E_TRANSFORM_NEED_MORE_INPUT, MF_E_TRANSFORM_STREAM_CHANGE, MF_MT_FRAME_SIZE,
+    MF_MT_MAJOR_TYPE, MF_MT_SUBTYPE, MFCreateMediaType, MFCreateMemoryBuffer, MFCreateSample,
+    MFMediaType_Video, MFT_MESSAGE_COMMAND_DRAIN, MFT_OUTPUT_DATA_BUFFER, MFVideoFormat_H264,
+    MFVideoFormat_NV12,
 };
 use windows::Win32::System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance};
 
@@ -90,12 +99,22 @@ fn assert_near(values: &[u8], expected: u8, label: &str) {
     }
 }
 
+fn gpu_with_video_support() -> Result<GpuDevice, CaptureError> {
+    let gpu = GpuDevice::hardware()?;
+    match &gpu.video_support {
+        VideoSupport::Available => Ok(gpu),
+        VideoSupport::Missing { reason } => Err(CaptureError::Capture(format!(
+            "this machine has no GPU video support: {reason}"
+        ))),
+    }
+}
+
 fn convert_solid(
     color: [u8; 4],
     source: FrameSize,
     target: FrameSize,
 ) -> Result<Nv12Planes, CaptureError> {
-    let gpu = GpuDevice::warp()?;
+    let gpu = gpu_with_video_support()?;
     let bgra = solid_bgra_texture(&gpu, source, color)?;
     let mut converter = Nv12Converter::new(&gpu, source, target, 30)?;
     let nv12 = converter.convert(&bgra)?;
@@ -103,6 +122,7 @@ fn convert_solid(
 }
 
 #[test]
+#[ignore = "requer GPU com suporte a vídeo; roda no checklist manual: cargo test -p concord-capture -- --ignored"]
 fn red_bgra_becomes_bt709_studio_range_nv12_at_the_target_size() -> TestResult {
     let planes = convert_solid(RED, size(128, 64), size(64, 32))?;
     assert_eq!(planes.description.Format, DXGI_FORMAT_NV12);
@@ -119,6 +139,7 @@ fn red_bgra_becomes_bt709_studio_range_nv12_at_the_target_size() -> TestResult {
 }
 
 #[test]
+#[ignore = "requer GPU com suporte a vídeo; roda no checklist manual: cargo test -p concord-capture -- --ignored"]
 fn white_bgra_becomes_peak_luma_with_neutral_chroma() -> TestResult {
     let planes = convert_solid(WHITE, size(64, 64), size(64, 64))?;
     assert_near(&planes.luma, 235, "luma");
@@ -126,27 +147,133 @@ fn white_bgra_becomes_peak_luma_with_neutral_chroma() -> TestResult {
     Ok(())
 }
 
+fn solid_bgra_pixels(color: [u8; 4], frame_size: FrameSize) -> Vec<u8> {
+    color
+        .iter()
+        .copied()
+        .cycle()
+        .take(frame_size.width as usize * frame_size.height as usize * 4)
+        .collect()
+}
+
+fn cpu_i420(color: [u8; 4], frame_size: FrameSize) -> I420Buffer {
+    bgra_to_i420(
+        &solid_bgra_pixels(color, frame_size),
+        frame_size.width * 4,
+        frame_size,
+    )
+}
+
+#[test]
+fn red_bgra_becomes_bt601_studio_range_i420_on_the_cpu() {
+    let i420 = cpu_i420(RED, size(64, 32));
+    let (luma, blue_difference, red_difference) = i420.data();
+    assert_eq!((i420.width(), i420.height()), (64, 32));
+    assert_near(luma, 82, "luma");
+    assert_near(blue_difference, 90, "Cb");
+    assert_near(red_difference, 240, "Cr");
+}
+
+#[test]
+fn white_bgra_becomes_peak_luma_with_neutral_chroma_on_the_cpu() {
+    let i420 = cpu_i420(WHITE, size(64, 32));
+    let (luma, blue_difference, red_difference) = i420.data();
+    assert_near(luma, 235, "luma");
+    assert_near(blue_difference, 128, "Cb");
+    assert_near(red_difference, 128, "Cr");
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PublishedFrame {
+    size: FrameSize,
+    timestamp_us: i64,
+    first_luma: u8,
+}
+
+#[derive(Default, Clone)]
+struct RecordingPublisher {
+    frames: Rc<RefCell<Vec<PublishedFrame>>>,
+}
+
+impl I420Publisher for RecordingPublisher {
+    fn publish(&self, frame: &VideoFrame<I420Buffer>) {
+        let (luma, _, _) = frame.buffer.data();
+        self.frames.borrow_mut().push(PublishedFrame {
+            size: size(frame.buffer.width(), frame.buffer.height()),
+            timestamp_us: frame.timestamp_us,
+            first_luma: luma.first().copied().unwrap_or_default(),
+        });
+    }
+}
+
+#[test]
+fn software_pipeline_starts_on_a_warp_device_without_video_support() -> TestResult {
+    let gpu = GpuDevice::warp()?;
+    assert!(
+        matches!(gpu.video_support, VideoSupport::Missing { .. }),
+        "{:?}",
+        gpu.video_support
+    );
+    let choice = select_encoder(&gpu.video_support, || {
+        Err(CaptureError::Encoder("hardware probe must not run".into()))
+    });
+    assert_eq!(choice.kind, EncoderKind::Software);
+    let preset = QualityPreset {
+        long_edge: 64,
+        short_edge: 32,
+        frames_per_second: 30,
+        max_bitrate_bps: 1_000_000,
+    };
+    let publisher = RecordingPublisher::default();
+    let mut sink = SoftwareVideoSink::new(gpu.clone(), publisher.clone(), preset);
+    let source = size(128, 64);
+    let frame = CapturedFrame {
+        texture: solid_bgra_texture(&gpu, source, WHITE)?,
+        size: source,
+    };
+    sink.send(&frame, Duration::from_millis(40))?;
+    assert_eq!(
+        *publisher.frames.borrow(),
+        vec![PublishedFrame {
+            size: size(64, 32),
+            timestamp_us: 40_000,
+            first_luma: 235,
+        }]
+    );
+    Ok(())
+}
+
 const ENCODED_FRAMES: u32 = 30;
 const FORCED_KEYFRAME: usize = 15;
 
-fn encode_synthetic_frames(
-    gpu: &GpuDevice,
-    frame_size: FrameSize,
-) -> Result<Vec<EncodedUnit>, CaptureError> {
+fn synthetic_nv12(frame_size: FrameSize, index: u32) -> Vec<u8> {
+    let luma_length = frame_size.width as usize * frame_size.height as usize;
+    let shade = 16 + (index * 7) as u8;
+    let blue_difference = 128 - index as u8;
+    let red_difference = 128 + index as u8;
+    let mut nv12 = vec![shade; luma_length];
+    nv12.extend(
+        [blue_difference, red_difference]
+            .iter()
+            .copied()
+            .cycle()
+            .take(luma_length / 2),
+    );
+    nv12
+}
+
+fn encode_synthetic_frames(frame_size: FrameSize) -> Result<Vec<EncodedUnit>, CaptureError> {
     let rate = EncoderRate {
         bitrate_bps: 2_000_000,
         frames_per_second: 30,
     };
-    let mut transform = H264Transform::new(gpu, frame_size, rate, TransformKind::Software)?;
-    let mut converter = Nv12Converter::new(gpu, frame_size, frame_size, 30)?;
+    let mut transform = H264Transform::new(TransformKind::Software, frame_size, rate)?;
     let mut units = Vec::new();
     for index in 0..ENCODED_FRAMES {
-        let shade = (index * 8) as u8;
-        let bgra = solid_bgra_texture(gpu, frame_size, [shade, 255 - shade, shade / 2, 255])?;
-        let nv12 = converter.convert(&bgra)?;
+        let buffer = memory_buffer(&synthetic_nv12(frame_size, index))?;
         let force_keyframe = index == 0 || index as usize == FORCED_KEYFRAME;
-        units.extend(transform.encode(
-            &nv12,
+        units.extend(transform.encode_buffer(
+            &buffer,
             Duration::from_millis(u64::from(index) * 33),
             force_keyframe,
         )?);
@@ -158,9 +285,8 @@ fn encode_synthetic_frames(
 #[test]
 fn software_encoder_round_trips_thirty_frames_with_a_forced_idr() -> TestResult {
     let _apartment = ComApartment::enter()?;
-    let gpu = GpuDevice::warp()?;
     let frame_size = size(320, 240);
-    let units = encode_synthetic_frames(&gpu, frame_size)?;
+    let units = encode_synthetic_frames(frame_size)?;
     assert_eq!(units.len(), ENCODED_FRAMES as usize);
     for index in [0, FORCED_KEYFRAME] {
         let types = nal_unit_types(&units[index].data);
@@ -230,7 +356,7 @@ fn select_nv12_output(decoder: &IMFTransform) -> Result<(), CaptureError> {
     ))
 }
 
-fn memory_sample(bytes: &[u8]) -> Result<IMFSample, CaptureError> {
+fn memory_buffer(bytes: &[u8]) -> Result<IMFMediaBuffer, CaptureError> {
     let buffer = unsafe { MFCreateMemoryBuffer(bytes.len() as u32)? };
     let mut pointer = std::ptr::null_mut();
     unsafe {
@@ -239,8 +365,12 @@ fn memory_sample(bytes: &[u8]) -> Result<IMFSample, CaptureError> {
         buffer.Unlock()?;
         buffer.SetCurrentLength(bytes.len() as u32)?;
     }
+    Ok(buffer)
+}
+
+fn memory_sample(bytes: &[u8]) -> Result<IMFSample, CaptureError> {
     let sample = unsafe { MFCreateSample()? };
-    unsafe { sample.AddBuffer(&buffer)? };
+    unsafe { sample.AddBuffer(&memory_buffer(bytes)?)? };
     Ok(sample)
 }
 

@@ -12,22 +12,22 @@ use windows::Win32::Media::MediaFoundation::{
     CODECAPI_AVEncCommonMeanBitRate, CODECAPI_AVEncCommonRateControlMode,
     CODECAPI_AVEncMPVDefaultBPictureCount, CODECAPI_AVEncMPVGOPSize,
     CODECAPI_AVEncVideoForceKeyFrame, CODECAPI_AVLowLatencyMode, ICodecAPI, IMF2DBuffer,
-    IMFActivate, IMFAttributes, IMFDXGIDeviceManager, IMFMediaEventGenerator, IMFMediaType,
-    IMFSample, IMFTransform, METransformHaveOutput, METransformNeedInput, MF_E_NO_EVENTS_AVAILABLE,
-    MF_E_TRANSFORM_NEED_MORE_INPUT, MF_E_TRANSFORM_STREAM_CHANGE, MF_EVENT_FLAG_NO_WAIT,
-    MF_LOW_LATENCY, MF_MT_AVG_BITRATE, MF_MT_FRAME_RATE, MF_MT_FRAME_SIZE, MF_MT_INTERLACE_MODE,
-    MF_MT_MAJOR_TYPE, MF_MT_MPEG_SEQUENCE_HEADER, MF_MT_MPEG2_PROFILE, MF_MT_PIXEL_ASPECT_RATIO,
-    MF_MT_SUBTYPE, MF_MT_TRANSFER_FUNCTION, MF_MT_VIDEO_NOMINAL_RANGE, MF_MT_VIDEO_PRIMARIES,
-    MF_MT_YUV_MATRIX, MF_SA_D3D11_AWARE, MF_TRANSFORM_ASYNC, MF_TRANSFORM_ASYNC_UNLOCK, MF_VERSION,
-    MFCreateAttributes, MFCreateDXGIDeviceManager, MFCreateDXGISurfaceBuffer, MFCreateMediaType,
-    MFCreateMemoryBuffer, MFCreateSample, MFMediaType_Video, MFNominalRange_16_235,
-    MFSTARTUP_NOSOCKET, MFShutdown, MFStartup, MFT_CATEGORY_VIDEO_ENCODER, MFT_ENUM_ADAPTER_LUID,
-    MFT_ENUM_FLAG, MFT_ENUM_FLAG_HARDWARE, MFT_ENUM_FLAG_SORTANDFILTER, MFT_ENUM_FLAG_SYNCMFT,
-    MFT_MESSAGE_COMMAND_FLUSH, MFT_MESSAGE_NOTIFY_BEGIN_STREAMING,
-    MFT_MESSAGE_NOTIFY_START_OF_STREAM, MFT_MESSAGE_SET_D3D_MANAGER, MFT_OUTPUT_DATA_BUFFER,
-    MFT_OUTPUT_STREAM_CAN_PROVIDE_SAMPLES, MFT_OUTPUT_STREAM_PROVIDES_SAMPLES,
-    MFT_REGISTER_TYPE_INFO, MFTEnum2, MFVideoFormat_H264, MFVideoFormat_NV12,
-    MFVideoInterlace_Progressive, MFVideoPrimaries_BT709, MFVideoTransFunc_709,
+    IMFActivate, IMFAttributes, IMFDXGIDeviceManager, IMFMediaBuffer, IMFMediaEventGenerator,
+    IMFMediaType, IMFSample, IMFTransform, METransformHaveOutput, METransformNeedInput,
+    MF_E_NO_EVENTS_AVAILABLE, MF_E_TRANSFORM_NEED_MORE_INPUT, MF_E_TRANSFORM_STREAM_CHANGE,
+    MF_EVENT_FLAG_NO_WAIT, MF_LOW_LATENCY, MF_MT_AVG_BITRATE, MF_MT_FRAME_RATE, MF_MT_FRAME_SIZE,
+    MF_MT_INTERLACE_MODE, MF_MT_MAJOR_TYPE, MF_MT_MPEG_SEQUENCE_HEADER, MF_MT_MPEG2_PROFILE,
+    MF_MT_PIXEL_ASPECT_RATIO, MF_MT_SUBTYPE, MF_MT_TRANSFER_FUNCTION, MF_MT_VIDEO_NOMINAL_RANGE,
+    MF_MT_VIDEO_PRIMARIES, MF_MT_YUV_MATRIX, MF_SA_D3D11_AWARE, MF_TRANSFORM_ASYNC,
+    MF_TRANSFORM_ASYNC_UNLOCK, MF_VERSION, MFCreateAttributes, MFCreateDXGIDeviceManager,
+    MFCreateDXGISurfaceBuffer, MFCreateMediaType, MFCreateMemoryBuffer, MFCreateSample,
+    MFMediaType_Video, MFNominalRange_16_235, MFSTARTUP_NOSOCKET, MFShutdown, MFStartup,
+    MFT_CATEGORY_VIDEO_ENCODER, MFT_ENUM_ADAPTER_LUID, MFT_ENUM_FLAG, MFT_ENUM_FLAG_HARDWARE,
+    MFT_ENUM_FLAG_SORTANDFILTER, MFT_ENUM_FLAG_SYNCMFT, MFT_MESSAGE_COMMAND_FLUSH,
+    MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, MFT_MESSAGE_NOTIFY_START_OF_STREAM,
+    MFT_MESSAGE_SET_D3D_MANAGER, MFT_OUTPUT_DATA_BUFFER, MFT_OUTPUT_STREAM_CAN_PROVIDE_SAMPLES,
+    MFT_OUTPUT_STREAM_PROVIDES_SAMPLES, MFT_REGISTER_TYPE_INFO, MFTEnum2, MFVideoFormat_H264,
+    MFVideoFormat_NV12, MFVideoInterlace_Progressive, MFVideoPrimaries_BT709, MFVideoTransFunc_709,
     MFVideoTransferMatrix_BT709, eAVEncCommonRateControlMode_CBR, eAVEncH264VProfile_Base,
 };
 use windows::Win32::System::Com::CoTaskMemFree;
@@ -38,9 +38,9 @@ const EVENT_TIMEOUT: Duration = Duration::from_secs(2);
 const EVENT_POLL: Duration = Duration::from_millis(1);
 const HUNDRED_NANOSECONDS_PER_SECOND: u64 = 10_000_000;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum TransformKind {
-    Hardware,
+#[derive(Clone, Copy)]
+pub(crate) enum TransformKind<'a> {
+    Hardware(&'a GpuDevice),
     #[cfg_attr(not(test), allow(dead_code))]
     Software,
 }
@@ -101,31 +101,32 @@ pub(crate) struct H264Transform {
     output_buffer_size: u32,
     frame_duration: i64,
     parameter_sets: ParameterSets,
-    _device_manager: IMFDXGIDeviceManager,
+    _device_manager: Option<IMFDXGIDeviceManager>,
     _runtime: MediaFoundationRuntime,
 }
 
 impl H264Transform {
     pub fn new(
-        gpu: &GpuDevice,
+        kind: TransformKind<'_>,
         size: FrameSize,
         rate: EncoderRate,
-        kind: TransformKind,
     ) -> Result<Self, CaptureError> {
         let runtime = MediaFoundationRuntime::start()?;
-        let transform = activate_encoder(gpu, kind)?;
+        let transform = activate_encoder(kind)?;
         let attributes = unsafe { transform.GetAttributes()? };
         let is_async = attribute_flag(&attributes, &MF_TRANSFORM_ASYNC);
         if is_async {
             unsafe { attributes.SetUINT32(&MF_TRANSFORM_ASYNC_UNLOCK, 1)? };
         }
-        let device_manager = device_manager(gpu)?;
-        if attribute_flag(&attributes, &MF_SA_D3D11_AWARE) {
+        let device_manager = match kind {
+            TransformKind::Hardware(gpu) => Some(device_manager(gpu)?),
+            TransformKind::Software => None,
+        };
+        if let Some(manager) = &device_manager
+            && attribute_flag(&attributes, &MF_SA_D3D11_AWARE)
+        {
             unsafe {
-                transform.ProcessMessage(
-                    MFT_MESSAGE_SET_D3D_MANAGER,
-                    device_manager.as_raw() as usize,
-                )?
+                transform.ProcessMessage(MFT_MESSAGE_SET_D3D_MANAGER, manager.as_raw() as usize)?
             };
         }
         unsafe { attributes.SetUINT32(&MF_LOW_LATENCY, 1)? };
@@ -183,6 +184,18 @@ impl H264Transform {
         timestamp: Duration,
         force_keyframe: bool,
     ) -> Result<Vec<EncodedUnit>, CaptureError> {
+        let buffer = unsafe { MFCreateDXGISurfaceBuffer(&ID3D11Texture2D::IID, nv12, 0, false)? };
+        let length = unsafe { buffer.cast::<IMF2DBuffer>()?.GetContiguousLength()? };
+        unsafe { buffer.SetCurrentLength(length)? };
+        self.encode_buffer(&buffer, timestamp, force_keyframe)
+    }
+
+    pub fn encode_buffer(
+        &mut self,
+        nv12: &IMFMediaBuffer,
+        timestamp: Duration,
+        force_keyframe: bool,
+    ) -> Result<Vec<EncodedUnit>, CaptureError> {
         if force_keyframe {
             unsafe {
                 self.codec_api
@@ -235,15 +248,12 @@ impl H264Transform {
 
     fn input_sample(
         &self,
-        nv12: &ID3D11Texture2D,
+        nv12: &IMFMediaBuffer,
         timestamp: Duration,
     ) -> Result<IMFSample, CaptureError> {
-        let buffer = unsafe { MFCreateDXGISurfaceBuffer(&ID3D11Texture2D::IID, nv12, 0, false)? };
-        let length = unsafe { buffer.cast::<IMF2DBuffer>()?.GetContiguousLength()? };
-        unsafe { buffer.SetCurrentLength(length)? };
         let sample = unsafe { MFCreateSample()? };
         unsafe {
-            sample.AddBuffer(&buffer)?;
+            sample.AddBuffer(nv12)?;
             sample.SetSampleTime(to_hundred_nanoseconds(timestamp))?;
             sample.SetSampleDuration(self.frame_duration)?;
         }
@@ -370,7 +380,7 @@ fn attribute_flag(attributes: &IMFAttributes, key: &GUID) -> bool {
     unsafe { attributes.GetUINT32(key) }.is_ok_and(|value| value != 0)
 }
 
-fn activate_encoder(gpu: &GpuDevice, kind: TransformKind) -> Result<IMFTransform, CaptureError> {
+fn activate_encoder(kind: TransformKind<'_>) -> Result<IMFTransform, CaptureError> {
     let input = MFT_REGISTER_TYPE_INFO {
         guidMajorType: MFMediaType_Video,
         guidSubtype: MFVideoFormat_NV12,
@@ -379,8 +389,8 @@ fn activate_encoder(gpu: &GpuDevice, kind: TransformKind) -> Result<IMFTransform
         guidMajorType: MFMediaType_Video,
         guidSubtype: MFVideoFormat_H264,
     };
-    let (flags, adapter_filter) = match kind {
-        TransformKind::Hardware => {
+    let (flags, adapter_filter, label) = match kind {
+        TransformKind::Hardware(gpu) => {
             let mut attributes = None;
             unsafe { MFCreateAttributes(&mut attributes, 1)? };
             let attributes =
@@ -391,13 +401,18 @@ fn activate_encoder(gpu: &GpuDevice, kind: TransformKind) -> Result<IMFTransform
             (
                 MFT_ENUM_FLAG_HARDWARE | MFT_ENUM_FLAG_SORTANDFILTER,
                 Some(attributes),
+                "hardware",
             )
         }
-        TransformKind::Software => (MFT_ENUM_FLAG_SYNCMFT | MFT_ENUM_FLAG_SORTANDFILTER, None),
+        TransformKind::Software => (
+            MFT_ENUM_FLAG_SYNCMFT | MFT_ENUM_FLAG_SORTANDFILTER,
+            None,
+            "software",
+        ),
     };
     let list = enumerate_transforms(flags, &input, &output, adapter_filter.as_ref())?;
     let activate = list.first().ok_or_else(|| {
-        CaptureError::Encoder(format!("no {kind:?} H.264 encoder on this adapter"))
+        CaptureError::Encoder(format!("no {label} H.264 encoder on this adapter"))
     })?;
     Ok(unsafe { activate.ActivateObject::<IMFTransform>()? })
 }
