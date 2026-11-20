@@ -13,6 +13,7 @@ $RunKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $FakeRunValue = 'concord-cutover-fake'
 $FakeMigration = '{"version":1,"exportedAt":"2026-01-01T00:00:00.000Z","entries":{"concord:theme":"{\"name\":\"cutover\"}"}}'
 $ElectronUninstallerName = 'Uninstall Concord.exe'
+$DecoyKeyName = 'ConcordCutoverDecoy'
 
 $failures = [System.Collections.Generic.List[string]]::new()
 
@@ -52,7 +53,7 @@ function Find-ElectronRelease {
 function Find-ElectronUninstallKeys {
     Get-ChildItem $UninstallRoot | Where-Object {
         $uninstallString = $_.GetValue('UninstallString')
-        $uninstallString -and $uninstallString -like "*$ElectronUninstallerName*"
+        $_.PSChildName -ne $DecoyKeyName -and $uninstallString -and $uninstallString -like "*$ElectronUninstallerName*"
     }
 }
 
@@ -86,6 +87,13 @@ if ($AutostartWasOn) {
     Set-ItemProperty -Path $RunKey -Name $FakeRunValue -Value "`"$oldInstallDir\concord.exe`""
 }
 
+$decoyDir = Join-Path $env:RUNNER_TEMP 'decoy-concord'
+New-Item -ItemType Directory -Force -Path $decoyDir | Out-Null
+Set-Content -Path (Join-Path $decoyDir 'concord.exe') -Value 'x'
+$decoyKey = "$UninstallRoot\$DecoyKeyName"
+New-Item -Path $decoyKey -Force | Out-Null
+Set-ItemProperty -Path $decoyKey -Name 'UninstallString' -Value "`"$decoyDir\$ElectronUninstallerName`" /currentuser"
+
 Write-Host "Rodando o instalador novo com os argumentos do electron-updater, sem --force-run: --updated /S /D=$oldInstallDir"
 $newInstall = Start-Process -FilePath $NewInstaller -ArgumentList '--updated', '/S', "/D=$oldInstallDir" -PassThru
 $newInstall.Handle | Out-Null
@@ -112,6 +120,11 @@ Assert-That (-not (Test-Path (Join-Path $oldInstallDir $ElectronUninstallerName)
 Assert-That (-not (Test-Path (Join-Path $oldInstallDir 'resources\app.asar'))) 'app.asar do Electron removido da pasta'
 $tauriUninstall = Get-ItemProperty -Path "$UninstallRoot\Concord" -ErrorAction SilentlyContinue
 Assert-That ($null -ne $tauriUninstall -and $tauriUninstall.UninstallString -like "*$oldInstallDir*") 'entrada de desinstalação do Tauri na pasta antiga'
+
+Assert-That (Test-Path (Join-Path $decoyDir 'concord.exe')) 'pasta isca sem app.asar (só concord.exe) continua intacta'
+Assert-That (Test-Path $decoyKey) 'entrada de desinstalação isca continua no registro'
+Remove-Item -Path $decoyKey -Recurse -Force
+Remove-Item -Path $decoyDir -Recurse -Force
 
 Write-Host "Rodando o instalador novo com --force-run: --updated /S --force-run /D=$oldInstallDir"
 $relaunchInstall = Start-Process -FilePath $NewInstaller -ArgumentList '--updated', '/S', '--force-run', "/D=$oldInstallDir" -PassThru

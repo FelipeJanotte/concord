@@ -53,6 +53,12 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Testes do app
+        run: npm test
+
+      - name: Testes do desktop
+        run: cargo test --workspace
+
       - name: Gerar o instalador assinado
         run: npx tauri build
         env:
