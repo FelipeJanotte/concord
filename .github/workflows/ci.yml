@@ -20,9 +20,6 @@ jobs:
     name: typecheck e testes
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    env:
-      # o binário do Electron não é usado nos testes (o processo principal é testado com Electron falso)
-      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
     steps:
       - uses: actions/checkout@v4
 
@@ -67,8 +64,6 @@ jobs:
     name: desktop (Windows)
     runs-on: windows-latest
     timeout-minutes: 45
-    env:
-      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
