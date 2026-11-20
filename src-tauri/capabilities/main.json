@@ -9,7 +9,6 @@
     "core:event:default",
     "allow-google-sign-in",
     "allow-screen-sources",
-    "allow-screen-select",
     "allow-overlay-config",
     "allow-overlay-room",
     "allow-overlay-edit",
@@ -31,6 +30,9 @@
     "allow-startup-set",
     "allow-window-control",
     "allow-window-maximized-get",
-    "allow-show-main-window"
+    "allow-show-main-window",
+    "allow-screen-start",
+    "allow-screen-stop",
+    "allow-screen-preview"
   ]
 }

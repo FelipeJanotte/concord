@@ -28,9 +28,11 @@ pub fn run() -> Result<(), tauri::Error> {
         )
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(shutdown::Shutdown::default())
+        .manage(commands::screen::ScreenShareState::default())
         .setup(|app| {
             let main_window = windows::main_window::create(app.handle())?;
             windows::overlay_window::setup(app.handle(), &main_window);
+            commands::screen::stop_share_on_shutdown(app.handle());
             commands::push_to_talk::install(app.handle());
             commands::idle::install(app.handle());
             commands::notifications::install(app.handle());

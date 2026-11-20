@@ -19,4 +19,5 @@ event_names! {
     NOTIFICATION_CLICK = "notification-click",
     THUMBAR_CLICK = "thumbar-click",
     UPDATE_STATUS = "update-status",
+    SCREEN_ENDED = "screen-ended",
 }

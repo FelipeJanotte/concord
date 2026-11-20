@@ -36,6 +36,21 @@ function useScreenLabels(userIds: string[]): string {
 }
 
 function ScreenVideo({ userId, label, onDoubleClick }: { userId: string; label: string; onDoubleClick?: () => void }) {
+  const ownThumbnail = useApp((s) => (s.self?.id === userId ? s.ownScreenThumbnail : null))
+  if (ownThumbnail) return <OwnScreenCard thumbnail={ownThumbnail} label={label} onDoubleClick={onDoubleClick} />
+  return <LiveScreenVideo userId={userId} label={label} onDoubleClick={onDoubleClick} />
+}
+
+function OwnScreenCard({ thumbnail, label, onDoubleClick }: { thumbnail: string; label: string; onDoubleClick?: () => void }) {
+  return (
+    <div onDoubleClick={onDoubleClick} className="relative flex size-full min-h-0 items-center justify-center">
+      <img src={thumbnail} alt={label} className="size-full min-h-0 object-contain opacity-60" />
+      <span className="absolute rounded-md bg-black/60 px-3 py-1 text-sm font-semibold text-white">Você está compartilhando</span>
+    </div>
+  )
+}
+
+function LiveScreenVideo({ userId, label, onDoubleClick }: { userId: string; label: string; onDoubleClick?: () => void }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   useEffect(() => {
     const el = videoRef.current

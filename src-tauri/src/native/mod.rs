@@ -9,6 +9,7 @@ pub mod notifications;
 pub mod overlay;
 pub mod permissions;
 pub mod push_to_talk;
+pub mod screen_share;
 pub mod startup;
 pub mod thumbar;
 pub mod translucency;

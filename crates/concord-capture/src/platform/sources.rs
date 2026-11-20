@@ -1,4 +1,4 @@
-use super::target::{monitor_rect, rect_size, window_rect};
+use super::target::{CaptureTarget, monitor_rect, rect_size, window_rect};
 use crate::error::CaptureError;
 use crate::frame_size::{FrameSize, thumbnail_size};
 use crate::source::{CaptureSource, SourceId, SourceKind};
@@ -30,6 +30,13 @@ pub(crate) fn list_sources() -> Result<Vec<CaptureSource>, CaptureError> {
         }
     }
     Ok(sources)
+}
+
+pub(crate) fn thumbnail_of(source_id: &str) -> Result<Vec<u8>, CaptureError> {
+    match CaptureTarget::resolve(SourceId::parse(source_id)?)? {
+        CaptureTarget::Monitor(monitor) => screen_thumbnail(&monitor_rect(monitor)?),
+        CaptureTarget::Window(window) => window_thumbnail(window),
+    }
 }
 
 fn screen_source(monitor: &Monitor) -> Result<CaptureSource, CaptureError> {

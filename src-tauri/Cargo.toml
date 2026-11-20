@@ -33,6 +33,7 @@ base64 = "=0.23.1"
 rand = "=0.10.4"
 tokio = { version = "=1.54.1", features = ["net", "io-util", "time", "rt", "sync"] }
 concord-ptt = { path = "../crates/concord-ptt" }
+concord-capture = { path = "../crates/concord-capture" }
 concord-taskbar = { path = "../crates/concord-taskbar" }
 
 [target.'cfg(windows)'.dependencies]

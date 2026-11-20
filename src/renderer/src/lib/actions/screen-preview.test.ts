@@ -7,7 +7,8 @@ import { FakeSocket } from '@/test/fake-socket'
 import { fetchScreenPreview, SCREEN_PREVIEW_FIRST_MS } from './screen-preview'
 
 const snapshot = vi.hoisted(() => vi.fn<(track: MediaStreamTrack) => Promise<string | null>>())
-vi.mock('@/lib/screen-snapshot', () => ({ snapshotScreen: snapshot }))
+const snapshotFromImage = vi.hoisted(() => vi.fn<(image: string) => Promise<string | null>>())
+vi.mock('@/lib/screen-snapshot', () => ({ snapshotScreen: snapshot, snapshotImage: snapshotFromImage }))
 
 const SELF = { id: 'eu' } as User
 const TRACK = { kind: 'video' } as MediaStreamTrack
@@ -19,11 +20,14 @@ beforeEach(() => {
   socket = new FakeSocket()
   setSocket(socket.asSocket())
   snapshot.mockReset().mockResolvedValue('data:image/jpeg;base64,AAAA')
+  snapshotFromImage.mockReset().mockImplementation(async (image) => image.replace('data:image/png', 'data:image/jpeg'))
+  vi.spyOn(console, 'warn').mockImplementation(() => {})
   vi.spyOn(voice, 'screenMediaTrack').mockImplementation((userId) => (userId === SELF.id ? TRACK : undefined))
 })
 
 afterEach(() => {
   useApp.setState({ sharing: false })
+  vi.unstubAllGlobals()
   setSocket(null)
   vi.useRealTimers()
   vi.restoreAllMocks()
@@ -62,6 +66,40 @@ describe('miniaturas da própria tela', () => {
     snapshot.mockRejectedValue(new Error('sem quadro'))
     await vi.advanceTimersByTimeAsync(SCREEN_PREVIEW_INTERVAL_MS)
     expect(socket.sent('voice:preview')).toEqual([])
+  })
+})
+
+describe('miniaturas da tela nativa', () => {
+  let previews: string[]
+  let previewFailure: Error | null
+
+  beforeEach(() => {
+    previews = ['data:image/png;base64,UM==', 'data:image/png;base64,RE9JUw==']
+    previewFailure = null
+    const screen = {
+      preview: async (): Promise<string> => {
+        if (previewFailure) throw previewFailure
+        return previews.shift() ?? 'data:image/png;base64,'
+      }
+    }
+    vi.stubGlobal('window', { api: { screen } })
+    vi.mocked(voice.screenMediaTrack).mockReturnValue(undefined)
+  })
+
+  it('compartilhando pela tela nativa, manda a miniatura nova do Rust no mesmo ritmo', async () => {
+    useApp.setState({ sharing: true, ownScreenThumbnail: 'data:image/png;base64,AAAA' })
+    await vi.advanceTimersByTimeAsync(SCREEN_PREVIEW_FIRST_MS)
+    expect(socket.sent('voice:preview')).toEqual([['data:image/jpeg;base64,UM==']])
+    await vi.advanceTimersByTimeAsync(SCREEN_PREVIEW_INTERVAL_MS)
+    expect(socket.sent('voice:preview')).toEqual([['data:image/jpeg;base64,UM=='], ['data:image/jpeg;base64,RE9JUw==']])
+  })
+
+  it('a miniatura nativa falha: não manda nada e avisa no console', async () => {
+    previewFailure = new Error('Nenhuma tela está sendo compartilhada')
+    useApp.setState({ sharing: true, ownScreenThumbnail: 'data:image/png;base64,AAAA' })
+    await vi.advanceTimersByTimeAsync(SCREEN_PREVIEW_FIRST_MS)
+    expect(socket.sent('voice:preview')).toEqual([])
+    expect(console.warn).toHaveBeenCalledWith('[tela] não foi possível gerar a prévia:', previewFailure)
   })
 })
 

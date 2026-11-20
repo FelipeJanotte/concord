@@ -1,24 +1,63 @@
-// Ações de compartilhar a tela (lib/actions/voice.ts) com socket falso e VoiceClient espionado.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ScreenShareBridge } from '@shared/screen'
+import type { ScreenShareBridge, ScreenShareEndReason, ScreenShareStart, ScreenSource } from '@shared/screen'
 import { setSocket } from '@/lib/core'
 import { voice } from '@/lib/voice'
 import { initialState, useApp } from '@/store'
 import { FakeSocket } from '@/test/fake-socket'
 import { canShareSystemAudio, closeScreenPicker, leaveVoice, startScreenShare, stopScreenShare, toggleScreenShare } from './voice'
 
+class FakeScreenBridge implements ScreenShareBridge {
+  canShareAudio = true
+  sharing: ScreenShareStart | null = null
+  startFailure: Error | null = null
+  stopFailure: Error | null = null
+  endDuringStart: ScreenShareEndReason | null = null
+  private endListeners = new Set<(reason: ScreenShareEndReason) => void>()
+
+  getSources = async (): Promise<ScreenSource[]> => []
+
+  start = async (request: ScreenShareStart): Promise<void> => {
+    if (this.startFailure) throw this.startFailure
+    this.sharing = request
+    if (this.endDuringStart) this.end(this.endDuringStart)
+  }
+
+  preview = async (): Promise<string> => 'data:image/png;base64,AAAA'
+
+  stop = async (): Promise<void> => {
+    if (this.stopFailure) throw this.stopFailure
+    this.sharing = null
+  }
+
+  onEnded = (listener: (reason: ScreenShareEndReason) => void): (() => void) => {
+    this.endListeners.add(listener)
+    return () => this.endListeners.delete(listener)
+  }
+
+  end(reason: ScreenShareEndReason): void {
+    this.sharing = null
+    for (const listener of this.endListeners) listener(reason)
+  }
+}
+
+const SOURCE: ScreenSource = { id: 'screen:65537', name: 'Tela 1', kind: 'screen', thumbnail: 'data:image/png;base64,AAAA', appIcon: null }
+
 let socket: FakeSocket
-let bridge: ScreenShareBridge & { select: ReturnType<typeof vi.fn> }
+let bridge: FakeScreenBridge
 
 function inVoice(): void {
-  useApp.setState({ myVoiceChannelId: 'sala' })
+  useApp.setState({ myVoiceChannelId: 'sala', self: { id: 'eu', accountId: 'conta', name: 'Eu', tag: 'eu', color: '#000', avatarUrl: null } })
+}
+
+function grantCredentials(): void {
+  socket.replyTo('voice:screen-credentials', () => ({ ok: true, url: 'ws://livekit.test', token: 'jwt-tela' }))
 }
 
 beforeEach(() => {
   useApp.setState({ ...initialState })
   socket = new FakeSocket()
   setSocket(socket.asSocket())
-  bridge = { getSources: vi.fn(async () => []), select: vi.fn(async () => {}), canShareAudio: true }
+  bridge = new FakeScreenBridge()
   vi.stubGlobal('window', { api: { screen: bridge } })
   vi.spyOn(voice, 'startScreenShare').mockResolvedValue()
   vi.spyOn(voice, 'stopScreenShare').mockResolvedValue()
@@ -38,7 +77,7 @@ describe('toggleScreenShare', () => {
     expect(useApp.getState().notice?.text).toContain('Entre numa sala de voz')
   })
 
-  it('no Electron abre o seletor', () => {
+  it('no app desktop abre o seletor', () => {
     inVoice()
     toggleScreenShare()
     expect(useApp.getState().screenPickerOpen).toBe(true)
@@ -54,32 +93,140 @@ describe('toggleScreenShare', () => {
     expect(useApp.getState().screenPickerOpen).toBe(false)
   })
 
-  it('compartilhando, para', async () => {
+  it('compartilhando pelo app desktop, para a tela nativa', async () => {
     inVoice()
-    useApp.setState({ sharing: true })
+    grantCredentials()
+    await startScreenShare(SOURCE, false)
     toggleScreenShare()
     await vi.waitFor(() => expect(useApp.getState().sharing).toBe(false))
-    expect(voice.stopScreenShare).toHaveBeenCalled()
+    expect(bridge.sharing).toBeNull()
+    expect(useApp.getState().ownScreenThumbnail).toBeNull()
   })
 })
 
-describe('startScreenShare', () => {
-  it('escolhe a fonte no Electron, publica e avisa o servidor', async () => {
+describe('startScreenShare no app desktop', () => {
+  it('pede as credenciais ao servidor, publica pela ponte nativa e mostra a própria tela como miniatura', async () => {
     inVoice()
+    grantCredentials()
     useApp.setState({ screenPickerOpen: true })
-    await startScreenShare('screen:0:0', true)
-    expect(bridge.select).toHaveBeenCalledWith('screen:0:0', true)
-    expect(voice.startScreenShare).toHaveBeenCalledWith(true)
-    expect(useApp.getState()).toMatchObject({ sharing: true, screenPickerOpen: false })
+    await startScreenShare(SOURCE, true)
+    expect(socket.sent('voice:screen-credentials')).toHaveLength(1)
+    expect(bridge.sharing).toEqual({ sourceId: 'screen:65537', audio: true, url: 'ws://livekit.test', token: 'jwt-tela' })
+    expect(useApp.getState()).toMatchObject({ sharing: true, screenPickerOpen: false, ownScreenThumbnail: SOURCE.thumbnail, screens: ['eu'] })
     expect(socket.sent('voice:sharing')).toEqual([[true]])
+    expect(voice.startScreenShare).not.toHaveBeenCalled()
   })
 
   it('não pede áudio onde o sistema não suporta', async () => {
     bridge.canShareAudio = false
     inVoice()
+    grantCredentials()
     expect(canShareSystemAudio()).toBe(false)
-    await startScreenShare('screen:0:0', true)
-    expect(bridge.select).toHaveBeenCalledWith('screen:0:0', false)
+    await startScreenShare(SOURCE, true)
+    expect(bridge.sharing?.audio).toBe(false)
+  })
+
+  it('servidor recusa as credenciais: avisa e não publica', async () => {
+    inVoice()
+    socket.replyTo('voice:screen-credentials', () => ({ ok: false, error: 'Você não tem permissão para compartilhar a tela nesta sala' }))
+    await startScreenShare(SOURCE, false)
+    expect(useApp.getState().notice?.text).toBe('Não foi possível compartilhar a tela: Você não tem permissão para compartilhar a tela nesta sala')
+    expect(bridge.sharing).toBeNull()
+    expect(useApp.getState()).toMatchObject({ sharing: false, ownScreenThumbnail: null })
+    expect(socket.sent('voice:sharing')).toEqual([])
+  })
+
+  it('a ponte nativa falha: avisa e não marca "ao vivo"', async () => {
+    inVoice()
+    grantCredentials()
+    bridge.startFailure = new Error('source not found: screen:65537')
+    await startScreenShare(SOURCE, false)
+    expect(useApp.getState().notice?.text).toBe('Não foi possível compartilhar a tela: source not found: screen:65537')
+    expect(useApp.getState()).toMatchObject({ sharing: false, ownScreenThumbnail: null })
+    expect(socket.sent('voice:sharing')).toEqual([])
+  })
+})
+
+describe('fim da tela nativa', () => {
+  async function sharingNatively(): Promise<void> {
+    inVoice()
+    grantCredentials()
+    await startScreenShare(SOURCE, false)
+  }
+
+  it('janela compartilhada fechada: desliga o "ao vivo" e avisa', async () => {
+    await sharingNatively()
+    bridge.end('source-closed')
+    expect(useApp.getState()).toMatchObject({ sharing: false, ownScreenThumbnail: null, screens: [] })
+    expect(useApp.getState().notice).toMatchObject({ text: 'A janela compartilhada foi fechada', kind: 'info' })
+    expect(socket.sent('voice:sharing')).toEqual([[true], [false]])
+  })
+
+  it('falha no meio: desliga o "ao vivo" e avisa', async () => {
+    await sharingNatively()
+    bridge.end('failed')
+    expect(useApp.getState().sharing).toBe(false)
+    expect(useApp.getState().notice).toMatchObject({ text: 'O compartilhamento de tela parou', kind: 'error' })
+  })
+
+  it('parada pedida ou pela queda da conexão: desliga sem aviso', async () => {
+    await sharingNatively()
+    bridge.end('disconnected')
+    expect(useApp.getState().sharing).toBe(false)
+    expect(useApp.getState().notice).toBeNull()
+    await startScreenShare(SOURCE, false)
+    bridge.end('stopped')
+    expect(useApp.getState().sharing).toBe(false)
+    expect(useApp.getState().notice).toBeNull()
+  })
+
+  it('o fim chega enquanto a tela ainda começa: fica sem compartilhar e avisa o motivo', async () => {
+    inVoice()
+    grantCredentials()
+    bridge.endDuringStart = 'source-closed'
+    await startScreenShare(SOURCE, false)
+    expect(useApp.getState()).toMatchObject({ sharing: false, ownScreenThumbnail: null, screens: [] })
+    expect(socket.sent('voice:sharing')).toEqual([])
+    expect(useApp.getState().notice).toMatchObject({ text: 'A janela compartilhada foi fechada', kind: 'info' })
+  })
+
+  it('stopScreenShare para a tela nativa e avisa o servidor uma vez, mesmo com o aviso de fim da ponte', async () => {
+    await sharingNatively()
+    await stopScreenShare()
+    bridge.end('stopped')
+    expect(bridge.sharing).toBeNull()
+    expect(socket.sent('voice:sharing')).toEqual([[true], [false]])
+    expect(voice.stopScreenShare).not.toHaveBeenCalled()
+  })
+
+  it('a ponte falha ao parar: o erro é relatado e o "ao vivo" desliga mesmo assim', async () => {
+    await sharingNatively()
+    bridge.stopFailure = new Error('travou')
+    await stopScreenShare()
+    expect(console.error).toHaveBeenCalledWith('[tela] não foi possível parar a tela nativa:', bridge.stopFailure)
+    expect(useApp.getState()).toMatchObject({ sharing: false, ownScreenThumbnail: null })
+  })
+
+  it('sair da sala para a tela nativa', async () => {
+    vi.spyOn(voice, 'leave').mockImplementation(() => {})
+    await sharingNatively()
+    leaveVoice()
+    await vi.waitFor(() => expect(bridge.sharing).toBeNull())
+    expect(useApp.getState()).toMatchObject({ myVoiceChannelId: null, sharing: false, screenPickerOpen: false })
+  })
+
+  it('falha ao parar a tela nativa ao sair da sala vai para o console', async () => {
+    vi.spyOn(voice, 'leave').mockImplementation(() => {})
+    await sharingNatively()
+    bridge.stopFailure = new Error('travou')
+    leaveVoice()
+    await vi.waitFor(() => expect(console.error).toHaveBeenCalledWith('[tela] não foi possível parar a tela nativa:', bridge.stopFailure))
+  })
+})
+
+describe('no navegador', () => {
+  beforeEach(() => {
+    vi.stubGlobal('window', {})
   })
 
   it('cancelar o seletor do navegador não mostra erro', async () => {
@@ -91,22 +238,20 @@ describe('startScreenShare', () => {
     expect(socket.sent('voice:sharing')).toEqual([])
   })
 
-  it('outros erros viram aviso e não marcam "ao vivo"', async () => {
+  it('publica pelo LiveKit do navegador sem pedir credenciais', async () => {
     inVoice()
-    bridge.select.mockRejectedValue(new Error('Essa tela ou janela não está mais disponível.'))
-    await startScreenShare('window:1:0', false)
-    expect(useApp.getState().notice?.text).toContain('Não foi possível compartilhar a tela')
-    expect(useApp.getState().sharing).toBe(false)
-    expect(voice.startScreenShare).not.toHaveBeenCalled()
+    await startScreenShare(null, false)
+    expect(voice.startScreenShare).toHaveBeenCalledWith(false)
+    expect(socket.sent('voice:screen-credentials')).toEqual([])
+    expect(useApp.getState().sharing).toBe(true)
   })
-})
 
-describe('parar e sair', () => {
   it('stopScreenShare avisa o servidor uma vez, mesmo se o LiveKit também avisar', async () => {
     inVoice()
     useApp.setState({ sharing: true })
     await stopScreenShare()
-    voice.onScreenShareEnded?.() // o LocalTrackUnpublished chega logo depois
+    voice.onScreenShareEnded?.()
+    expect(voice.stopScreenShare).toHaveBeenCalled()
     expect(socket.sent('voice:sharing')).toEqual([[false]])
   })
 

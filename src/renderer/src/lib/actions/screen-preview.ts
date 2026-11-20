@@ -1,7 +1,7 @@
 import { SCREEN_PREVIEW_INTERVAL_MS, type ScreenPreviewResult } from '@shared/types'
 import { useApp } from '@/store'
 import { get, getSocket } from '../core'
-import { snapshotScreen } from '../screen-snapshot'
+import { snapshotImage, snapshotScreen } from '../screen-snapshot'
 import { voice } from '../voice'
 
 export const SCREEN_PREVIEW_FIRST_MS = 1000
@@ -11,12 +11,26 @@ const UNAVAILABLE: ScreenPreviewResult = { ok: false, error: 'Prévia indisponí
 let firstTimer: ReturnType<typeof setTimeout> | null = null
 let intervalTimer: ReturnType<typeof setInterval> | null = null
 
+function nativeScreen() {
+  return typeof window !== 'undefined' ? window.api?.screen : undefined
+}
+
+async function ownScreenImage(): Promise<string | null> {
+  const { self, ownScreenThumbnail } = get()
+  const native = nativeScreen()
+  if (native && ownScreenThumbnail !== null) return snapshotImage(await native.preview())
+  const track = self ? voice.screenMediaTrack(self.id) : undefined
+  return track ? snapshotScreen(track) : null
+}
+
 async function sendOwnScreenPreview(): Promise<void> {
-  const { self, sharing } = get()
-  const track = self && sharing ? voice.screenMediaTrack(self.id) : undefined
-  if (!track) return
-  const image = await snapshotScreen(track).catch(() => null)
-  if (image && get().sharing) getSocket()?.emit('voice:preview', image)
+  if (!get().sharing) return
+  try {
+    const image = await ownScreenImage()
+    if (image && get().sharing) getSocket()?.emit('voice:preview', image)
+  } catch (err) {
+    console.warn('[tela] não foi possível gerar a prévia:', err)
+  }
 }
 
 function startPreviewUploads(): void {
