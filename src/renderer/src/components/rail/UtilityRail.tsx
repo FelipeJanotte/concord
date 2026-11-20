@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { LayoutGrid, MessageCircle, Music } from 'lucide-react'
+import { ConcordLogo } from '@/components/ConcordLogo'
 import { Separator } from '@/components/ui/separator'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { showCommunity, showHome, showMusic, showTools } from '@/lib/client'
@@ -33,7 +34,12 @@ export function UtilityRail() {
         dot={communityDot && section !== 'community'}
         onClick={showCommunity}
       >
-        <span className="text-lg font-bold">C</span>
+        <ConcordLogo
+          className={cn(
+            'size-7',
+            section === 'community' ? 'text-primary-foreground' : 'text-primary group-hover:text-primary-foreground'
+          )}
+        />
       </RailButton>
       <Separator className="mx-auto w-8" />
       <RailButton label="Ferramentas" active={section === 'tool'} onClick={showTools}>

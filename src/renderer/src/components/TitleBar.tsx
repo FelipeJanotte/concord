@@ -3,6 +3,7 @@ import { Copy, Minus, Square, X } from 'lucide-react'
 import type { WindowControlAction } from '@shared/window-controls'
 import { runWindowControl, windowEnv } from '@/lib/client'
 import { cn } from '@/lib/utils'
+import { ConcordLogo } from './ConcordLogo'
 import { useApp } from '@/store'
 
 export function TitleBar() {
@@ -18,6 +19,7 @@ export function TitleBar() {
         bridge.buttons ? 'pl-3' : 'pl-[76px]'
       )}
     >
+      <ConcordLogo className="mr-1.5 size-4 text-primary" />
       <span className="text-xs font-semibold tracking-wide text-muted-foreground">Concord</span>
       {bridge.buttons && (
         <div className="ml-auto flex h-full items-center gap-0.5 pr-1.5 [-webkit-app-region:no-drag]">
