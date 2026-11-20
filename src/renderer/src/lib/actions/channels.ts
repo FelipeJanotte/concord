@@ -32,6 +32,7 @@ function replaceChannels(next: Channel[]): void {
       hasMoreHistory: drop(st.hasMoreHistory),
       loadingOlder: drop(st.loadingOlder),
       unread: drop(st.unread),
+      mentioned: drop(st.mentioned),
       lastRead: drop(st.lastRead),
       readMarker: drop(st.readMarker),
       view: st.view && !keep.has(st.view.channelId) ? firstTextView(next) : st.view

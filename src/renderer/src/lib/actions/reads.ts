@@ -6,7 +6,7 @@ import { isChatOnScreen } from './navigation'
 
 export function bindReadsEvents(s: AppSocket): void {
   s.on('channel:read-sync', ({ channelId, messageId }) =>
-    set((st) => ({ unread: omit(st.unread, channelId), lastRead: { ...st.lastRead, [channelId]: messageId } }))
+    set((st) => ({ unread: omit(st.unread, channelId), mentioned: omit(st.mentioned, channelId), lastRead: { ...st.lastRead, [channelId]: messageId } }))
   )
 
   s.on('message:new', (message) => {
@@ -37,6 +37,7 @@ export function startReading(channelId: string): void {
     const marker = st.unread[channelId] ? st.lastRead[channelId] : undefined
     return {
       unread: omit(st.unread, channelId),
+      mentioned: omit(st.mentioned, channelId),
       readMarker: marker ? { ...st.readMarker, [channelId]: marker } : omit(st.readMarker, channelId)
     }
   })

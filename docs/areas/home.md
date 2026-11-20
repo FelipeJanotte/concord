@@ -103,7 +103,7 @@ lateral. A ordem e as categorias ficam no servidor e valem para todos.
   vê categoria vazia nem os canais privados que não pode ver.
 - **Recolher** a categoria guarda na máquina (`localStorage`, chave `concord:collapsed-categories`, lista de ids;
   com `try/catch`: sem armazenamento, tudo aberto).
-- Com `manageChannels`: botão **`+` "Criar"** no cabeçalho da comunidade (Criar canal / Criar categoria), **`+`
+- Com `manageChannels`: botão **`+` "Criar"** no cabeçalho da comunidade (dica "Criar canal ou categoria", abaixo do botão como a da engrenagem; menu Criar canal / Criar categoria, que abre um diálogo centralizado), **`+`
   "Criar canal"** no cabeçalho de cada categoria (o canal nasce nela) e **botão direito na categoria**: Criar canal,
   Renomear categoria, Apagar categoria (confirmação; os canais dela vão para o topo, sem categoria).
 

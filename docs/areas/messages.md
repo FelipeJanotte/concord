@@ -309,6 +309,11 @@ Fluxo no app:
    não reenvia).
 4. `message:new` com o chat na tela: lê na hora (`isChatOnScreen`, a mesma regra do não lido).
 5. `channel:read-sync`: tira o não lido e anda `lastRead` nesta janela.
+6. **Menção não lida**: `message:new` fora da tela, de outra pessoa, que me menciona (`mentionsAccount`: eu ou
+   `@todos`) liga `mentioned[channelId]` na store; a `ChannelSidebar` mostra uma bolinha vermelha
+   (`bg-destructive`, "Você foi mencionado") ao lado do nome do canal de texto ou da sala de voz (chat da sala).
+   Vale mesmo com o canal silenciado. Sai junto com o não lido (`startReading`, `channel:read-sync`) e quando o
+   canal some. Só na memória da janela: reiniciar o app perde a bolinha (o servidor não guarda menção não lida).
 
 Como testar: `server/tests/reads.test.ts` (servidor real: nunca lido, ler e mensagem nova, só avança, canais
 escondidos e DMs, `channel:read-sync` só para as outras janelas, ler o mesmo ponto não avisa, recusas),
