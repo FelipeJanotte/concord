@@ -62,7 +62,7 @@ export function NowPlaying({ state, track }: NowPlayingProps) {
           </div>
           <PlaybackProgress state={state} track={track} />
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <PlaybackControls channelId={state.channelId} paused={state.paused} />
+            <PlaybackControls channelId={state.channelId} paused={state.paused} canShuffle={state.queue.length >= 2} />
             <MusicVolumeSlider className="w-28" />
           </div>
         </div>

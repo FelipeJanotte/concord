@@ -1,7 +1,7 @@
 import { Button } from '@ui-sdk/react/button'
-import { ListMusic, Play, Shuffle } from 'lucide-react'
+import { ListMusic, Play } from 'lucide-react'
 import type { MusicTrack } from '@shared/types'
-import { jumpToTrack, shuffleMusic, trackDuration } from '@/lib/client'
+import { jumpToTrack, trackDuration } from '@/lib/client'
 import { CoverArt } from './CoverArt'
 import { reportError } from './reportError'
 
@@ -41,32 +41,13 @@ function QueueItem({ channelId, track, position }: QueueItemProps) {
   )
 }
 
-function ShuffleButton({ channelId, disabled }: { channelId: string; disabled: boolean }) {
-  return (
-    <Button
-      aria-label="Embaralhar a fila"
-      title="Embaralhar a fila"
-      pendingAnnouncement=""
-      disabled={disabled}
-      onClick={() => shuffleMusic(channelId).then(() => undefined, reportError(MUSIC_ERROR))}
-      className="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none data-disabled:pointer-events-none data-disabled:opacity-40 data-pending:opacity-60 [&_svg]:size-4"
-    >
-      <Shuffle aria-hidden />
-      Embaralhar
-    </Button>
-  )
-}
-
 export function MusicQueue({ channelId, queue }: { channelId: string; queue: MusicTrack[] }) {
   return (
     <section aria-labelledby="music-queue-heading" className="flex flex-col gap-2">
-      <div className="flex items-center justify-between gap-2 px-2">
-        <h2 id="music-queue-heading" className="flex items-center gap-2 text-sm font-semibold text-accent-foreground">
-          A seguir{' '}
-          <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground tabular-nums">{queue.length}</span>
-        </h2>
-        <ShuffleButton channelId={channelId} disabled={queue.length < 2} />
-      </div>
+      <h2 id="music-queue-heading" className="flex items-center gap-2 px-2 text-sm font-semibold text-accent-foreground">
+        A seguir{' '}
+        <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground tabular-nums">{queue.length}</span>
+      </h2>
       {queue.length === 0 ? (
         <div className="flex items-center gap-3 rounded-xl border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
           <ListMusic aria-hidden className="size-5 shrink-0" />

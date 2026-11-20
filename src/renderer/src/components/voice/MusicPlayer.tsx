@@ -1,7 +1,7 @@
 import { useEffect, useState, type ComponentProps } from 'react'
-import { ChevronDown, ChevronUp, ListMusic, Music2, Pause, Play, SkipForward, Square, VolumeX } from 'lucide-react'
+import { ChevronDown, ChevronUp, ListMusic, Music2, Pause, Play, Shuffle, SkipForward, Square, VolumeX } from 'lucide-react'
 import { MUSIC_BOT_NAME, type MusicTrack } from '@shared/types'
-import { loadMusicQueue, notify, openMusicQueue, pauseMusic, resumeMusic, skipMusic, stopMusic, trackDuration } from '@/lib/client'
+import { loadMusicQueue, notify, openMusicQueue, pauseMusic, resumeMusic, shuffleMusic, skipMusic, stopMusic, trackDuration } from '@/lib/client'
 import { loadPlayerHidden, savePlayerHidden } from '@/lib/music-player'
 import { cn } from '@/lib/utils'
 import { MUSIC_BOT_VOLUME_ID } from '@/lib/voice'
@@ -103,6 +103,9 @@ export function MusicPlayer({ channelId }: { channelId: string }) {
             )}
             <PlayerButton label="Pular música" onClick={() => skipMusic(channelId).catch(reportError)}>
               <SkipForward />
+            </PlayerButton>
+            <PlayerButton label="Embaralhar a fila" disabled={state.queue.length < 2} onClick={() => shuffleMusic(channelId).catch(reportError)} className="disabled:pointer-events-none disabled:opacity-40">
+              <Shuffle />
             </PlayerButton>
             <PlayerButton label="Parar a música" onClick={() => stopMusic(channelId).catch(reportError)} className="hover:text-destructive">
               <Square />

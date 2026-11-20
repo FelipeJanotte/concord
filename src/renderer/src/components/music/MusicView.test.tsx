@@ -266,7 +266,10 @@ describe('fila', () => {
   it('Embaralhar manda music:shuffle para a minha sala e mostra a fila nova', async () => {
     socket.replyTo('music:shuffle', () => ({ ok: true, state: room({ queue: [chega, aguas] }) }))
     renderView()
-    await userEvent.click(await screen.findByRole('button', { name: 'Embaralhar a fila' }))
+    const button = await screen.findByRole('button', { name: 'Embaralhar a fila' })
+    expect(button.parentElement).toBe(screen.getByRole('button', { name: 'Pular' }).parentElement)
+    expect(within(screen.getByRole('region', { name: 'Tocando agora' })).getByRole('button', { name: 'Embaralhar a fila' })).toBe(button)
+    await userEvent.click(button)
     expect(socket.sent('music:shuffle')).toEqual([[{ channelId: 'sala' }]])
     const queue = screen.getByRole('list', { name: 'Fila' })
     await waitFor(() => expect(within(queue).getAllByRole('listitem')[0].textContent).toContain('Chega de Saudade'))
