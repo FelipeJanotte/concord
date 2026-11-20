@@ -11,7 +11,13 @@ use crate::native::updater::state::{UpdateEvent, UpdateMachine, UpdateStatus, CH
 domain_error!(UpdaterError {
     #[error("Falha ao instalar a atualização: {0}")]
     Install(String),
+    #[error("Não há atualização baixada para instalar")]
+    NothingDownloaded,
 });
+
+fn downloaded_or_error<T>(downloaded: Option<&T>) -> Result<&T, UpdaterError> {
+    downloaded.ok_or(UpdaterError::NothingDownloaded)
+}
 
 #[derive(Default)]
 pub struct UpdaterState {
@@ -90,30 +96,47 @@ pub fn start(app: &AppHandle) {
 }
 
 #[tauri::command]
-pub fn update_get(state: State<UpdaterState>) -> Result<UpdateStatus, UpdaterError> {
-    Ok(locked(&state.machine).status().clone())
+pub fn update_get(state: State<UpdaterState>) -> UpdateStatus {
+    locked(&state.machine).status().clone()
 }
 
 #[tauri::command]
-pub fn update_check(app: AppHandle) -> Result<(), UpdaterError> {
+pub fn update_check(app: AppHandle) {
     if cfg!(debug_assertions) {
         publish(&app, UpdateEvent::Unsupported);
     } else {
         tauri::async_runtime::spawn(run_check(app));
     }
-    Ok(())
 }
 
 #[tauri::command]
 pub fn update_install(app: AppHandle, state: State<UpdaterState>) -> Result<(), UpdaterError> {
     let guard = locked(&state.downloaded);
-    let Some(ready) = guard.as_ref() else {
-        return Ok(());
-    };
+    let ready = downloaded_or_error(guard.as_ref())?;
     ready
         .update
         .install(&ready.bytes)
         .map_err(|error| UpdaterError::Install(error.to_string()))?;
     drop(guard);
     app.restart()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{downloaded_or_error, UpdaterError};
+
+    #[test]
+    fn installing_without_a_download_is_an_explicit_error() {
+        let nothing: Option<u8> = None;
+        assert!(matches!(
+            downloaded_or_error(nothing.as_ref()),
+            Err(UpdaterError::NothingDownloaded)
+        ));
+    }
+
+    #[test]
+    fn installing_with_a_download_hands_it_over() {
+        let ready = Some(7u8);
+        assert!(matches!(downloaded_or_error(ready.as_ref()), Ok(7)));
+    }
 }
