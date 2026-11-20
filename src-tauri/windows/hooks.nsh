@@ -10,12 +10,29 @@
 !define ELECTRON_MAIN_EXECUTABLE "concord.exe"
 !define ELECTRON_APP_ARCHIVE "resources\app.asar"
 !define ELECTRON_UNINSTALLER_COPY "$TEMP\concord-electron-uninstaller.exe"
+!define BRIDGE_LOG "$TEMP\concord-bridge.log"
 
 Var ElectronUninstaller
 Var ElectronInstallDir
 Var ElectronInstallConfirmed
 Var ElectronRunEntryFound
 Var ElectronRunEntryAction
+
+Function ConcordLog
+  Exch $R9
+  Push $R8
+  FileOpen $R8 "${BRIDGE_LOG}" a
+  FileSeek $R8 0 END
+  FileWrite $R8 "$R9$\r$\n"
+  FileClose $R8
+  Pop $R8
+  Pop $R9
+FunctionEnd
+
+!macro ConcordLog message
+  Push "${message}"
+  Call ConcordLog
+!macroend
 
 Function ConcordReadUninstallerPath
   StrCpy $ElectronUninstaller ""
@@ -107,44 +124,66 @@ FunctionEnd
 Function ConcordRemoveElectronLeftovers
   ${If} $ElectronInstallConfirmed == "1"
     RMDir /r "$ElectronInstallDir"
+    !insertmacro ConcordLog "pasta do Electron apagada: $ElectronInstallDir"
   ${Else}
     DetailPrint "Pasta do Electron não confere, mantida: $ElectronInstallDir"
+    !insertmacro ConcordLog "pasta do Electron nao confere, mantida: $ElectronInstallDir"
   ${EndIf}
   RMDir /r "$APPDATA\Concord"
   RMDir /r "$APPDATA\concord"
+  !insertmacro ConcordLog "dados do Electron em APPDATA apagados"
   RMDir /r "$LOCALAPPDATA\concord-updater"
+  !insertmacro ConcordLog "cache do updater apagado"
   DeleteRegKey HKCU "Software\${ELECTRON_APP_GUID}"
   DeleteRegKey HKCU "${ELECTRON_UNINSTALL_KEY}"
+  !insertmacro ConcordLog "chaves de registro do Electron apagadas"
   StrCpy $ElectronRunEntryAction "delete"
   Call ConcordScanElectronRunEntries
+  !insertmacro ConcordLog "entradas de Run do Electron apagadas"
 FunctionEnd
 
 Function ConcordReplaceElectronInstall
   Call ConcordFindElectronUninstaller
+  !insertmacro ConcordLog "inicio: INSTDIR=$INSTDIR"
+  ${If} ${Silent}
+    !insertmacro ConcordLog "modo silencioso"
+  ${EndIf}
   ${If} $ElectronUninstaller == ""
+    !insertmacro ConcordLog "sem desinstalador do Electron: instalacao normal"
     Return
   ${EndIf}
   ${WordFind} $ElectronUninstaller "\" "-1{" $ElectronInstallDir
+  !insertmacro ConcordLog "desinstalador=$ElectronUninstaller pasta=$ElectronInstallDir"
   Call ConcordDecideElectronInstall
+  !insertmacro ConcordLog "pasta do Electron confirmada=$ElectronInstallConfirmed"
   Call ConcordKeepAutostartOffUnlessElectronHadIt
+  !insertmacro ConcordLog "entrada de Run do Electron encontrada=$ElectronRunEntryFound"
   nsExec::Exec 'taskkill /F /IM ${ELECTRON_MAIN_EXECUTABLE}'
   Pop $0
   DetailPrint "taskkill terminou com o código $0"
+  !insertmacro ConcordLog "taskkill terminou com o codigo $0"
   ${If} ${FileExists} "$APPDATA\Concord\migrate.json"
     CreateDirectory "$APPDATA\${BUNDLEID}"
     CopyFiles /SILENT "$APPDATA\Concord\migrate.json" "$APPDATA\${BUNDLEID}\migrate.json"
+    !insertmacro ConcordLog "migrate.json copiado"
+  ${Else}
+    !insertmacro ConcordLog "migrate.json nao existe"
   ${EndIf}
+  !insertmacro ConcordLog "rodando o desinstalador do Electron"
   CopyFiles /SILENT "$ElectronUninstaller" "${ELECTRON_UNINSTALLER_COPY}"
   SetOutPath $TEMP
   ExecWait '"${ELECTRON_UNINSTALLER_COPY}" /S /currentuser _?=$ElectronInstallDir' $0
   Delete "${ELECTRON_UNINSTALLER_COPY}"
   SetOutPath $INSTDIR
+  !insertmacro ConcordLog "desinstalador do Electron terminou com o codigo $0"
   ${If} $0 != 0
     DetailPrint "O desinstalador do Electron terminou com o código $0"
-    MessageBox MB_OK|MB_ICONSTOP "Não foi possível remover a versão anterior do Concord (código $0). Você continua na versão atual e a atualização será tentada de novo mais tarde."
+    !insertmacro ConcordLog "abortando: desinstalador do Electron falhou"
+    MessageBox MB_OK|MB_ICONSTOP "Não foi possível remover a versão anterior do Concord (código $0). Você continua na versão atual e a atualização será tentada de novo mais tarde." /SD IDOK
     Abort "Falha ao remover a versão anterior do Concord."
   ${EndIf}
   Call ConcordRemoveElectronLeftovers
+  !insertmacro ConcordLog "ponte concluida"
 FunctionEnd
 
 !macro NSIS_HOOK_PREINSTALL

@@ -112,6 +112,7 @@ O instalador Tauri (`src-tauri/windows/hooks.nsh`, gancho `NSIS_HOOK_PREINSTALL`
 7. Com código 0 apaga o resto: a pasta antiga (só se confirmada no passo 2), `%APPDATA%\Concord`, `%APPDATA%\concord`,
    `%LOCALAPPDATA%\concord-updater`, as chaves `HKCU\Software\<GUID>` e de desinstalação do GUID e as entradas de `Run`
    que apontavam para o `concord.exe` antigo.
+7b. Cada passo acima grava uma linha em `%TEMP%\concord-bridge.log` (pasta e desinstalador achados, decisão da pasta, códigos do `taskkill` e do desinstalador, `migrate.json` copiado ou não, cada limpeza, motivo do aborto). Toda mensagem do gancho tem `/SD IDOK`: no modo silencioso nada espera clique. O `cutover-test.ps1` imprime o log e, se o instalador passar do prazo, a lista de processos (pai e linha de comando) antes de matar a árvore.
 8. O instalador segue e grava o Tauri na mesma pasta. No `NSIS_HOOK_POSTINSTALL`, com `--force-run` (como o
    `electron-updater` chama), abre o app como o usuário.
 

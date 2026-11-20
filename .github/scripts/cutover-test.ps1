@@ -11,6 +11,7 @@ Set-StrictMode -Version Latest
 $UninstallRoot = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall'
 $RunKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $FakeRunValue = 'concord-cutover-fake'
+$BridgeLog = Join-Path $env:TEMP 'concord-bridge.log'
 $FakeMigration = '{"version":1,"exportedAt":"2026-01-01T00:00:00.000Z","entries":{"concord:theme":"{\"name\":\"cutover\"}"}}'
 $ElectronUninstallerName = 'Uninstall Concord.exe'
 $DecoyKeyName = 'ConcordCutoverDecoy'
@@ -57,6 +58,41 @@ function Find-ElectronUninstallKeys {
     }
 }
 
+function Write-BridgeLog {
+    Write-Host '--- concord-bridge.log ---'
+    if (Test-Path $BridgeLog) {
+        Get-Content $BridgeLog | ForEach-Object { Write-Host $_ }
+    }
+    else {
+        Write-Host "(ausente: $BridgeLog)"
+    }
+    Write-Host '--- fim do concord-bridge.log ---'
+}
+
+function Write-InstallerProcesses {
+    Write-Host '--- processos relacionados ---'
+    Get-CimInstance Win32_Process |
+        Where-Object { $_.Name -match 'setup|install|uninstall|concord|^Au_|msiexec' } |
+        Select-Object ProcessId, ParentProcessId, Name, CommandLine |
+        Format-List |
+        Out-String -Width 400 |
+        Write-Host
+    Write-Host '--- fim dos processos ---'
+}
+
+function Wait-Installer {
+    param([System.Diagnostics.Process]$Installer)
+    $Installer.Handle | Out-Null
+    $finished = $Installer.WaitForExit($InstallerTimeoutSeconds * 1000)
+    if (-not $finished) {
+        Write-Host "O instalador não terminou em $InstallerTimeoutSeconds s."
+        Write-BridgeLog
+        Write-InstallerProcesses
+        & taskkill /T /F /PID $Installer.Id | Out-Host
+    }
+    return $finished
+}
+
 $electronGuid = (Invoke-Native node @('.github/scripts/electron-guid.mjs', $AppId)) -join ''
 $electronAppKey = "HKCU:\Software\$electronGuid"
 $electronUninstallKey = "$UninstallRoot\$electronGuid"
@@ -94,13 +130,11 @@ $decoyKey = "$UninstallRoot\$DecoyKeyName"
 New-Item -Path $decoyKey -Force | Out-Null
 Set-ItemProperty -Path $decoyKey -Name 'UninstallString' -Value "`"$decoyDir\$ElectronUninstallerName`" /currentuser"
 
+Remove-Item -Path $BridgeLog -Force -ErrorAction SilentlyContinue
 Write-Host "Rodando o instalador novo com os argumentos do electron-updater, sem --force-run: --updated /S /D=$oldInstallDir"
 $newInstall = Start-Process -FilePath $NewInstaller -ArgumentList '--updated', '/S', "/D=$oldInstallDir" -PassThru
-$newInstall.Handle | Out-Null
-$finished = $newInstall.WaitForExit($InstallerTimeoutSeconds * 1000)
-if (-not $finished) {
-    $newInstall.Kill()
-}
+$finished = Wait-Installer $newInstall
+Write-BridgeLog
 Assert-That $finished 'o instalador novo terminou no prazo'
 
 $autostartMarker = Join-Path $env:APPDATA "$AppId\startup-default-applied"
@@ -128,11 +162,7 @@ Remove-Item -Path $decoyDir -Recurse -Force
 
 Write-Host "Rodando o instalador novo com --force-run: --updated /S --force-run /D=$oldInstallDir"
 $relaunchInstall = Start-Process -FilePath $NewInstaller -ArgumentList '--updated', '/S', '--force-run', "/D=$oldInstallDir" -PassThru
-$relaunchInstall.Handle | Out-Null
-$relaunchFinished = $relaunchInstall.WaitForExit($InstallerTimeoutSeconds * 1000)
-if (-not $relaunchFinished) {
-    $relaunchInstall.Kill()
-}
+$relaunchFinished = Wait-Installer $relaunchInstall
 Assert-That $relaunchFinished 'o instalador com --force-run terminou no prazo'
 $relaunched = $null
 for ($attempt = 0; $attempt -lt 30 -and -not $relaunched; $attempt++) {
