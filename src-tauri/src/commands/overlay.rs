@@ -3,11 +3,13 @@ use tauri::State;
 use crate::domain_error;
 use crate::native::overlay::model::{OverlayConfig, OverlayRoom};
 use crate::native::overlay::shortcuts::{OverlayShortcutStatus, OverlayShortcuts};
-use crate::native::overlay::worker::OverlayHandle;
+use crate::native::overlay::worker::{OverlayHandle, ShortcutsError};
 
 domain_error!(OverlayError {
     #[error("Não foi possível registrar os atalhos do overlay")]
     ShortcutsUnavailable,
+    #[error("{0}")]
+    Shortcuts(#[from] ShortcutsError),
 });
 
 #[tauri::command]
@@ -33,9 +35,8 @@ pub async fn overlay_shortcuts(
     let handle = handle.inner().clone();
     tauri::async_runtime::spawn_blocking(move || handle.set_shortcuts(shortcuts))
         .await
-        .ok()
-        .flatten()
-        .ok_or(OverlayError::ShortcutsUnavailable)
+        .map_err(|_| OverlayError::ShortcutsUnavailable)?
+        .map_err(OverlayError::from)
 }
 
 #[tauri::command]

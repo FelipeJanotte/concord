@@ -10,6 +10,15 @@ use super::settle::Settling;
 use super::shortcuts::{OverlayShortcutStatus, OverlayShortcuts, ShortcutAction};
 
 const MOVE_SETTLE_DELAY: Duration = Duration::from_millis(250);
+const SHORTCUTS_ANSWER_LIMIT: Duration = Duration::from_secs(2);
+
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+pub enum ShortcutsError {
+    #[error("O overlay não respondeu a tempo ao registrar os atalhos")]
+    TimedOut,
+    #[error("O overlay foi encerrado antes de registrar os atalhos")]
+    WorkerStopped,
+}
 
 enum Message {
     Config(OverlayConfig),
@@ -88,10 +97,24 @@ impl OverlayHandle {
         self.send(Message::Stop);
     }
 
-    pub fn set_shortcuts(&self, shortcuts: OverlayShortcuts) -> Option<OverlayShortcutStatus> {
+    pub fn set_shortcuts(
+        &self,
+        shortcuts: OverlayShortcuts,
+    ) -> Result<OverlayShortcutStatus, ShortcutsError> {
+        self.set_shortcuts_within(shortcuts, SHORTCUTS_ANSWER_LIMIT)
+    }
+
+    fn set_shortcuts_within(
+        &self,
+        shortcuts: OverlayShortcuts,
+        limit: Duration,
+    ) -> Result<OverlayShortcutStatus, ShortcutsError> {
         let (reply, answer) = mpsc::channel();
         self.send(Message::Shortcuts { shortcuts, reply });
-        answer.recv().ok()
+        answer.recv_timeout(limit).map_err(|error| match error {
+            RecvTimeoutError::Timeout => ShortcutsError::TimedOut,
+            RecvTimeoutError::Disconnected => ShortcutsError::WorkerStopped,
+        })
     }
 }
 
@@ -253,6 +276,66 @@ mod tests {
         handle.stop();
     }
 
+    struct BlockedEnvironment {
+        release: Mutex<Receiver<()>>,
+    }
+
+    impl OverlayEnvironment for BlockedEnvironment {
+        type Window = SilentWindow;
+        fn create_window(&self) -> Option<SilentWindow> {
+            None
+        }
+        fn screen_at(&self, _point: Option<OverlayPosition>) -> Screen {
+            Screen {
+                work_area: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 1920,
+                    height: 1040,
+                },
+                scale: 1.0,
+            }
+        }
+        fn notify_toggled(&self, _enabled: bool) {}
+        fn notify_editing(&self, _editing: bool) {}
+        fn notify_moved(&self, _position: OverlayPosition) {}
+        fn notify_resized(&self, _width: f64) {}
+        fn register_shortcut(&self, _accelerator: &str, _action: ShortcutAction) -> bool {
+            if let Ok(release) = self.release.lock() {
+                release.recv().ok();
+            }
+            true
+        }
+        fn remember_foreground(&self) {}
+        fn return_foreground(&self) {}
+        fn unregister_shortcut(&self, _accelerator: &str) {}
+    }
+
+    #[test]
+    fn a_worker_that_never_answers_makes_the_shortcut_request_time_out() {
+        let (release, blocked) = mpsc::channel();
+        let handle = spawn(move |_| BlockedEnvironment {
+            release: Mutex::new(blocked),
+        });
+        let outcome =
+            handle.set_shortcuts_within(OverlayShortcuts::default(), Duration::from_millis(50));
+        assert_eq!(outcome, Err(ShortcutsError::TimedOut));
+        drop(release);
+        handle.stop();
+    }
+
+    #[test]
+    fn a_stopped_worker_is_reported_as_stopped() {
+        let handle = spawn(|_| CountingEnvironment {
+            moves: Arc::default(),
+        });
+        handle.stop();
+        thread::sleep(Duration::from_millis(100));
+        let outcome =
+            handle.set_shortcuts_within(OverlayShortcuts::default(), Duration::from_secs(1));
+        assert_eq!(outcome, Err(ShortcutsError::WorkerStopped));
+    }
+
     #[test]
     fn shortcut_status_comes_back_to_the_caller() {
         let handle = spawn(|_| CountingEnvironment {
@@ -261,7 +344,7 @@ mod tests {
         let status = handle.set_shortcuts(OverlayShortcuts::default());
         assert_eq!(
             status,
-            Some(OverlayShortcutStatus {
+            Ok(OverlayShortcutStatus {
                 toggle: true,
                 edit: true
             })

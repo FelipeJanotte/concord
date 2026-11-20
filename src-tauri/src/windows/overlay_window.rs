@@ -302,11 +302,11 @@ pub fn setup(app: &AppHandle, main_window: &WebviewWindow) {
 
     tauri::async_runtime::spawn_blocking(move || {
         match handle.set_shortcuts(OverlayShortcuts::default()) {
-            Some(status) if !status.toggle || !status.edit => {
+            Ok(status) if !status.toggle || !status.edit => {
                 log::warn!("overlay: atalhos padrão já em uso por outro programa: {status:?}");
             }
-            Some(_) => {}
-            None => log::warn!("overlay: sem resposta ao registrar os atalhos padrão"),
+            Ok(_) => {}
+            Err(error) => log::warn!("overlay: atalhos padrão não registrados: {error}"),
         }
     });
 }
