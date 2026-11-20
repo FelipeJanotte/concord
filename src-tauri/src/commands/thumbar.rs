@@ -16,53 +16,16 @@ impl From<concord_taskbar::TaskbarError> for ThumbarError {
     }
 }
 
-impl From<tauri::Error> for ThumbarError {
-    fn from(error: tauri::Error) -> Self {
+#[cfg(windows)]
+impl From<crate::native::thumbar_bar::ThumbarBarError> for ThumbarError {
+    fn from(error: crate::native::thumbar_bar::ThumbarBarError) -> Self {
         Self::Native(error.to_string())
     }
 }
 
-#[cfg(windows)]
-mod windows_bar {
-    use std::cell::RefCell;
-
-    use concord_taskbar::{ThumbBar, ThumbButton};
-    use tauri::{AppHandle, WebviewWindow};
-
-    use super::{ThumbarAction, ThumbarError};
-    use crate::events;
-    use crate::native::main_window_events::emit_to_main;
-
-    thread_local! {
-        static THUMB_BAR: RefCell<Option<ThumbBar>> = const { RefCell::new(None) };
-    }
-
-    fn attach(app: &AppHandle, window: &WebviewWindow) -> Result<ThumbBar, ThumbarError> {
-        let clicked = app.clone();
-        Ok(ThumbBar::attach(
-            window.hwnd()?.0 as isize,
-            move |action| {
-                emit_to_main(&clicked, events::THUMBAR_CLICK, ThumbarAction::from(action))
-            },
-            |error| log::error!("botões da miniatura da barra de tarefas: {error}"),
-        )?)
-    }
-
-    pub fn apply(
-        app: &AppHandle,
-        window: &WebviewWindow,
-        buttons: Vec<ThumbButton>,
-    ) -> Result<(), ThumbarError> {
-        THUMB_BAR.with(|cell| {
-            let mut bar = cell.borrow_mut();
-            if bar.is_none() {
-                *bar = Some(attach(app, window)?);
-            }
-            match bar.as_ref() {
-                Some(bar) => Ok(bar.set_buttons(buttons)?),
-                None => Ok(()),
-            }
-        })
+impl From<tauri::Error> for ThumbarError {
+    fn from(error: tauri::Error) -> Self {
+        Self::Native(error.to_string())
     }
 }
 
@@ -78,15 +41,15 @@ pub async fn thumbar_buttons(
     let handle = app.clone();
     app.run_on_main_thread(move || {
         if reply
-            .send(windows_bar::apply(&handle, &window, cleaned))
+            .send(crate::native::thumbar_bar::apply(&handle, &window, cleaned))
             .is_err()
         {
             log::warn!("quem pediu os botões da miniatura não esperou a resposta");
         }
     })?;
-    outcome
+    Ok(outcome
         .await
-        .map_err(|_| ThumbarError::MainThreadUnavailable)?
+        .map_err(|_| ThumbarError::MainThreadUnavailable)??)
 }
 
 #[cfg(not(windows))]

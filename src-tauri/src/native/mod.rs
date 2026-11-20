@@ -13,6 +13,9 @@ pub mod push_to_talk;
 pub mod screen_share;
 pub mod startup;
 pub mod thumbar;
+#[cfg(windows)]
+pub mod thumbar_bar;
+pub mod toast;
 pub mod translucency;
 pub mod updater;
 pub mod window_controls;

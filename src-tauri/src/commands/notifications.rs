@@ -17,9 +17,8 @@ use crate::native::notifications::{
     toast_xml, ClickQueue, NotificationClick, NotificationRejection, ACTIVATION_SCHEME,
 };
 pub use crate::native::notifications::{NativeNotification, NotificationTarget};
+use crate::native::toast::ToastError;
 use crate::windows::main_window::MAIN_WINDOW_LABEL;
-
-pub const APP_USER_MODEL_ID: &str = "com.concord.app";
 
 domain_error!(NotificationsError {
     #[error("{0}")]
@@ -32,6 +31,12 @@ domain_error!(NotificationsError {
     Native(String),
 });
 
+impl From<ToastError> for NotificationsError {
+    fn from(error: ToastError) -> Self {
+        Self::Native(error.to_string())
+    }
+}
+
 impl From<tauri::Error> for NotificationsError {
     fn from(error: tauri::Error) -> Self {
         Self::Native(error.to_string())
@@ -43,50 +48,6 @@ pub struct NotificationsState {
     clicks: Mutex<ClickQueue>,
     last_badge_count: Mutex<u32>,
     focus_listener_installed: AtomicBool,
-}
-
-#[cfg(windows)]
-mod toast {
-    use windows::core::HSTRING;
-    use windows::Data::Xml::Dom::XmlDocument;
-    use windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
-    use windows::UI::Notifications::{ToastNotification, ToastNotificationManager};
-
-    use super::{NotificationsError, APP_USER_MODEL_ID};
-
-    fn native(error: windows::core::Error) -> NotificationsError {
-        NotificationsError::Native(error.to_string())
-    }
-
-    pub fn identify_process() -> Result<(), NotificationsError> {
-        unsafe { SetCurrentProcessExplicitAppUserModelID(&HSTRING::from(APP_USER_MODEL_ID)) }
-            .map_err(native)
-    }
-
-    pub fn show(xml: &str) -> Result<(), NotificationsError> {
-        let document = XmlDocument::new().map_err(native)?;
-        document.LoadXml(&HSTRING::from(xml)).map_err(native)?;
-        let toast = ToastNotification::CreateToastNotification(&document).map_err(native)?;
-        ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(APP_USER_MODEL_ID))
-            .map_err(native)?
-            .Show(&toast)
-            .map_err(native)
-    }
-}
-
-#[cfg(not(windows))]
-mod toast {
-    use super::NotificationsError;
-
-    pub fn identify_process() -> Result<(), NotificationsError> {
-        Ok(())
-    }
-
-    pub fn show(_xml: &str) -> Result<(), NotificationsError> {
-        Err(NotificationsError::Native(
-            "Notificações nativas só existem no Windows".into(),
-        ))
-    }
 }
 
 pub fn focus_main_window(app: &AppHandle) {
@@ -149,7 +110,7 @@ pub fn page_loaded(webview: &Webview, event: &PageLoadEvent) {
 
 pub fn install(app: &AppHandle) {
     app.manage(NotificationsState::default());
-    if let Err(error) = toast::identify_process() {
+    if let Err(error) = crate::native::toast::identify_process() {
         log::warn!("identidade do aplicativo para as notificações: {error}");
     }
     let deep_links = app.deep_link();
@@ -171,7 +132,7 @@ pub fn install(app: &AppHandle) {
 pub fn notify(notification: NativeNotification) -> Result<(), NotificationsError> {
     let clean = clean_notification(notification)?;
     let launch_url = activation_url(clean.target.as_ref())?;
-    toast::show(&toast_xml(&clean, &launch_url))
+    Ok(crate::native::toast::show(&toast_xml(&clean, &launch_url))?)
 }
 
 fn install_focus_listener(window: &WebviewWindow, state: &NotificationsState) {
