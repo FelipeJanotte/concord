@@ -4,6 +4,7 @@ use crate::error::CaptureError;
 use crate::frame_size::FrameSize;
 use crate::pipeline::EncodedUnit;
 use crate::rate_control::EncoderRate;
+use crate::stream_start::{OnRefusal, StartMessage, TransformProcessing, stream_start_messages};
 use std::mem::ManuallyDrop;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -23,11 +24,11 @@ use windows::Win32::Media::MediaFoundation::{
     MFCreateDXGISurfaceBuffer, MFCreateMediaType, MFCreateMemoryBuffer, MFCreateSample,
     MFMediaType_Video, MFNominalRange_16_235, MFSTARTUP_NOSOCKET, MFShutdown, MFStartup,
     MFT_CATEGORY_VIDEO_ENCODER, MFT_ENUM_ADAPTER_LUID, MFT_ENUM_FLAG, MFT_ENUM_FLAG_HARDWARE,
-    MFT_ENUM_FLAG_SORTANDFILTER, MFT_ENUM_FLAG_SYNCMFT, MFT_MESSAGE_COMMAND_FLUSH,
-    MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, MFT_MESSAGE_NOTIFY_START_OF_STREAM,
-    MFT_MESSAGE_SET_D3D_MANAGER, MFT_OUTPUT_DATA_BUFFER, MFT_OUTPUT_STREAM_CAN_PROVIDE_SAMPLES,
-    MFT_OUTPUT_STREAM_PROVIDES_SAMPLES, MFT_REGISTER_TYPE_INFO, MFTEnum2, MFVideoFormat_H264,
-    MFVideoFormat_NV12, MFVideoInterlace_Progressive, MFVideoPrimaries_BT709, MFVideoTransFunc_709,
+    MFT_ENUM_FLAG_SORTANDFILTER, MFT_ENUM_FLAG_SYNCMFT, MFT_MESSAGE_NOTIFY_BEGIN_STREAMING,
+    MFT_MESSAGE_NOTIFY_START_OF_STREAM, MFT_MESSAGE_SET_D3D_MANAGER, MFT_OUTPUT_DATA_BUFFER,
+    MFT_OUTPUT_STREAM_CAN_PROVIDE_SAMPLES, MFT_OUTPUT_STREAM_PROVIDES_SAMPLES,
+    MFT_REGISTER_TYPE_INFO, MFTEnum2, MFVideoFormat_H264, MFVideoFormat_NV12,
+    MFVideoInterlace_Progressive, MFVideoPrimaries_BT709, MFVideoTransFunc_709,
     MFVideoTransferMatrix_BT709, eAVEncCommonRateControlMode_CBR, eAVEncH264VProfile_Base,
 };
 use windows::Win32::System::Com::CoTaskMemFree;
@@ -143,11 +144,7 @@ impl H264Transform {
         if let Ok(header) = sequence_header(&transform) {
             parameter_sets.remember(&header);
         }
-        unsafe {
-            transform.ProcessMessage(MFT_MESSAGE_COMMAND_FLUSH, 0)?;
-            transform.ProcessMessage(MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, 0)?;
-            transform.ProcessMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM, 0)?;
-        }
+        start_streaming(&transform, is_async)?;
         let events = if is_async {
             Some(transform.cast::<IMFMediaEventGenerator>()?)
         } else {
@@ -374,6 +371,28 @@ fn sample_bytes(sample: &IMFSample) -> Result<Vec<u8>, CaptureError> {
     let bytes = unsafe { std::slice::from_raw_parts(pointer, length as usize) }.to_vec();
     unsafe { buffer.Unlock()? };
     Ok(bytes)
+}
+
+fn start_streaming(transform: &IMFTransform, is_async: bool) -> Result<(), CaptureError> {
+    let processing = if is_async {
+        TransformProcessing::Asynchronous
+    } else {
+        TransformProcessing::Synchronous
+    };
+    for (message, on_refusal) in stream_start_messages(processing) {
+        let code = match message {
+            StartMessage::BeginStreaming => MFT_MESSAGE_NOTIFY_BEGIN_STREAMING,
+            StartMessage::StartOfStream => MFT_MESSAGE_NOTIFY_START_OF_STREAM,
+        };
+        match (unsafe { transform.ProcessMessage(code, 0) }, on_refusal) {
+            (Ok(()), _) => {}
+            (Err(error), OnRefusal::Fail) => return Err(error.into()),
+            (Err(error), OnRefusal::Log) => {
+                log::warn!("{processing:?} encoder refused optional {message:?}: {error}")
+            }
+        }
+    }
+    Ok(())
 }
 
 fn attribute_flag(attributes: &IMFAttributes, key: &GUID) -> bool {

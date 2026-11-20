@@ -19,6 +19,7 @@ mod room_start;
 mod share;
 mod source;
 mod stop_outcome;
+mod stream_start;
 mod thumbnail;
 
 pub use error::CaptureError;
