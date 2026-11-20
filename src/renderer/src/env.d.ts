@@ -2,6 +2,7 @@
 interface ImportMetaEnv {
   /** Endereço padrão do servidor na tela de login (ex.: https://concord.seudominio.com). Sem ela: localhost:3001. */
   readonly VITE_DEFAULT_SERVER?: string
+  readonly VITE_APP_VERSION: string
 }
 
 interface ImportMeta {
