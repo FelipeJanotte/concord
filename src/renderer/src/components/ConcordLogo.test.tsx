@@ -11,15 +11,15 @@ function drawLogo(className?: string) {
 }
 
 describe('ConcordLogo', () => {
-  it('não tem cor fixa: o anel e o centro saem da cor do texto, que vem do tema', () => {
+  it('não tem cor fixa: anel e centro vêm dos tokens logo e logo-core do tema', () => {
     const svg = drawLogo()
     expect(svg.outerHTML).not.toMatch(/#[0-9a-f]{3,8}\b/i)
-    expect(svg.querySelector('path')!.getAttribute('stroke')).toBe('currentColor')
-    expect(svg.querySelector('circle')!.getAttribute('class')).toContain('currentColor')
+    expect(svg.querySelector('path')!.getAttribute('class')).toBe('stroke-logo')
+    expect(svg.querySelector('circle')!.getAttribute('class')).toBe('fill-logo-core')
   })
 
-  it('recebe a cor e o tamanho de quem usa', () => {
-    expect(drawLogo('size-4 text-primary').getAttribute('class')).toBe('size-4 text-primary')
+  it('recebe o tamanho de quem usa', () => {
+    expect(drawLogo('size-4').getAttribute('class')).toBe('size-4')
   })
 
   it('é decorativa: o nome fica no texto ou no botão ao lado', () => {

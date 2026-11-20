@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_THEME, validateTheme, type ThemeConfig } from '@shared/types'
-import { AA, contrast } from './color'
+import { AA, contrast, NON_TEXT } from './color'
 import { deriveTokens, THEME_TOKENS, type DerivedTheme } from './derive'
 import { THEME_PRESETS } from './presets'
 
@@ -44,6 +44,15 @@ function expectReadable(theme: ThemeConfig): void {
   // texto sobre a cor de destaque: o melhor entre branco e preto (sempre pelo menos 4,5 com um dos dois)
   const onAccent = contrast(derived.tokens['primary-foreground'], theme.accent)
   expect(onAccent).toBeGreaterThanOrEqual(Math.max(contrast('#ffffff', theme.accent), contrast('#000000', theme.accent)) - 1e-9)
+  expectLogoVisible(derived, theme)
+}
+
+function expectLogoVisible({ tokens: t, gradientStops }: DerivedTheme, theme: ThemeConfig): void {
+  for (const bg of [t.rail, t.sidebar, t.accent, t.background, ...gradientStops]) {
+    for (const part of ['logo', 'logo-core'] as const) {
+      expect(contrast(t[part], bg), `${part} ${t[part]} sobre ${bg} (${JSON.stringify(theme)})`).toBeGreaterThanOrEqual(NON_TEXT)
+    }
+  }
 }
 
 /** Gerador com semente (mulberry32), para os temas aleatórios serem sempre os mesmos. */
@@ -93,6 +102,20 @@ describe('deriveTokens', () => {
     expect(yellow.tokens.primary).toBe('#ffd43b')
     expect(yellow.tokens.ring).toBe('#ffd43b')
     expect(yellow.tokens['primary-foreground']).toBe('#000000')
+  })
+
+  it('a logo usa a cor de destaque e só muda quando ela sumiria no fundo', () => {
+    expect(deriveTokens({ ...DEFAULT_THEME, accent: '#ffd43b' }).tokens.logo).toBe('#ffd43b')
+    const darkOnDark = deriveTokens({ ...DEFAULT_THEME, accent: '#202030' }).tokens
+    expect(darkOnDark.logo).not.toBe('#202030')
+    expect(contrast(darkOnDark.logo, darkOnDark.rail)).toBeGreaterThanOrEqual(NON_TEXT)
+  })
+
+  it('o centro da logo é mais claro que o anel no tema escuro e mais escuro no claro', () => {
+    const dark = deriveTokens(DEFAULT_THEME).tokens
+    const light = deriveTokens({ base: 'claro', accent: '#5865f2', background: { stops: ['#ffffff'], angle: 0 }, intensity: 0 }).tokens
+    expect(contrast(dark['logo-core'], '#ffffff')).toBeLessThan(contrast(dark.logo, '#ffffff'))
+    expect(contrast(light['logo-core'], '#000000')).toBeLessThan(contrast(light.logo, '#000000'))
   })
 })
 

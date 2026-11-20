@@ -48,6 +48,8 @@ export function contrast(a: string, b: string): number {
 /** AA para texto normal. */
 export const AA = 4.5
 
+export const NON_TEXT = 3
+
 /**
  * A cor `fg` ajustada (indo em direção a `toward`, ex.: branco no tema escuro) até ter pelo menos
  * `min` de contraste com **todas** as cores de `backgrounds`. Já atende: devolve igual.
