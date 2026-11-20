@@ -6,6 +6,8 @@ export interface ScreenSource {
   appIcon: string | null
 }
 
+export type ScreenAudioChoice = 'with-system-audio' | 'without-audio'
+
 export interface ScreenShareStart {
   sourceId: string
   audio: boolean

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { AppWindow, Loader2, Monitor, RefreshCw } from 'lucide-react'
-import type { ScreenSource } from '@shared/screen'
+import type { ScreenAudioChoice, ScreenSource } from '@shared/screen'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { canShareSystemAudio, closeScreenPicker, startScreenShare } from '@/lib/client'
+import { canShareSystemAudio, closeScreenPicker, startNativeScreenShare } from '@/lib/client'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
 
@@ -17,6 +17,7 @@ export function ScreenPicker() {
   const [selected, setSelected] = useState<string | null>(null)
   const [audio, setAudio] = useState(false)
   const audioAvailable = canShareSystemAudio()
+  const audioChoice: ScreenAudioChoice = audio ? 'with-system-audio' : 'without-audio'
 
   const load = useCallback(async () => {
     setError(null)
@@ -80,7 +81,7 @@ export function ScreenPicker() {
                   role="option"
                   aria-selected={s.id === selected}
                   onClick={() => setSelected(s.id)}
-                  onDoubleClick={() => void startScreenShare(s, audio)}
+                  onDoubleClick={() => void startNativeScreenShare(s, audioChoice)}
                   className={cn(
                     'flex flex-col gap-1.5 rounded-lg p-2 text-left ring-2 ring-transparent transition-colors hover:bg-accent/50',
                     s.id === selected && 'bg-accent/60 ring-primary'
@@ -110,7 +111,7 @@ export function ScreenPicker() {
             <Button variant="ghost" onClick={closeScreenPicker}>
               Cancelar
             </Button>
-            <Button disabled={!choice} onClick={() => choice && void startScreenShare(choice, audio)}>
+            <Button disabled={!choice} onClick={() => choice && void startNativeScreenShare(choice, audioChoice)}>
               Compartilhar
             </Button>
           </div>

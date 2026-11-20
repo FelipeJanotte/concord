@@ -90,7 +90,7 @@ describe('ScreenPicker', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Compartilhar' }))
     await vi.waitFor(() => expect(useApp.getState().sharing).toBe(true))
     expect(bridge.sharing).toEqual({ sourceId: 'screen:1:0', audio: true, url: 'ws://livekit.test', token: 'jwt-tela' })
-    expect(useApp.getState()).toMatchObject({ screenPickerOpen: false, ownScreenThumbnail: 'data:image/png;base64,Mg==' })
+    expect(useApp.getState()).toMatchObject({ screenPickerOpen: false, ownScreenShare: { kind: 'native', thumbnail: 'data:image/png;base64,Mg==' } })
   })
 
   it('duplo clique compartilha direto', async () => {
@@ -151,7 +151,7 @@ describe('ScreenTile', () => {
   })
 
   it('a própria tela nativa mostra a miniatura da fonte e "Você está compartilhando", sem vídeo', () => {
-    useApp.setState({ ownScreenThumbnail: 'data:image/png;base64,Mg==' })
+    useApp.setState({ ownScreenShare: { kind: 'native', thumbnail: 'data:image/png;base64,Mg==' } })
     render(<ScreenTile userId="eu" onSelect={() => {}} />)
     const card = screen.getByRole('img', { name: 'Sua tela' })
     expect(card.getAttribute('src')).toBe('data:image/png;base64,Mg==')
@@ -161,7 +161,7 @@ describe('ScreenTile', () => {
   })
 
   it('a tela de outra pessoa continua ao vivo enquanto eu compartilho pela tela nativa', () => {
-    useApp.setState({ ownScreenThumbnail: 'data:image/png;base64,Mg==' })
+    useApp.setState({ ownScreenShare: { kind: 'native', thumbnail: 'data:image/png;base64,Mg==' } })
     render(<ScreenTile userId="ana" onSelect={() => {}} />)
     expect(voice.attachScreen).toHaveBeenCalledWith('ana', screen.getByLabelText('Tela de Ana'))
     expect(screen.queryByText('Você está compartilhando')).toBeNull()

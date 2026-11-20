@@ -1,4 +1,5 @@
-import type { ScreenShareBridge, ScreenShareEndReason, ScreenSource } from '@shared/screen'
+import type { ScreenAudioChoice, ScreenShareBridge, ScreenShareEndReason, ScreenSource } from '@shared/screen'
+import { NO_OWN_SCREEN_SHARE } from '@/store/voice'
 import { get, getSocket, notify, requireSocket, set, type AppSocket } from '../core'
 import { findDm } from '../dms'
 import { voice } from '../voice'
@@ -182,16 +183,27 @@ export function toggleScreenShare(): void {
   if (!get().voiceCanShare) return notify('Você não tem permissão para compartilhar a tela nesta sala.', 'info')
   if (sharing) return void stopScreenShare()
   if (screenBridge()) set({ screenPickerOpen: true })
-  else void startScreenShare(null, false)
+  else void startBrowserScreenShare('without-audio')
 }
 
-export async function startScreenShare(source: ScreenSource | null, audio: boolean): Promise<void> {
+export async function startNativeScreenShare(source: ScreenSource, audioChoice: ScreenAudioChoice): Promise<void> {
+  const bridge = screenBridge()
+  if (!bridge) throw new Error('Compartilhar uma fonte da tela exige o app desktop')
+  await shareScreen(async () => startNativeShare(bridge, source, audioChoice))
+}
+
+export async function startBrowserScreenShare(audioChoice: ScreenAudioChoice): Promise<void> {
+  await shareScreen(async () => {
+    await voice.startScreenShare(audioChoice)
+    voice.showOwnScreen({ kind: 'browser' })
+    return true
+  })
+}
+
+async function shareScreen(start: () => Promise<boolean>): Promise<void> {
   set({ screenPickerOpen: false })
   try {
-    const bridge = screenBridge()
-    if (bridge && source) {
-      if (!(await startNativeShare(bridge, source, audio))) return
-    } else await voice.startScreenShare(audio)
+    if (!(await start())) return
     setSharing(true)
   } catch (err) {
     if (err instanceof DOMException && err.name === 'NotAllowedError') return
@@ -203,7 +215,7 @@ export async function startScreenShare(source: ScreenSource | null, audio: boole
 let stopListeningForNativeEnd: (() => void) | null = null
 let nativeStart: { endedWith: ScreenShareEndReason | null } | null = null
 
-async function startNativeShare(bridge: ScreenShareBridge, source: ScreenSource, audio: boolean): Promise<boolean> {
+async function startNativeShare(bridge: ScreenShareBridge, source: ScreenSource, audioChoice: ScreenAudioChoice): Promise<boolean> {
   const credentials = await requireSocket().emitWithAck('voice:screen-credentials')
   if (!credentials.ok) throw new Error(credentials.error)
   stopListeningForNativeEnd?.()
@@ -211,7 +223,7 @@ async function startNativeShare(bridge: ScreenShareBridge, source: ScreenSource,
   const attempt: { endedWith: ScreenShareEndReason | null } = { endedWith: null }
   nativeStart = attempt
   try {
-    await bridge.start({ sourceId: source.id, audio: audio && bridge.canShareAudio, url: credentials.url, token: credentials.token })
+    await bridge.start({ sourceId: source.id, audio: audioChoice === 'with-system-audio' && bridge.canShareAudio, url: credentials.url, token: credentials.token })
   } finally {
     if (nativeStart === attempt) nativeStart = null
   }
@@ -219,7 +231,7 @@ async function startNativeShare(bridge: ScreenShareBridge, source: ScreenSource,
     announceNativeEnd(attempt.endedWith)
     return false
   }
-  voice.showOwnScreen(source.thumbnail)
+  voice.showOwnScreen({ kind: 'native', thumbnail: source.thumbnail })
   return true
 }
 
@@ -239,7 +251,7 @@ function nativeShareEnded(reason: ScreenShareEndReason): void {
     return
   }
   const wasSharing = get().sharing
-  voice.showOwnScreen(null)
+  voice.showOwnScreen(NO_OWN_SCREEN_SHARE)
   setSharing(false)
   if (wasSharing) announceNativeEnd(reason)
 }
@@ -250,7 +262,7 @@ async function stopNativeShare(bridge: ScreenShareBridge): Promise<void> {
   } catch (err) {
     console.error('[tela] não foi possível parar a tela nativa:', err)
   } finally {
-    voice.showOwnScreen(null)
+    voice.showOwnScreen(NO_OWN_SCREEN_SHARE)
   }
 }
 
@@ -260,6 +272,7 @@ export async function stopScreenShare(): Promise<void> {
     if (bridge) await stopNativeShare(bridge)
     else await voice.stopScreenShare()
   } finally {
+    voice.showOwnScreen(NO_OWN_SCREEN_SHARE)
     setSharing(false)
   }
 }
