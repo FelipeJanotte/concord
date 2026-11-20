@@ -7,11 +7,13 @@ import {
   loadMusicQueue,
   openMusicQueue,
   dismissCollection,
+  jumpToTrack,
   parseMusicCommand,
   pauseMusic,
   playMusic,
   resumeMusic,
   runMusicCommand,
+  shuffleMusic,
   skipMusic,
   stopMusic,
   trackDuration
@@ -53,7 +55,8 @@ describe('parseMusicCommand', () => {
     ['/play', { kind: 'usage', text: 'Use /play <link ou nome da música>' }],
     ['/skip', { kind: 'skip' }],
     ['/STOP', { kind: 'stop' }],
-    ['/queue', { kind: 'queue' }]
+    ['/queue', { kind: 'queue' }],
+    ['/Shuffle', { kind: 'shuffle' }]
   ])('%s', (text, expected) => {
     expect(parseMusicCommand(text)).toEqual(expected)
   })
@@ -149,6 +152,20 @@ describe('ações', () => {
     await expect(skipMusic('sala')).rejects.toThrow('Nenhuma música tocando')
   })
 
+  it('jumpToTrack manda a sala e a música escolhida e aplica o estado, sem levar chat', async () => {
+    socket.replyTo('music:jump', () => ({ ok: true, state: state({ nowPlaying: aguas }) }))
+    await jumpToTrack('sala', 't2')
+    expect(socket.sent('music:jump')).toEqual([[{ channelId: 'sala', trackId: 't2' }]])
+    expect(useApp.getState().musicRooms.sala.nowPlaying?.id).toBe('t2')
+  })
+
+  it('shuffleMusic manda o id da sala e aplica a fila nova', async () => {
+    socket.replyTo('music:shuffle', () => ({ ok: true, state: state({ queue: [aguas, ipanema] }) }))
+    await shuffleMusic('sala')
+    expect(socket.sent('music:shuffle')).toEqual([[{ channelId: 'sala' }]])
+    expect(useApp.getState().musicRooms.sala.queue).toEqual([aguas, ipanema])
+  })
+
   it('stopMusic e loadMusicQueue mandam o id da sala', async () => {
     useApp.setState({ musicRooms: { sala: state() } })
     socket.replyTo('music:stop', () => ({ ok: true, state: state({ nowPlaying: null }) }))
@@ -212,6 +229,12 @@ describe('runMusicCommand', () => {
     expect(await runMusicCommand('/stop', 'geral')).toBe(true)
     expect(socket.sent('music:stop')).toEqual([[{ channelId: 'sala', textChannelId: 'geral' }]])
     expect(useApp.getState().musicRooms).toEqual({})
+  })
+
+  it('/shuffle leva o chat de onde veio', async () => {
+    socket.replyTo('music:shuffle', () => ({ ok: true, state: state({ queue: [aguas] }) }))
+    expect(await runMusicCommand('/shuffle', 'geral')).toBe(true)
+    expect(socket.sent('music:shuffle')).toEqual([[{ channelId: 'sala', textChannelId: 'geral' }]])
   })
 
   it('/play sem nada: mostra como usar e falha', async () => {

@@ -29,6 +29,8 @@ import { onVoiceRoomsChange, voiceChannelOf, voiceSocketsIn } from './voice'
 const NOT_CONFIGURED = 'Bot de música não configurado neste servidor'
 const NOT_IN_ROOM = 'Entre na sala de voz para controlar a música'
 const NOTHING_PLAYING = 'Nenhuma música tocando'
+const NOT_IN_QUEUE = 'Essa música não está mais na fila'
+const TOO_FEW_TO_SHUFFLE = 'Precisa de pelo menos 2 músicas na fila para embaralhar'
 const CHAT_NOT_FOUND = 'Canal não encontrado'
 const CANNOT_SEND = 'Você não tem permissão para enviar mensagens neste canal'
 
@@ -175,8 +177,8 @@ export const musicModule: ServerModule = {
     }
 
     const chatControl = (
-      event: 'music:skip' | 'music:stop',
-      act: (p: MusicPlayer, channelId: string) => boolean,
+      event: 'music:skip' | 'music:stop' | 'music:shuffle',
+      act: (p: MusicPlayer, channelId: string) => string | null,
       reply: (before: MusicState, after: MusicState) => MusicBotReply
     ) => {
       socket.on(event, (raw, ack) => {
@@ -190,7 +192,8 @@ export const musicModule: ServerModule = {
           const limited = rateLimited(limiters.music, user.accountId)
           if (limited) return ack(fail(limited))
           const before = room.state(channelId)
-          if (!act(room, channelId)) return ack(fail(NOTHING_PLAYING))
+          const refused = act(room, channelId)
+          if (refused) return ack(fail(refused))
           const after = room.state(channelId)
           await postToChat(io, user, chat.channel, `/${event.slice('music:'.length)}`, reply(before, after))
           ack(ok(after))
@@ -214,14 +217,37 @@ export const musicModule: ServerModule = {
 
     chatControl(
       'music:skip',
-      (p, id) => p.skip(id),
+      (p, id) => (p.skip(id) ? null : NOTHING_PLAYING),
       (before, after) => ({ action: 'skip', skipped: summary(before.nowPlaying!), next: after.nowPlaying && summary(after.nowPlaying) })
     )
     chatControl(
       'music:stop',
-      (p, id) => p.stop(id),
+      (p, id) => (p.stop(id) ? null : NOTHING_PLAYING),
       () => ({ action: 'stop' })
     )
+    chatControl(
+      'music:shuffle',
+      (p, id) => {
+        if (!p.state(id).nowPlaying) return NOTHING_PLAYING
+        return p.shuffle(id) ? null : TOO_FEW_TO_SHUFFLE
+      },
+      (_before, after) => ({ action: 'shuffle', count: after.queue.length })
+    )
+
+    socket.on('music:jump', (raw, ack) => {
+      if (typeof ack !== 'function') return
+      void guard('music:jump', async () => {
+        const control = await roomControl(raw)
+        if (!control.ok) return ack(control)
+        const { user, player: room, channelId } = control
+        const limited = rateLimited(limiters.music, user.accountId)
+        if (limited) return ack(fail(limited))
+        if (!room.state(channelId).nowPlaying) return ack(fail(NOTHING_PLAYING))
+        const trackId = (raw as { trackId?: unknown } | null)?.trackId
+        if (typeof trackId !== 'string' || !room.jump(channelId, trackId)) return ack(fail(NOT_IN_QUEUE))
+        ack(ok(room.state(channelId)))
+      })
+    })
     silentControl('music:pause', (p, id) => p.pause(id))
     silentControl('music:resume', (p, id) => p.resume(id))
 

@@ -5,7 +5,7 @@ const names = (text: string): string[] => commandSuggestions(text).map((c) => c.
 
 describe('registro de comandos', () => {
   it('os comandos do bot de música, cada um com descrição curta', () => {
-    expect(CHAT_COMMANDS.map((c) => c.name)).toEqual(['play', 'skip', 'stop', 'queue'])
+    expect(CHAT_COMMANDS.map((c) => c.name)).toEqual(['play', 'skip', 'stop', 'queue', 'shuffle'])
     expect(CHAT_COMMANDS.find((c) => c.name === 'play')?.arg?.name).toBe('query')
     for (const command of CHAT_COMMANDS) expect(command.description.length).toBeGreaterThan(0)
   })
@@ -13,9 +13,9 @@ describe('registro de comandos', () => {
 
 describe('commandSuggestions', () => {
   it.each([
-    ['/', ['play', 'skip', 'stop', 'queue']],
+    ['/', ['play', 'skip', 'stop', 'queue', 'shuffle']],
     ['/pl', ['play']],
-    ['/S', ['skip', 'stop']],
+    ['/S', ['skip', 'stop', 'shuffle']],
     ['/sk', ['skip']],
     ['/play', ['play']]
   ])('%j', (text, expected) => {

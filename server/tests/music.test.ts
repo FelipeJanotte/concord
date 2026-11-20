@@ -377,6 +377,80 @@ describe('bot de música', () => {
     })
   })
 
+  describe('pular para uma da fila e embaralhar', () => {
+    const fill = async (): Promise<string> => {
+      const id = await roomWithAna()
+      playing(await play(ana, id, link(LONG)))
+      playing(await play(ana, id, link(LONG_2)))
+      playing(await play(ana, id, `https://open.spotify.com/playlist/${PLAYLIST}`))
+      return id
+    }
+    const jump = (u: TestUser, channelId: string, trackId: unknown): Promise<MusicResult> => u.socket.emitWithAck('music:jump', { channelId, trackId } as never)
+    const shuffle = (u: TestUser, channelId: string, textChannelId?: string): Promise<MusicResult> =>
+      u.socket.emitWithAck('music:shuffle', { channelId, ...(textChannelId ? { textChannelId } : {}) })
+
+    it('pular para a 3ª da fila: ela toca e as anteriores saem; quem vê a sala recebe o estado', async () => {
+      const id = await fill()
+      const queue = playing(await ana.socket.emitWithAck('music:queue', id)).queue
+      expect(queue.map((t) => t.title)).toEqual(['Outra longa', 'Chega de Saudade', 'Desafinado'])
+      const seen = waitFor(bia.socket, 'music:state', (s) => s.channelId === id && s.nowPlaying?.title === 'Desafinado')
+      const jumped = playing(await jump(ana, id, queue[2].id))
+      expect(jumped.nowPlaying?.title).toBe('Desafinado')
+      expect(jumped.queue).toEqual([])
+      await seen
+      await ana.socket.emitWithAck('music:stop', { channelId: id })
+    })
+
+    it('pular recusa id fora da fila, id inválido, quem está fora da sala e sala sem música', async () => {
+      const id = await fill()
+      const { nowPlaying, queue } = playing(await ana.socket.emitWithAck('music:queue', id))
+      const gone = { ok: false, error: 'Essa música não está mais na fila' }
+      expect(await jump(ana, id, nowPlaying!.id)).toEqual(gone)
+      expect(await jump(ana, id, 'x'.repeat(2000))).toEqual(gone)
+      expect(await jump(ana, id, 42)).toEqual(gone)
+      expect(await jump(bia, id, queue[0].id)).toEqual({ ok: false, error: 'Entre na sala de voz para controlar a música' })
+      expect(playing(await ana.socket.emitWithAck('music:queue', id)).queue).toEqual(queue)
+      await ana.socket.emitWithAck('music:stop', { channelId: id })
+      expect(await jump(ana, id, queue[0].id)).toEqual({ ok: false, error: 'Nenhuma música tocando' })
+    })
+
+    it('embaralhar mexe só na fila: a que toca segue e as mesmas músicas continuam', async () => {
+      const id = await fill()
+      const before = playing(await ana.socket.emitWithAck('music:queue', id))
+      const after = playing(await shuffle(ana, id))
+      expect(after.nowPlaying).toEqual(before.nowPlaying)
+      expect(after.queue.map((t) => t.id).sort()).toEqual(before.queue.map((t) => t.id).sort())
+      await ana.socket.emitWithAck('music:stop', { channelId: id })
+    })
+
+    it('embaralhar recusa fila com menos de 2, sala sem música e quem está fora da sala', async () => {
+      const id = await roomWithAna()
+      expect(await shuffle(ana, id)).toEqual({ ok: false, error: 'Nenhuma música tocando' })
+      playing(await play(ana, id, link(LONG)))
+      playing(await play(ana, id, link(LONG_2)))
+      expect(await shuffle(ana, id)).toEqual({ ok: false, error: 'Precisa de pelo menos 2 músicas na fila para embaralhar' })
+      expect(await shuffle(bia, id)).toEqual({ ok: false, error: 'Entre na sala de voz para controlar a música' })
+      await ana.socket.emitWithAck('music:stop', { channelId: id })
+    })
+
+    it('/shuffle no chat: o comando e a resposta do bot; o botão (sem canal de texto) não posta', async () => {
+      const id = await fill()
+      const chat = (await server.createChannel(`chat-${Math.random().toString(36).slice(2, 7)}`)).id
+      const seen = chatOf(bia, chat)
+      playing(await shuffle(ana, id, chat))
+      await until(() => seen.length === 2, 'comando e resposta')
+      expect(seen.map((m) => [m.kind ?? 'text', m.content])).toEqual([
+        ['text', '/shuffle'],
+        ['tool', 'Embaralhou a fila (3 músicas)']
+      ])
+      expect(seen[1].tool).toEqual({ tool: 'music', result: { action: 'shuffle', count: 3 } })
+      const silent = expectNoEvent(ana.socket, 'message:new', (m) => m.channelId === id)
+      playing(await shuffle(ana, id))
+      await silent
+      await ana.socket.emitWithAck('music:stop', { channelId: id })
+    })
+  })
+
   describe('coleção no resultado do play', () => {
     it('playlist e álbum do Spotify e playlist do YouTube trazem tipo, título e link', async () => {
       const id = await roomWithAna()

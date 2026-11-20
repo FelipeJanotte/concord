@@ -40,6 +40,7 @@ export type MusicBotReply =
   | { action: 'play'; added: number; startedNow: boolean; first: MusicTrackSummary }
   | { action: 'skip'; skipped: MusicTrackSummary; next: MusicTrackSummary | null }
   | { action: 'stop' }
+  | { action: 'shuffle'; count: number }
   | { action: 'searching'; query: string }
   | { action: 'failed'; query: string; error: string }
 
@@ -52,11 +53,17 @@ export interface MusicPlayRequest extends MusicControl {
   query: string
 }
 
+export interface MusicJumpRequest extends MusicControl {
+  trackId: string
+}
+
 export const musicTrackLabel = (track: MusicTrackSummary): string => `${track.title} — ${track.artists.join(', ')}`
 
 export const musicSearchingText = (query: string): string => `Procurando “${query}”…`
 
 export const musicFailedText = (error: string): string => `Não consegui tocar: ${error}`
+
+export const musicShuffleText = (count: number): string => `Embaralhou a fila (${count} músicas)`
 
 export function musicBotReplyText(reply: MusicBotReply): string {
   switch (reply.action) {
@@ -67,6 +74,8 @@ export function musicBotReplyText(reply: MusicBotReply): string {
       return `Pulou: ${musicTrackLabel(reply.skipped)}${reply.next ? `. Tocando agora: ${musicTrackLabel(reply.next)}` : ''}`
     case 'stop':
       return 'Parou a música e limpou a fila'
+    case 'shuffle':
+      return musicShuffleText(reply.count)
     case 'searching':
       return musicSearchingText(reply.query)
     case 'failed':
@@ -88,6 +97,8 @@ export interface MusicClientEvents {
   'music:play': (payload: MusicPlayRequest, ack: (res: MusicPlayResult) => void) => void
   'music:skip': (control: MusicControl, ack: (res: MusicResult) => void) => void
   'music:stop': (control: MusicControl, ack: (res: MusicResult) => void) => void
+  'music:jump': (request: MusicJumpRequest, ack: (res: MusicResult) => void) => void
+  'music:shuffle': (control: MusicControl, ack: (res: MusicResult) => void) => void
   'music:pause': (control: MusicControl, ack: (res: MusicResult) => void) => void
   'music:resume': (control: MusicControl, ack: (res: MusicResult) => void) => void
   'music:queue': (channelId: string, ack: (res: MusicResult) => void) => void

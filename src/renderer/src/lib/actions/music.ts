@@ -5,10 +5,11 @@ import { get, notify, requireSocket, set, type AppSocket } from '../core'
 
 type PlayedMusic = Extract<MusicPlayResult, { ok: true }>
 
-export type MusicCommand = { kind: 'play'; query: string } | { kind: 'skip' } | { kind: 'stop' } | { kind: 'queue' } | { kind: 'usage'; text: string }
+const MUSIC_CONTROLS = ['skip', 'stop', 'queue', 'shuffle'] as const
+
+export type MusicCommand = { kind: 'play'; query: string } | { kind: (typeof MUSIC_CONTROLS)[number] } | { kind: 'usage'; text: string }
 
 const PLAY_USAGE = 'Use /play <link ou nome da música>'
-const MUSIC_CONTROLS = ['skip', 'stop', 'queue'] as const
 const isMusicControl = (name: string): name is (typeof MUSIC_CONTROLS)[number] => (MUSIC_CONTROLS as readonly string[]).includes(name)
 
 export function parseMusicCommand(text: string): MusicCommand | null {
@@ -63,6 +64,12 @@ export const skipMusic = async (channelId: string, textChannelId?: string): Prom
 export const stopMusic = async (channelId: string, textChannelId?: string): Promise<MusicState> =>
   (await request((s) => s.emitWithAck('music:stop', { channelId, ...fromChat(textChannelId) }))).state
 
+export const shuffleMusic = async (channelId: string, textChannelId?: string): Promise<MusicState> =>
+  (await request((s) => s.emitWithAck('music:shuffle', { channelId, ...fromChat(textChannelId) }))).state
+
+export const jumpToTrack = async (channelId: string, trackId: string): Promise<MusicState> =>
+  (await request((s) => s.emitWithAck('music:jump', { channelId, trackId }))).state
+
 export const loadMusicQueue = async (channelId: string): Promise<MusicState> => (await request((s) => s.emitWithAck('music:queue', channelId))).state
 
 export const openMusicQueue = (channelId: string): void => set({ musicQueueChannelId: channelId })
@@ -88,6 +95,7 @@ async function runCommand(command: Exclude<MusicCommand, { kind: 'usage' }>, cha
   if (command.kind === 'play') return playFromChat(channelId, command.query, textChannelId)
   if (command.kind === 'skip') await skipMusic(channelId, textChannelId)
   else if (command.kind === 'stop') await stopMusic(channelId, textChannelId)
+  else if (command.kind === 'shuffle') await shuffleMusic(channelId, textChannelId)
   else {
     await loadMusicQueue(channelId)
     openMusicQueue(channelId)

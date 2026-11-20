@@ -55,7 +55,7 @@ function RoomMusic({ channelId }: { channelId: string }) {
         <MusicRequestForm channelId={channelId} />
         <SaveCollectionChip />
       </div>
-      {state && track && <MusicQueue queue={state.queue} />}
+      {state && track && <MusicQueue channelId={channelId} queue={state.queue} />}
     </>
   )
 }

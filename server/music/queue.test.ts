@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { QueuedTrack } from './ports'
-import { advance, EMPTY_QUEUE, enqueue, type RoomQueue } from './queue'
+import { advance, EMPTY_QUEUE, enqueue, jumpTo, shuffleUpcoming, type RoomQueue } from './queue'
 
 const track = (id: string): QueuedTrack => ({
   id,
@@ -62,5 +62,49 @@ describe('advance', () => {
 
   it('fila vazia: nada tocando', () => {
     expect(advance({ nowPlaying: track('a'), upcoming: [] })).toEqual(EMPTY_QUEUE)
+  })
+})
+
+describe('jumpTo', () => {
+  const q: RoomQueue = { nowPlaying: track('a'), upcoming: [track('b'), track('c'), track('d')] }
+
+  it('a escolhida passa a tocar e as anteriores saem da fila', () => {
+    expect(jumpTo(q, 'c')).toEqual({ nowPlaying: track('c'), upcoming: [track('d')] })
+  })
+
+  it('a primeira da fila: igual a pular', () => {
+    expect(jumpTo(q, 'b')).toEqual(advance(q))
+  })
+
+  it('id que não está na fila (nem a que toca): null', () => {
+    expect(jumpTo(q, 'x')).toBeNull()
+    expect(jumpTo(q, 'a')).toBeNull()
+  })
+})
+
+describe('shuffleUpcoming', () => {
+  const q: RoomQueue = { nowPlaying: track('a'), upcoming: [track('b'), track('c'), track('d'), track('e')] }
+  const ids = (queue: RoomQueue): string[] => queue.upcoming.map((t) => t.id)
+
+  it('Fisher-Yates com o acaso recebido: a que toca não muda', () => {
+    const picks = [0, 0, 0]
+    const shuffled = shuffleUpcoming(q, () => picks.shift()!)
+    expect(shuffled.nowPlaying).toBe(q.nowPlaying)
+    expect(ids(shuffled)).toEqual(['c', 'd', 'e', 'b'])
+  })
+
+  it('pede ao acaso um índice em [0, i] para cada posição, do fim para o começo', () => {
+    const asked: number[] = []
+    shuffleUpcoming(q, (max) => {
+      asked.push(max)
+      return max - 1
+    })
+    expect(asked).toEqual([4, 3, 2])
+  })
+
+  it('acaso que sempre escolhe a própria posição mantém a ordem e não muda a fila recebida', () => {
+    expect(ids(shuffleUpcoming(q, (max) => max - 1))).toEqual(['b', 'c', 'd', 'e'])
+    shuffleUpcoming(q, () => 0)
+    expect(ids(q)).toEqual(['b', 'c', 'd', 'e'])
   })
 })
