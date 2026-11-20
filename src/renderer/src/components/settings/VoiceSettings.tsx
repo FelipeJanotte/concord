@@ -1,6 +1,3 @@
-// Configurações → "Voz e vídeo": microfone, saída de áudio (B4), câmera (B21), volume do microfone e de saída,
-// supressão de ruído automática (B13), pressione para falar (B20), sons de entrar/sair da sala (B16) e
-// sobreposição em jogos (B15). O volume de cada pessoa fica no botão direito sobre ela.
 import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -54,7 +51,6 @@ export function VoiceSettings() {
     }
   }, [])
 
-  // ao abrir a seção lista os aparelhos; fone conectado/desconectado com ela aberta atualiza a lista
   useEffect(() => {
     void refresh()
     const media = typeof navigator !== 'undefined' ? navigator.mediaDevices : undefined
@@ -106,7 +102,6 @@ export function VoiceSettings() {
   )
 }
 
-/** Volume do microfone (0–200%) e de saída (0–100%). Valem na hora, mesmo numa sala. */
 function VolumeSettings() {
   const mic = useApp((s) => Math.round(s.micGain * 100))
   const output = useApp((s) => Math.round(s.outputVolume * 100))
@@ -205,7 +200,6 @@ const NOISE_TEXT = {
   'light-fallback': 'Filtro avançado indisponível neste computador: usando o filtro leve.'
 } as const
 
-/** Supressão de ruído automática (B13): só liga/desliga; o modo o app escolhe sozinho. */
 function NoiseSuppression() {
   const enabled = useApp((s) => s.noiseSuppression)
   const mode = useApp((s) => s.noiseMode)
@@ -228,7 +222,6 @@ function NoiseSuppression() {
   )
 }
 
-/** Sons de quando alguém entra ou sai da sala (B16). */
 function JoinLeaveSounds() {
   const enabled = useApp((s) => s.voiceSoundsEnabled)
   const pct = useApp((s) => Math.round(s.voiceSoundsVolume * 100))
@@ -264,7 +257,6 @@ function JoinLeaveSounds() {
   )
 }
 
-/** valor do seletor de posição quando o overlay foi arrastado (não é um canto) */
 const CUSTOM = '__custom__'
 const CORNERS: Record<OverlayCorner, string> = {
   'top-left': 'Canto superior esquerdo',
@@ -274,7 +266,6 @@ const CORNERS: Record<OverlayCorner, string> = {
 }
 const SIZES: Record<OverlaySize, string> = { small: 'Pequeno', medium: 'Médio', large: 'Grande' }
 
-/** Sobreposição em jogos (B15): quem fala na sala, por cima do jogo. */
 function GameOverlay() {
   const enabled = useApp((s) => s.overlayEnabled)
   const corner = useApp((s) => s.overlayCorner)
@@ -282,7 +273,6 @@ function GameOverlay() {
   const moved = useApp((s) => s.overlayPosition !== null)
   const editing = useApp((s) => s.overlayEditing)
   const editLabel = useApp((s) => shortcutLabel(s.overlayShortcuts.edit))
-  // o modo de mover só existe no app (precisa da janela do overlay)
   const canMove = typeof window !== 'undefined' && !!window.api?.overlay
   const selectClass = 'h-9 rounded-md border border-border bg-input px-2 text-sm text-foreground disabled:opacity-60'
   return (
@@ -405,7 +395,6 @@ function DeviceSelect({
   devices: AudioDevice[] | undefined
   onChange: (deviceId: string | null) => void
 }) {
-  // Escolhido mas desconectado agora: continua aparecendo para a pessoa entender o que está salvo.
   const missing = value && devices && !devices.some((d) => d.deviceId === value)
   return (
     <div className="space-y-1.5">

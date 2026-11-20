@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-// Pressione para falar na tela (B20): seção das Configurações de voz e indicador na sala.
 import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'

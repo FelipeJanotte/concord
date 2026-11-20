@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-// Configurações → "Voz e vídeo" (B4 e seguintes): dispositivos, volumes, ruído, sons e sobreposição.
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -25,7 +24,7 @@ beforeEach(() => {
     users: [
       user('eu', 'acc-eu', 'Eu'),
       user('ana1', 'acc-ana', 'Ana'),
-      user('ana2', 'acc-ana', 'Ana'), // a mesma conta em duas janelas
+      user('ana2', 'acc-ana', 'Ana'),
       user('bia', 'acc-bia', 'Bia'),
       user('caio', 'acc-caio', 'Caio')
     ],
