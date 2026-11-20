@@ -4,11 +4,11 @@ export function ConcordLogo({ className }: { className?: string }) {
       <path
         d="M390.8 142.9A176 176 0 1 0 390.8 369.1"
         fill="none"
-        stroke="currentColor"
+        className="stroke-logo"
         strokeWidth={96}
         strokeLinecap="round"
       />
-      <circle cx={256} cy={256} r={64} className="fill-[color-mix(in_srgb,currentColor_70%,white)]" />
+      <circle cx={256} cy={256} r={64} className="fill-logo-core" />
     </svg>
   )
 }

@@ -35,6 +35,8 @@
   --composer: #383a40;
   --success: #23a55a;
   --idle: #f0b232;
+  --logo: #7984f5;
+  --logo-core: #a1a9f8;
 }
 
 @theme inline {
@@ -63,6 +65,8 @@
   --color-composer: var(--composer);
   --color-success: var(--success);
   --color-idle: var(--idle);
+  --color-logo: var(--logo);
+  --color-logo-core: var(--logo-core);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);

@@ -68,6 +68,15 @@ describe('barra de úteis', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Concord' }))
     expect(useApp.getState().section).toBe('community')
   })
+
+  it('Concord aberto não pinta o botão com a cor de destaque: a logo mantém as cores do tema', () => {
+    setup({ section: 'community' })
+    ui(<UtilityRail />)
+    const button = screen.getByRole('button', { name: 'Concord' })
+    expect(button.getAttribute('aria-current')).toBe('page')
+    expect(button.className).not.toMatch(/bg-primary/)
+    expect(button.querySelector('svg')!.getAttribute('class')).not.toMatch(/--logo/)
+  })
 })
 
 describe('Home', () => {

@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, session, shell } from 'electron'
 import { join } from 'path'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { externalUrl } from '../shared/links'
+import { windowIconOptions } from './app-icon'
 import { googleSignIn } from './google-auth'
 import { setupIdle, type IdleWatcher } from './idle'
 import { setupNotifications } from './notifications'
@@ -32,6 +33,7 @@ function createWindow(): void {
     backgroundColor: '#1e1f22',
     autoHideMenuBar: true,
     ...titleBarOptions(process.platform),
+    ...windowIconOptions(app.isPackaged, app.getAppPath()),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
