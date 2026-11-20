@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 pub const RELEASE_DELAY: Duration = Duration::from_millis(200);
 pub const CAPTURE_TIMEOUT: Duration = Duration::from_millis(10_000);
 const MOUSE_BUTTONS: [u32; 3] = [3, 4, 5];
-const MAXIMUM_CODE: u32 = 0xffff;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -59,7 +58,7 @@ impl From<Binding> for PttBinding {
 
 pub fn valid_binding(binding: &PttBinding) -> Option<Binding> {
     let code = u16::try_from(binding.code).ok()?;
-    if binding.code == 0 || binding.code > MAXIMUM_CODE {
+    if binding.code == 0 {
         return None;
     }
     if binding.kind == PttBindingKind::Mouse && !MOUSE_BUTTONS.contains(&binding.code) {
