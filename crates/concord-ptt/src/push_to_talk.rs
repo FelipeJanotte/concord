@@ -298,7 +298,7 @@ pub struct PushToTalk {
     shared: SharedHandle,
     window: isize,
     listener: Option<JoinHandle<()>>,
-    exited: Receiver<()>,
+    exited: Mutex<Receiver<()>>,
 }
 
 impl PushToTalk {
@@ -318,7 +318,7 @@ impl PushToTalk {
             shared,
             window,
             listener: Some(listener),
-            exited,
+            exited: Mutex::new(exited),
         })
     }
 
@@ -388,7 +388,13 @@ impl Drop for PushToTalk {
         let Some(listener) = self.listener.take() else {
             return;
         };
-        match join_after_exit(&self.exited, listener, EXIT_LIMIT) {
+        match join_after_exit(
+            self.exited
+                .get_mut()
+                .unwrap_or_else(PoisonError::into_inner),
+            listener,
+            EXIT_LIMIT,
+        ) {
             ExitOutcome::Exited => {}
             ExitOutcome::Panicked => log::warn!("push to talk listener panicked"),
             ExitOutcome::TimedOut => log::warn!("push to talk listener did not exit in time"),
