@@ -5,29 +5,15 @@ pub use crate::native::thumbar::{ThumbarAction, ThumbarButton};
 
 domain_error!(ThumbarError {
     #[error("{0}")]
-    Native(String),
+    Taskbar(#[from] concord_taskbar::TaskbarError),
+    #[cfg(windows)]
+    #[error("{0}")]
+    Bar(#[from] crate::native::thumbar_bar::ThumbarBarError),
+    #[error("{0}")]
+    Window(#[from] tauri::Error),
     #[error("A janela não respondeu na thread principal")]
     MainThreadUnavailable,
 });
-
-impl From<concord_taskbar::TaskbarError> for ThumbarError {
-    fn from(error: concord_taskbar::TaskbarError) -> Self {
-        Self::Native(error.to_string())
-    }
-}
-
-#[cfg(windows)]
-impl From<crate::native::thumbar_bar::ThumbarBarError> for ThumbarError {
-    fn from(error: crate::native::thumbar_bar::ThumbarBarError) -> Self {
-        Self::Native(error.to_string())
-    }
-}
-
-impl From<tauri::Error> for ThumbarError {
-    fn from(error: tauri::Error) -> Self {
-        Self::Native(error.to_string())
-    }
-}
 
 #[cfg(windows)]
 #[tauri::command]
@@ -69,4 +55,18 @@ pub async fn thumbar_buttons(
         buttons.len()
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::error::Error;
+
+    use super::ThumbarError;
+
+    #[test]
+    fn a_window_failure_keeps_its_message_and_source() {
+        let error = ThumbarError::from(tauri::Error::WindowNotFound);
+        assert_eq!(error.to_string(), tauri::Error::WindowNotFound.to_string());
+        assert!(error.source().is_some());
+    }
 }

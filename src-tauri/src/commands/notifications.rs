@@ -29,20 +29,10 @@ domain_error!(NotificationsError {
     #[error("Ícone do selo inválido: {0}")]
     InvalidBadge(#[from] DataUrlError),
     #[error("{0}")]
-    Native(String),
+    Toast(#[from] ToastError),
+    #[error("{0}")]
+    Native(#[from] tauri::Error),
 });
-
-impl From<ToastError> for NotificationsError {
-    fn from(error: ToastError) -> Self {
-        Self::Native(error.to_string())
-    }
-}
-
-impl From<tauri::Error> for NotificationsError {
-    fn from(error: tauri::Error) -> Self {
-        Self::Native(error.to_string())
-    }
-}
 
 #[derive(Default)]
 pub struct NotificationsState {
@@ -190,4 +180,18 @@ pub fn badge(
         window.request_user_attention(Some(UserAttentionType::Informational))?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::error::Error;
+
+    use super::NotificationsError;
+
+    #[test]
+    fn a_window_failure_keeps_its_message_and_source() {
+        let error = NotificationsError::from(tauri::Error::WindowNotFound);
+        assert_eq!(error.to_string(), tauri::Error::WindowNotFound.to_string());
+        assert!(error.source().is_some());
+    }
 }

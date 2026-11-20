@@ -6,16 +6,10 @@ use crate::windows::main_window::MAIN_WINDOW_LABEL;
 
 domain_error!(WindowControlsError {
     #[error("{0}")]
-    Native(String),
+    Native(#[from] tauri::Error),
     #[error("Janela principal não existe")]
     MissingMainWindow,
 });
-
-impl From<tauri::Error> for WindowControlsError {
-    fn from(error: tauri::Error) -> Self {
-        Self::Native(error.to_string())
-    }
-}
 
 #[tauri::command]
 pub fn window_control(
@@ -37,4 +31,18 @@ pub fn show_main_window(app: AppHandle) -> Result<(), WindowControlsError> {
         .ok_or(WindowControlsError::MissingMainWindow)?;
     window.show()?;
     Ok(window.set_focus()?)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::error::Error;
+
+    use super::WindowControlsError;
+
+    #[test]
+    fn a_window_failure_keeps_its_message_and_source() {
+        let error = WindowControlsError::from(tauri::Error::WindowNotFound);
+        assert_eq!(error.to_string(), tauri::Error::WindowNotFound.to_string());
+        assert!(error.source().is_some());
+    }
 }

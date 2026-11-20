@@ -8,14 +8,8 @@ use crate::native::translucency::{is_supported_here, window_color, Rgba, WindowS
 
 domain_error!(TranslucencyError {
     #[error("{0}")]
-    Native(String),
+    Native(#[from] tauri::Error),
 });
-
-impl From<tauri::Error> for TranslucencyError {
-    fn from(error: tauri::Error) -> Self {
-        Self::Native(error.to_string())
-    }
-}
 
 #[derive(Debug, Deserialize)]
 pub struct TranslucencyRequest {
@@ -54,6 +48,15 @@ pub fn window_translucency(
 
 #[cfg(test)]
 mod tests {
+    use std::error::Error;
+
+    #[test]
+    fn a_window_failure_keeps_its_message_and_source() {
+        let error = super::TranslucencyError::from(tauri::Error::WindowNotFound);
+        assert_eq!(error.to_string(), tauri::Error::WindowNotFound.to_string());
+        assert!(error.source().is_some());
+    }
+
     use super::*;
 
     #[test]
