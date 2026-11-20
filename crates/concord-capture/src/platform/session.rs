@@ -11,16 +11,20 @@ use super::target::CaptureTarget;
 use crate::bounded::within;
 use crate::encoder_selection::select_encoder;
 use crate::error::CaptureError;
-use crate::events::{EncoderKind, EndReason, EventCallback, EventEmitter, ShareEvent};
+use crate::events::{
+    EncoderKind, EndReason, EventCallback, EventEmitter, ShareEvent, ShareProgress, closing_event,
+};
 use crate::frame_size::target_size;
 use crate::pacing::FramePacer;
 use crate::pipeline::{
     EncodedVideoSink, MonotonicClock, StopSignal, VideoEnd, run_audio, run_video,
 };
 use crate::quality::QualityPreset;
+use crate::room_start::{ROOM_CONNECT_LIMIT, ready_or_error, room_ready_limit};
 use crate::share::ShareRequest;
 use crate::source::SourceId;
 use livekit::Room;
+use livekit::webrtc::audio_source::native::NativeAudioSource;
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver};
 use std::thread::{self, JoinHandle};
@@ -28,7 +32,6 @@ use std::time::Duration;
 use tokio::runtime::{Builder, Handle};
 
 const ROOM_RUNTIME_THREADS: usize = 2;
-const ROOM_CONNECT_LIMIT: Duration = Duration::from_secs(10);
 const ROOM_CLOSE_LIMIT: Duration = Duration::from_secs(3);
 
 type Worker = JoinHandle<()>;
@@ -40,6 +43,7 @@ pub(crate) struct Session {
     capture: Option<CaptureThread>,
     media_workers: Vec<Worker>,
     room_worker: Option<Worker>,
+    progress: ShareProgress,
 }
 
 impl Session {
@@ -59,6 +63,7 @@ impl Session {
             capture: None,
             media_workers: Vec::new(),
             room_worker: None,
+            progress: ShareProgress::Starting,
         };
         if let Some(failure) = &choice.hardware_failure {
             session.events.emit(ShareEvent::HardwareEncoderUnavailable {
@@ -74,13 +79,7 @@ impl Session {
             with_audio: request.with_audio,
         };
         let (tracks, runtime) = session.start_room(plan)?;
-        let (sender, receiver) = mpsc::sync_channel(1);
-        session.capture = Some(CaptureThread::start(
-            target,
-            gpu.clone(),
-            preset.frames_per_second,
-            sender,
-        )?);
+        let receiver = session.start_capture(target, gpu.clone(), preset)?;
         let video = VideoPlan {
             receiver,
             gpu,
@@ -88,23 +87,11 @@ impl Session {
             encoder: choice.kind,
             tracks_video: tracks.video,
         };
-        let stop = session.media_stop.clone();
-        session.spawn_media("concord-video", move || video.run(&stop))?;
-        if let Some(audio_source) = tracks.audio {
-            let stop = session.media_stop.clone();
-            session.spawn_media("concord-audio", move || {
-                let mut loopback = SystemAudioLoopback::start()?;
-                let publisher = LiveKitAudioPublisher {
-                    source: audio_source,
-                    runtime,
-                };
-                run_audio(&mut loopback, &publisher, &stop)?;
-                Ok(None)
-            })?;
-        }
+        session.start_media(video, tracks.audio, runtime)?;
         session.events.emit(ShareEvent::Started {
             encoder: choice.kind,
         });
+        session.progress = ShareProgress::Started;
         Ok(session)
     }
 
@@ -130,9 +117,46 @@ impl Session {
             })
             .map_err(|error| CaptureError::Thread(error.to_string()))?;
         self.room_worker = Some(worker);
-        ready
-            .recv_timeout(ROOM_CONNECT_LIMIT)
-            .map_err(|_| CaptureError::Thread("room thread ended before connecting".into()))?
+        ready_or_error(ready.recv_timeout(room_ready_limit()))
+    }
+
+    fn start_capture(
+        &mut self,
+        target: CaptureTarget,
+        gpu: GpuDevice,
+        preset: QualityPreset,
+    ) -> Result<Receiver<CaptureMessage>, CaptureError> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        self.capture = Some(CaptureThread::start(
+            target,
+            gpu,
+            preset.frames_per_second,
+            sender,
+        )?);
+        Ok(receiver)
+    }
+
+    fn start_media(
+        &mut self,
+        video: VideoPlan,
+        audio_source: Option<NativeAudioSource>,
+        runtime: Handle,
+    ) -> Result<(), CaptureError> {
+        let stop = self.media_stop.clone();
+        self.spawn_media("concord-video", move || video.run(&stop))?;
+        if let Some(audio_source) = audio_source {
+            let stop = self.media_stop.clone();
+            self.spawn_media("concord-audio", move || {
+                let mut loopback = SystemAudioLoopback::start()?;
+                let publisher = LiveKitAudioPublisher {
+                    source: audio_source,
+                    runtime,
+                };
+                run_audio(&mut loopback, &publisher, &stop)?;
+                Ok(None)
+            })?;
+        }
+        Ok(())
     }
 
     fn spawn_media(
@@ -181,9 +205,9 @@ impl Drop for Session {
         if let Some(worker) = self.room_worker.take() {
             self.report(join(worker));
         }
-        self.events.emit(ShareEvent::Ended {
-            reason: EndReason::Stopped,
-        });
+        if let Some(event) = closing_event(self.progress) {
+            self.events.emit(event);
+        }
     }
 }
 

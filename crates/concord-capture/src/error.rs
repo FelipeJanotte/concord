@@ -16,6 +16,8 @@ pub enum CaptureError {
     Audio(String),
     #[error("publishing failed: {0}")]
     Publish(String),
+    #[error("connecting to the room timed out")]
+    ConnectTimedOut,
     #[error("thumbnail encoding failed: {0}")]
     Thumbnail(#[from] png::EncodingError),
     #[error("a share thread stopped unexpectedly: {0}")]

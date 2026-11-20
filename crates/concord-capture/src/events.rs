@@ -21,6 +21,21 @@ pub enum ShareEvent {
     Ended { reason: EndReason },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ShareProgress {
+    Starting,
+    Started,
+}
+
+pub(crate) fn closing_event(progress: ShareProgress) -> Option<ShareEvent> {
+    match progress {
+        ShareProgress::Starting => None,
+        ShareProgress::Started => Some(ShareEvent::Ended {
+            reason: EndReason::Stopped,
+        }),
+    }
+}
+
 pub(crate) type EventCallback = Box<dyn Fn(ShareEvent) + Send + Sync>;
 
 pub(crate) struct EventEmitter {
@@ -67,6 +82,21 @@ mod tests {
             .lock()
             .map(|events| events.clone())
             .unwrap_or_default()
+    }
+
+    #[test]
+    fn a_share_that_never_started_has_nothing_to_end() {
+        assert_eq!(closing_event(ShareProgress::Starting), None);
+    }
+
+    #[test]
+    fn a_started_share_ends_as_stopped() {
+        assert_eq!(
+            closing_event(ShareProgress::Started),
+            Some(ShareEvent::Ended {
+                reason: EndReason::Stopped
+            })
+        );
     }
 
     #[test]

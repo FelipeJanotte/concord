@@ -15,6 +15,7 @@ mod pipeline;
 mod platform;
 mod quality;
 mod rate_control;
+mod room_start;
 mod share;
 mod source;
 mod stop_outcome;
