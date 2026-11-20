@@ -21,7 +21,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::{PCWSTR, w};
 
 use crate::binding::Binding;
-use crate::capture::{CaptureOutcome, capture_outcome};
+use crate::capture::{CaptureOutcome, capture_outcome, claim_capture};
 use crate::config::PushToTalkConfig;
 use crate::error::PushToTalkError;
 use crate::input::InputEvent;
@@ -300,7 +300,7 @@ impl PushToTalk {
 
     pub fn capture(&self, timeout: Duration) -> Result<Option<Binding>, PushToTalkError> {
         let (sender, receiver) = mpsc::channel();
-        lock(&self.shared).capture = Some(sender);
+        claim_capture(&mut lock(&self.shared).capture, sender)?;
         let started = self.sync();
         let outcome = match started {
             Ok(()) => receiver.recv_timeout(timeout),

@@ -1,5 +1,7 @@
 use crate::binding::{ALLOWED_MOUSE_BUTTONS, Binding, BindingKind};
+use crate::error::PushToTalkError;
 use crate::input::InputEvent;
+use std::sync::mpsc::Sender;
 
 const ESCAPE_CODE: u16 = 0x0001;
 
@@ -20,9 +22,47 @@ pub fn capture_outcome(event: &InputEvent) -> Option<CaptureOutcome> {
     }
 }
 
+pub fn claim_capture(
+    slot: &mut Option<Sender<CaptureOutcome>>,
+    sender: Sender<CaptureOutcome>,
+) -> Result<(), PushToTalkError> {
+    if slot.is_some() {
+        return Err(PushToTalkError::CaptureInProgress);
+    }
+    *slot = Some(sender);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::mpsc;
+
+    #[test]
+    fn a_second_claim_is_refused_and_leaves_the_first_in_place() {
+        let (first, first_receiver) = mpsc::channel();
+        let (second, _second_receiver) = mpsc::channel();
+        let mut slot = None;
+        assert!(claim_capture(&mut slot, first).is_ok());
+        assert!(matches!(
+            claim_capture(&mut slot, second),
+            Err(PushToTalkError::CaptureInProgress)
+        ));
+        if let Some(sender) = &slot {
+            let _ = sender.send(CaptureOutcome::Cancelled);
+        }
+        assert_eq!(first_receiver.try_recv(), Ok(CaptureOutcome::Cancelled));
+    }
+
+    #[test]
+    fn a_claim_after_the_slot_is_cleared_succeeds() {
+        let (first, _first_receiver) = mpsc::channel();
+        let (second, _second_receiver) = mpsc::channel();
+        let mut slot = None;
+        assert!(claim_capture(&mut slot, first).is_ok());
+        slot = None;
+        assert!(claim_capture(&mut slot, second).is_ok());
+    }
 
     fn event(kind: BindingKind, code: u16, down: bool) -> InputEvent {
         InputEvent { kind, code, down }

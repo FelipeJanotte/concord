@@ -243,16 +243,15 @@ impl<Hook: InputHook> PttController<Hook> {
             return Ok(());
         };
         let next = config.active_binding();
-        let changed = {
+        let (changed, result) = {
             let mut active = self
                 .active_binding
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner);
             let changed = *active != next;
             *active = next;
-            changed
+            (changed, hook.configure(config))
         };
-        let result = hook.configure(config);
         if changed {
             self.release_delay.flush();
         }
@@ -564,5 +563,77 @@ mod tests {
             .announced
             .recv_timeout(Duration::from_millis(50))
             .is_err());
+    }
+
+    struct OverlapProbeHook {
+        entered: mpsc::Sender<()>,
+        calls: AtomicUsize,
+        overlapped: Mutex<bool>,
+        inside: AtomicUsize,
+    }
+
+    impl InputHook for OverlapProbeHook {
+        fn configure(&self, _config: PushToTalkConfig) -> Result<(), PushToTalkError> {
+            let inside = self.inside.fetch_add(1, Ordering::SeqCst) + 1;
+            let first_call = self.calls.fetch_add(1, Ordering::SeqCst) == 0;
+            let _ = self.entered.send(());
+            if first_call {
+                std::thread::sleep(Duration::from_millis(300));
+            }
+            if inside > 1 || self.inside.load(Ordering::SeqCst) > 1 {
+                *self
+                    .overlapped
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner) = true;
+            }
+            self.inside.fetch_sub(1, Ordering::SeqCst);
+            Ok(())
+        }
+
+        fn capture(&self, _timeout: Duration) -> Result<Option<Binding>, PushToTalkError> {
+            Ok(None)
+        }
+    }
+
+    #[test]
+    fn two_concurrent_configures_never_run_inside_the_hook_at_the_same_time() {
+        let (entered_sender, entered) = mpsc::channel();
+        let hook = Arc::new(OverlapProbeHook {
+            entered: entered_sender,
+            calls: AtomicUsize::new(0),
+            overlapped: Mutex::new(false),
+            inside: AtomicUsize::new(0),
+        });
+        let shared_hook = Arc::clone(&hook);
+        let factory: HookFactory<ProbeHandle> =
+            Box::new(move |_on_change| Ok(ProbeHandle(Arc::clone(&shared_hook))));
+        let controller = Arc::new(PttController::new(factory, Arc::new(|_| {}), || {}));
+        let first = Arc::clone(&controller);
+        let first_thread = std::thread::spawn(move || first.configure(enabled_v()));
+        assert!(entered.recv_timeout(Duration::from_secs(2)).is_ok());
+        let other = PushToTalkConfig {
+            enabled: true,
+            binding: Some(Binding::new(BindingKind::Key, 48)),
+        };
+        let second = Arc::clone(&controller);
+        let second_thread = std::thread::spawn(move || second.configure(other));
+        assert!(first_thread.join().is_ok());
+        assert!(second_thread.join().is_ok());
+        assert!(!*hook
+            .overlapped
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner));
+    }
+
+    struct ProbeHandle(Arc<OverlapProbeHook>);
+
+    impl InputHook for ProbeHandle {
+        fn configure(&self, config: PushToTalkConfig) -> Result<(), PushToTalkError> {
+            self.0.configure(config)
+        }
+
+        fn capture(&self, timeout: Duration) -> Result<Option<Binding>, PushToTalkError> {
+            self.0.capture(timeout)
+        }
     }
 }
