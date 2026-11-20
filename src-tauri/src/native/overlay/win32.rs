@@ -10,9 +10,17 @@ mod platform {
         SWP_NOMOVE, SWP_NOSIZE, WINEVENT_OUTOFCONTEXT, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
     };
 
-    static TOPMOST_TARGET: AtomicIsize = AtomicIsize::new(0);
-    static HOOK: AtomicIsize = AtomicIsize::new(0);
-    static REMEMBERED_FOREGROUND: AtomicIsize = AtomicIsize::new(0);
+    struct ForegroundWatch {
+        topmost_target: AtomicIsize,
+        hook: AtomicIsize,
+        remembered_foreground: AtomicIsize,
+    }
+
+    static FOREGROUND_WATCH: ForegroundWatch = ForegroundWatch {
+        topmost_target: AtomicIsize::new(0),
+        hook: AtomicIsize::new(0),
+        remembered_foreground: AtomicIsize::new(0),
+    };
 
     fn window_handle(raw: isize) -> HWND {
         HWND(raw as *mut core::ffi::c_void)
@@ -45,15 +53,15 @@ mod platform {
         _thread: u32,
         _time: u32,
     ) {
-        let target = TOPMOST_TARGET.load(Ordering::SeqCst);
+        let target = FOREGROUND_WATCH.topmost_target.load(Ordering::SeqCst);
         if target != 0 {
             keep_topmost(target);
         }
     }
 
     pub fn watch_foreground(raw: isize) {
-        TOPMOST_TARGET.store(raw, Ordering::SeqCst);
-        if HOOK.load(Ordering::SeqCst) != 0 {
+        FOREGROUND_WATCH.topmost_target.store(raw, Ordering::SeqCst);
+        if FOREGROUND_WATCH.hook.load(Ordering::SeqCst) != 0 {
             return;
         }
         let hook = unsafe {
@@ -71,16 +79,22 @@ mod platform {
             log::warn!("overlay: não foi possível vigiar a janela em primeiro plano");
             return;
         }
-        HOOK.store(hook.0 as isize, Ordering::SeqCst);
+        FOREGROUND_WATCH
+            .hook
+            .store(hook.0 as isize, Ordering::SeqCst);
     }
 
     pub fn remember_foreground() {
         let foreground = unsafe { GetForegroundWindow() };
-        REMEMBERED_FOREGROUND.store(foreground.0 as isize, Ordering::SeqCst);
+        FOREGROUND_WATCH
+            .remembered_foreground
+            .store(foreground.0 as isize, Ordering::SeqCst);
     }
 
     pub fn return_foreground() {
-        let raw = REMEMBERED_FOREGROUND.swap(0, Ordering::SeqCst);
+        let raw = FOREGROUND_WATCH
+            .remembered_foreground
+            .swap(0, Ordering::SeqCst);
         if raw == 0 {
             return;
         }
@@ -95,8 +109,8 @@ mod platform {
     }
 
     pub fn stop_watching_foreground() {
-        TOPMOST_TARGET.store(0, Ordering::SeqCst);
-        let raw = HOOK.swap(0, Ordering::SeqCst);
+        FOREGROUND_WATCH.topmost_target.store(0, Ordering::SeqCst);
+        let raw = FOREGROUND_WATCH.hook.swap(0, Ordering::SeqCst);
         if raw == 0 {
             return;
         }

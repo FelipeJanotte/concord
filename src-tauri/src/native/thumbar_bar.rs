@@ -15,6 +15,15 @@ pub enum ThumbarBarError {
     Window(#[from] tauri::Error),
 }
 
+pub struct MainThread(());
+
+pub fn run_on_main_thread(
+    app: &AppHandle,
+    task: impl FnOnce(MainThread) + Send + 'static,
+) -> tauri::Result<()> {
+    app.run_on_main_thread(move || task(MainThread(())))
+}
+
 thread_local! {
     static THUMB_BAR: RefCell<Option<ThumbBar>> = const { RefCell::new(None) };
 }
@@ -29,6 +38,7 @@ fn attach(app: &AppHandle, window: &WebviewWindow) -> Result<ThumbBar, ThumbarBa
 }
 
 pub fn apply(
+    _main_thread: &MainThread,
     app: &AppHandle,
     window: &WebviewWindow,
     buttons: Vec<ThumbButton>,

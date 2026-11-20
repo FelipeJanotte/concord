@@ -39,9 +39,14 @@ pub async fn thumbar_buttons(
     let cleaned = crate::native::thumbar::clean_buttons(buttons);
     let (reply, outcome) = tokio::sync::oneshot::channel();
     let handle = app.clone();
-    app.run_on_main_thread(move || {
+    crate::native::thumbar_bar::run_on_main_thread(&app, move |main_thread| {
         if reply
-            .send(crate::native::thumbar_bar::apply(&handle, &window, cleaned))
+            .send(crate::native::thumbar_bar::apply(
+                &main_thread,
+                &handle,
+                &window,
+                cleaned,
+            ))
             .is_err()
         {
             log::warn!("quem pediu os botões da miniatura não esperou a resposta");
