@@ -110,6 +110,8 @@ Para hospedar pela internet (voz fora da rede local, HTTPS): `deploy/README.md` 
   e apaga um banco temporário a partir dela (`server/tests/database.ts`). Sem `DATABASE_URL_TEST`, os testes usam
   PGlite (em memória nos testes do repo; dentro do DATA_DIR temporário nos de integração). Rode a suíte **nos dois
   modos** antes de mergear mudança de banco quando puder (com e sem o compose ligado).
+- Teste do que só existe no PGlite (backup automático) sobe com `TestServer.start({ pglite: true })`: usa PGlite
+  mesmo com `DATABASE_URL_TEST`, senão o backup nunca roda com o compose ligado.
 - Testes do repo (`server/repo/repo.test.ts`) abrem o banco no próprio processo com `openTestDatabase()`.
 - Teste que precisa de DOM: `// @vitest-environment jsdom` no topo do arquivo (jsdom e Testing Library já estão
   instalados). Sem globals, chame `cleanup()` no `afterEach`. Exemplo: `components/chat/chat.test.tsx`.

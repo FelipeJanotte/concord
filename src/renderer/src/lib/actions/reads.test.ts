@@ -115,3 +115,25 @@ describe('channel:read-sync', () => {
     expect(useApp.getState().lastRead.jogos).toBe('j5')
   })
 })
+
+describe('menção não lida', () => {
+  it('marca o canal quando a mensagem nova me menciona e limpa ao abrir', async () => {
+    socket.receive('message:new', { ...msg('m1', 'jogos'), content: 'oi <@todos>' })
+    socket.receive('message:new', msg('m2', 'jogos'))
+    expect(useApp.getState().mentioned).toEqual({ jogos: true })
+    selectTextChannel('jogos')
+    await flush()
+    expect(useApp.getState().mentioned).toEqual({})
+  })
+
+  it('não marca mensagem sem menção a mim', () => {
+    socket.receive('message:new', { ...msg('m1', 'jogos'), content: 'oi <@00000000-0000-4000-8000-000000000001>' })
+    expect(useApp.getState().mentioned).toEqual({})
+  })
+
+  it('outra janela que leu limpa a menção', () => {
+    socket.receive('message:new', { ...msg('m1', 'jogos'), content: '<@todos>' })
+    socket.receive('channel:read-sync', { channelId: 'jogos', messageId: 'm1' })
+    expect(useApp.getState().mentioned).toEqual({})
+  })
+})

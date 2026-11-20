@@ -1,26 +1,20 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import {
-  AlertDialog,
-  AlertDialogBackdrop,
-  AlertDialogClose,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogTitle
-} from '@ui-sdk/react/alert-dialog'
+import { FolderPlus, Loader2, X } from 'lucide-react'
+import { AlertDialog, AlertDialogBackdrop, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogTitle } from '@ui-sdk/react/alert-dialog'
 import { Button } from '@ui-sdk/react/button'
-import { Dialog, DialogBackdrop, DialogClose, DialogContent, DialogTitle } from '@ui-sdk/react/dialog'
+import { Dialog, DialogBackdrop, DialogClose, DialogContent, DialogDescription, DialogTitle } from '@ui-sdk/react/dialog'
 import { Field, FieldError, FieldLabel } from '@ui-sdk/react/field'
 import { Input } from '@ui-sdk/react/input'
 import { CATEGORY_NAME_MAX_LENGTH, type ChannelCategory } from '@shared/types'
 import { createCategory, deleteCategory, notify, renameCategory } from '@/lib/client'
 
-const BACKDROP = 'bg-background/70 transition-opacity data-ending-style:opacity-0 data-starting-style:opacity-0'
+const BACKDROP = 'fixed inset-0 bg-black/70 transition-opacity data-ending-style:opacity-0 data-starting-style:opacity-0'
 const CONTENT =
-  'w-[min(420px,90vw)] rounded-xl border border-border bg-popover p-5 text-popover-foreground shadow-2xl transition-[opacity,scale] duration-150 data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0 motion-reduce:transition-none'
+  'fixed inset-0 m-auto h-fit w-[min(460px,calc(100%-2rem))] rounded-lg bg-background p-6 text-foreground shadow-2xl transition-[opacity,scale] duration-150 data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0 motion-reduce:transition-none'
 const SECONDARY =
-  'h-9 rounded-lg px-4 text-sm text-foreground hover:bg-foreground/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none'
+  'h-9 rounded-md px-4 text-sm font-medium text-accent-foreground underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none'
 const PRIMARY =
-  'h-9 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground hover:brightness-110 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-60'
+  'inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-xs hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4'
 
 interface CategoryNameDialogProps {
   open: boolean
@@ -59,26 +53,39 @@ export function CategoryNameDialog({ open, onOpenChange, category }: CategoryNam
     <Dialog open={open} onOpenChange={(next) => onOpenChange(next)}>
       <DialogBackdrop className={BACKDROP} />
       <DialogContent data-glass="surface" className={CONTENT}>
-        <form onSubmit={(event) => void submit(event)} className="flex flex-col gap-4">
-          <DialogTitle className="text-base font-bold text-accent-foreground">{title}</DialogTitle>
-          <Field invalid={error ? true : undefined} className="flex flex-col gap-1.5">
-            <FieldLabel className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Nome da categoria</FieldLabel>
-            <Input
-              value={name}
-              maxLength={CATEGORY_NAME_MAX_LENGTH}
-              autoFocus
-              placeholder="Nova categoria"
-              onValueChange={(value) => {
-                setName(value)
-                setError(null)
-              }}
-              className="h-9 rounded-lg border border-border bg-input px-3 text-sm text-foreground outline-none focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/20"
-            />
+        <DialogClose
+          aria-label="Fechar"
+          className="absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        >
+          <X className="size-5" />
+        </DialogClose>
+        <form onSubmit={(event) => void submit(event)} className="grid gap-5">
+          <div className="flex flex-col gap-2">
+            <DialogTitle className="text-xl leading-none font-semibold text-accent-foreground">{title}</DialogTitle>
+            <DialogDescription className="text-sm text-muted-foreground">Categorias agrupam canais na barra lateral.</DialogDescription>
+          </div>
+          <Field invalid={error ? true : undefined} className="space-y-2">
+            <FieldLabel className="text-xs font-bold tracking-wide text-muted-foreground uppercase">Nome da categoria</FieldLabel>
+            <div className="relative">
+              <FolderPlus aria-hidden className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={name}
+                maxLength={CATEGORY_NAME_MAX_LENGTH}
+                autoFocus
+                placeholder="Nova categoria"
+                onValueChange={(value) => {
+                  setName(value)
+                  setError(null)
+                }}
+                className="flex h-10 w-full rounded-md border border-transparent bg-input pr-3 pl-9 text-sm text-foreground shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              />
+            </div>
             {error && <FieldError className="text-sm text-destructive">{error}</FieldError>}
           </Field>
           <div className="flex justify-end gap-2">
             <DialogClose className={SECONDARY}>Cancelar</DialogClose>
             <Button type="submit" disabled={saving || !name.trim()} className={PRIMARY}>
+              {saving && <Loader2 className="animate-spin" />}
               {category ? 'Salvar' : 'Criar categoria'}
             </Button>
           </div>

@@ -1,5 +1,5 @@
 // Histórico, envio de mensagens e "digitando".
-import { replyPreviewText, type Mention, type Message, type MessageEdited } from '@shared/types'
+import { mentionsAccount, replyPreviewText, type Mention, type Message, type MessageEdited } from '@shared/types'
 import { omit } from '../utils'
 import { get, getSocket, notify, requireSocket, set, type AppSocket } from '../core'
 import { isChatOnScreen } from './navigation'
@@ -12,7 +12,9 @@ export function bindMessageEvents(s: AppSocket): void {
       const list = st.messages[message.channelId]
       const isActive = isChatOnScreen(st, message.channelId)
       const typingInChannel = st.typing[message.channelId]
+      const mentionsMe = !isActive && !!st.self && message.author.id !== st.self.id && mentionsAccount(message.content, st.self.accountId)
       return {
+        mentioned: mentionsMe ? { ...st.mentioned, [message.channelId]: true } : st.mentioned,
         messages: list && !st.hasNewerHistory[message.channelId] ? { ...st.messages, [message.channelId]: [...list, message] } : st.messages,
         unread:
           !isActive && message.author.id !== st.self?.id && !st.mutedChannels.includes(message.channelId) ? { ...st.unread, [message.channelId]: true } : st.unread,

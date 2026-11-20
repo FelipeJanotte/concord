@@ -77,9 +77,16 @@ export function ChannelSidebar() {
         <span className="flex-1">Concord</span>
         {canManageChannels && (
           <Menu>
-            <MenuTrigger aria-label="Criar" title="Criar" className="text-muted-foreground hover:text-accent-foreground data-open:text-accent-foreground">
-              <Plus className="size-4" />
-            </MenuTrigger>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="flex">
+                  <MenuTrigger aria-label="Criar" className="text-muted-foreground hover:text-accent-foreground data-open:text-accent-foreground">
+                    <Plus className="size-4" />
+                  </MenuTrigger>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Criar canal ou categoria</TooltipContent>
+            </Tooltip>
             <MenuContent align="end" sideOffset={8} data-glass="surface" className={MENU_CONTENT}>
               <MenuItem onSelect={() => setChannelDialog({ open: true, categoryId: null })} className={MENU_ITEM}>
                 <Hash aria-hidden />
@@ -103,14 +110,14 @@ export function ChannelSidebar() {
                 <Settings className="size-4" />
               </button>
             </TooltipTrigger>
-            <TooltipContent>Configurações da comunidade</TooltipContent>
+            <TooltipContent side="bottom">Configurações da comunidade</TooltipContent>
           </Tooltip>
         )}
       </header>
 
       <ArrangeContext.Provider value={arrange}>
         <ScrollArea className="min-h-0 flex-1">
-          <div className="space-y-4 px-2 py-3">
+          <div className="relative space-y-4 px-2 py-3">
             <UncategorizedChannels channels={grouped.uncategorized} />
             {groups.map((group, i) => (
               <CategorySection
@@ -175,9 +182,9 @@ function UncategorizedChannels({ channels }: { channels: Channel[] }) {
   )
   if (!enabled && channels.length === 0) return null
   return (
-    <section aria-label="Canais sem categoria">
+    <section aria-label="Canais sem categoria" className={channels.length === 0 ? 'absolute inset-x-2 top-0' : undefined}>
       {enabled && (
-        <div {...drop.props} data-testid="sem-categoria" className="relative h-2">
+        <div {...drop.props} data-testid="sem-categoria" className={cn('relative', channels.length === 0 ? 'h-3' : 'h-2')}>
           <DropLine edge={drop.edge} />
         </div>
       )}
@@ -350,6 +357,7 @@ function TextChannelItem({ channel, slot }: { channel: Channel; slot: Slot }) {
   const { rowProps, edge } = useChannelRow(channel, slot)
   const active = useApp((s) => s.view?.kind === 'text' && s.view.channelId === channel.id)
   const unread = useApp((s) => !!s.unread[channel.id])
+  const mentioned = useApp((s) => !!s.mentioned[channel.id])
   const muted = useChannelMuted(channel.id)
 
   return (
@@ -369,6 +377,7 @@ function TextChannelItem({ channel, slot }: { channel: Channel; slot: Slot }) {
         {unread && !active && <span className="absolute -left-2 h-2 w-1 rounded-r-full bg-accent-foreground" />}
         <Hash className="size-5 shrink-0 opacity-60" />
         <span className="flex-1 truncate text-[15px]">{channel.name}</span>
+        {mentioned && !active && <MentionDot />}
         <PrivateBadge channelId={channel.id} />
         <ChannelActions channel={channel} />
       </div>
@@ -390,6 +399,7 @@ function VoiceChannelItem({ channel, slot }: { channel: Channel; slot: Slot }) {
   const [dropping, setDropping] = useState(false)
   // chat de texto da sala: mensagem nova sem o painel "Chat" aberto
   const unread = useApp((s) => !!s.unread[channel.id])
+  const mentioned = useApp((s) => !!s.mentioned[channel.id])
   const muted = useChannelMuted(channel.id)
 
   return (
@@ -434,6 +444,7 @@ function VoiceChannelItem({ channel, slot }: { channel: Channel; slot: Slot }) {
             <Volume2 className={cn('size-5 shrink-0 opacity-60', connected && 'text-success opacity-100')} />
           )}
           <span className="flex-1 truncate text-[15px]">{channel.name}</span>
+          {mentioned && <MentionDot />}
           <PrivateBadge channelId={channel.id} />
           <VoiceChatShortcut channelId={channel.id} unread={unread} />
           <ChannelActions channel={channel} />
@@ -452,6 +463,10 @@ function VoiceChannelItem({ channel, slot }: { channel: Channel; slot: Slot }) {
 }
 
 /** Abre o chat de texto da sala sem entrar na voz (sempre à vista com mensagem nova; senão, ao passar o mouse). */
+function MentionDot() {
+  return <span role="img" aria-label="Você foi mencionado" className="size-2 shrink-0 rounded-full bg-destructive" />
+}
+
 function VoiceChatShortcut({ channelId, unread }: { channelId: string; unread: boolean }) {
   return (
     <Tooltip>
