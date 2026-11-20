@@ -5,6 +5,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
+log = "=0.4.35"
 thiserror = "2.0.18"
 
 [target.'cfg(windows)'.dependencies]

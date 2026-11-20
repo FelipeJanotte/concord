@@ -2,12 +2,12 @@ use std::cell::RefCell;
 use std::ffi::c_void;
 use std::mem::{size_of, zeroed};
 use std::rc::Rc;
-use std::sync::mpsc::{self, RecvTimeoutError, Sender};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Foundation::{ERROR_TIMEOUT, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Input::{
     GetRawInputData, HRAWINPUT, RAWINPUT, RAWINPUTDEVICE, RAWINPUTHEADER, RID_INPUT,
@@ -15,8 +15,8 @@ use windows::Win32::UI::Input::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW, HWND_MESSAGE,
-    MSG, PostMessageW, PostQuitMessage, RegisterClassW, SendMessageW, UnregisterClassW,
-    WINDOW_EX_STYLE, WINDOW_STYLE, WM_APP, WM_CLOSE, WM_INPUT, WNDCLASSW,
+    MSG, PostMessageW, PostQuitMessage, RegisterClassW, SMTO_ABORTIFHUNG, SendMessageTimeoutW,
+    UnregisterClassW, WINDOW_EX_STYLE, WINDOW_STYLE, WM_APP, WM_CLOSE, WM_INPUT, WNDCLASSW,
 };
 use windows::core::{PCWSTR, w};
 
@@ -24,12 +24,15 @@ use crate::binding::Binding;
 use crate::capture::{CaptureOutcome, capture_outcome, claim_capture};
 use crate::config::PushToTalkConfig;
 use crate::error::PushToTalkError;
+use crate::exit_handshake::{ExitOutcome, join_after_exit};
 use crate::input::InputEvent;
 use crate::keymap::key_event;
 use crate::mouse::mouse_events;
 use crate::press::PressState;
 
 const WM_SYNC: u32 = WM_APP;
+const SYNC_LIMIT: Duration = Duration::from_secs(2);
+const EXIT_LIMIT: Duration = Duration::from_secs(2);
 const CLASS_NAME: PCWSTR = w!("ConcordPushToTalk");
 const USAGE_PAGE_GENERIC_DESKTOP: u16 = 1;
 const USAGE_MOUSE: u16 = 2;
@@ -64,7 +67,12 @@ impl Context {
         let listening = capturing || active.is_some();
         let released = self.press.configure(active.filter(|_| !capturing));
         if listening != self.registered {
-            match set_registration(window, listening) {
+            let registration = if listening {
+                Registration::Listen
+            } else {
+                Registration::Stop
+            };
+            match set_registration(window, registration) {
                 Ok(()) => self.registered = listening,
                 Err(error) => lock(&self.shared).error = Some(error),
             }
@@ -101,11 +109,16 @@ fn dispatch(action: impl FnOnce(&mut Context) -> Option<bool>) {
     }
 }
 
-fn set_registration(window: HWND, listen: bool) -> windows::core::Result<()> {
-    let (flags, target) = if listen {
-        (RIDEV_INPUTSINK, window)
-    } else {
-        (RIDEV_REMOVE, HWND::default())
+#[derive(Clone, Copy)]
+enum Registration {
+    Listen,
+    Stop,
+}
+
+fn set_registration(window: HWND, registration: Registration) -> windows::core::Result<()> {
+    let (flags, target) = match registration {
+        Registration::Listen => (RIDEV_INPUTSINK, window),
+        Registration::Stop => (RIDEV_REMOVE, HWND::default()),
     };
     let device = |usage| RAWINPUTDEVICE {
         usUsagePage: USAGE_PAGE_GENERIC_DESKTOP,
@@ -234,9 +247,17 @@ impl MessageWindow {
 
 impl Drop for MessageWindow {
     fn drop(&mut self) {
-        let _ = unsafe { DestroyWindow(self.handle) };
-        let instance = unsafe { GetModuleHandleW(None) }.map(Into::into).ok();
-        let _ = unsafe { UnregisterClassW(CLASS_NAME, instance) };
+        if let Err(error) = unsafe { DestroyWindow(self.handle) } {
+            log::warn!("push to talk window not destroyed: {error}");
+        }
+        match unsafe { GetModuleHandleW(None) } {
+            Ok(instance) => {
+                if let Err(error) = unsafe { UnregisterClassW(CLASS_NAME, Some(instance.into())) } {
+                    log::warn!("push to talk window class not unregistered: {error}");
+                }
+            }
+            Err(error) => log::warn!("push to talk module handle unavailable: {error}"),
+        }
     }
 }
 
@@ -267,7 +288,9 @@ fn listen(
     while unsafe { GetMessageW(&mut message, None, 0, 0) }.0 > 0 {
         unsafe { DispatchMessageW(&message) };
     }
-    let _ = set_registration(window.handle, false);
+    if let Err(error) = set_registration(window.handle, Registration::Stop) {
+        log::warn!("push to talk raw input not unregistered: {error}");
+    }
     CONTEXT.with(|cell| cell.borrow_mut().take());
 }
 
@@ -275,6 +298,7 @@ pub struct PushToTalk {
     shared: SharedHandle,
     window: isize,
     listener: Option<JoinHandle<()>>,
+    exited: Receiver<()>,
 }
 
 impl PushToTalk {
@@ -282,7 +306,11 @@ impl PushToTalk {
         let shared = SharedHandle::default();
         let (ready, started) = mpsc::channel();
         let thread_shared = Arc::clone(&shared);
-        let listener = std::thread::spawn(move || listen(thread_shared, on_change, ready));
+        let (exit_signal, exited) = mpsc::channel();
+        let listener = std::thread::spawn(move || {
+            listen(thread_shared, on_change, ready);
+            drop(exit_signal);
+        });
         let window = started
             .recv()
             .map_err(|_| PushToTalkError::ListenerStopped)??;
@@ -290,6 +318,7 @@ impl PushToTalk {
             shared,
             window,
             listener: Some(listener),
+            exited,
         })
     }
 
@@ -322,7 +351,25 @@ impl PushToTalk {
     }
 
     fn sync(&self) -> Result<(), PushToTalkError> {
-        unsafe { SendMessageW(self.window_handle(), WM_SYNC, None, None) };
+        let delivered = unsafe {
+            SendMessageTimeoutW(
+                self.window_handle(),
+                WM_SYNC,
+                WPARAM(0),
+                LPARAM(0),
+                SMTO_ABORTIFHUNG,
+                SYNC_LIMIT.as_millis() as u32,
+                None,
+            )
+        };
+        if delivered.0 == 0 {
+            let error = windows::core::Error::from_thread();
+            return Err(if error.code() == ERROR_TIMEOUT.to_hresult() {
+                PushToTalkError::SyncTimedOut
+            } else {
+                error.into()
+            });
+        }
         match lock(&self.shared).error.take() {
             Some(error) => Err(error.into()),
             None => Ok(()),
@@ -332,9 +379,19 @@ impl PushToTalk {
 
 impl Drop for PushToTalk {
     fn drop(&mut self) {
-        let _ = unsafe { PostMessageW(Some(self.window_handle()), WM_CLOSE, WPARAM(0), LPARAM(0)) };
-        if let Some(listener) = self.listener.take() {
-            let _ = listener.join();
+        let posted =
+            unsafe { PostMessageW(Some(self.window_handle()), WM_CLOSE, WPARAM(0), LPARAM(0)) };
+        if let Err(error) = posted {
+            log::warn!("push to talk listener not asked to close: {error}");
+            return;
+        }
+        let Some(listener) = self.listener.take() else {
+            return;
+        };
+        match join_after_exit(&self.exited, listener, EXIT_LIMIT) {
+            ExitOutcome::Exited => {}
+            ExitOutcome::Panicked => log::warn!("push to talk listener panicked"),
+            ExitOutcome::TimedOut => log::warn!("push to talk listener did not exit in time"),
         }
     }
 }

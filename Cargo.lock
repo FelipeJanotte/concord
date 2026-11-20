@@ -694,6 +694,7 @@ dependencies = [
 name = "concord-ptt"
 version = "0.1.0"
 dependencies = [
+ "log",
  "thiserror 2.0.21",
  "windows",
 ]
