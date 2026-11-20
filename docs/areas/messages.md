@@ -142,9 +142,9 @@ no contrato: o texto continua o mesmo, só a tela reconhece o link.
 
 | Arquivo | Papel |
 |---|---|
-| `src/shared/links.ts` | Puras: `splitLinks(texto)` → pedaços `{ text }` / `{ url, href }` e `externalUrl(raw)` (só `http:`/`https:`, senão `null`). Compartilhado porque o processo principal usa a mesma checagem. |
+| `src/shared/links.ts` | Puras: `splitLinks(texto)` → pedaços `{ text }` / `{ url, href }` e `externalUrl(raw)` (só `http:`/`https:`, senão `null`). O shell tem a regra equivalente em `src-tauri/src/native/links.rs`. |
 | `components/chat/MessageText.tsx` | Cada nó de texto da formatação (B25) separa as menções e passa por `splitLinks`; link vira `<a target="_blank" rel="noreferrer noopener">` com `text-primary` sublinhado e o endereço no `title`. |
-| `src/main/index.ts` | `setWindowOpenHandler`: o `target="_blank"` cai aqui e vai para `shell.openExternal` **só se `externalUrl` aceitar** (nunca `file:`, `javascript:`, `ms-settings:`...). `will-navigate`: link que tentasse trocar a página da janela é cancelado e (se http/https) aberto fora. |
+| `src-tauri/src/windows/main_window.rs`, `src-tauri/src/native/links.rs` | `on_new_window`: o `target="_blank"` cai aqui e abre no navegador **só se `external_url` aceitar** (nunca `file:`, `javascript:`, `ms-settings:`...); a janela nova é sempre negada. `on_navigation`: link que tentasse trocar a página da janela é cancelado e (se http/https) aberto fora. |
 
 Regras de reconhecimento:
 

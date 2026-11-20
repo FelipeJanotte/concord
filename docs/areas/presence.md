@@ -4,7 +4,7 @@ Quem está conectado e **como** está: `online`, `idle` (ausente) ou `dnd` (Não
 "sem conexão" (sai da lista de membros; amigos recebem `friend:presence` com `online: false`).
 
 - **Ausente** sozinho depois de **10 minutos** sem mexer no computador (teclado e mouse em qualquer programa, não só
-  no Concord: `powerMonitor.getSystemIdleTime()` no processo principal). Volta para online ao mexer.
+  no Concord: `GetLastInputInfo` numa thread do Rust). Volta para online ao mexer.
 - **Não perturbe** é escolhido no `UserPanel` (clique no avatar/nome → menu "Status e conta"), fica salvo nas
   preferências da conta (vale em todas as janelas e computadores) e **silencia notificações e sons de mensagem e de
   pedido de amizade**. Chamada continua tocando e notificando.
@@ -17,8 +17,9 @@ Quem está conectado e **como** está: `online`, `idle` (ausente) ou `dnd` (Não
 |---|---|
 | `src/shared/types/presence.ts` | Contrato: `PresenceStatus` (`online \| idle \| dnd`), `ActivityStatus` (`online \| idle`, o que a conexão informa), `isActivityStatus`, a regra pura `presenceStatus(doNotDisturb, idleConnections)`, `ServerState.statuses` e os eventos. |
 | `src/shared/idle.ts` | `IDLE_AFTER_SECONDS` (600), `IDLE_CHECK_MS` (5 s), a regra pura `isIdle(segundos)` e o contrato da ponte `IdleBridge`. |
-| `src/main/idle.ts` | `createIdleWatcher` (confere o tempo parado a cada `IDLE_CHECK_MS` e avisa só quando muda; dependências injetadas) e `setupIdle(getWindow)` (usa o `powerMonitor`, manda `idle-change` para a janela e responde `idle-get`). Chamado em `src/main/index.ts`, parado no `will-quit`. |
-| `src/preload/index.ts` / `index.d.ts` | `window.api.idle` (`isIdle()`, `onChange(listener)`). |
+| `src-tauri/src/native/idle.rs` | `IdleWatcher` (thread que confere o tempo parado a cada 5 s com o trait `IdleClock` e avisa só quando muda), `IdleTracker`, `is_idle` (600 s) e `SystemIdleClock` (`GetLastInputInfo`, só Windows). |
+| `src-tauri/src/commands/idle.rs` | `install` (inicia o vigia e registra o "parar" no `Shutdown`), comando `idle-get` e evento `idle-change` para a janela principal. Fora do Windows o estado fica sempre "não ocioso". |
+| `src/renderer/src/lib/desktop/idle.ts` | `window.api.idle` (`isIdle()`, `onChange(listener)`). |
 | `server/modules/presence.ts` | `hello` (devolve `statuses`), `presence:set-status`, saída; guarda em memória as conexões paradas e as contas em Não perturbe; `setDoNotDisturb(io, accountId, on)` (chamado pelas preferências). |
 | `server/modules/preferences.ts`, `server/repo/preferences.ts`, `server/db/schema/preferences.ts` | `Preferences.doNotDisturb` (coluna `do_not_disturb`, migration `0015_v8`). |
 | `src/renderer/src/lib/actions/presence.ts` | `bindPresenceEvents` (`user:*`, `presence:status`, escuta a ponte `idle` uma vez), `syncActivityStatus` (depois do `hello`), `setDoNotDisturb`. `idleEnv.bridge` é trocado nos testes. |
@@ -51,7 +52,7 @@ A regra "online só para amigos" continua: a tela Amigos/Conversas só mostra o 
 - **Silenciar** (`lib/notifications.ts`): com `doNotDisturb`, nada de notificação nativa nem som para mensagem
   (conversa, canal, menção) e pedido de amizade. Chamada: notificação e toque normais. Selo do ícone e bolinhas de
   não lido continuam.
-- Fora do Electron (`window.api` não existe) não há ausente automático; Não perturbe funciona igual.
+- Fora do app (`window.api` não existe, como no `dev:web`) não há ausente automático; Não perturbe funciona igual.
 
 ## Testes
 
@@ -59,14 +60,14 @@ A regra "online só para amigos" continua: a tela Amigos/Conversas só mostra o 
 |---|---|
 | `src/shared/idle.test.ts` | Limite de 10 min (599 s não, 600 s sim). |
 | `src/shared/types/presence.test.ts` | `presenceStatus` (Não perturbe por cima, ausente só com todas paradas) e `isActivityStatus`. |
-| `src/main/idle.test.ts` | Watcher com relógio injetado (avisa só quando muda, para no `destroy`) e `setupIdle` com `powerMonitor`/`ipcMain` falsos. |
+| `cargo test -p concord` (módulo `native::idle`) | Watcher com relógio injetado (avisa só quando muda, limite de 600 s, para ao parar). |
 | `server/tests/presence.test.ts` | Status no `hello`, ausente e volta, duas janelas, fechar a janela ativa, valor inválido, Não perturbe salvo e anunciado, por cima do ausente, volta ao reconectar. |
 | `server/tests/preferences.test.ts` | `doNotDisturb` no formato das preferências. |
 | `src/renderer/src/lib/actions/presence.test.ts` | `presence:status` na store, ponte do sistema → `presence:set-status`, `syncActivityStatus`, `setDoNotDisturb` (na hora, erro volta) e vindo de outra janela. |
 | `src/renderer/src/lib/actions/notifications.test.ts` | Não perturbe cala mensagem e pedido (aviso e som), chamada passa. |
 | `src/renderer/src/components/presence.test.tsx` | Bolinhas por status em membros, conversas e amigos; menu do `UserPanel` (Não perturbe, Online, Minha conta). |
 
-À mão (Windows; o `powerMonitor` não roda no vitest): duas contas (`docs/areas/dev-workflow.md`); em A, não mexa no
+À mão (Windows; o relógio do sistema não roda no vitest): duas contas (`docs/areas/dev-workflow.md`); em A, não mexa no
 computador por 10 min → em B a bolinha de A fica amarela; mexa → verde em até 5 s. Em A escolha Não perturbe →
 vermelha em B; minimize A e mande mensagem de B → sem notificação nem som; ligue de B → A toca e notifica.
 
@@ -74,7 +75,7 @@ vermelha em B; minimize A e mande mensagem de B → sem notificação nem som; l
 
 | Sintoma | Causa e solução |
 |---|---|
-| Nunca fica ausente | Algo mexe no "tempo parado" do sistema (mouse com tremor, programa que simula tecla, vídeo em tela cheia que bloqueia o descanso). Confira `powerMonitor.getSystemIdleTime()` no DevTools do main. No navegador não existe. |
+| Nunca fica ausente | Algo mexe no "tempo parado" do sistema (mouse com tremor, programa que simula tecla, vídeo em tela cheia que bloqueia o descanso). O Rust lê `GetLastInputInfo`; veja o log do app. No navegador não existe. |
 | Fica ausente com outra janela aberta em uso | Não deveria: é por conta e exige todas as conexões paradas. Confira se a outra janela é da mesma conta. |
 | Bolinha vermelha some ao reabrir | Não deveria: Não perturbe está em `account_preferences.do_not_disturb`; confira o `preferences:get`. |
 | Status atrasado depois de muitas trocas | `LIMITS.presence` ignorou o excesso; o próximo envio (próxima mudança) corrige. |
