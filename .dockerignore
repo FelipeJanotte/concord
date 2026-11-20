@@ -12,6 +12,4 @@ server/.env
 **/*.test.ts
 **/*.test.tsx
 server/tests
-src/main
-src/preload
 src/renderer

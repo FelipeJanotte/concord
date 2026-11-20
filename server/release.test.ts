@@ -93,9 +93,9 @@ describe('workflows de release', () => {
     expect(pr).toContain('cancel-in-progress: true')
   })
 
-  it('release.yml cria a release antes do electron-builder (senão ele cria duas, uma por arquivo)', () => {
+  it('release.yml cria a release antes de enviar os arquivos (uma release só, com todos os arquivos)', () => {
     expect(release.indexOf('gh release create')).toBeGreaterThan(-1)
-    expect(release.indexOf('gh release create')).toBeLessThan(release.indexOf('npm run release'))
+    expect(release.indexOf('gh release create')).toBeLessThan(release.indexOf('gh release upload'))
     expect(release).not.toContain('gh release edit')
   })
 

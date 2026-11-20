@@ -1,4 +1,4 @@
-# Imagem do servidor do Concord (A14). Só o servidor: o app Electron é distribuído pelo instalador.
+# Imagem do servidor do Concord (A14). Só o servidor: o app desktop é distribuído pelo instalador.
 # Usada pelo docker-compose.prod.yml; ver deploy/README.md.
 FROM node:22-bookworm-slim
 
@@ -10,8 +10,6 @@ RUN chmod 755 /usr/local/bin/yt-dlp
 
 WORKDIR /app
 ENV NODE_ENV=production \
-    # o binário do Electron não é usado no servidor
-    ELECTRON_SKIP_BINARY_DOWNLOAD=1 \
     DATA_DIR=/data \
     PORT=3001
 

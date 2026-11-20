@@ -95,23 +95,21 @@ describe('LiveKit, Caddy, imagem e banco', () => {
 
 describe('vercel.json (versão web do app)', () => {
   const vercel = JSON.parse(read('vercel.json')) as Record<string, unknown>
-  const viteConfig = read('electron.vite.config.ts')
+  const viteConfig = read('vite.config.ts')
 
-  it('gera o renderer e publica out/renderer (onde o electron-vite põe a página)', () => {
-    expect(vercel.buildCommand).toBe('npx electron-vite build')
+  it('gera o renderer com o Vite e publica out/renderer', () => {
+    expect(vercel.buildCommand).toBe('npx vite build')
     expect(vercel.outputDirectory).toBe('out/renderer')
-    expect(viteConfig).toContain("index: resolve('src/renderer/index.html')")
-  })
-
-  it('não baixa o binário do Electron na instalação (o site não precisa dele)', () => {
-    expect(vercel.installCommand).toMatch(/^ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci$/)
+    expect(viteConfig).toContain("outDir: resolve(__dirname, 'out/renderer')")
+    expect(viteConfig).toContain("index: resolve(__dirname, 'src/renderer/index.html')")
   })
 })
 
-describe('electron-builder.yml (instalador)', () => {
-  const builder = read('electron-builder.yml')
+describe('tauri.conf.json (instalador)', () => {
+  const tauri = JSON.parse(read('src-tauri/tauri.conf.json')) as { build: Record<string, string> }
 
-  it('não recompila dependências nativas (o uiohook-napi já vem compilado; recompilar exige Python)', () => {
-    expect(builder).toMatch(/^npmRebuild: false$/m)
+  it('o instalador embute o renderer que o Vite gera e a Vercel publica', () => {
+    expect(tauri.build.frontendDist).toBe('../out/renderer')
+    expect(tauri.build.beforeBuildCommand).toBe('vite build')
   })
 })

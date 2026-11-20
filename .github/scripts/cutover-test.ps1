@@ -86,8 +86,8 @@ if ($AutostartWasOn) {
     Set-ItemProperty -Path $RunKey -Name $FakeRunValue -Value "`"$oldInstallDir\concord.exe`""
 }
 
-Write-Host "Rodando o instalador novo como o electron-updater: --updated /S --force-run /D=$oldInstallDir"
-$newInstall = Start-Process -FilePath $NewInstaller -ArgumentList '--updated', '/S', '--force-run', "/D=$oldInstallDir" -PassThru
+Write-Host "Rodando o instalador novo com os argumentos do electron-updater, sem --force-run: --updated /S /D=$oldInstallDir"
+$newInstall = Start-Process -FilePath $NewInstaller -ArgumentList '--updated', '/S', "/D=$oldInstallDir" -PassThru
 $newInstall.Handle | Out-Null
 $finished = $newInstall.WaitForExit($InstallerTimeoutSeconds * 1000)
 if (-not $finished) {
@@ -112,6 +112,23 @@ Assert-That (-not (Test-Path (Join-Path $oldInstallDir $ElectronUninstallerName)
 Assert-That (-not (Test-Path (Join-Path $oldInstallDir 'resources\app.asar'))) 'app.asar do Electron removido da pasta'
 $tauriUninstall = Get-ItemProperty -Path "$UninstallRoot\Concord" -ErrorAction SilentlyContinue
 Assert-That ($null -ne $tauriUninstall -and $tauriUninstall.UninstallString -like "*$oldInstallDir*") 'entrada de desinstalação do Tauri na pasta antiga'
+
+Write-Host "Rodando o instalador novo com --force-run: --updated /S --force-run /D=$oldInstallDir"
+$relaunchInstall = Start-Process -FilePath $NewInstaller -ArgumentList '--updated', '/S', '--force-run', "/D=$oldInstallDir" -PassThru
+$relaunchInstall.Handle | Out-Null
+$relaunchFinished = $relaunchInstall.WaitForExit($InstallerTimeoutSeconds * 1000)
+if (-not $relaunchFinished) {
+    $relaunchInstall.Kill()
+}
+Assert-That $relaunchFinished 'o instalador com --force-run terminou no prazo'
+$relaunched = $null
+for ($attempt = 0; $attempt -lt 30 -and -not $relaunched; $attempt++) {
+    $relaunched = Get-Process -Name concord -ErrorAction SilentlyContinue
+    if (-not $relaunched) {
+        Start-Sleep -Seconds 1
+    }
+}
+Assert-That ($null -ne $relaunched) '--force-run abre o concord.exe'
 
 Get-Process -Name concord -ErrorAction SilentlyContinue | Stop-Process -Force
 

@@ -2,8 +2,8 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { electronAppGuid, uuidV5 } from './electron-guid.mjs'
 
-const BUILDER_NAMESPACE = '50e065bc-3134-11e6-9bab-38c9862bdaf3'
 const DNS_NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8'
+const ELECTRON_BUILDER_NAMESPACE = '50e065bc-3134-11e6-9bab-38c9862bdaf3'
 
 describe('uuidV5', () => {
   it('matches the RFC 4122 reference value', () => {
@@ -12,17 +12,12 @@ describe('uuidV5', () => {
 })
 
 describe('electronAppGuid', () => {
-  it('is the key electron-builder gave the installed Concord', () => {
+  it('is the key the old Electron install of Concord used', () => {
     expect(electronAppGuid('com.concord.app')).toBe('5913399b-029d-504c-af52-ca654e517444')
   })
 
-  it('uses the electron-builder namespace', () => {
-    expect(electronAppGuid('com.concord.app')).toBe(uuidV5('com.concord.app', BUILDER_NAMESPACE))
-  })
-
-  it('agrees with electron-builder own UUID implementation', async () => {
-    const { UUID } = await import('builder-util-runtime')
-    expect(electronAppGuid('com.concord.app')).toBe(UUID.v5('com.concord.app', UUID.parse(BUILDER_NAMESPACE)))
+  it('is the version 5 UUID of the app id in the electron-builder namespace', () => {
+    expect(electronAppGuid('com.concord.app')).toBe(uuidV5('com.concord.app', ELECTRON_BUILDER_NAMESPACE))
   })
 
   it('is the key the NSIS hook looks for', () => {
