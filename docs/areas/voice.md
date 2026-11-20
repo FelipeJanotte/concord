@@ -208,9 +208,19 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
   - A **própria tela** também tem card ("Sua tela"): clicar abre a prévia no destaque, mas ela não conta como
     espectador e nunca vai para o destaque sozinha.
   - **Organizar** (com 2 ou mais em destaque): arrastar uma tela sobre outra muda a ordem (HTML5 drag and drop; o id
-    arrastado fica num `ref` do `ScreenStage`, sem `dataTransfer`) e o botão "Empilhar as telas"/"Pôr as telas lado
-    a lado" (`Rows2`/`Columns2`, `data-arrangement` = `side-by-side`|`stacked`) alterna lado a lado e empilhadas.
-    Cada tela mostra o nome embaixo. Ordem e arranjo são locais do `VoiceGrid` (não salvos).
+    arrastado fica num `ref` do `ScreenStage`, sem `dataTransfer`; vale em qualquer arranjo, grade incluída) e um botão
+    só alterna o arranjo em ciclo lado a lado → empilhadas → grade (`nextArrangement`), com o nome e o ícone do
+    **próximo**: "Empilhar as telas" (`Rows2`), "Pôr as telas em grade" (`LayoutGrid`), "Pôr as telas lado a lado"
+    (`Columns2`); `data-arrangement` = `side-by-side`|`stacked`|`grid`.
+  - **Arranjo padrão** (B30, `defaultArrangement`/`stageArrangement` em `lib/featured-screens.ts`): sem escolha da
+    pessoa, 1–2 telas ficam lado a lado e **3 ou mais em grade**; depois que ela escolhe pelo botão, a escolha vale
+    mesmo quando entra ou sai tela. Na **grade** (`StageArea` no `ScreenTile.tsx`) as telas ficam centralizadas
+    (`justify-center` + `align-content: safe center`), em 16:9, com colunas e largura de `bestTileLayout` sobre a área
+    medida por `useElementSize` (espaço de 4 px; `data-columns` e `--tile-w`); sem espaço, rola na vertical.
+    Cada tela mostra o nome embaixo. A ordem é local do `VoiceGrid` e o arranjo, do `ScreenStage` (não salvos;
+    parar de assistir volta ao padrão).
+  - **Pendente (A22):** o botão "Abrir miniatura" na barra do `ScreenStage`, que chama `openScreenPip`, entra quando a
+    miniatura flutuante (A22) existir.
   - Embaixo, a fileira "Membros da chamada" (`role="group"`), **centralizada**, com os cards das
     telas que não estão em destaque (`ScreenTile`, clicar = assistir **só** essa) e os participantes. A centralização usa `ml-auto` no primeiro e
     `mr-auto` no último filho (não `justify-center`, que cortaria o começo quando a fileira rola de lado).
@@ -290,13 +300,14 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
   `lib/actions/screen.test.ts` (botão, seletor, erros, aviso único ao servidor), `components/voice/voice.test.tsx`
   (jsdom: bloco "áudio da tela em destaque"; seletor, card, ninguém entra assistindo, clicar no card assiste e avisa o servidor, própria prévia sem
   contar, "Parar de assistir", tirar a última pelo seletor, sair da tela da sala, tela assistida que acaba e volta,
-  quem assiste a minha tela na barra, duas telas em destaque, arrastar para reordenar, lado a lado/empilhadas,
+  quem assiste a minha tela na barra, duas telas em destaque, arrastar para reordenar, lado a lado/empilhadas/grade, 3+ telas
+  abrem em grade com o tamanho medido, arranjo escolhido que continua com a 3ª tela,
   "Assistir" no quadro, esconder/mostrar membros, tela cheia do quadro com botão/duplo clique e a recusa, grade
   centralizada com o tamanho medido), `components/voice-panel.test.tsx` (espectadores no "Voz conectada"),
   `lib/actions/screen-watching.test.ts` (envia só quando muda, fora da sala não envia, união das origens `room`/`pip`,
   `pip` sozinha, tirar uma origem mantém a outra, união para o `VoiceClient`, trocar/sair da sala zera as origens),
   `lib/voice.test.ts` (bloco "telas que eu assisto": `setWatchedScreens` sem repetir, cópia, `teardown` esquece),
-  `lib/featured-screens.test.ts` (escolha, pôr/tirar, reordenar, `watchedScreens`, `screenViewers`),
+  `lib/featured-screens.test.ts` (escolha, pôr/tirar, reordenar, `watchedScreens`, `screenViewers`, arranjo padrão e ciclo),
   `lib/tile-layout.test.ts` (colunas e tamanho, limites, sem altura, gente demais), `src/main/permissions.test.ts`
   e `server/tests/voice.test.ts` (`voice:sharing` e o bloco `voice:watching`: só a sala recebe, validação, lista
   igual, parar de compartilhar, sair/desconectar, trocar de sala e o limite real com `RATE_LIMIT_MULTIPLIER=1`).
