@@ -104,7 +104,7 @@ export async function importLegacyJson(file: string): Promise<ImportResult> {
 
     const channelRows = (data.channels ?? [])
       .filter((c) => isUuid(c.id) && (c.type === 'text' || c.type === 'voice'))
-      .map((c, i) => ({ id: c.id, name: String(c.name).slice(0, 32), type: c.type, createdAt: new Date(c.createdAt ?? now + i) }))
+      .map((c, i) => ({ id: c.id, name: String(c.name).slice(0, 32), type: c.type, position: i, createdAt: new Date(c.createdAt ?? now + i) }))
       .filter((c) => c.name.trim().length > 0)
     for (const part of chunks(channelRows)) {
       const inserted = await tx.insert(channels).values(part).onConflictDoNothing().returning({ id: channels.id })
@@ -159,7 +159,7 @@ export async function ensureInitialData(legacyFile = LEGACY_JSON_FILE): Promise<
   const now = Date.now()
   await db()
     .insert(channels)
-    .values(DEFAULT_CHANNELS.map((ch, i) => ({ id: randomUUID(), ...ch, createdAt: new Date(now + i) })))
+    .values(DEFAULT_CHANNELS.map((ch, i) => ({ id: randomUUID(), ...ch, position: i, createdAt: new Date(now + i) })))
     .onConflictDoNothing()
   return `canais padrão criados (${DEFAULT_CHANNELS.map((c) => c.name).join(', ')})`
 }

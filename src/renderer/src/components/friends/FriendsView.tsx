@@ -6,6 +6,7 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { Ban, Check, MessageCircle, UserMinus, UserPlus, Users, X } from 'lucide-react'
 import type { FriendEntry } from '@shared/types'
+import { CustomStatusText } from '@/components/CustomStatusText'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -143,6 +144,7 @@ function FriendRow({ entry }: { entry: FriendEntry }) {
           {account.name}
           <span className="font-normal text-muted-foreground">#{account.tag}</span>
         </div>
+        {status === 'friend' && <CustomStatusText status={account.customStatus} />}
         <div className="text-xs text-muted-foreground">{subtitle}</div>
       </div>
       <div className="flex gap-2">

@@ -1,11 +1,13 @@
-import { useEffect, type ComponentProps, type ReactNode } from 'react'
+import { useEffect, useState, type ComponentProps, type ReactNode } from 'react'
 import { Menu, MenuContent, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger } from '@ui-sdk/react/menu'
 import { AudioLines, HeadphoneOff, Headphones, Mic, MicOff, MonitorOff, MonitorUp, Music, PhoneOff, Settings, Signal, Video, VideoOff } from 'lucide-react'
-import { joinVoice, leaveVoice, openDeviceSettings, openDmChat, openSettings, setDoNotDisturb, toggleCamera, toggleDeafen, toggleMute, toggleScreenShare } from '@/lib/client'
+import { joinVoice, leaveVoice, notify, openDeviceSettings, openDmChat, openSettings, setCustomStatus, setDoNotDisturb, toggleCamera, toggleDeafen, toggleMute, toggleScreenShare } from '@/lib/client'
+import { useActiveCustomStatus } from '@/lib/custom-status'
 import { findDm } from '@/lib/dms'
 import { usePresence, type DotStatus } from '@/lib/presence'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
+import { CustomStatusDialog } from './CustomStatusDialog'
 import { IconButton } from './IconButton'
 import { UserSettingsDialog } from './settings/UserSettingsDialog'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
@@ -109,6 +111,7 @@ export function UserPanel() {
     if (mustChooseTag) openSettings('account')
   }, [mustChooseTag])
   const status = usePresence(self?.accountId ?? '')
+  const [customStatusOpen, setCustomStatusOpen] = useState(false)
   if (!self) return null
 
   return (
@@ -127,8 +130,9 @@ export function UserPanel() {
             <div className="truncate text-xs text-muted-foreground">#{self.tag}</div>
           </div>
         </MenuTrigger>
-        <StatusMenuContent />
+        <StatusMenuContent onSetCustomStatus={() => setCustomStatusOpen(true)} />
       </Menu>
+      <CustomStatusDialog open={customStatusOpen} onOpenChange={setCustomStatusOpen} />
       <IconButton label={muted ? 'Ativar microfone' : 'Silenciar microfone'} onClick={toggleMute} danger={muted}>
         {muted ? <MicOff /> : <Mic />}
       </IconButton>
@@ -150,8 +154,12 @@ export function UserPanel() {
 
 const MENU_ITEM = 'flex w-full cursor-default items-start gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-none data-highlighted:bg-accent data-highlighted:text-accent-foreground'
 
-function StatusMenuContent() {
+function StatusMenuContent({ onSetCustomStatus }: { onSetCustomStatus: () => void }) {
   const doNotDisturb = useApp((s) => s.doNotDisturb)
+  const customStatus = useActiveCustomStatus(useApp((s) => s.account?.customStatus))
+  const clearStatus = (): void => {
+    setCustomStatus(null).catch((err: unknown) => notify(`Não foi possível limpar o status: ${err instanceof Error ? err.message : 'erro'}`))
+  }
 
   return (
     <MenuContent side="top" align="start" sideOffset={8} data-glass="surface" className="w-64 rounded-md border border-border bg-popover p-1.5 text-popover-foreground shadow-md">
@@ -163,6 +171,15 @@ function StatusMenuContent() {
           <StatusOption status="dnd" label="Não perturbe" hint="Sem notificações nem sons de mensagem. Chamadas continuam tocando." />
         </MenuRadioItem>
       </MenuRadioGroup>
+      <MenuSeparator className="my-1 h-px bg-border" />
+      <MenuItem onSelect={onSetCustomStatus} className={MENU_ITEM}>
+        Definir status personalizado
+      </MenuItem>
+      {customStatus && (
+        <MenuItem onSelect={clearStatus} className={MENU_ITEM}>
+          Limpar status
+        </MenuItem>
+      )}
       <MenuSeparator className="my-1 h-px bg-border" />
       <MenuItem onSelect={() => openSettings('account')} className={MENU_ITEM}>
         Minha conta

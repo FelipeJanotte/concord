@@ -24,7 +24,7 @@ Quem está conectado e **como** está: `online`, `idle` (ausente) ou `dnd` (Não
 | `src/renderer/src/lib/actions/presence.ts` | `bindPresenceEvents` (`user:*`, `presence:status`, escuta a ponte `idle` uma vez), `syncActivityStatus` (depois do `hello`), `setDoNotDisturb`. `idleEnv.bridge` é trocado nos testes. |
 | `src/renderer/src/lib/presence.ts` | `DotStatus`, `STATUS_LABEL` e o hook `usePresence(accountId, online?)`. |
 | `src/renderer/src/components/UserAvatar.tsx` | `StatusDot` (bolinha com `role="img"` e nome: "Online", "Ausente", "Não perturbe", "Offline"). Usado em `MemberList`, `UserPanel`, `DmList`, `FriendsView` e `UserProfileDialog`. |
-| `src/renderer/src/components/UserPanel.tsx` | Menu "Status e conta" (`@ui-sdk/react/menu`): Online / Não perturbe (rádio) e "Minha conta". |
+| `src/renderer/src/components/UserPanel.tsx` | Menu "Status e conta" (`@ui-sdk/react/menu`): Online / Não perturbe (rádio), "Definir status personalizado" (abre o `CustomStatusDialog`), "Limpar status" (só com status ativo) e "Minha conta". O status personalizado é do perfil, não da presença: ver "Bio e status personalizado" em `docs/areas/accounts.md`. |
 | `src/renderer/src/lib/notifications.ts` | `doNotDisturb` na regra de `messageNotification`, `friendRequestNotification`, `messageSound` e `friendRequestSound`; `callNotification` não olha. |
 | `src/renderer/src/store/session.ts`, `store/preferences.ts` | `statuses[accountId]` e `doNotDisturb`. |
 

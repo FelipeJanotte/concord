@@ -11,6 +11,14 @@ export interface User {
   color: string
   /** caminho da foto no servidor (ex.: `/avatars/<id>?v=2`) ou null */
   avatarUrl: string | null
+  bio?: string
+  customStatus?: CustomStatus | null
+}
+
+export interface CustomStatus {
+  emoji?: string
+  text?: string
+  expiresAt?: string | null
 }
 
 /** Dados da própria conta (só o dono recebe). */
@@ -28,6 +36,8 @@ export interface AccountInfo {
    * recebem um id provisório e podem escolher o definitivo uma única vez.
    */
   tagLocked: boolean
+  bio: string
+  customStatus: CustomStatus | null
 }
 
 // ---------- Autenticação (HTTP, antes de abrir o socket) ----------
@@ -74,9 +84,20 @@ export type AuthResult = { ok: true; token: string; account: AccountInfo } | { o
  * `tag` só é aceito enquanto `tagLocked` for false (e trava o id em seguida).
  */
 export interface ProfileUpdate {
-  name: string
+  name?: string
   tag?: string
   avatar?: string | null
+  bio?: string
+  customStatus?: CustomStatus | null
+}
+
+export interface ProfileChange {
+  accountId: string
+  name: string
+  tag: string
+  avatarUrl: string | null
+  bio: string
+  customStatus: CustomStatus | null
 }
 export type ProfileUpdateResult = { ok: true; account: AccountInfo } | { ok: false; error: string }
 
@@ -84,7 +105,7 @@ export type ProfileUpdateResult = { ok: true; account: AccountInfo } | { ok: fal
 
 export interface AccountServerEvents {
   /** nome/tag/foto de uma conta mudou (vale para todas as conexões dela) */
-  'user:updated': (payload: { accountId: string; name: string; tag: string; avatarUrl: string | null }) => void
+  'user:updated': (payload: ProfileChange) => void
 }
 
 export interface AccountClientEvents {

@@ -36,6 +36,7 @@ import { currentAccess, initAccess, reloadAccess, visibleChannels } from '../acc
 import { guard, type AppServer, type ServerModule } from '../context'
 import { limiters, retryText } from '../middleware/rate-limit'
 import { findAccount } from '../repo/accounts'
+import { recordAudit } from '../repo/audit'
 import { findChannel, listChannels } from '../repo/channels'
 import {
   deleteRole,
@@ -152,6 +153,7 @@ export const permissionsModule: ServerModule = {
           position = mine
         }
         const role = await insertRole({ id: randomUUID(), name, color, position, permissions })
+        await recordAudit({ actorId: me, action: 'role-create', targetId: role.id, details: { name } })
         await applyAccessChange(io, access)
         ack({ ok: true, role })
       })
@@ -197,6 +199,7 @@ export const permissionsModule: ServerModule = {
           patch.permissions = permissions
         }
         const updated = (await updateRole(role.id, patch)) ?? role
+        await recordAudit({ actorId: me, action: 'role-update', targetId: role.id, details: { name: updated.name } })
         await applyAccessChange(io, access)
         ack({ ok: true, role: updated })
       })
@@ -214,6 +217,7 @@ export const permissionsModule: ServerModule = {
         if (!role) return ack(fail('Cargo não encontrado'))
         if (!canManageRole(access, me, role)) return ack(fail(roleRefusal(access, me, role, 'Você só pode apagar cargos abaixo do seu')))
         await deleteRole(role.id)
+        await recordAudit({ actorId: me, action: 'role-delete', targetId: role.id, details: { name: role.name } })
         await applyAccessChange(io, access)
         ack({ ok: true } satisfies OkResult)
       })
@@ -265,6 +269,13 @@ export const permissionsModule: ServerModule = {
         const refused = access.roles.find((role) => changed.has(role.id) && !canAssignRole(access, me, role))
         if (refused) return ack(fail(roleRefusal(access, me, refused, 'Você só pode dar ou tirar cargos abaixo do seu')))
         await setMemberRoles(target.id, requested)
+        const namesOf = (ids: string[]): string[] => ids.map((id) => known.get(id)?.name ?? id)
+        await recordAudit({
+          actorId: me,
+          action: 'member-roles',
+          targetId: target.id,
+          details: { added: namesOf(requested.filter((id) => !current.includes(id))), removed: namesOf(current.filter((id) => !requested.includes(id))) }
+        })
         await applyAccessChange(io, access)
         ack({ ok: true })
       })
@@ -296,6 +307,7 @@ export const permissionsModule: ServerModule = {
           if (allow.length || deny.length) list.push({ roleId: o.roleId, allow, deny })
         }
         await setChannelOverrides(channel.id, list)
+        await recordAudit({ actorId: me, action: 'channel-overrides', targetId: channel.id, details: { name: channel.name, type: channel.type } })
         await applyAccessChange(io, access)
         ack({ ok: true })
       })

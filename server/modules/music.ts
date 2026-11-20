@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import {
+  messageAuthor,
   MUSIC_QUERY_MAX,
   toolResultText,
   type Channel,
@@ -75,7 +76,7 @@ async function commandChat(accountId: string, textChannelId: unknown): Promise<C
 const summary = ({ title, artists, coverUrl }: MusicTrackSummary): MusicTrackSummary => ({ title, artists, coverUrl })
 
 function chatMessage(user: User, channelId: string, content: string): Message {
-  return { id: randomUUID(), channelId, author: { ...user }, content, attachments: [], createdAt: Date.now() }
+  return { id: randomUUID(), channelId, author: messageAuthor(user), content, attachments: [], createdAt: Date.now() }
 }
 
 const botPayload = (reply: MusicBotReply): ToolPayload => ({ tool: 'music', result: reply })

@@ -10,7 +10,7 @@
  * antigos param ao reiniciar, e o app recebe links novos ao reconectar).
  */
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
-import type { Attachment, Message } from '../src/shared/types'
+import type { Attachment, LinkEmbed, Message } from '../src/shared/types'
 
 const SECRET = process.env.FILES_SIGNING_SECRET?.trim() || randomBytes(32).toString('hex')
 
@@ -39,8 +39,12 @@ export function signFileUrl(attachment: Attachment, accountId: string, now = Dat
 
 /** A mensagem com os links dos anexos assinados para a conta. */
 export function signMessage(message: Message, accountId: string, now = Date.now()): Message {
-  if (message.attachments.length === 0) return message
-  return { ...message, attachments: message.attachments.map((a) => ({ ...a, url: signFileUrl(a, accountId, now) })) }
+  const signed = message.attachments.length === 0 ? message : { ...message, attachments: message.attachments.map((a) => ({ ...a, url: signFileUrl(a, accountId, now) })) }
+  return signed.embed ? { ...signed, embed: signEmbed(signed.embed, message.id, accountId, now) } : signed
+}
+
+export function signEmbed(embed: LinkEmbed, messageId: string, accountId: string, now = Date.now()): LinkEmbed {
+  return embed.imageUrl ? { ...embed, imageUrl: signResourceUrl(embed.imageUrl, messageId, accountId, now) } : embed
 }
 
 /**

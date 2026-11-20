@@ -1,5 +1,5 @@
 // Canais e o que está aberto no painel central.
-import type { Channel } from '@shared/types'
+import type { Channel, ChannelCategory } from '@shared/types'
 
 export interface View {
   kind: 'text' | 'voice'
@@ -8,6 +8,7 @@ export interface View {
 
 export interface ChannelsState {
   channels: Channel[]
+  categories: ChannelCategory[]
   /** bolinha de não lido por canal */
   unread: Record<string, boolean>
   lastRead: Record<string, string>
@@ -17,6 +18,7 @@ export interface ChannelsState {
 
 export const channelsInitial: ChannelsState = {
   channels: [],
+  categories: [],
   unread: {},
   lastRead: {},
   readMarker: {},

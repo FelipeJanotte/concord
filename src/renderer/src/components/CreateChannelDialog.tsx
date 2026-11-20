@@ -18,6 +18,7 @@ import { cn } from '@/lib/utils'
 interface Props {
   open: boolean
   defaultType: ChannelType
+  categoryId?: string | null
   onOpenChange: (open: boolean) => void
 }
 
@@ -26,7 +27,7 @@ const options: { type: ChannelType; title: string; description: string; Icon: ty
   { type: 'voice', title: 'Voz', description: 'Converse por voz com quem estiver na sala', Icon: Volume2 }
 ]
 
-export function CreateChannelDialog({ open, defaultType, onOpenChange }: Props) {
+export function CreateChannelDialog({ open, defaultType, categoryId = null, onOpenChange }: Props) {
   const [type, setType] = useState<ChannelType>(defaultType)
   const [name, setName] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -48,7 +49,7 @@ export function CreateChannelDialog({ open, defaultType, onOpenChange }: Props) 
     setLoading(true)
     setError(null)
     try {
-      const channel = await createChannel(name, type)
+      const channel = await createChannel(name, type, categoryId)
       onOpenChange(false)
       if (channel.type === 'text') selectTextChannel(channel.id)
     } catch (err) {

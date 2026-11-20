@@ -1,4 +1,5 @@
 // Registros persistidos que só o servidor conhece (não vão para o app).
+import type { CustomStatus } from '../../src/shared/types'
 
 export interface Account {
   id: string
@@ -17,8 +18,12 @@ export interface Account {
   /** content-type da foto salva em AVATAR_DIR/<id>, ou null sem foto */
   avatarType: string | null
   avatarVersion: number
+  bio: string
+  customStatus: CustomStatus | null
   createdAt: number
 }
+
+export type NewAccount = Omit<Account, 'bio' | 'customStatus'> & Partial<Pick<Account, 'bio' | 'customStatus'>>
 
 export interface Session {
   /** sha256 do token (o token em si nunca é salvo) */

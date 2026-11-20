@@ -98,6 +98,18 @@ describe('servidor de versão anterior', () => {
     await done
     expect(useApp.getState().statuses).toEqual({})
   })
+
+  it('hello sem categorias entra com a lista vazia; com categorias, guarda', async () => {
+    const done = connect('http://localhost:3001', 'token-salvo')
+    serverAccepts()
+    await done
+    expect(useApp.getState().categories).toEqual([])
+    disconnect()
+    const again = connect('http://localhost:3001', 'token-salvo')
+    serverAccepts({ categories: [{ id: 'k1', name: 'Jogos', position: 0 }] })
+    await again
+    expect(useApp.getState().categories).toEqual([{ id: 'k1', name: 'Jogos', position: 0 }])
+  })
 })
 
 describe('cancelRestore', () => {
