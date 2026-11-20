@@ -45,8 +45,8 @@ export function VoiceGrid({ members, fill = true }: { members: VoiceState[]; fil
   if (featured.length !== chosen.length) setChosen(featured)
 
   const watched = watchedScreens(featured, selfId)
-  useEffect(() => watchScreens(watched), [watched.join(' ')])
-  useEffect(() => () => watchScreens([]), [])
+  useEffect(() => watchScreens('room', watched), [watched.join(' ')])
+  useEffect(() => () => watchScreens('room', []), [])
 
   const watch = (id: string): void => setChosen([id])
   const watchable = (userId: string): (() => void) | undefined =>

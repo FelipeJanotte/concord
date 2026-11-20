@@ -189,7 +189,7 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
 - **Receber:** `TrackSubscribed` de vídeo com `source === ScreenShare` entra em `store.screens` (ids de conexão);
   a própria tela entra como prévia via `LocalTrackPublished`. O áudio da tela (`ScreenShareAudio`) toca como os
   outros áudios (respeita deafen e o volume de saída), mas com **volume próprio por pessoa**, separado da voz dela
-  (ver "Volume do áudio da tela" abaixo). O `ScreenVideo` (em `ScreenTile.tsx`) liga a faixa num `<video muted>` com `attachScreen(userId, el)` (de `@/lib/client`).
+  (ver "Volume do áudio da tela" abaixo). O `ScreenVideo` (exportado de `ScreenTile.tsx` para a miniatura da A22 reusar) liga a faixa num `<video muted>` com `attachScreen(userId, el)` (de `@/lib/client`).
 - **Parar:** botão de novo (`stopScreenShare`) ou pelo sistema (janela fechada): `LocalTrackUnpublished` chama
   `voice.onScreenShareEnded`, que desliga `sharing` e avisa o servidor uma vez só.
 - **Assistir é opcional** (`components/voice/VoiceGrid.tsx` + `ScreenTile.tsx` + `lib/featured-screens.ts`): ninguém
@@ -228,13 +228,26 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
   - A escolha é estado local do `VoiceGrid` (não salva): ao trocar de sala ou sair da tela da sala, para de assistir.
 - **Quem está assistindo** (como os espectadores de uma transmissão no Discord):
   ```
-  VoiceGrid: watchedScreens(featured, eu) muda ─► watchScreens(lista) (lib/actions/screen-watching.ts)
-    ─► só envia se for diferente do `watching` que o servidor já mandou para mim ─► emit('voice:watching', ids)
+  VoiceGrid: watchedScreens(featured, eu) muda ─► watchScreens('room', lista) (lib/actions/screen-watching.ts)
+  miniatura (A22)                               ─► watchScreens('pip', lista)
+    ─► guarda a lista da origem ─► união das origens (sem repetir; sala primeiro, na ordem de cada lista)
+    ─► voice.setWatchedScreens(união) (VoiceClient)
+    ─► só envia se for diferente do `watching` que o servidor já mandou para mim ─► emit('voice:watching', união)
   servidor: valida, guarda por conexão ─► emitVoice ─► voice:state com `watching` em cada VoiceState da MINHA sala
   quem compartilha: screenViewers(voice, eu) ─► ScreenViewers "Assistindo: Ana e Bia" (avatares + nomes)
   ```
   - **Conta** como espectador: só as telas **em destaque** de outras pessoas (`watchedScreens` tira a própria).
-    Grade, cards e miniaturas não contam. Desmontar o `VoiceGrid` (sair da tela da sala) manda `[]`.
+    Grade, cards e miniaturas da faixa não contam. Desmontar o `VoiceGrid` (sair da tela da sala) zera a origem `room`.
+  - **Origens** (`watchScreens(origin: WatchOrigin, ids)`, `WatchOrigin = 'room' | 'pip'`): a sala (`VoiceGrid`) e a
+    miniatura flutuante (A22) informam cada uma as suas telas; o servidor recebe a **união**. Tirar uma origem
+    (lista vazia) mantém as telas da outra. O estado das origens mora no módulo `screen-watching.ts` (não na store:
+    nenhuma tela desenha a partir dele) e é zerado sempre que `myVoiceChannelId` muda (sair, cair ou trocar de sala;
+    `useApp.subscribe` no próprio módulo), junto com `voice.setWatchedScreens([])`: nada da sala anterior vai para a
+    nova. Fora da sala não guarda nem envia nada.
+  - **`VoiceClient.setWatchedScreens(ids)`** (`lib/voice.ts`): guarda, sem repetir, os ids de conexão das telas que
+    eu assisto, lidos em `voice.watchedScreens` (cópia); `teardown` esquece. Ainda não muda nenhuma assinatura: é
+    onde a B29 vai assinar (`setSubscribed`) só essas faixas de tela. O `watchScreens` chama com a união mesmo
+    quando não reenvia o `voice:watching` (o servidor já tinha a lista).
   - **Contrato** (`src/shared/types/voice.ts`): `voice:watching (screenIds: string[])` (cliente → servidor) e o
     campo opcional `VoiceState.watching?: string[]` (ids de conexão das telas que aquela pessoa assiste).
     `MAX_WATCHED_SCREENS = 25`.
@@ -280,7 +293,9 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
   quem assiste a minha tela na barra, duas telas em destaque, arrastar para reordenar, lado a lado/empilhadas,
   "Assistir" no quadro, esconder/mostrar membros, tela cheia do quadro com botão/duplo clique e a recusa, grade
   centralizada com o tamanho medido), `components/voice-panel.test.tsx` (espectadores no "Voz conectada"),
-  `lib/actions/screen-watching.test.ts` (envia só quando muda, fora da sala não envia),
+  `lib/actions/screen-watching.test.ts` (envia só quando muda, fora da sala não envia, união das origens `room`/`pip`,
+  `pip` sozinha, tirar uma origem mantém a outra, união para o `VoiceClient`, trocar/sair da sala zera as origens),
+  `lib/voice.test.ts` (bloco "telas que eu assisto": `setWatchedScreens` sem repetir, cópia, `teardown` esquece),
   `lib/featured-screens.test.ts` (escolha, pôr/tirar, reordenar, `watchedScreens`, `screenViewers`),
   `lib/tile-layout.test.ts` (colunas e tamanho, limites, sem altura, gente demais), `src/main/permissions.test.ts`
   e `server/tests/voice.test.ts` (`voice:sharing` e o bloco `voice:watching`: só a sala recebe, validação, lista
