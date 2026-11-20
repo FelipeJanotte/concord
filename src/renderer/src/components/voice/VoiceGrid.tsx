@@ -10,7 +10,7 @@ import { useApp } from '@/store'
 import { CameraVideo } from './CameraTile'
 import { MemberContextMenu } from './MemberContextMenu'
 import { ServerMutedIcon } from './ModerationMenu'
-import { LiveBadge, ScreenStage, ScreenTile, type ScreenArrangement } from './ScreenTile'
+import { LiveBadge, ScreenStage, ScreenTile } from './ScreenTile'
 
 const MAX_TILE_WITHOUT_HEIGHT = 320
 
@@ -39,7 +39,6 @@ export function VoiceGrid({ members, fill = true }: { members: VoiceState[]; fil
   const selfId = useApp((s) => s.self?.id)
   const [chosen, setChosen] = useState<string[]>([])
   const [membersHidden, setMembersHidden] = useState(false)
-  const [arrangement, setArrangement] = useState<ScreenArrangement>('side-by-side')
 
   const featured = featuredScreens(screens, chosen)
   if (featured.length !== chosen.length) setChosen(featured)
@@ -74,8 +73,6 @@ export function VoiceGrid({ members, fill = true }: { members: VoiceState[]; fil
         screens={screens}
         onToggle={(id) => setChosen(toggleFeatured(featured, id))}
         onMove={(dragged, target) => setChosen(moveScreen(featured, dragged, target))}
-        arrangement={arrangement}
-        onToggleArrangement={() => setArrangement((a) => (a === 'side-by-side' ? 'stacked' : 'side-by-side'))}
         onStopWatching={() => setChosen([])}
         membersHidden={membersHidden}
         onToggleMembers={() => setMembersHidden((h) => !h)}
