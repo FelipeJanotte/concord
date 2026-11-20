@@ -6,6 +6,7 @@ use tauri::{
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 use crate::events;
+use crate::native::environment::DesktopEnvironment;
 use crate::native::overlay::controller::{OverlayEnvironment, OverlayWindow, Screen};
 use crate::native::overlay::geometry::Rect;
 use crate::native::overlay::model::{OverlayPosition, OverlayUpdate};
@@ -31,6 +32,8 @@ const FALLBACK_SCREEN: Screen = Screen {
 pub enum OverlayWindowError {
     #[error(transparent)]
     Tauri(#[from] tauri::Error),
+    #[error(transparent)]
+    Environment(#[from] serde_json::Error),
 }
 
 fn log_failure<T, E: std::fmt::Display>(action: &str, result: Result<T, E>) {
@@ -119,6 +122,7 @@ impl TauriOverlayEnvironment {
             OVERLAY_WINDOW_LABEL,
             WebviewUrl::App(OVERLAY_PAGE.into()),
         )
+        .initialization_script(DesktopEnvironment::current().initialization_script()?)
         .title("Concord overlay")
         .inner_size(250.0, 100.0)
         .visible(false)

@@ -53,9 +53,7 @@
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ4MjNDM0EzNjIzOTUwRUEKUldUcVVEbGlvOE1qMkVCNHlmeVJQUDRNaU1TZXFsVVI3SVlhU1lVYU5tLzBtNmxvQm1jaG91dmwK",
       "endpoints": ["https://github.com/FelipeJanotte/concord/releases/latest/download/latest.json"],
       "windows": { "installMode": "passive" }
-    }
-  },
-  "plugins": {
+    },
     "deep-link": { "desktop": { "schemes": ["concord"] } }
   }
 }
