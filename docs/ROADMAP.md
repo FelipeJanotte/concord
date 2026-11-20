@@ -357,12 +357,24 @@ Sai o Electron e, na fase 2, o Node (ADRs 0013 e 0014). Só Windows. A tela Reac
 | Task | O que faz | Arquivos | Tamanho |
 |---|---|---|---|
 | **M0 Pré-ponte (Electron)** | Última versão Electron: na partida grava as chaves `concord:*` do localStorage em `userData/migrate.json` e fixa a pasta de instalação do updater. Precisa virar release antes da M1. | `src/main/migration.ts`, `src/main/updater.ts` | pequeno |
-| **M1 App em Tauri (fase 1, PR única)** | Tudo do ADR 0013: `src-tauri/` + `crates/`, adaptador do `window.api`, tela nativa com GPU, pressione para falar por Raw Input, overlay, miniatura, notificações com deep link, updater, ponte NSIS e os portões de verificação (CI Windows, teste de troca). | `src-tauri/`, `crates/`, `src/shared/desktop-*`, `lib/desktop/`, `.github/workflows/`, `server/livekit.ts` (token da tela) | grande |
+| **M1 App em Tauri (fase 1, PR única)** ✅ (branch `feat/app-tauri`) | Tudo do ADR 0013: `src-tauri/` + `crates/`, adaptador do `window.api`, tela nativa com GPU, pressione para falar por Raw Input, overlay, miniatura, notificações com deep link, updater, ponte NSIS e os portões de verificação (CI Windows, teste de troca). | `src-tauri/`, `crates/`, `src/shared/desktop-*`, `lib/desktop/`, `.github/workflows/`, `server/livekit.ts` (token da tela) | grande |
 | **M2 Servidor em Rust (fase 2)** | Por domínio, com os testes de `server/tests/` como especificação; escolhas abertas viram ADRs antes. | `server/` | grande |
 
 Ordem: M0 → release → M1 → M2. **Riscos:** o encoder de GPU pelo caminho `new_encoded` do LiveKit não tem uso
 público conhecido (reserva automática por CPU); pressione para falar com janela de administrador em foco e o clique
 de notificação com o app fechado só se provam num Windows real.
+
+**Checklist manual da M1 (só num Windows real, portão 6 do ADR 0013; a CI não prova):**
+
+- [ ] Compartilhar tela com GPU NVIDIA, AMD e Intel (tela e janela, com e sem áudio): quadro-chave, fluidez, e o log não diz "Codificador de vídeo da placa indisponível".
+- [ ] Participante `<accountId>:screen` não aparece como membro nem como "falando" para quem assiste; sem eco da chamada no áudio da tela.
+- [ ] Pressione para falar com um jogo em primeiro plano e com uma janela rodando como administrador.
+- [ ] Overlay sobre um jogo em tela cheia sem bordas: aparece, não rouba clique nem foco, volta ao topo quando outra janela ganha o foco; atalhos e modo de mover.
+- [ ] Clique no toast com o Concord **fechado**: abre o app e a conversa certa; com o app aberto, traz a janela para frente.
+- [ ] Botões da miniatura da barra de tarefas em chamada, inclusive depois de reiniciar o Explorer.
+- [ ] Vidro (tema translúcido) no Windows 11 22H2+ e sem efeito no Windows 10.
+- [ ] Troca de uma instalação Electron real (com a M0): dados importados, pasta e atalho fixado mantidos, iniciar com o Windows respeitado, nada do Electron sobrando.
+- [ ] Borda de quem fala no overlay sem atraso com o jogo na frente (o shell não desliga a limitação de timers do WebView2).
 
 ## Verificação (em toda task)
 

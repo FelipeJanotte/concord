@@ -8,7 +8,7 @@ uma VPS com Docker e um domínio bastam para o grupo usar de qualquer lugar.
 | Arquivo | Papel |
 |---|---|
 | `Dockerfile` | Imagem só do servidor: `node:22-bookworm-slim` (Debian: o `@livekit/rtc-node` do bot de música só tem binário glibc) com ffmpeg e yt-dlp, `npm ci` (com dev: o servidor roda com `tsx`), copia `server/` e `src/shared/`, usuário `node`, volume `/data`, healthcheck em `/` (com `node`, sem wget), `CMD npx tsx server/index.ts`. |
-| `.dockerignore` | Fora: `node_modules`, `server/.env`, `server/data`, testes, `src/renderer`/`main`/`preload`, `.git`... |
+| `.dockerignore` | Fora: `node_modules`, `server/.env`, `server/data`, testes, `src/renderer`, `src-tauri`, `crates`, `.git`... |
 | `docker-compose.prod.yml` | `server` (atrás do Caddy, `TRUST_PROXY=1`, `DATABASE_URL` = `concord_app`, `DATABASE_MIGRATE_URL` = dono, `LIVEKIT_URL=wss://LIVEKIT_DOMAIN`, `LIVEKIT_API_URL=http://livekit:7880`), `postgres` (não exposto), `pg-backup` (diário, 7 no volume `pg-backups`), `livekit` (`LIVEKIT_KEYS` do `.env`, portas 7881/tcp, 7882/udp, 3478/udp) e `caddy` (80/443). Variáveis obrigatórias com `${X:?defina X no .env}`. |
 | `deploy/livekit.yaml` | LiveKit de produção: `use_external_ip: true` (IP público), TCP 7881 + UDP 7882, **TURN** em 3478/udp; sem chave no arquivo (vem do `LIVEKIT_KEYS`). Mesma versão do LiveKit do `docker-compose.yml` de dev. |
 | `deploy/Caddyfile` | HTTPS automático: `CONCORD_DOMAIN` → `server:3001` (HTTP + WebSocket), `LIVEKIT_DOMAIN` → `livekit:7880`. |
@@ -33,8 +33,8 @@ continua na VPS acima; o site só fala com ele.
 
 | Peça | Papel |
 |---|---|
-| `vercel.json` | `installCommand`: `ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci` (o site não precisa do binário do Electron); `buildCommand`: `npx electron-vite build`; `outputDirectory`: `out/renderer`; cache longo em `/assets/*` (nomes com hash). |
-| `src/renderer/src/lib/default-server.ts` | `defaultServerUrl(VITE_DEFAULT_SERVER)`: o endereço padrão da tela de login vem do build (só a origem http(s); inválido ou vazio = `http://localhost:3001`). Vale também para o instalador (`npm run dist` com a variável). Tipo em `src/renderer/src/env.d.ts`. |
+| `vercel.json` | `installCommand`: `npm ci`; `buildCommand`: `npm run build:web` (só o `vite build`, sem Rust nem Tauri); `outputDirectory`: `out/renderer`; cache longo em `/assets/*` (nomes com hash). |
+| `src/renderer/src/lib/default-server.ts` | `defaultServerUrl(VITE_DEFAULT_SERVER)`: o endereço padrão da tela de login vem do build (só a origem http(s); inválido ou vazio = `http://localhost:3001`). Vale também para o instalador (`npm run dist` e o `release.yml` com a variável). Tipo em `src/renderer/src/env.d.ts`. |
 
 - **Na Vercel:** importar o repositório; o `vercel.json` já define install/build/saída. Variável de ambiente:
   `VITE_DEFAULT_SERVER=https://CONCORD_DOMAIN` (opcional; sem ela cada pessoa usa "alterar" na tela de login).
@@ -42,11 +42,11 @@ continua na VPS acima; o site só fala com ele.
   (conteúdo misto). Com o compose deste doc isso já vem do Caddy (`https://` e `wss://`).
 - **CORS:** o servidor aceita qualquer origem (`cors: { origin: '*' }` no Socket.IO e os cabeçalhos das rotas HTTP);
   o login é por token, sem cookie.
-- **Não funciona no navegador** (precisa da ponte do Electron): login com Google, pressione para falar, overlay,
+- **Não funciona no navegador** (precisa da ponte do app desktop, `window.api`): login com Google, pressione para falar, overlay,
   notificações nativas e selo no ícone, atualização automática e áudio do Windows ao compartilhar a tela. Texto, voz,
   câmera, tela (com o seletor do navegador), anexos, sons e ferramentas funcionam. O navegador pede permissão de
   microfone e câmera.
-- **Conferir sem a Vercel:** `VITE_DEFAULT_SERVER=https://exemplo npx electron-vite build` e servir `out/renderer`
+- **Conferir sem a Vercel:** `VITE_DEFAULT_SERVER=https://exemplo npm run build:web` e servir `out/renderer`
   com qualquer servidor estático; a tela de login mostra o endereço do build.
 
 ## Testes

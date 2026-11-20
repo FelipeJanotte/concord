@@ -9,9 +9,10 @@ da Home + chamadas tocando para mim). Dá para desligar tudo no próprio app e e
 | Arquivo | Papel |
 |---|---|
 | `src/shared/notifications.ts` | Contrato da ponte (não é Socket.IO): `NativeNotification { title, body, target?, silent? }`, `NotificationTarget` (`dm` ou `channel` + `channelId`, ou `friends`), limites de tamanho e `NotificationsBridge` (`show`, `setBadge`, `onClick`). |
-| `src/main/notifications.ts` | Processo principal: `setupNotifications(getWindow)` registra os IPC `notify` e `badge`; `cleanNotification`/`cleanBadgeCount` validam o que vem do renderer. Mostra o `Notification` do Electron (guardado num `Set` até fechar, senão o clique se perde) e, no clique, restaura/foca a janela e manda `notification-click` com o alvo. |
-| `src/main/index.ts` | Guarda a janela principal (`mainWindow`) e chama `setupNotifications`. A permissão `notifications` já era liberada. |
-| `src/preload/index.ts` / `index.d.ts` | `window.api.notifications` (IPC `notify`, `badge` e o ouvinte de `notification-click`). |
+| `src-tauri/src/native/notifications.rs` | Regras puras: `clean_notification` (título obrigatório; título até 64 caracteres, corpo até 200, id de canal até 64), `clean_badge_count` (0 a 999), `should_flash`, `activation_url`/`parse_activation` (`concord://notification?target=<json>`), `toast_xml` e `ClickQueue` (guarda cliques até a página carregar). |
+| `src-tauri/src/commands/notifications.rs` | Comandos `notify` e `badge`; `install` (AUMID, deep link, instância única); `focus_main_window`; `page_loaded`. Toast pelo WinRT (`ToastNotificationManager`), selo por `set_overlay_icon`, piscar por `request_user_attention`. |
+| `src-tauri/src/native/permissions.rs` | A permissão `notifications` da página é liberada. |
+| `src/renderer/src/lib/desktop/notifications.ts` | `window.api.notifications`: `show` (`notify`), `setBadge` (`badge`) e `onClick` (`notification-click`). |
 | `src/renderer/src/lib/notifications.ts` | Regras puras: `messageNotification`, `callNotification`, `friendRequestNotification`, `messageSound`, `friendRequestSound`, `messagePreview`, `badgeCount`, `drawBadge` (bolinha com o número em canvas, cor do token `--destructive`). |
 | `src/renderer/src/lib/actions/notifications.ts` | `bindNotificationEvents` (ouve `message:new`, `call:updated`, `friend:updated`; assina a store para o selo; registra o clique), `syncBadge`, `openNotificationTarget`, `stopNotifications` (chamado no `disconnect`: para tudo e zera o selo) e as preferências (`setChannelNotifications`, `setNotificationsEnabled`, `setNotificationSound`, `loadNotificationPreferences`). `notificationEnv` (ponte, foco e `playSound`) é substituído nos testes. |
 | `src/renderer/src/store/notifications.ts` | Preferências desta máquina: `channelNotifications`, `notificationsEnabled`, `notificationSounds` (`NotificationSoundKind`: `dm`, `mention`, `friend`). |
@@ -37,9 +38,9 @@ da Home + chamadas tocando para mim). Dá para desligar tudo no próprio app e e
   evento chega quando outra coisa muda, ex. online); depois de resolvido, um pedido novo avisa de novo. Clique abre
   "Amigos".
 - **Selo:** `badgeCount` = pedidos recebidos + conversas não lidas (`homeBadge`, B7) + chamadas tocando para mim.
-  Recalculado a cada mudança da store, enviado só quando o número muda. **Windows:** `setOverlayIcon` com a imagem
-  do `drawBadge` (só aceita `data:image/png`) e `flashFrame(true)` quando o número sobe com a janela em segundo
-  plano (para quando a janela ganha foco). **macOS/Linux:** `app.setBadgeCount`.
+  Recalculado a cada mudança da store, enviado só quando o número muda. **Windows:** `set_overlay_icon` com a imagem
+  do `drawBadge` (só aceita `data:image/png`; vazia ou número 0 tira o ícone) e `request_user_attention` quando o número
+  sobe com a janela fora de foco (para quando a janela ganha foco). Fora do Windows: `set_badge_count`.
 - **Interruptor geral** ("Mostrar notificações do Concord", `notificationsEnabled`, padrão ligado): desligado, nenhuma
   notificação nativa (mensagem, chamada, pedido) **e o selo do ícone fica em 0** (sem número, sem imagem no Windows, sem
   piscar): é o "não me avise fora do app" sem ir às configurações do Windows. Uma regra só, em `show()` e `syncBadge()`
@@ -60,9 +61,23 @@ da Home + chamadas tocando para mim). Dá para desligar tudo no próprio app e e
   e sem som para mensagem (conversa, canal, menção) e pedido de amizade, em `messageNotification`,
   `friendRequestNotification`, `messageSound` e `friendRequestSound`. **Chamada passa** (`callNotification` e o toque
   não olham). Selo e bolinhas continuam. Detalhes em `docs/areas/presence.md`.
-- O main valida tudo: título obrigatório, cortes em `NOTIFICATION_TITLE_MAX`/`NOTIFICATION_BODY_MAX`, alvo
-  desconhecido vira "sem alvo", selo inteiro de 0 a 999.
-- **Fora do Electron** (renderer aberto no navegador durante o `npm run dev`): `window.api` não existe e nada acontece.
+- O Rust valida tudo (`clean_notification`): título obrigatório, cortes de 64 e 200 caracteres, alvo com id acima de
+  64 caracteres recusado, selo de 0 a 999.
+- **Fora do app** (tela aberta no navegador, `npm run dev:web`): `window.api` não existe e nada acontece.
+
+## Clique, app fechado e instância única
+
+O toast usa `activationType="protocol"` com `launch="concord://notification?target=<json>"`. O clique abre o esquema
+`concord://`, registrado pelo instalador e tratado por `tauri-plugin-deep-link`; `tauri-plugin-single-instance`
+(com `deep-link`) entrega o endereço ao Concord já aberto e traz a janela para frente. Com o app **fechado**, o
+Windows inicia um Concord novo com o endereço: `install` lê o endereço de abertura (`get_current`) e o clique espera
+na `ClickQueue` até a página terminar de carregar (`page_loaded`), então chega como `notification-click` mesmo na
+partida. Endereço de outro host, alvo ilegível ou fora dos limites é ignorado com log. No `tauri dev` o esquema é
+registrado na hora (`deep_links.register`), porque não há instalador.
+
+`APP_USER_MODEL_ID` = `com.concord.app`, o mesmo `identifier` do `tauri.conf.json`; o processo se identifica com ele
+(`SetCurrentProcessExplicitAppUserModelID`) e o toast sai por `CreateToastNotifierWithId`. Sem o atalho do instalador
+com esse AUMID o Windows pode não mostrar o toast.
 
 ## Silenciar canal
 
@@ -90,7 +105,7 @@ Preferência pessoal, por canal (texto, sala de voz ou conversa privada), **liga
 
 | Arquivo | Cobre |
 |---|---|
-| `src/main/notifications.test.ts` | Electron falso: validação, notificação mostrada e clique (restaura, foca, manda o alvo), selo no Windows (imagem, piscar e parar ao focar, imagem que não é PNG ignorada, descer não pisca) e no macOS. |
+| `cargo test -p concord` (módulos `native::notifications` e `commands::notifications`) | Validação e cortes, endereço de ativação (ida e volta, host alheio, alvo fora dos limites), XML do toast com escape, `ClickQueue` (guarda até a página carregar) e piscar só quando sobe com a janela fora de foco. O toast de verdade só se prova num Windows. |
 | `src/renderer/src/lib/actions/notifications.test.ts` | Regras (texto, conversa × canal × minha, foco, modos de canal `all`/`mentions`/`none`, preferência salva, chamada só tocando para mim, pedido, selo, som por tipo com interruptor, ensurdecer e silenciado) e a ligação (eventos → notificação, pedido sem repetir, selo acompanha a store e zera ao sair, clique abre a conversa/amigos, interruptor geral sem aviso e selo 0, som no lugar do som do sistema, som em foco menos na conversa aberta). |
 | `src/renderer/src/lib/actions/notifications.test.ts` (Não perturbe) | Não perturbe cala aviso e som de mensagem e de pedido; a chamada continua aparecendo. |
 | `src/renderer/src/lib/sounds/sounds.test.ts` | Os três sons de notificação são diferentes entre si. |
@@ -107,7 +122,7 @@ Desligue "Mostrar notificações do Concord" → nada aparece e o número some (
 
 | Sintoma | Causa e solução |
 |---|---|
-| Nenhuma notificação no Windows | "Notificações" do Windows desligadas para o app (Configurações → Sistema → Notificações) ou modo "Não incomodar". O `AppUserModelId` (`com.concord.app`) é definido no `main`; no app empacotado o instalador cria o atalho que o Windows exige. |
+| Nenhuma notificação no Windows | "Notificações" do Windows desligadas para o app (Configurações → Sistema → Notificações) ou modo "Não incomodar". O AUMID (`com.concord.app`) é definido pelo shell; no app empacotado o instalador cria o atalho que o Windows exige. No `tauri dev` o Windows pode não mostrar o toast. |
 | Aparece com o app aberto | Não deveria: a regra exige a janela fora de foco. Confira `notificationEnv.isFocused`. |
 | Selo não some | Ele segue o não lido da Home e as chamadas tocando; abrir a conversa ou responder o pedido zera. Sair da conta também zera. |
 | Canal sem notificação nem bolinha | Está silenciado (item esmaecido na lista): botão direito → "Reativar canal". |
@@ -116,3 +131,4 @@ Desligue "Mostrar notificações do Concord" → nada aparece e o número some (
 | Nenhuma notificação nem número no ícone com o Windows liberado | "Mostrar notificações do Concord" desligado em Configurações → "Notificações". |
 | Som não toca | Tipo desligado em "Tocar um som", ensurdecido, canal/conversa silenciado ou a conversa estava aberta na tela. |
 | Pendente | Silenciar por um tempo ("por 1 hora"). |
+| Clique no toast não abre nada com o app fechado | O esquema `concord://` não está registrado (instalação quebrada) ou a página ainda não carregou: veja o log do Rust (`ativação ignorada` ou `registro do endereço concord:// falhou`). |

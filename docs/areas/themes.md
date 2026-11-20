@@ -92,9 +92,9 @@ Temas prontos **Vidro** (escuro), **Vidro aurora** (escuro, roxo e verde) e **Vi
 
 | Arquivo | Papel |
 |---|---|
-| `src/shared/translucency.ts` | `supportsTranslucency(platform, release)`: Windows 11 22H2+ (build ≥ `WINDOWS_ACRYLIC_BUILD` = 22621) e macOS; Windows 10, Linux e o resto não. `TranslucencyRequest { glass, scheme }`, `parseTranslucencyRequest` (o processo principal não confia na página) e `TranslucencyBridge`. |
-| `src/main/translucency.ts` | IPC `window-translucency` (só da janela principal) → `applyTranslucency`: `nativeTheme.themeSource` = esquema do tema (a tinta do acrílico fica escura no tema escuro e clara no claro, mesmo com o Windows no modo oposto); Windows `setBackgroundMaterial('acrylic' \| 'none')`, macOS `setVibrancy('under-window' \| null)`, e a cor da janela transparente ou `OPAQUE_WINDOW_COLOR`. Sistema sem o efeito: só o esquema. Pedido inválido: nada. |
-| `src/preload/index.ts` | `window.api.translucency`: `supported` (decidido uma vez com `os.release()`) e `set({ glass, scheme })`. |
+| `src/shared/translucency.ts` | `TranslucencyRequest { glass, scheme }` e `TranslucencyBridge` (`supported`, `set`), o contrato da ponte. A regra de suporte é do Rust (`supports_translucency`: Windows com build ≥ 22621); o resultado chega à tela em `__CONCORD_DESKTOP__.translucencySupported`. |
+| `src-tauri/src/commands/translucency.rs`, `src-tauri/src/native/translucency.rs` | Comando `window-translucency` (só da janela principal): `set_theme` com o esquema do tema (a tinta do acrílico fica escura no tema escuro e clara no claro, mesmo com o Windows no modo oposto); no Windows 11 22H2+ `set_effects(Acrylic)` ou nenhum efeito e a cor da janela transparente (`TRANSPARENT_WINDOW_COLOR`) ou opaca (`OPAQUE_WINDOW_COLOR`). Sistema sem o efeito: só o esquema. Pedido que não bate com `{ glass: bool, scheme: dark \| light }` é recusado na desserialização. |
+| `src/renderer/src/lib/desktop/translucency.ts` | `window.api.translucency`: `supported` (vem do ambiente injetado pelo Rust) e `set({ glass, scheme })`. |
 | `src/renderer/src/lib/theme/derive.ts` | `GLASS_OPACITY` (quanto de cada token continua pintado): barra de úteis 32%, canais 42%, painel 50%, fundo 56%, cartões/muted 60%, campos 62%, campo de mensagem 66%, hover (`accent`) 70%, secundário 72% e **menus/modais (`popover`) 82%**. `withAlpha` e `glassTheme` (gradiente também). **Ficam opacos:** bordas, destaque e textos. |
 | `src/renderer/src/lib/theme/apply.ts` | `translucencyEnv.bridge()` e `translucencyEnv.reducedTransparency()` (`prefers-reduced-transparency`). `glassActive(theme)`: tema translúcido **e** sistema com o efeito **e** sem "reduzir transparência". `applyTheme` manda `set({ glass, scheme })`, usa `glassTheme` e marca `<html data-translucent>`. `windowEffects: false` (overlay) não mexe na janela. |
 | `src/renderer/src/assets/globals.css` | Com `html[data-translucent]`: `body` transparente; `[data-glass='surface']` = material da camada flutuante (`--popover`, `backdrop-filter: blur(28px) saturate(180%)`, brilho em gradiente, `--glass-specular` na borda de cima, `--glass-edge`, `--glass-shadow`; valores próprios na base clara); cantos maiores nos modais e menus; `dialog-overlay` com `--glass-dim` + desfoque; barra de rolagem translúcida. |
@@ -116,11 +116,11 @@ o app desenha a sua com as cores do tema (`bg-rail`; no vidro, transparente sobr
 
 | Arquivo | Papel |
 |---|---|
-| `src/shared/window-controls.ts` | `WindowControlAction` (`minimize` \| `maximize` \| `close`), `isWindowControlAction`, `hasOwnWindowButtons(platform)` (todos menos macOS) e `WindowControlsBridge`. |
-| `src/main/window-controls.ts` | `titleBarOptions(platform)` (no macOS, semáforo em `{ x: 12, y: 10 }`), `runWindowControl` (maximizar alterna com restaurar; ação desconhecida é ignorada), `watchMaximized` (avisa `window-maximized`) e `setupWindowControls`: IPC `window-control` e `window-maximized-get`, só da janela principal. |
-| `src/preload/index.ts` | `window.api.windowControls`: `buttons`, `run`, `isMaximized`, `onMaximizedChange`. |
+| `src/shared/window-controls.ts` | `WindowControlAction` (`minimize` \| `maximize` \| `close`) e `WindowControlsBridge`. |
+| `src-tauri/src/commands/window_controls.rs`, `src-tauri/src/native/window_controls.rs` | Comandos `window-control` (maximizar alterna com restaurar) e `window-maximized-get`, e o evento `window-maximized` (emitido quando o estado muda ao redimensionar). A janela nasce com `decorations: false`. |
+| `src/renderer/src/lib/desktop/window-controls.ts` | `window.api.windowControls`: `buttons` (do ambiente: falso só no macOS), `run`, `isMaximized`, `onMaximizedChange`. |
 | `src/renderer/src/lib/actions/window.ts` | `windowEnv`, `startWindowControls` (em `main.tsx`; guarda `windowMaximized` em `store/window.ts`) e `runWindowControl`. |
-| `src/renderer/src/components/TitleBar.tsx` | Faixa de 32 px com "Concord", arrastável (`-webkit-app-region: drag`); no Windows/Linux, Minimizar, Maximizar/Restaurar e Fechar no estilo dos botões do app (hover `accent`; fechar em `destructive`). Fica acima dos modais (`z-[60]`). Fora do Electron (web) não aparece. Montada em `App.tsx`, em cima do login e do app. |
+| `src/renderer/src/components/TitleBar.tsx` | Faixa de 32 px com "Concord", arrastável (`-webkit-app-region: drag`); no Windows/Linux, Minimizar, Maximizar/Restaurar e Fechar no estilo dos botões do app (hover `accent`; fechar em `destructive`). Fica acima dos modais (`z-[60]`). Fora do app (web) não aparece. Montada em `App.tsx`, em cima do login e do app. |
 
 - Perde o menu de layouts do Windows 11 no maximizar (Win + Z continua). Duplo clique na barra maximiza.
 - Clicável novo na barra precisa de `[-webkit-app-region:no-drag]`, senão o clique vira arrasto.
@@ -162,8 +162,8 @@ Seção **Aparência** das Configurações (engrenagem no painel do usuário, `U
 | Arquivo | Cobre |
 |---|---|
 | `src/shared/types/theme.test.ts` | `validateTheme` (normalização e cada recusa), `cleanThemeName`, código de compartilhamento (ida e volta, recusas), vidro (`translucent` só quando `true`, `~1` no código, código antigo continua valendo). |
-| `src/main/translucency.test.ts` | `supportsTranslucency` (Windows 11 22H2+, 21H2, 10, macOS, Linux) e `applyTranslucency` (acrílico/vibrancy, cor da janela, esquema do `nativeTheme`; sem suporte só o esquema; pedido inválido não mexe). |
-| `src/main/window-controls.test.ts` | `runWindowControl` (minimizar, fechar, maximizar alterna, ação desconhecida ignorada) e `titleBarOptions` por sistema. |
+| `cargo test -p concord` (módulos `native::translucency` e `native::environment`) | `supports_translucency` (build 22621, 22000, sem build, Linux), cor da janela por vidro e o ambiente injetado. |
+| `cargo test -p concord` (módulo `native::window_controls`) | `apply` (minimizar, fechar, maximizar alterna) e `maximized_change`. |
 | `src/renderer/src/components/glass-panels.test.tsx` | (jsdom) barra de úteis, canais, Home e membros marcados como `data-glass="panel"`. |
 | `src/renderer/src/components/TitleBar.test.tsx` | (jsdom) some na web; botões pedem a ação; maximizada vira "Restaurar" (no início e depois); macOS sem botões. |
 | `src/renderer/src/lib/theme/surprise.test.ts` | `hslToHex`; 300 sorteios válidos, legíveis e com fundo da base; as duas bases; nunca o atual e mantém o vidro; `withAlpha`, `glassTheme` (o que fica opaco), camadas (o que flutua é mais opaco que as superfícies) e os temas prontos de vidro. |
@@ -183,7 +183,7 @@ Seção **Aparência** das Configurações (engrenagem no painel do usuário, `U
 |---|---|
 | "Tema inválido" | Algum campo fora do contrato (cor sem `#rrggbb`, mais de 4 cores, ângulo/intensidade fora). Teste com `validateTheme`. |
 | Tema não muda na outra janela | `preferences:updated` vai só para conexões da **mesma conta** que já mandaram `hello`. |
-| Tema translúcido aparece opaco | O sistema não tem o efeito (Windows 10/11 21H2, Linux, navegador): `window.api.translucency.supported` é false. No Windows 11 22H2+, confira se a transparência está ligada em Personalização → Cores do Windows. |
+| Tema translúcido aparece opaco | O sistema não tem o efeito (Windows 10/11 21H2, macOS, Linux, navegador): `window.api.translucency.supported` é false. No Windows 11 22H2+, confira se a transparência está ligada em Personalização → Cores do Windows. |
 | Modal/menu sem desfoque no vidro | Falta `data-glass="surface"` no conteúdo (os de `components/ui/` já têm). |
 | Clique na barra de título arrasta a janela | O elemento não tem `[-webkit-app-region:no-drag]`. |
 | Vidro ficou preto | A janela recebeu a cor transparente sem o material (sistema sem suporte forçado). `applyTranslucency` só mexe quando `supportsTranslucency` é true. |

@@ -39,6 +39,14 @@ O conteúdo de cada seção continua documentado na área dela (links abaixo); a
 - A seção **Windows** só entra no menu quando o processo principal diz que o iniciar com o Windows é suportado
   (`openAtLogin !== null`); sem isso, `openSettings('windows')` cai na primeira seção.
 
+## Vidro (tema translúcido)
+
+O interruptor de vidro da seção "Aparência" só vale quando o shell diz que o sistema tem o efeito:
+`window.api.translucency.supported`, vindo de `__CONCORD_DESKTOP__.translucencySupported` (Windows com build 22621 ou
+maior, regra de `src-tauri/src/native/translucency.rs`). Sem suporte, ou com "reduzir transparência" ligado no
+sistema, o tema fica opaco. O efeito aplicado é o acrílico da janela (`window-translucency`); as regras do tema e das
+camadas estão em `docs/areas/themes.md`.
+
 ## Testes
 
 - `components/settings/UserSettingsDialog.test.tsx`: engrenagem abre em "Minha conta" com as quatro seções (sem a ponte, a seção Windows não aparece), trocar de
@@ -46,7 +54,7 @@ O conteúdo de cada seção continua documentado na área dela (links abaixo); a
   mudança (continua aberta), conta nova do Google sem o menu.
 - Cada seção tem os testes da sua área: `settings/VoiceSettings.test.tsx`, `settings/appearance/appearance.test.tsx`
   (inclui "o tema vai uma vez ao sair da seção" e chegar pela engrenagem), `settings/NotificationSettings.test.tsx`,
-  `settings/WindowsSettings.test.tsx` e `src/main/startup.test.ts` (ver [Iniciar com o Windows](#iniciar-com-o-windows)).
+  `settings/WindowsSettings.test.tsx` e `cargo test -p concord` (módulo `native::startup`; ver [Iniciar com o Windows](#iniciar-com-o-windows)).
 
 À mão: engrenagem → passe pelas seções (cinco no app instalado no Windows); na sala, o botão de configurações de voz abre direto em "Voz e vídeo";
 mude o tema várias vezes e feche (vai um envio só); com a janela baixa, a seção rola.
@@ -60,37 +68,37 @@ daí a seção nova curta, como a "Configurações do Windows" do Discord.
 
 | Arquivo | Papel |
 |---|---|
-| `src/main/startup.ts` | `createStartupController({ supported, loginItems, marker })`: `applyDefault()` (liga uma vez só e marca), `get()`, `set(valor)` (ignora o que não é booleano). `supportsOpenAtLogin(platform, isPackaged)`: só `win32` **e** app instalado. `fileMarker(path)`: a marca "padrão já aplicado". `setupStartup()` liga ao Electron: `app.setLoginItemSettings({ openAtLogin })` e `app.getLoginItemSettings().executableWillLaunchAtLogin`. |
+| `src-tauri/src/native/startup.rs` | `StartupController { supported, login_items, marker }`: `apply_default()` (liga uma vez só e marca), `get()`, `set(valor)`. `supports_open_at_login(is_windows, is_packaged)`: só Windows **e** build de release. `FileMarker`: a marca "padrão já aplicado". Traits `LoginItems` e `DefaultMarker` (falsos nos testes). |
+| `src-tauri/src/commands/startup.rs` | Liga ao `tauri-plugin-autostart` (`enable`, `disable`, `is_enabled`), marca `startup-default-applied` na pasta de dados do app, `install` (aplica o padrão na partida) e comandos `startup-get`/`startup-set`. |
 | `src/shared/startup.ts` | `OpenAtLogin = boolean \| null` (null = não suportado) e `StartupBridge` (`get`, `set`). |
-| `src/preload/index.ts` | `window.api.startup`: IPC `startup-get` e `startup-set` (`invoke`, devolvem o estado real do sistema). |
+| `src/renderer/src/lib/desktop/startup.ts` | `window.api.startup`: comandos `startup-get` e `startup-set` (devolvem o estado real do sistema). |
 | `src/renderer/src/lib/actions/startup.ts` | `loadStartup()` (na abertura, em `main.tsx`) e `setOpenAtLogin(bool)`; `startupEnv.bridge()` é a costura dos testes. Falha ao mudar: aviso "Não foi possível mudar o início com o Windows." e o interruptor fica como estava. |
 | `src/renderer/src/store/startup.ts` | `openAtLogin: boolean \| null`. Não é salvo no renderer: a fonte é o sistema. |
 | `src/renderer/src/components/settings/WindowsSettings.tsx` | A seção "Windows" com o interruptor. |
 
-**Onde fica guardado.** A escolha é o próprio registro do Windows (chave `Run` do usuário, escrita pelo Electron). A
-marca "já apliquei o padrão" é o arquivo vazio `startup-default-applied` em `app.getPath('userData')`
-(`%APPDATA%\Concord`); não usa `localStorage`. O main lê `executableWillLaunchAtLogin`, que também respeita quem
-desligou o Concord pelo Gerenciador de Tarefas → Aplicativos de inicialização.
+**Onde fica guardado.** A escolha é o próprio registro do Windows (chave `Run` do usuário, escrita pelo
+`tauri-plugin-autostart`). A marca "já apliquei o padrão" é o arquivo vazio `startup-default-applied` na pasta de
+dados do app (`%APPDATA%\com.concord.app`); não usa `localStorage`. Quem veio do Electron: se o Electron **não**
+tinha entrada de iniciar com o Windows, o instalador (`src-tauri/windows/hooks.nsh`) cria a marca antes do primeiro
+uso, e o padrão "ligado" não se aplica (a escolha da pessoa vale; `docs/areas/updates.md`).
 
-**Onde vale.** Só no Windows com o app empacotado (`app.isPackaged`). Em dev (`npm run dev`) o main não registra o
-`electron.exe` e responde `null`; a seção some. No macOS a mesma API existiria, mas ficou de fora por simplicidade (o
-texto fala em Windows e o macOS 13+ pede outra forma de registro). Na versão web não há `window.api`: nada é chamado e
-a seção não aparece.
+**Onde vale.** Só no Windows com o app de release (`!debug_assertions`). Em dev (`npm run dev`) o comando responde
+`null` e a seção some. Em outros sistemas e na versão web (sem `window.api`) nada é chamado e a seção não aparece.
 
 **Fluxo.**
 
 | Situação | O que acontece |
 |---|---|
 | Primeira execução instalada | `applyDefault()`: registra para iniciar e cria a marca. Interruptor ligado. |
-| Pessoa desliga | `startup-set false` → `setLoginItemSettings({ openAtLogin: false })`; a tela mostra o que o sistema devolveu. |
+| Pessoa desliga | `startup-set false` → `autolaunch().disable()`; a tela mostra o que o sistema devolveu. |
 | Reabrir / atualizar | A marca existe: nada muda; vale o que está no registro. |
-| Dev / macOS / Linux / web | Nada é registrado; a seção não aparece. |
+| Dev / Linux / web | Nada é registrado; a seção não aparece. |
 
-**Testes.** `src/main/startup.test.ts` (controlador com registro e marca falsos; `fileMarker` com pasta temporária).
+**Testes.** `cargo test -p concord` (módulo `native::startup`: controlador com registro e marca falsos; `fileMarker` com pasta temporária).
 `components/settings/WindowsSettings.test.tsx` (seção visível com o estado do sistema, ligar/desligar, falha ao mudar,
 sem suporte / navegador / falha ao ler: seção some).
 
-**À mão** (precisa do instalador: `npm run dist` e instalar): na primeira abertura, Gerenciador de Tarefas →
+**À mão** (precisa do instalador: `npm run dist` e instalar; a saída fica em `target/release/bundle/nsis/`): na primeira abertura, Gerenciador de Tarefas →
 Aplicativos de inicialização mostra o Concord habilitado (ou `reg query HKCU\Software\Microsoft\Windows\CurrentVersion\Run`);
 desligue o interruptor, feche e reabra: continua desligado e a entrada some; reinicie o Windows para conferir.
-Para refazer a "primeira execução", apague `%APPDATA%\Concord\startup-default-applied`.
+Para refazer a "primeira execução", apague `%APPDATA%\com.concord.app\startup-default-applied`.

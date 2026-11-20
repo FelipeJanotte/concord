@@ -3,6 +3,8 @@
 ## Ambiente
 
 - Windows (o repositório fica em `D:\Repos\concord`), Node.js 20+, **npm**.
+- **Rust** estável (`rustup`) e, no Windows, as ferramentas de build do MSVC (Visual Studio Build Tools com "Desenvolvimento para desktop com C++"). O **WebView2** já vem no Windows 11; no Windows 10 o instalador baixa o bootstrapper.
+- **Linux** serve para tela, chat e servidor (`npm run dev` abre o shell com a tela; WebKitGTK precisa de `libwebkit2gtk-4.1-dev` e afins, como no job `desktop-linux` do CI). **Voz e tela compartilhada só no Windows** (ou na versão web, `npm run dev:web`): o shell Linux responde "só existem no Windows".
 - **Não use pnpm.** Ele foi testado e removido de propósito. Se aparecerem `pnpm-lock.yaml` ou `pnpm-workspace.yaml`, apague os dois e rode `npm install`.
 
 ## Scripts (`package.json`)
@@ -12,14 +14,36 @@
 | `npm run dev:all` | servidor + app juntos (`concurrently`, prefixos `server`/`app`; `-k` encerra os dois juntos) |
 | `npm run server` | servidor com recarregamento (`tsx watch server/index.ts`), porta `PORT` (padrão 3001) |
 | `npm run server:start` | servidor sem watch (para produção) |
-| `npm run dev` | electron-vite em modo dev (HMR no renderer, reinicia o Electron quando main/preload mudam) |
-| `npm run typecheck` | `tsc` em `tsconfig.node.json` (main, preload, server, shared) e `tsconfig.web.json` (renderer), testes incluídos |
+| `npm run dev` | `tauri dev`: sobe o Vite (`localhost:5173`, HMR no renderer) e compila e abre o shell Rust (recompila quando o Rust muda) |
+| `npm run dev:web` | só o Vite em `localhost:5173`, para abrir num navegador (sem `window.api`: sem Google, overlay, atalhos, tela nativa) |
+| `npm run typecheck` | `tsc` em `tsconfig.node.json` (servidor, shared) e `tsconfig.web.json` (renderer), testes incluídos |
 | `npm test` | vitest uma vez (`vitest run`). **Obrigatório passar por completo antes de dar uma tarefa por concluída.** |
 | `npm run test:watch` | vitest em modo watch; `npx vitest run server/tests/auth.test.ts` roda um arquivo só |
-| `npm run build` | typecheck + bundle em `out/` |
-| `npm start` | abre o build de `out/` |
-| `npm run dist` | build + instalador NSIS em `dist/` (config em `electron-builder.yml`), sem publicar. Com `VITE_DEFAULT_SERVER=<endereço>` no ambiente, o instalador já vem com o servidor na tela de login (ex.: o IP do Radmin para os amigos) |
-| `npm run release` | build + instalador + publica no GitHub Releases (o workflow da tag `vX.Y.Z` usa; `docs/areas/updates.md`) |
+| `npm run build` | typecheck + `tauri build` (instalador NSIS em `target/release/bundle/nsis/`) |
+| `npm run build:web` | só a tela (`vite build`) em `out/renderer`: a versão web (`docs/areas/deploy.md`) |
+| `npm run dist` | `tauri build`: instalador NSIS por usuário, sem publicar. Com `VITE_DEFAULT_SERVER=<endereço>` no ambiente, o instalador já vem com o servidor na tela de login (ex.: o IP do Radmin para os amigos). Sem `TAURI_SIGNING_PRIVATE_KEY` o `tauri build` falha ao assinar a atualização; para um instalador local use `npx tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}'` |
+| `cargo test --workspace` | testes do shell e das crates (roda no Linux e no Windows) |
+| `cargo clippy --workspace --all-targets -- -D warnings` | lint do Rust; o CI não aceita aviso |
+
+A publicação é pelo `.github/workflows/release.yml` (merge na `main`; `docs/areas/updates.md`), não por script local.
+
+### Conferir o código Windows a partir do Linux
+
+O Win32 fica em `cfg(windows)` e o `cargo clippy` do Linux não o compila. Com `cargo install cargo-xwin` e o alvo
+`rustup target add x86_64-pc-windows-msvc`:
+
+```bash
+XWIN_CACHE_DIR=~/.cache/cargo-xwin cargo xwin clippy --workspace --all-targets --target x86_64-pc-windows-msvc -- -D warnings
+```
+
+`XWIN_CACHE_DIR` guarda o SDK do Windows baixado (use pastas diferentes em worktrees que rodam ao mesmo tempo). Isso
+confere a compilação e o lint; **não roda** nada: o Raw Input, o encoder de GPU e o toast só se provam num Windows
+(job `desktop-windows` do CI e o checklist do `ROADMAP.md`).
+
+### Gerar o instalador
+
+`npm run dist` no Windows (Rust e MSVC instalados). Na primeira vez o Cargo baixa e compila tudo (vários minutos). O
+bundle é só NSIS, por usuário, e entra na pasta `%LOCALAPPDATA%\Programs\Concord`.
 
 Variáveis do servidor: `PORT`, `DATA_DIR` (padrão `server/data`, que está no `.gitignore`), `DATABASE_URL`,
 `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `UPLOAD_ORPHAN_TTL_MS` (anexo solto é apagado depois disso; padrão 1 h)
@@ -126,13 +150,17 @@ Para hospedar pela internet (voz fora da rede local, HTTPS): `deploy/README.md` 
 
 ## CI no GitHub (A12)
 
-`.github/workflows/ci.yml` roda em **todo PR** e em todo push na `main`: `npm ci`, `npm run typecheck` e `npm test`
-(Ubuntu, Node 22, cache do npm). Um PR novo no mesmo branch cancela a execução anterior.
+`.github/workflows/ci.yml` roda em **todo PR** e em todo push na `main`, com quatro jobs. Um PR novo no mesmo branch cancela a execução anterior.
+
+| Job | O que roda |
+|---|---|
+| `check` (Ubuntu, Node 22) | `npm ci`, `npm run typecheck` e `npm test` |
+| `desktop-linux` | `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings` e `cargo test --workspace` |
+| `desktop-windows` | os mesmos `clippy` e `cargo test` no Windows (inclui os testes Win32), `npm ci`, `npx tauri build` (assina se houver a chave) e envia o instalador como artefato |
+| `desktop-cutover` (2 execuções: iniciar com o Windows ligado e desligado) | instala a release Electron real, roda o instalador novo como o `electron-updater` e confere a troca (`docs/areas/updates.md`) |
 
 - **Sem Docker:** sem `DATABASE_URL`/`DATABASE_URL_TEST` os testes usam PGlite, e a voz usa o LiveKit falso
   (`server/tests/fake-livekit.ts`). Não há `server/.env` no CI (o `server/env.ts` só carrega se existir).
-- `ELECTRON_SKIP_BINARY_DOWNLOAD=1`: o binário do Electron não é baixado (o processo principal é testado com
-  Electron falso, `vi.mock('electron')`).
 - O badge fica no topo do `README.md`. Para o PR vermelho **não** poder ser mergeado, o dono do repositório liga a
   proteção da `main` (Settings → Branches → exigir o check "typecheck e testes").
 - **Falhou só no CI:** quase sempre diferença de sistema (o CI é Linux; o time usa Windows): caminho com `\`,
@@ -149,12 +177,11 @@ Para hospedar pela internet (voz fora da rede local, HTTPS): `deploy/README.md` 
   `Login com Google: ativado/desativado`. Detalhes em `docs/areas/accounts.md`.
 - Para testar regras de conta sem sujar `server/data`, suba um servidor isolado:
   `DATA_DIR="$TMPDIR/concord-teste" PORT=3999 npx tsx server/index.ts` (Git Bash).
-- O renderer também abre em `http://localhost:5173` num navegador comum durante o `npm run dev`; só o login com
-  Google precisa do Electron (`window.api`).
+- O renderer também abre em `http://localhost:5173` num navegador comum (`npm run dev:web`); Google, overlay, atalhos, tela nativa e notificações nativas precisam do app (`window.api`).
 
 ## Testar com vários usuários
 
-- **Mesma máquina:** `npm run dev:all` e, em outro terminal, `npx electron .` (rode `npm run build` uma vez antes) para cada janela extra. Use **contas diferentes** em cada janela (a mesma conta em duas janelas aparece uma vez só na lista de membros).
+- **Mesma máquina:** `npm run dev:all` e, em outro terminal, o `concord.exe` de `target/debug/` (gerado pelo `tauri dev`; o `.exe` do instalador também serve) para cada janela extra, ou `npm run dev:web` em outra aba do navegador. Use **contas diferentes** em cada janela (a mesma conta em duas janelas aparece uma vez só na lista de membros).
 - **Rede local ou VPN:** o servidor mostra `Rede: http://<ip>:3001` ao iniciar (um por placa de rede, inclusive a da
   VPN). A outra pessoa usa esse endereço no login. Libere a porta no Windows Defender Firewall. Só isso faz o texto
   funcionar; **a voz precisa da configuração abaixo**.
@@ -188,12 +215,13 @@ Pela internet sem VPN, use a hospedagem da A14 (`docs/areas/deploy.md`: LiveKit 
 
 | Sintoma | Causa e solução |
 |---|---|
-| `npm run dist` falha com "Could not find any Python installation" / "node-gyp failed to rebuild uiohook-napi" | O `electron-builder` tentou recompilar a dependência nativa. O `electron-builder.yml` precisa ter `npmRebuild: false` (o `uiohook-napi` já vem compilado; `docs/areas/voice.md`, "Pressione para falar"). |
-| `Error: Electron uninstall` | O binário do Electron não foi baixado (o script de instalação dele não rodou ou ainda não terminou). `node node_modules/electron/install.js`, ou apague `node_modules` e rode `npm install` de novo. No npm 11.20+ os install scripts ficam bloqueados por padrão (aviso `install-scripts ... not yet covered by allowScripts`): rode `npm install-scripts approve electron esbuild` e depois `npm rebuild`. |
+| `cargo` não encontrado ou `link.exe` ausente | Rust (`rustup`) ou ferramentas de build do MSVC não instalados (veja "Ambiente"). |
+| `tauri build` falha ao assinar a atualização | Falta `TAURI_SIGNING_PRIVATE_KEY`. Local: use `--config '{"bundle":{"createUpdaterArtifacts":false}}'` (veja "Scripts"). |
+| Voz, tela ou botão da miniatura "só existem no Windows" | Você está no Linux: use um Windows ou `npm run dev:web` (veja "Ambiente"). |
 | Tela de login diz que não conectou | O servidor não está rodando, o endereço está errado ou o firewall bloqueia. Teste abrindo o endereço no navegador: ele responde `{"name":"concord-server",...}`. |
 | `EADDRINUSE :3001` | Outro servidor já está rodando. Feche o processo ou use outra porta (PowerShell: `$env:PORT=3002; npm run server`). |
-| Microfone negado ou não encontrado | Confira as permissões de microfone do Windows para apps desktop. O main já libera `media` para o renderer. |
-| Erro de CSP no console | A CSP está em `src/renderer/index.html`. `connect-src` libera `ws:`/`http:` e `img-src` libera `http:`/`https:` (fotos de perfil vêm do servidor). Ajuste ali se adicionar outros recursos externos. |
+| Microfone negado ou não encontrado | Confira as permissões de microfone do Windows para apps desktop. O shell já libera microfone e câmera para a tela (`src-tauri/src/native/permissions.rs`). |
+| Erro de CSP no console | No app a CSP está em `src-tauri/tauri.conf.json` (por diretiva); `connect-src` libera `ws:`/`wss:`/`http:`/`https:` e `img-src` libera `http:`/`https:` (fotos de perfil vêm do servidor). Ajuste ali se adicionar outros recursos externos. |
 | "Sua sessão expirou" ou o app volta para o login sozinho | O token salvo não vale mais (venceu em 30 dias, foi revogado ou o `db.json` foi apagado). Entre de novo. |
 | Botão "Entrar com Google" desativado | `server/.env` sem `GOOGLE_CLIENT_ID`, ou o app aponta para outro servidor. Reinicie o servidor depois de editar o `.env`. |
 | "O Google recusou o login" | Client id/secret errados ou o cliente OAuth não é do tipo "App para computador". O motivo exato aparece no log do servidor (`[google] troca de código falhou`). |
@@ -207,7 +235,7 @@ Pela internet sem VPN, use a hospedagem da A14 (`docs/areas/deploy.md`: LiveKit 
 
 ## Notas de configuração
 
-- `electron.vite.config.ts`: aliases `@` e `@shared` só no renderer; plugins `react()` e `tailwindcss()` (Tailwind v4, sem `tailwind.config`).
+- `vite.config.ts`: raiz em `src/renderer`, aliases `@` e `@shared`, plugins `react()` e `tailwindcss()` (Tailwind v4, sem `tailwind.config`), duas entradas (`index.html` e `overlay.html`), saída em `out/renderer`.
 - `components.json`: shadcn new-york, CSS em `src/renderer/src/assets/globals.css`, ícones lucide.
 - `tsconfig.json` (raiz) só tem `references` + `paths` (para o editor e o CLI do shadcn). Os de verdade são `tsconfig.node.json` e `tsconfig.web.json`.
-- A maioria das dependências fica em `devDependencies` de propósito: o Vite empacota o renderer e o electron-builder só leva `dependencies` (`@electron-toolkit/utils`).
+- A maioria das dependências fica em `devDependencies` de propósito: o Vite empacota o renderer e o instalador Tauri leva só o que o Vite gerou, não o `node_modules`.
