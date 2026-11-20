@@ -20,9 +20,12 @@ import { ensureInitialData } from './db/seed'
 import { sendJson } from './http'
 import { liveKitConfig } from './livekit'
 import { accountsModule } from './modules/accounts'
+import { auditModule } from './modules/audit'
 import { backupModule } from './modules/backup'
 import { callsModule } from './modules/calls'
+import { categoriesModule } from './modules/categories'
 import { channelsModule } from './modules/channels'
+import { embedsModule } from './modules/embeds'
 import { messagesModule } from './modules/messages'
 import { moderationModule } from './modules/moderation'
 import { musicModule } from './modules/music'
@@ -51,7 +54,9 @@ const modules: ServerModule[] = [
   accountsModule,
   uploadsModule,
   channelsModule,
+  categoriesModule,
   messagesModule,
+  embedsModule,
   reactionsModule,
   readsModule,
   voiceModule,
@@ -66,6 +71,7 @@ const modules: ServerModule[] = [
   dmsModule,
   toolsModule,
   pollsModule,
+  auditModule,
   presenceModule,
   backupModule
 ]

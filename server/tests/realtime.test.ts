@@ -232,7 +232,7 @@ describe('perfil', () => {
     const updated = waitFor(b.socket, 'user:updated', (p) => p.accountId === a.account.id)
     const res = await a.socket.emitWithAck('account:update', { name: 'Novo Nome' })
     expect(res.ok && res.account.name).toBe('Novo Nome')
-    expect((await updated)[0]).toEqual({ accountId: a.account.id, name: 'Novo Nome', tag: a.tag, avatarUrl: null })
+    expect((await updated)[0]).toEqual({ accountId: a.account.id, name: 'Novo Nome', tag: a.tag, avatarUrl: null, bio: '', customStatus: null })
 
     const ch = await newChannel(a, 'text')
     const msg = waitFor(b.socket, 'message:new', (m) => m.channelId === ch.id)

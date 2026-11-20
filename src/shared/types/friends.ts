@@ -11,6 +11,8 @@
  * volta aceita na hora. Online/offline só aparece para amigos.
  */
 
+import type { CustomStatus } from './account'
+
 export type FriendStatus = 'friend' | 'outgoing' | 'incoming' | 'blocked'
 
 /** Dados públicos da outra conta (o mesmo que aparece na lista de membros). */
@@ -20,6 +22,8 @@ export interface FriendAccount {
   tag: string
   color: string
   avatarUrl: string | null
+  bio?: string
+  customStatus?: CustomStatus | null
 }
 
 export interface FriendEntry {

@@ -1,6 +1,7 @@
 // Contas e sessões de login.
 import { sql } from 'drizzle-orm'
-import { boolean, index, integer, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
+import { boolean, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
+import type { CustomStatus } from '../../../src/shared/types'
 
 export const accounts = pgTable(
   'accounts',
@@ -21,6 +22,8 @@ export const accounts = pgTable(
     /** content-type da foto em DATA_DIR/avatars/<id>, ou null sem foto */
     avatarType: text('avatar_type'),
     avatarVersion: integer('avatar_version').notNull().default(0),
+    bio: text('bio').notNull().default(''),
+    customStatus: jsonb('custom_status').$type<CustomStatus>(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
   },
   (t) => [

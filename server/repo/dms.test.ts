@@ -112,7 +112,7 @@ describe('apoio nas amizades', () => {
 
   it('findFriendAccount devolve só dados públicos', async () => {
     const a = await account()
-    expect(await findFriendAccount(a.id)).toEqual({ id: a.id, name: a.name, tag: a.tag, color: a.color, avatarUrl: null })
+    expect(await findFriendAccount(a.id)).toEqual({ id: a.id, name: a.name, tag: a.tag, color: a.color, avatarUrl: null, bio: '', customStatus: null })
     expect(await findFriendAccount(randomUUID())).toBeUndefined()
     expect(await findFriendAccount('lixo')).toBeUndefined()
   })

@@ -29,8 +29,9 @@ Constantes compartilhadas em `src/shared/types/account.ts`: `NAME_MAX`, `TAG_MAX
 
 | Arquivo | Papel |
 |---|---|
-| `src/shared/types/account.ts` | `User` (com `accountId`, `tag`, `avatarUrl`), `AccountInfo`, requests/`AuthResult` HTTP, `ProfileUpdate`, eventos `account:update` e `user:updated` |
-| `server/repo/types.ts` | `Account` (com `passwordHash`, `googleId`, `tagLocked`, `avatarType`, `avatarVersion`) e `Session` |
+| `src/shared/types/account.ts` | `User` (com `accountId`, `tag`, `avatarUrl`, `bio?`, `customStatus?`), `CustomStatus`, `AccountInfo`, requests/`AuthResult` HTTP, `ProfileUpdate`, `ProfileChange`, eventos `account:update` e `user:updated` |
+| `src/shared/profile.ts` | regras puras de bio e status personalizado (ver "Bio e status personalizado") |
+| `server/repo/types.ts` | `Account` (com `passwordHash`, `googleId`, `tagLocked`, `avatarType`, `avatarVersion`, `bio`, `customStatus`), `NewAccount` (bio e status opcionais ao inserir) e `Session` |
 | `server/repo/accounts.ts`, `server/repo/sessions.ts` | acesso async às contas e sessões (devolvem cópias; alteração só por `updateAccount(id, patch)`) |
 | `server/db/schema/accounts.ts` | tabelas `accounts` (únicos: e-mail, `lower(tag)`, Google id) e `sessions` (cascata ao apagar a conta) |
 | `server/db/seed.ts` | importa contas/sessões do `db.json` antigo no primeiro boot (senhas e sessões continuam valendo) |
@@ -45,7 +46,7 @@ Constantes compartilhadas em `src/shared/types/account.ts`: `NAME_MAX`, `TAG_MAX
 | `src/renderer/src/lib/actions/account.ts` | `updateProfile`, `resolveAvatarUrl`, listener `user:updated` |
 | `src/renderer/src/lib/image.ts` | `fileToAvatarDataUrl` (recorte quadrado 256×256 em WebP) e `randomTag` |
 | `components/LoginScreen.tsx` | abas Entrar / Criar conta, botão Google, troca de servidor, tela "Entrando..." |
-| `components/settings/AccountSettings.tsx` | Configurações → "Minha conta" (era `ProfileDialog`): nome, foto, id com cadeado (ou campo de escolha única), Salvar e sair da conta |
+| `components/settings/AccountSettings.tsx` | Configurações → "Minha conta" (era `ProfileDialog`): nome, foto, id com cadeado (ou campo de escolha única), bio, Salvar e sair da conta |
 | `components/AvatarPicker.tsx` | foto clicável + trocar/remover (usado no cadastro e no perfil) |
 | `components/UserAvatar.tsx` | mostra a foto (`AvatarImage`) com as iniciais como fallback |
 
@@ -117,11 +118,60 @@ Erros vindos do IPC chegam com o prefixo `Error invoking remote method ...: Erro
 ## Perfil em tempo real
 
 `account:update` → `updateProfile()` no servidor → atualiza todas as conexões daquela conta no mapa `users` →
-`io.emit('user:updated', { accountId, name, tag, avatarUrl })`. O cliente aplica em `users`, `self` e `account`.
+`io.emit('user:updated', ProfileChange)` (`{ accountId, name, tag, avatarUrl, bio, customStatus }`). O cliente aplica
+em `users`, `self`, `account`, `friends[].account` e `dms[].other`.
 
-Mensagens guardam uma **cópia** do autor do momento do envio. O `MessageItem` (`ChatView`) mostra o nome/foto
+`ProfileUpdate` é parcial: campo ausente = manter (inclusive o `name`), então mudar só o status manda
+`{ customStatus }`. Todos os campos passam pelo mesmo limite `LIMITS.profile`.
+
+Mensagens guardam uma **cópia** do autor do momento do envio, sem bio nem status (`messageAuthor(user)` em
+`src/shared/types/message.ts`, usado em mensagens, ferramentas e bot de música). O `MessageItem` (`ChatView`) mostra o nome/foto
 atuais se o autor estiver online (busca por `accountId`) e agrupa mensagens seguidas por `accountId`.
 A `MemberList` deduplica por `accountId` (a mesma conta pode estar em duas janelas).
+
+## Bio e status personalizado
+
+**Bio**: texto livre de "Sobre mim" que aparece no cartão de perfil com a formatação do chat. **Status
+personalizado**: emoji e/ou frase curta embaixo do nome, com validade opcional, como no Discord.
+
+| Regra | Valor |
+|---|---|
+| Bio | até `BIO_MAX` (190) caracteres e `BIO_LINE_BREAKS_MAX` (5) quebras de linha; `\r\n` vira `\n`; pontas sem espaço; vazio apaga |
+| Status | `CustomStatus { emoji?, text?, expiresAt? }`; pelo menos um dos dois; `null` limpa |
+| Emoji | um único emoji Unicode (`isSingleEmoji`: `^\p{RGI_Emoji}$` com a flag `v`; tom de pele e ZWJ valem) |
+| Texto | até `CUSTOM_STATUS_TEXT_MAX` (60), sem quebra de linha (espaços colapsados) |
+| Validade | instante ISO no futuro e até 24 h (`CUSTOM_STATUS_DURATION_MAX_MS`), ou `null` (nunca). O app calcula com `customStatusExpiry`: 30 min, 1 h, 4 h, "Hoje" (meia-noite local, enviada como instante) ou "Nunca" |
+| Erros | "Bio inválida", "A bio pode ter até 190 caracteres", "A bio pode ter até 5 quebras de linha", "Status inválido", "Emoji inválido", "Escolha um emoji ou escreva um status", "O status pode ter até 60 caracteres", "Validade inválida" |
+
+Funções puras em `src/shared/profile.ts` (servidor e app usam as mesmas): `parseBio`, `parseCustomStatus(raw, now)`,
+`isSingleEmoji`, `activeCustomStatus(status, now)` (vencido = `null`) e `customStatusExpiry(duração, agora)`.
+
+**Status vencido**
+
+- Servidor: entrega sempre pelo `activeCustomStatus` (`publicProfile` em `server/auth.ts`: `toAccountInfo`, `userFor`;
+  `toFriendAccount` no repo de amizades; a lista de `users` do `hello` também passa por ela). A cada minuto
+  `clearExpiredCustomStatuses` (repo) grava `null` nas contas vencidas e limpa o mapa `users` (sem evento: os apps já
+  escondem sozinhos).
+- App: `useActiveCustomStatus` (`lib/custom-status.ts`) aplica a mesma função e agenda um `setTimeout` para o
+  vencimento, então o status some na hora mesmo sem evento.
+
+**Onde fica**
+
+| Arquivo | Papel |
+|---|---|
+| `server/db/schema/accounts.ts` | colunas `bio` (`text`, padrão `''`) e `custom_status` (`jsonb`, nulo) |
+| `server/auth.ts` | valida em `updateProfile` (`parseBio`/`parseCustomStatus`) e `publicProfile` |
+| `server/modules/accounts.ts` | `user:updated` com bio e status; varredura dos vencidos |
+| `components/CustomStatusText.tsx` | emoji + texto truncado (some quando vence); na `MemberList`, na `FriendsView` (só amigos), no `UserProfileDialog` |
+| `components/UserProfileDialog.tsx` | status embaixo do nome e a seção "Sobre mim" com a bio (`FormattedText` de `chat/MessageText.tsx`: Markdown e links, **sem** menções; `<@id>` aparece como texto e nada notifica, porque a bio não é mensagem) |
+| `components/settings/AccountSettings.tsx` | campo "Bio" (`@ui-sdk/react/textarea`) com contador `n/190`, salvo junto com o resto do perfil |
+| `components/CustomStatusDialog.tsx` | "Definir status personalizado": `EmojiPicker` (de `voice/`), texto com contador, "Limpar depois de" (rádio) e Salvar; erro do servidor fica no diálogo |
+| `components/UserPanel.tsx` | menu "Status e conta": "Definir status personalizado" e "Limpar status" (só com status ativo) |
+| `lib/actions/account.ts` | `setCustomStatus(status \| null)` (manda `{ customStatus }` no `account:update`) |
+
+**Testes**: `src/shared/profile.test.ts` (validações e vencimento), `server/tests/profile.test.ts` (salvar, avisar,
+recusas, vencido no `hello`/lista de amigos, limite), `server/repo/repo.test.ts` (varredura), `lib/actions/actions.test.ts`
+(`user:updated` em amigos/conversas, `setCustomStatus`) e `components/profile.test.tsx` (telas).
 
 ## Adicionar algo às contas (exemplo: campo "bio")
 

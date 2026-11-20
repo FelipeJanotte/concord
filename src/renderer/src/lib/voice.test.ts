@@ -703,7 +703,7 @@ describe('supressão de ruído automática (B13)', () => {
   let micOpts: ({ noiseSuppression: boolean } | undefined)[]
   let processors: { onMode: (m: 'advanced' | 'light-fallback') => void }[]
   let contexts: { close: ReturnType<typeof vi.fn> }[]
-  let watchdogs: { ctx: unknown; stop: ReturnType<typeof vi.fn> }[]
+  let watchdogs: { ctx: unknown; onStuck: () => Promise<void>; stop: ReturnType<typeof vi.fn> }[]
   let modes: (string | null)[]
 
   function noiseClient(opts: { processorFails?: boolean } = {}): VoiceClient {
@@ -730,8 +730,8 @@ describe('supressão de ruído automática (B13)', () => {
         contexts.push(ctx)
         return ctx as unknown as AudioContext
       },
-      createClockWatchdog: (ctx) => {
-        const w = { ctx, stop: vi.fn() }
+      createClockWatchdog: (ctx, onStuck) => {
+        const w = { ctx, onStuck, stop: vi.fn() }
         watchdogs.push(w)
         return w
       },
@@ -791,6 +791,17 @@ describe('supressão de ruído automática (B13)', () => {
     await c.setNoiseSuppression(true)
     expect(contexts).toHaveLength(1)
     expect(watchdogs).toHaveLength(1)
+  })
+
+  it('o vigia achando o áudio preso refaz o microfone como desligar e ligar a supressão', async () => {
+    const c = noiseClient()
+    await c.join('sala-1')
+    await watchdogs[0].onStuck()
+    expect(mic!.stopProcessor).toHaveBeenCalledTimes(1)
+    expect(mic!.restartTrack).toHaveBeenCalledTimes(1)
+    expect(mic!.nativeSuppression).toBe(true)
+    expect(mic!.setProcessor).toHaveBeenLastCalledWith(processors[1])
+    expect(contexts).toHaveLength(1)
   })
 
   it('se o filtro não liga, entra mesmo assim com a supressão nativa', async () => {

@@ -3,9 +3,11 @@
  * saída de quem desconecta e o status (online, ausente, Não perturbe).
  */
 import { accessFor, isActivityStatus, presenceStatus, type PresenceStatus, type User } from '../../src/shared/types'
-import { avatarUrl, findAccount, toAccountInfo } from '../auth'
+import { activeCustomStatus } from '../../src/shared/profile'
+import { avatarUrl, findAccount, publicProfile, toAccountInfo } from '../auth'
 import { guard, users, type AppServer, type ServerModule } from '../context'
 import { limiters } from '../middleware/rate-limit'
+import { listCategories } from '../repo/categories'
 import { listChannels } from '../repo/channels'
 import { getPreferences } from '../repo/preferences'
 import type { Account } from '../repo/types'
@@ -17,7 +19,11 @@ const idleConnections = new Set<string>()
 const doNotDisturbAccounts = new Set<string>()
 
 function userFor(socketId: string, a: Account): User {
-  return { id: socketId, accountId: a.id, name: a.name, tag: a.tag, color: a.color, avatarUrl: avatarUrl(a) }
+  return { id: socketId, accountId: a.id, name: a.name, tag: a.tag, color: a.color, avatarUrl: avatarUrl(a), ...publicProfile(a) }
+}
+
+function onlineUsers(now: number): User[] {
+  return [...users.values()].map((u) => ({ ...u, customStatus: activeCustomStatus(u.customStatus, now) }))
 }
 
 function accountStatus(accountId: string): PresenceStatus {
@@ -63,6 +69,7 @@ export const presenceModule: ServerModule = {
         const access = await currentAccess()
         const all = await listChannels()
         const channels = visibleChannels(access, account.id, all)
+        const categories = await listCategories()
         const { doNotDisturb } = await getPreferences(account.id)
         // Desconectou enquanto esperava o banco: não registra um usuário fantasma.
         if (!socket.connected) return
@@ -78,7 +85,8 @@ export const presenceModule: ServerModule = {
           account: toAccountInfo(account),
           state: {
             channels,
-            users: [...users.values()],
+            categories,
+            users: onlineUsers(Date.now()),
             voice: voiceStatesFor(account.id),
             access: accessFor(access, account.id, all.map((c) => c.id)),
             statuses: onlineStatuses()

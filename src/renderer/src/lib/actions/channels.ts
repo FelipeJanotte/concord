@@ -55,8 +55,8 @@ export function selectTextChannel(channelId: string): void {
   startReading(channelId)
 }
 
-export async function createChannel(name: string, type: ChannelType): Promise<Channel> {
-  const res = await requireSocket().emitWithAck('channel:create', { name, type })
+export async function createChannel(name: string, type: ChannelType, categoryId: string | null = null): Promise<Channel> {
+  const res = await requireSocket().emitWithAck('channel:create', { name, type, categoryId })
   if (!res.ok) throw new Error(res.error)
   return res.channel
 }

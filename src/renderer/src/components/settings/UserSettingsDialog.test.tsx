@@ -24,7 +24,9 @@ const account: AccountInfo = {
   avatarUrl: null,
   hasPassword: true,
   hasGoogle: false,
-  tagLocked: true
+  tagLocked: true,
+  bio: '',
+  customStatus: null
 }
 
 let socket: FakeSocket

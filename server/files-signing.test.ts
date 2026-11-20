@@ -65,4 +65,21 @@ describe('links assinados', () => {
     const plain = { ...msg, attachments: [] }
     expect(signMessage(plain, 'conta-a')).toBe(plain)
   })
+
+  it('signMessage assina a imagem da prévia de link amarrada ao id da mensagem', () => {
+    const msg: Message = {
+      id: '44444444-4444-4444-4444-444444444444',
+      channelId: 'c',
+      author: { id: 's', accountId: 'x', name: 'X', tag: '', color: '#000', avatarUrl: null },
+      content: 'https://a.com',
+      attachments: [],
+      createdAt: 0,
+      embed: { url: 'https://a.com', title: 'A', imageUrl: '/embeds/44444444-4444-4444-4444-444444444444' }
+    }
+    const imageUrl = signMessage(msg, 'conta-a', 1_000).embed!.imageUrl!
+    expect(imageUrl.startsWith('/embeds/44444444-4444-4444-4444-444444444444?')).toBe(true)
+    expect(verifyFileQuery(msg.id, query(imageUrl), 2_000)).toBe('conta-a')
+    const textOnly = { ...msg, embed: { url: 'https://a.com', title: 'A' } }
+    expect(signMessage(textOnly, 'conta-a').embed).toEqual(textOnly.embed)
+  })
 })

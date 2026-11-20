@@ -20,6 +20,7 @@ import { allowed, currentAccess, dmMembersOf, emitToViewers } from '../access'
 import { guard, type AppServer, type AppSocket, type ServerModule } from '../context'
 import { limiters, retryText } from '../middleware/rate-limit'
 import { findAccount } from '../repo/accounts'
+import { recordAudit } from '../repo/audit'
 import { findChannel } from '../repo/channels'
 import { deleteMessage, findMessageMeta } from '../repo/messages'
 import { deleteCommunityBan, insertCommunityBan, listCommunityBans } from '../repo/moderation'
@@ -80,6 +81,12 @@ export const moderationModule: ServerModule = {
         // avisa antes do voice:state sem ela, para o app mostrar quem expulsou
         io.to(targetId).emit('moderation:kicked', { channelId: state.channelId, by: actor.name })
         kickFromVoice(io, targetId)
+        await recordAudit({
+          actorId: actor.accountId,
+          action: 'voice-kick',
+          targetId: target.accountId,
+          details: { channelName: (await findChannel(state.channelId))?.name ?? '' }
+        })
         ack({ ok: true })
       })
     })
@@ -113,6 +120,7 @@ export const moderationModule: ServerModule = {
           return ack(fail('Essa pessoa não tem acesso a essa sala'))
         }
         io.to(targetId).emit('moderation:moved', { channelId: channel.id, by: actor.name })
+        await recordAudit({ actorId: actor.accountId, action: 'voice-move', targetId: target.accountId, details: { channelName: channel.name } })
         ack({ ok: true })
       })
     })
@@ -135,6 +143,7 @@ export const moderationModule: ServerModule = {
           if (!visible.some(Boolean)) return ack(fail('Essa pessoa não está numa sala de voz'))
         }
         await setServerMuted(io, accountId, payload.muted, actor.accountId)
+        await recordAudit({ actorId: actor.accountId, action: payload.muted ? 'voice-mute' : 'voice-unmute', targetId: accountId, details: {} })
         ack({ ok: true })
       })
     })
@@ -150,6 +159,7 @@ export const moderationModule: ServerModule = {
         }
         if (!(await findAccount(accountId))) return ack(fail('Pessoa não encontrada'))
         await removeFromCommunity(io, accountId, { kind: 'kick', by: actor.name })
+        await recordAudit({ actorId: actor.accountId, action: 'kick', targetId: accountId, details: {} })
         ack({ ok: true })
       })
     })
@@ -167,6 +177,7 @@ export const moderationModule: ServerModule = {
         if (!target) return ack(fail('Pessoa não encontrada'))
         await insertCommunityBan({ accountId, email: target.email, reason, bannedBy: actor.accountId })
         await removeFromCommunity(io, accountId, { kind: 'ban', reason })
+        await recordAudit({ actorId: actor.accountId, action: 'ban', targetId: accountId, details: { reason } })
         ack({ ok: true })
       })
     })
@@ -179,6 +190,7 @@ export const moderationModule: ServerModule = {
         if (!(await allowed(actor.accountId, 'banMembers'))) return ack(fail('Você não pode tirar banimentos'))
         const accountId = typeof payload?.accountId === 'string' ? payload.accountId : ''
         if (!(await deleteCommunityBan(accountId))) return ack(fail('Essa pessoa não está banida'))
+        await recordAudit({ actorId: actor.accountId, action: 'unban', targetId: accountId, details: {} })
         ack({ ok: true })
       })
     })
@@ -205,6 +217,11 @@ export const moderationModule: ServerModule = {
         }
         if (!(await findAccount(accountId))) return ack(fail('Pessoa não encontrada'))
         await setTimedOut(io, accountId, minutes === 0 ? null : Date.now() + minutes * MINUTE_MS, actor.accountId)
+        await recordAudit(
+          minutes === 0
+            ? { actorId: actor.accountId, action: 'timeout-clear', targetId: accountId, details: {} }
+            : { actorId: actor.accountId, action: 'timeout', targetId: accountId, details: { minutes } }
+        )
         ack({ ok: true })
       })
     })
@@ -225,8 +242,17 @@ export const moderationModule: ServerModule = {
           ? isAuthor
           : canDeleteMessage(await currentAccess(), actor.accountId, meta.authorId)
         if (!permitted) return ack(fail('Você não pode apagar esta mensagem'))
+        const channel = await findChannel(meta.channelId)
         const files = await deleteMessage(payload.messageId)
         if (files === null) return ack(fail('Mensagem não encontrada'))
+        if (!isAuthor && channel) {
+          await recordAudit({
+            actorId: actor.accountId,
+            action: 'message-delete',
+            targetId: meta.authorId,
+            details: { messageId: payload.messageId, channel: { name: channel.name, type: channel.type } }
+          })
+        }
         for (const id of files) await storage.remove(id).catch(() => {})
         await emitToViewers(io, meta.channelId, 'message:deleted', { channelId: meta.channelId, messageId: payload.messageId })
         ack({ ok: true })

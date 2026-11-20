@@ -6,9 +6,9 @@
  * conta não existe mais (ou em mensagens importadas de antes das contas).
  */
 import { and, asc, count, desc, eq, gte, ilike, inArray, isNotNull, isNull, lt } from 'drizzle-orm'
-import { HISTORY_PAGE_SIZE, SEARCH_PAGE_SIZE, parseMentions, replyPreviewText, type Attachment, type Mention, type Message, type ReplyPreview, type ToolPayload } from '../../src/shared/types'
+import { HISTORY_PAGE_SIZE, SEARCH_PAGE_SIZE, parseMentions, replyPreviewText, type Attachment, type LinkEmbed, type Mention, type Message, type ReplyPreview, type ToolPayload } from '../../src/shared/types'
 import { db } from '../db/client'
-import { accounts, attachments, messages } from '../db/schema'
+import { accounts, attachments, messages, type StoredEmbed } from '../db/schema'
 import { accountNames, avatarUrl } from './accounts'
 import { attachmentsByMessage, toAttachment } from './attachments'
 import { reactionsByMessage } from './reactions'
@@ -102,6 +102,7 @@ async function toMessages(rows: MessageRow[]): Promise<Message[]> {
     createdAt: m.createdAt.getTime(),
     ...(m.editedAt ? { editedAt: m.editedAt.getTime() } : {}),
     ...(m.pinnedAt ? { pinnedAt: m.pinnedAt.getTime() } : {}),
+    ...(m.embed ? { embed: toLinkEmbed(m.id, m.embed) } : {}),
     ...(reactions.get(m.id) ? { reactions: reactions.get(m.id) } : {}),
     ...withMentions(m.content, names),
     ...(m.replyToId ? { replyTo: replies.get(m.replyToId) ?? deletedReply(m.replyToId) } : {}),
@@ -116,6 +117,48 @@ async function toMessages(rows: MessageRow[]): Promise<Message[]> {
           avatarUrl: null
         }
   }))
+}
+
+export type { StoredEmbed }
+
+export const embedImagePath = (messageId: string): string => `/embeds/${messageId}`
+
+export function toLinkEmbed(messageId: string, stored: StoredEmbed): LinkEmbed {
+  const { imageType, ...embed } = stored
+  return imageType ? { ...embed, imageUrl: embedImagePath(messageId) } : embed
+}
+
+export interface EmbedState {
+  channelId: string
+  authorId: string | null
+  content: string
+  embed: StoredEmbed | null
+}
+
+export async function findEmbedState(id: string): Promise<EmbedState | undefined> {
+  if (!isUuid(id)) return undefined
+  const [row] = await db()
+    .select({ channelId: messages.channelId, authorId: messages.authorId, content: messages.content, embed: messages.embed })
+    .from(messages)
+    .where(eq(messages.id, id))
+    .limit(1)
+  return row
+}
+
+export async function setEmbed(id: string, embed: StoredEmbed | null): Promise<boolean> {
+  if (!isUuid(id)) return false
+  const rows = await db().update(messages).set({ embed }).where(eq(messages.id, id)).returning({ id: messages.id })
+  return rows.length > 0
+}
+
+export async function messagesWithEmbedImage(ids: string[]): Promise<Set<string>> {
+  const valid = ids.filter(isUuid)
+  if (valid.length === 0) return new Set()
+  const rows = await db()
+    .select({ id: messages.id, embed: messages.embed })
+    .from(messages)
+    .where(and(inArray(messages.id, valid), isNotNull(messages.embed)))
+  return new Set(rows.filter((r) => r.embed?.imageType).map((r) => r.id))
 }
 
 export interface SearchOptions {

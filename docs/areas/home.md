@@ -12,7 +12,7 @@ ferramentas da v4 (barra lateral `ToolsSidebar` com as ferramentas por grupo e, 
 | `lib/actions/navigation.ts` | `showCommunity`, `showHome`, `showFriends`, `openDmChat(channelId)`, `messageAccount(accountId)`, `openTool(toolId, toolChannelId?)` (o `+` do composer passa o canal do chat), `showMusic()` (botão "Música": só põe `section: 'music'`), `showTools()` (botão da barra: última ferramenta ou a galeria na primeira vez; zera `toolChannelId`), `showToolGallery()` (galeria), `openVoiceChat(channelId)` e `setVoiceChatOpen(open)` (chat da sala de voz, ver `docs/areas/messages.md`), `isChatOnScreen(state, channelId)` (sala de voz só conta com o painel "Chat" aberto; nas seções `tool` e `music` nenhum chat está na tela, então devolve `false`). Reexportadas por `lib/client.ts`. |
 | `lib/dms.ts` | `findDm(dms, channelId)`, `chatLabel(channel, dms)` (`#geral` / `@Ana`) e `DM_PERMISSIONS`. |
 | `lib/home.ts` | `homeBadge` (selo do Início) e `communityUnread` (bolinha da comunidade). |
-| `components/rail/UtilityRail.tsx` | A barra de úteis (substitui o antigo `ServerRail` do `App.tsx`). No topo, acima do Início, o botão de atualizar o app quando há versão nova (`UpdateRailSlot`, `docs/areas/updates.md`). Um único botão "Ferramentas" (ativo com `section === 'tool'`) chama `showTools`; ao lado, o botão "Música" (ativo com `section === 'music'`) chama `showMusic`. |
+| `components/rail/UtilityRail.tsx` | A barra de úteis (substitui o antigo `ServerRail` do `App.tsx`). No topo, acima do Início, o botão de atualizar o app quando há versão nova (`UpdateRailSlot`, `docs/areas/updates.md`). Um único botão "Ferramentas" (ativo com `section === 'tool'`) chama `showTools`; ao lado, o botão "Música" (ativo com `section === 'music'`) chama `showMusic`. O botão "Concord" mostra a logo (`ConcordLogo`): `text-primary` parado, `text-primary-foreground` ativo ou no hover (fundo vira `primary`). |
 | `components/home/HomeSidebar.tsx` | Barra lateral da Home: botão "Amigos" (selo de pedidos recebidos) + `DmList` + painéis de voz e da conta. |
 | `components/dm/DmList.tsx` | Conversas, a mais recente primeiro, com não lido e online (online só de amigos). |
 | `components/friends/FriendsView.tsx` | Abas Online, Todos, Pendentes, Bloqueados e "Adicionar amigo" (nome#id). |
@@ -88,6 +88,106 @@ de canais e a da Home dividem a mesma (`navigation`), então trocar de seção n
   os painéis têm largura em px e a área central é que absorve, e a lista de membros some abaixo de `lg`. A alça
   própria tem ~60 linhas e nenhuma dependência.
 - Painel novo redimensionável: uma linha em `SIDE_PANELS` e envolver o painel com `ResizableSide`.
+
+## Categorias e ordem dos canais
+
+A comunidade organiza os canais em **categorias** (como no Discord) e em **ordem livre**, arrastando na barra
+lateral. A ordem e as categorias ficam no servidor e valem para todos.
+
+### Desenho da barra
+
+- Canais **sem categoria** no topo, sem cabeçalho; depois cada categoria com cabeçalho recolhível.
+- **Texto e voz juntos** dentro de cada grupo, pela posição (as antigas seções fixas "Canais de texto"/"Canais de
+  voz" saíram: a categoria é que agrupa).
+- Categoria **vazia** (sem nenhum canal visível) só aparece para quem tem `manageChannels`. Quem não gerencia não
+  vê categoria vazia nem os canais privados que não pode ver.
+- **Recolher** a categoria guarda na máquina (`localStorage`, chave `concord:collapsed-categories`, lista de ids;
+  com `try/catch`: sem armazenamento, tudo aberto).
+- Com `manageChannels`: botão **`+` "Criar"** no cabeçalho da comunidade (Criar canal / Criar categoria), **`+`
+  "Criar canal"** no cabeçalho de cada categoria (o canal nasce nela) e **botão direito na categoria**: Criar canal,
+  Renomear categoria, Apagar categoria (confirmação; os canais dela vão para o topo, sem categoria).
+
+### Arrastar (só `manageChannels`)
+
+| Arrasta | Solta em | Resultado |
+|---|---|---|
+| Canal | outro canal | antes dele (metade de cima) ou depois (metade de baixo), na categoria dele |
+| Canal | cabeçalho de categoria | primeiro da categoria (funciona com ela recolhida ou vazia) |
+| Canal | faixa fina no topo da lista | primeiro dos canais sem categoria (tirar da categoria) |
+| Categoria | outra categoria | antes ou depois dela |
+
+HTML5 drag and drop com tipos próprios no `dataTransfer` (`application/x-concord-channel` e
+`application/x-concord-category`, em `lib/channel-drag.ts`). Arrastar **pessoas** entre salas de voz
+(`application/x-concord-voice-user`, `moderation:voice-move`) continua igual: cada alvo só reage ao seu tipo. A linha
+`bg-primary` mostra onde o item vai entrar.
+
+Depois de soltar, o app monta a **ordem inteira** (`moveChannel`/`moveCategory` sobre `layoutOf(groupChannels(...))`),
+aplica na hora (otimista) e manda `channel:layout`. Recusa: volta as posições anteriores e mostra o erro no toast.
+
+### Contrato (`src/shared/types/categories.ts`)
+
+- `ChannelCategory { id, name, position }`. `Channel` ganhou `position?` e `categoryId?` (sempre presentes nos
+  canais da comunidade; ausentes em DM).
+- `hello.state.categories` (opcional no tipo: servidor antigo não manda e o app usa `[]`).
+- Eventos (todos exigem `manageChannels`, a dona pode tudo, `LIMITS.channelLayout` = 20 seguidos, depois 1/s):
+  - `category:create { name }` → `CategoryResult`; `category:rename { categoryId, name }` → `CategoryResult`;
+    `category:delete { categoryId }` → `OkResult`.
+  - `channel:layout { categories: string[], channels: { id, categoryId }[] }` → `OkResult`: a ordem **inteira**.
+    O servidor confere (`parseLayout`): toda categoria e todo canal da comunidade exatamente uma vez, nada
+    desconhecido, `categoryId` nulo ou de uma categoria da lista. Grava as posições numa transação. Último a mandar vence.
+  - Aviso: `channels:layout { categories, channels: { id, categoryId, position }[] }` depois de qualquer mudança,
+    **por conexão**: os canais filtrados por `visibleChannels` (canal privado não vaza); as categorias (só nome) vão
+    para todos.
+- `channel:create` aceita `categoryId?` (categoria que não existe: "Essa categoria não existe"); canal novo entra
+  **no fim** da ordem (`max(position) + 1`).
+- Nome da categoria: `normalizeCategoryName` (espaços sobrando saem, até 32 caracteres; vazio: "Dê um nome à
+  categoria"). Até 50 categorias (`MAX_CATEGORIES`).
+
+### Servidor e dados
+
+- Tabela `channel_categories (id, name 1–32, position, created_at)`; `channels.position` (int, padrão 0) e
+  `channels.category_id` (FK com `on delete set null`). DMs ficam com `position` 0 e sem categoria (ignorados).
+- Posição é **global** entre os canais da comunidade; o agrupamento por categoria é feito na tela. O app normaliza a
+  ordem ao mandar (sem categoria, depois cada categoria na ordem).
+- Backfill: a migration numera os canais existentes por `created_at, id` (`row_number() - 1`); o seed grava os canais
+  padrão e os importados do `db.json` com `position` pela ordem.
+- Por que posição global e a ordem inteira: `docs/decisions/0016-ordem-dos-canais-inteira.md`.
+- Por que não precisa mesclar canais escondidos: `manageChannels` **sempre vê** todos os canais (`can()`, regra 5),
+  então quem pode mandar o layout tem a lista completa.
+
+### Arquivos
+
+| Arquivo | Papel |
+|---|---|
+| `src/shared/types/categories.ts` | Tipos, eventos, `normalizeCategoryName`, `parseLayout`. |
+| `server/modules/categories.ts` | `category:*`, `channel:layout`, `emitLayout` (aviso por conexão). |
+| `server/repo/categories.ts` | `listCategories`, `findCategory`, `insertCategory`, `renameCategory`, `deleteCategory`, `saveLayout` (transação). |
+| `server/db/schema/channels.ts` | `channelCategories`, colunas `position`/`category_id`. |
+| `lib/channel-layout.ts` | Puras: `groupChannels`, `layoutOf`, `moveChannel`, `moveCategory`, `layoutUpdate`, `applyLayoutUpdate`. |
+| `lib/channel-drag.ts` | `dragSource`, `useDropTarget` (metade de cima/baixo) e os tipos de arraste. |
+| `lib/collapsed-categories.ts` | Categorias recolhidas na máquina. |
+| `lib/actions/categories.ts` | `bindCategoryEvents`, `saveChannelLayout`, `createCategory`, `renameCategory`, `deleteCategory`. |
+| `components/ChannelSidebar.tsx` | Grupos, cabeçalhos, menus e arraste. |
+| `components/CategoryDialogs.tsx` | Criar/renomear (Dialog) e apagar (AlertDialog) com ui-sdk. |
+
+### Testes
+
+| Arquivo | Cobre |
+|---|---|
+| `server/tests/categories.test.ts` | hello com categorias e posições estáveis, canal novo no fim e na categoria, criar/renomear/apagar avisam, apagar solta os canais, layout válido grava e avisa, inválido recusa sem mudar nada, sem permissão recusa, canal privado não vaza no aviso. |
+| `src/shared/types/categories.test.ts` | `normalizeCategoryName`, `parseLayout`. |
+| `lib/channel-layout.test.ts` | Agrupar, ordem inteira, mover canal/categoria, aplicar o aviso. |
+| `lib/actions/categories.test.ts` | Aviso no estado, otimista + volta na recusa, erros dos pedidos. |
+| `components/channel-categories.test.tsx` | Grupos e ordem, categoria vazia escondida, recolher guardado, arrastar canal e categoria, arrastar pessoa não mexe na ordem, `+` da categoria, renomear pelo botão direito. |
+
+À mão (dona + uma conta comum): criar categoria, arrastar canais para dentro e entre categorias, reordenar
+categorias → a outra janela atualiza na hora; recolher e reiniciar o app mantém recolhida; canal privado não aparece
+para a conta comum.
+
+### Problemas conhecidos
+
+- Recolher esconde todos os canais da categoria, inclusive a sala em que estou (o Discord mantém a ativa à vista).
+- Arrastar só com mouse (sem teclado).
 
 ## Ferramenta nova no hub (B10 e seguintes)
 

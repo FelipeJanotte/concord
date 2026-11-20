@@ -136,6 +136,7 @@ dar só isso, sem silenciar/expulsar da voz.
 |---|---|
 | `hello` | devolve só os canais com `view` e só o `voice:state` dessas salas |
 | `channel:create` / `channel:delete` | `manageChannels`; `channel:created` só para quem pode ver o canal novo |
+| `category:*` / `channel:layout` | `manageChannels`; o aviso `channels:layout` leva só os canais que cada conexão vê (`docs/areas/home.md`, "Categorias e ordem dos canais") |
 | `message:history` | sem `view` = lista vazia (igual canal inexistente); links de anexo assinados para a conta |
 | `GET /files/<id>` | link assinado para uma conta (`server/files-signing.ts`); confere de novo se ela vê o canal da mensagem — perdeu o acesso, o link para |
 | `message:send` | `send`; com anexos, também `attach`; `message:new` só para quem tem `view` |
@@ -182,7 +183,7 @@ testes antigos) nada é escondido, o servidor bloqueia de qualquer jeito.
 | Onde | O que aparece / some |
 |---|---|
 | Cabeçalho da barra lateral | Engrenagem "Configurações da comunidade" só com `manageRoles`, `assignRoles` ou `manageMembers` (dona sempre). |
-| Seções de canais | Botão **+** só com `manageChannels`. Em cada canal, engrenagem "Permissões do canal" e lixeira também só com `manageChannels`. Cadeado quando o @todos tem `view` negado (canal privado). |
+| Categorias de canais | Botão **+** "Criar", `+` da categoria, botão direito na categoria, arrastar canais e categorias e ver categoria vazia: só com `manageChannels`. Em cada canal, engrenagem "Permissões do canal" e lixeira também só com `manageChannels`. Cadeado quando o @todos tem `view` negado (canal privado). |
 | Aba **Cargos** | Lista do mais para o menos importante (@todos por último). Criar (`manageRoles`; nasce "novo cargo" sem permissões, logo abaixo do seu). Reordenar só os cargos de `reorderableRoles`: **arrastar** o cargo e soltar sobre outro (HTML5 drag and drop, como o `ScreenStage`), botões "Mover <cargo> para cima/para baixo" ou **Alt + seta** com o foco no cargo; manda `role:reorder` com só esses, do menos para o mais importante. Os outros (o meu, os de cima, o @todos, cargo de admin para quem não é admin) mostram um cadeado "<cargo>: você não pode mover este cargo" e não arrastam. Editor: nome (até 32), cor (ou "Sem cor"), permissões de administração (Administrador primeiro, com aviso em vermelho de acesso total) e de canal. Cargo no meu nível ou acima fica só leitura ("Só a dona ou um administrador mexe em cargos com Administrador." se for cargo de admin); permissão global que não tenho fica travada (`canGrantPermissions`), mas posso desmarcar a que já está. @todos: só permissões. |
 | Aba **Membros** | Quem está **online** (uma linha por conta), com um checkbox por cargo (todos aparecem, para ver os cargos da pessoa). Travado quando `canChangeMemberRoles` é falso (a dona, eu mesmo) e nos cargos em que `canAssignRole` é falso (os do meu nível ou acima), inclusive em quem está acima de mim. |
 | Permissões do canal | Lista de cargos (@todos primeiro) e, para o cargo escolhido, cada permissão do tipo do canal (texto: ver/enviar/anexar; voz: ver/entrar/falar/tela) em Negar / Herdar / Liberar. "Canal privado" = negar `view` ao @todos. Salvar manda todas as regras (`channel:set-overrides`), sem as vazias. O rascunho é lido só ao abrir. |

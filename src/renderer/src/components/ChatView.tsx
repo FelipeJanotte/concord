@@ -10,6 +10,7 @@ import { CallButton } from './call/CallButton'
 import { CallPanel } from './call/CallPanel'
 import { Composer } from './chat/Composer'
 import { MessageActions } from './chat/MessageActions'
+import { LinkEmbed } from './chat/LinkEmbed'
 import { MessageAttachments } from './chat/MessageAttachments'
 import { MessageEditor } from './chat/MessageEditor'
 import { MessageText } from './chat/MessageText'
@@ -294,6 +295,7 @@ function MessageBody({ message }: { message: Message }) {
           </p>
         )
       )}
+      {!editing && <LinkEmbed message={message} />}
       <MessageAttachments attachments={message.attachments ?? []} />
       <Reactions message={message} />
     </>

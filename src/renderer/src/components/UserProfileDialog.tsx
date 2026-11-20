@@ -3,6 +3,8 @@ import { Volume2 } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { useApp } from '@/store'
 import { STATUS_LABEL, usePresence } from '@/lib/presence'
+import { FormattedText } from './chat/MessageText'
+import { CustomStatusText } from './CustomStatusText'
 import { StatusDot, UserAvatar } from './UserAvatar'
 
 interface Props {
@@ -39,7 +41,16 @@ export function UserProfileDialog({ userId, open, onOpenChange }: Props) {
                 <DialogDescription className="text-muted-foreground">
                   {user.name}#{user.tag}
                 </DialogDescription>
+                <CustomStatusText status={user.customStatus} className="mt-1 text-sm text-foreground" />
               </div>
+              {user.bio && (
+                <section aria-label="Sobre mim" className="space-y-1 rounded-md bg-sidebar p-3 text-sm">
+                  <h3 className="text-xs font-bold tracking-wide text-muted-foreground uppercase">Sobre mim</h3>
+                  <p className="break-words whitespace-pre-wrap text-foreground">
+                    <FormattedText text={user.bio} />
+                  </p>
+                </section>
+              )}
               <div className="space-y-1.5 rounded-md bg-sidebar p-3 text-sm">
                 <div className="flex items-center gap-2 text-foreground">
                   <span className="relative size-2.5">
