@@ -18,7 +18,8 @@ import {
   setOutputVolume,
   setNoiseSuppression,
   setOverlayCorner,
-  setOverlayEditing,
+  finishOverlayEditing,
+  startOverlayEditing,
   setOverlayEnabled,
   setOverlaySize,
   setVoiceLeveler,
@@ -313,7 +314,7 @@ function GameOverlay() {
           ))}
         </select>
         {canMove && (
-          <Button variant={editing ? 'default' : 'secondary'} size="sm" className="h-9" disabled={!enabled} onClick={() => setOverlayEditing(!editing)}>
+          <Button variant={editing ? 'default' : 'secondary'} size="sm" className="h-9" disabled={!enabled} onClick={() => (editing ? finishOverlayEditing() : startOverlayEditing())}>
             {editing ? 'Concluir' : 'Mover'}
           </Button>
         )}

@@ -1,9 +1,10 @@
 import type { ScreenShareBridge, ScreenShareEndReason, ScreenSource } from '@shared/screen'
+import type { DesktopEnvironment } from '@shared/desktop-api'
 import { command, subscribe } from './ipc'
 
-export function screenBridge(canShareAudio: boolean): ScreenShareBridge {
+export function screenBridge(environment: Pick<DesktopEnvironment, 'canShareAudio'>): ScreenShareBridge {
   return {
-    canShareAudio,
+    canShareAudio: environment.canShareAudio,
     getSources: () => command<ScreenSource[]>('screen-sources'),
     start: (request) => command('screen-start', { request }),
     stop: () => command('screen-stop'),

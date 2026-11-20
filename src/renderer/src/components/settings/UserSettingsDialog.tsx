@@ -25,7 +25,7 @@ const SECTIONS: { id: SettingsSection; label: string; icon: ReactNode; Body: Com
 export function UserSettingsDialog() {
   const section = useApp((s) => s.settingsSection)
   const choosingTag = useApp((s) => s.account?.tagLocked === false)
-  const startupAvailable = useApp((s) => s.openAtLogin !== null)
+  const startupAvailable = useApp((s) => s.openAtLogin.supported)
   const sections = SECTIONS.filter((s) => s.id !== 'windows' || startupAvailable)
   const current = sections.find((s) => s.id === (choosingTag ? 'account' : section)) ?? sections[0]
   const Body = current.Body

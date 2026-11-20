@@ -11,7 +11,7 @@ import { PushToTalkHint, PushToTalkSettings } from './PushToTalk'
 
 const bridge: PushToTalkBridge = {
   setConfig: vi.fn(),
-  capture: vi.fn(async () => ({ kind: 'key' as const, code: 57, label: 'Espaço' })),
+  capture: vi.fn(async () => ({ kind: 'chosen' as const, binding: { kind: 'key' as const, code: 57, label: 'Espaço' } })),
   onChange: () => () => {},
   onUnavailable: () => () => {}
 }

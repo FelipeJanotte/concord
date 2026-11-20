@@ -85,7 +85,8 @@ export async function choosePttKey(): Promise<void> {
   set({ pttCapturing: true, pttPressed: false })
   syncMicGate()
   try {
-    const binding = cleanBinding(await bridge.capture())
+    const capture = await bridge.capture()
+    const binding = capture.kind === 'chosen' ? cleanBinding(capture.binding) : null
     if (binding) {
       set({ pttBinding: binding })
       save()

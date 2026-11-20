@@ -105,8 +105,10 @@ describe('comandos', () => {
     const config = { enabled: true, corner: 'top-left', size: 'medium', position: null, width: null } as const
     api.overlay.setConfig(config)
     api.overlay.setRoom(null)
-    api.overlay.setEditing(true)
-    api.overlay.pauseShortcuts(true)
+    api.overlay.startEditing()
+    api.overlay.pauseShortcuts()
+    api.overlay.resumeShortcuts()
+    api.overlay.finishEditing()
     api.overlay.setTheme({ name: 'x' } as never)
     replies['overlay_shortcuts'] = { toggle: true, edit: false }
     await expect(api.overlay.setShortcuts({ toggle: 'F1', edit: 'F2' })).resolves.toEqual({ toggle: true, edit: false })
@@ -116,6 +118,8 @@ describe('comandos', () => {
       { command: 'overlay_room', args: { room: null } },
       { command: 'overlay_edit', args: { editing: true } },
       { command: 'overlay_shortcuts_pause', args: { paused: true } },
+      { command: 'overlay_shortcuts_pause', args: { paused: false } },
+      { command: 'overlay_edit', args: { editing: false } },
       { command: 'overlay_theme', args: { theme: { name: 'x' } } },
       { command: 'overlay_shortcuts', args: { shortcuts: { toggle: 'F1', edit: 'F2' } } }
     ])
@@ -123,10 +127,12 @@ describe('comandos', () => {
 
   it('overlay (página do overlay)', async () => {
     api.overlayView.finishEditing()
-    api.overlayView.resize(300, true)
+    api.overlayView.resizing(200)
+    api.overlayView.resized(300)
     await settle()
     expect(calls).toEqual([
       { command: 'overlay_edit', args: { editing: false } },
+      { command: 'overlay_resize', args: { width: 200, done: false } },
       { command: 'overlay_resize', args: { width: 300, done: true } }
     ])
   })
@@ -134,8 +140,11 @@ describe('comandos', () => {
   it('pressione para falar', async () => {
     const config = { enabled: true, binding: { kind: 'key', code: 47, label: 'V' } } as const
     api.pushToTalk.setConfig(config)
-    replies['ptt_capture'] = { kind: 'mouse', code: 4, label: 'Botão 4 do mouse' }
-    await expect(api.pushToTalk.capture()).resolves.toEqual({ kind: 'mouse', code: 4, label: 'Botão 4 do mouse' })
+    const binding = { kind: 'mouse', code: 4, label: 'Botão 4 do mouse' }
+    replies['ptt_capture'] = binding
+    await expect(api.pushToTalk.capture()).resolves.toEqual({ kind: 'chosen', binding })
+    replies['ptt_capture'] = null
+    await expect(api.pushToTalk.capture()).resolves.toEqual({ kind: 'cancelled' })
     expect(calls[0]).toEqual({ command: 'ptt_config', args: { config } })
   })
 
@@ -147,8 +156,10 @@ describe('comandos', () => {
     replies['window_maximized_get'] = true
     await expect(api.idle.isIdle()).resolves.toBe(true)
     await expect(api.updater.getStatus()).resolves.toEqual({ state: 'ready', version: '1.0.0' })
-    await expect(api.startup.get()).resolves.toBeNull()
-    await expect(api.startup.set(true)).resolves.toBe(true)
+    await expect(api.startup.get()).resolves.toEqual({ supported: false })
+    await expect(api.startup.enable()).resolves.toEqual({ supported: true, enabled: true })
+    replies['startup_get'] = false
+    await expect(api.startup.get()).resolves.toEqual({ supported: true, enabled: false })
     await expect(api.windowControls.isMaximized()).resolves.toBe(true)
     api.updater.check()
     api.updater.install()
@@ -162,6 +173,7 @@ describe('comandos', () => {
       'update_get',
       'startup_get',
       'startup_set',
+      'startup_get',
       'window_maximized_get',
       'update_check',
       'update_install',
@@ -202,6 +214,16 @@ describe('eventos', () => {
     expect(listener).toHaveBeenCalledWith(null, config, true)
   })
 
+  it('overlay-update só entra em modo de mover com editing exatamente true', async () => {
+    mockIPC(() => undefined, { shouldMockEvents: true })
+    const view = buildDesktopApi(environment).overlayView
+    const listener = vi.fn()
+    view.onUpdate(listener)
+    await settle()
+    await emit('overlay-update', { room: null, config: {}, editing: 'sim' })
+    expect(listener).toHaveBeenCalledWith(null, {}, false)
+  })
+
   it('screen-ended entrega o motivo do fim da tela', async () => {
     mockIPC(() => undefined, { shouldMockEvents: true })
     const ended = vi.fn()
@@ -222,7 +244,9 @@ describe('eventos', () => {
     await emit('ptt-unavailable')
     await emit('notification-click', { kind: 'friends' })
     expect(unavailable).toHaveBeenCalledTimes(1)
-    expect(click).toHaveBeenCalledWith({ kind: 'friends' })
+    await emit('notification-click', null)
+    expect(click).toHaveBeenNthCalledWith(1, { kind: 'target', target: { kind: 'friends' } })
+    expect(click).toHaveBeenNthCalledWith(2, { kind: 'no-target' })
   })
 })
 
@@ -241,16 +265,19 @@ describe('canais compartilhados', () => {
       api.idle.isIdle(),
       api.updater.getStatus(),
       api.startup.get(),
-      api.startup.set(false),
+      api.startup.disable(),
       api.windowControls.isMaximized()
     ])
     api.overlay.setConfig(overlayConfig)
     api.overlay.setRoom(null)
-    api.overlay.setEditing(false)
-    api.overlay.pauseShortcuts(false)
+    api.overlay.startEditing()
+    api.overlay.finishEditing()
+    api.overlay.pauseShortcuts()
+    api.overlay.resumeShortcuts()
     api.overlay.setTheme({} as never)
     api.overlayView.finishEditing()
-    api.overlayView.resize(1, false)
+    api.overlayView.resizing(1)
+    api.overlayView.resized(1)
     api.pushToTalk.setConfig({ enabled: false, binding: null })
     api.notifications.show({ title: '', body: '' })
     api.notifications.setBadge(0, null)

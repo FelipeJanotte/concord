@@ -5,12 +5,14 @@ export const overlayBridge: OverlayBridge = {
   setConfig: (config) => send('overlay-config', { config }),
   setRoom: (room) => send('overlay-room', { room }),
   onToggled: (listener) => subscribe<boolean>('overlay-toggled', listener),
-  setEditing: (editing) => send('overlay-edit', { editing }),
+  startEditing: () => send('overlay-edit', { editing: true }),
+  finishEditing: () => send('overlay-edit', { editing: false }),
   onEditing: (listener) => subscribe<boolean>('overlay-editing', listener),
   onMoved: (listener) => subscribe<OverlayPosition>('overlay-moved', listener),
   onResized: (listener) => subscribe<number>('overlay-resized', listener),
   setShortcuts: (shortcuts) => command<OverlayShortcutStatus>('overlay-shortcuts', { shortcuts }),
-  pauseShortcuts: (paused) => send('overlay-shortcuts-pause', { paused }),
+  pauseShortcuts: () => send('overlay-shortcuts-pause', { paused: true }),
+  resumeShortcuts: () => send('overlay-shortcuts-pause', { paused: false }),
   setTheme: (theme) => send('overlay-theme', { theme })
 }
 
@@ -22,6 +24,7 @@ export const overlayViewBridge: OverlayViewBridge = {
       listener(update.room, update.config, update.editing === true)
     ),
   finishEditing: () => send('overlay-edit', { editing: false }),
-  resize: (width, done) => send('overlay-resize', { width, done }),
+  resizing: (width) => send('overlay-resize', { width, done: false }),
+  resized: (width) => send('overlay-resize', { width, done: true }),
   onTheme: (listener) => subscribe('overlay-theme', listener)
 }

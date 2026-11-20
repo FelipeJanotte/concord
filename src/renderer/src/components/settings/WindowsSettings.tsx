@@ -3,7 +3,7 @@ import { useApp } from '@/store'
 import { SettingsHeading } from './SettingsHeading'
 
 export function WindowsSettings() {
-  const openAtLogin = useApp((s) => s.openAtLogin === true)
+  const openAtLogin = useApp((s) => s.openAtLogin.supported && s.openAtLogin.enabled)
   return (
     <div className="space-y-5">
       <SettingsHeading title="Windows" description="Como o Concord se comporta no seu computador." />

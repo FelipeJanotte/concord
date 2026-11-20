@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CallInfo, DmEntry, FriendEntry, Message, User } from '@shared/types'
-import type { NativeNotification, NotificationTarget } from '@shared/notifications'
+import type { NativeNotification, NotificationClick } from '@shared/notifications'
 import {
   bindNotificationEvents,
   loadNotificationPreferences,
@@ -190,7 +190,7 @@ describe('ligação com os eventos', () => {
   let socket: FakeSocket
   let shown: NativeNotification[]
   let badges: Array<[number, string | null]>
-  let clickListener: ((t: NotificationTarget | null) => void) | null
+  let clickListener: ((click: NotificationClick) => void) | null
   let focused: boolean
   let played: string[]
 
@@ -304,16 +304,16 @@ describe('ligação com os eventos', () => {
   })
 
   it('clique: abre a conversa ou a tela de amigos', () => {
-    clickListener!({ kind: 'dm', channelId: 'dm-ana' })
+    clickListener!({ kind: 'target', target: { kind: 'dm', channelId: 'dm-ana' } })
     expect(st()).toMatchObject({ section: 'home', homeView: { kind: 'dm', channelId: 'dm-ana' } })
-    clickListener!({ kind: 'friends' })
+    clickListener!({ kind: 'target', target: { kind: 'friends' } })
     expect(st()).toMatchObject({ section: 'home', homeView: { kind: 'friends' } })
   })
 
   it('clique numa conversa que não está mais na lista não faz nada', () => {
     useApp.setState({ section: 'community' })
     openNotificationTarget({ kind: 'dm', channelId: 'sumiu' })
-    openNotificationTarget(null)
+    clickListener!({ kind: 'no-target' })
     expect(st().section).toBe('community')
   })
 })

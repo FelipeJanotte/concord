@@ -15,7 +15,7 @@ export function buildDesktopApi(environment: DesktopEnvironment): DesktopApi {
   return {
     platform: environment.platform,
     googleSignIn,
-    screen: screenBridge(environment.canShareAudio),
+    screen: screenBridge(environment),
     overlay: overlayBridge,
     overlayView: overlayViewBridge,
     notifications: notificationsBridge,
@@ -23,8 +23,8 @@ export function buildDesktopApi(environment: DesktopEnvironment): DesktopApi {
     updater: updaterBridge,
     pushToTalk: pushToTalkBridge,
     idle: idleBridge,
-    translucency: translucencyBridge(environment.translucencySupported),
+    translucency: translucencyBridge(environment),
     startup: startupBridge,
-    windowControls: windowControlsBridge(environment.windowButtons)
+    windowControls: windowControlsBridge(environment)
   }
 }

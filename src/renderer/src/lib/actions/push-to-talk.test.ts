@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { PttBinding, PttConfig, PushToTalkBridge } from '@shared/push-to-talk'
+import type { PttCapture, PttConfig, PushToTalkBridge } from '@shared/push-to-talk'
 import { voice } from '@/lib/voice'
 import { initialState, useApp } from '@/store'
 import { choosePttKey, handlePttChange, loadPushToTalkPreferences, PTT_KEY, pttEnv, setPttSounds, setPushToTalk, startPushToTalk } from './push-to-talk'
@@ -9,7 +9,7 @@ import { chimes } from './voice-sounds'
 function fakeBridge() {
   let change: ((pressed: boolean) => void) | null = null
   let unavailable: (() => void) | null = null
-  let resolveCapture: ((b: PttBinding | null) => void) | null = null
+  let resolveCapture: ((c: PttCapture) => void) | null = null
   const configs: PttConfig[] = []
   const bridge: PushToTalkBridge = {
     setConfig: (c) => configs.push(c),
@@ -28,7 +28,7 @@ function fakeBridge() {
     configs,
     press: (pressed: boolean) => change?.(pressed),
     unavailable: () => unavailable?.(),
-    capture: (b: PttBinding | null) => resolveCapture?.(b)
+    capture: (c: PttCapture) => resolveCapture?.(c)
   }
 }
 
@@ -121,16 +121,16 @@ describe('tecla pressionada e solta', () => {
 })
 
 describe('trocar a tecla e indisponível', () => {
-  it('a tecla pressionada vira a nova e fica salva; Esc (null) mantém a antiga', async () => {
+  it('a tecla pressionada vira a nova e fica salva; Esc (cancelado) mantém a antiga', async () => {
     const chosen = choosePttKey()
     expect(useApp.getState().pttCapturing).toBe(true)
-    fake.capture({ kind: 'mouse', code: 4, label: 'Botão 4 do mouse' })
+    fake.capture({ kind: 'chosen', binding: { kind: 'mouse', code: 4, label: 'Botão 4 do mouse' } })
     await chosen
     expect(useApp.getState()).toMatchObject({ pttCapturing: false, pttBinding: { kind: 'mouse', code: 4 } })
     expect(JSON.parse(localStorage.getItem(PTT_KEY)!).binding.code).toBe(4)
 
     const again = choosePttKey()
-    fake.capture(null)
+    fake.capture({ kind: 'cancelled' })
     await again
     expect(useApp.getState().pttBinding.code).toBe(4)
   })

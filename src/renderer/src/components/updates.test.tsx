@@ -1,6 +1,4 @@
 // @vitest-environment jsdom
-// Atualização automática no app (A13): situação vinda da ponte, faixa "Reiniciar para atualizar",
-// "Depois" e fora do app desktop.
 import { act, cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'

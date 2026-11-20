@@ -11,7 +11,8 @@ import {
   recordOverlayShortcutKey,
   resetOverlayShortcuts,
   setOverlayCorner,
-  setOverlayEditing,
+  finishOverlayEditing,
+  startOverlayEditing,
   setOverlayEnabled,
   setOverlaySize,
   startOverlay,
@@ -35,12 +36,14 @@ const noopBridge = (): OverlayBridge => ({
   setConfig: () => {},
   setRoom: () => {},
   onToggled: () => () => {},
-  setEditing: () => {},
+  startEditing: () => {},
+  finishEditing: () => {},
   onEditing: () => () => {},
   onMoved: () => () => {},
   onResized: () => () => {},
   setShortcuts: async () => ({ toggle: true, edit: true }),
   pauseShortcuts: () => {},
+  resumeShortcuts: () => {},
   setTheme: () => {}
 })
 
@@ -106,7 +109,6 @@ describe('sincronia com o processo principal', () => {
         toggled = fn
         return () => (toggled = null)
       },
-      setEditing: () => {},
       onEditing: () => () => {},
       onMoved: () => () => {}
     })
@@ -137,7 +139,7 @@ describe('sincronia com o processo principal', () => {
     vi.spyOn(overlayEnv, 'bridge').mockReturnValue(null)
     const stop = startOverlay()
     expect(() => syncOverlay()).not.toThrow()
-    expect(() => setOverlayEditing(true)).not.toThrow()
+    expect(() => startOverlayEditing()).not.toThrow()
     stop()
   })
 })
@@ -152,7 +154,8 @@ describe('mover (como no Discord)', () => {
       setConfig: (c) => calls.configs.push(c),
       setRoom: () => {},
       onToggled: () => () => {},
-      setEditing: (e) => calls.editing.push(e),
+      startEditing: () => calls.editing.push(true),
+      finishEditing: () => calls.editing.push(false),
       onEditing: (fn) => {
         onEditing = fn
         return () => (onEditing = null)
@@ -169,10 +172,10 @@ describe('mover (como no Discord)', () => {
     const b = bridge()
     const stop = startOverlay()
     useApp.setState({ overlayEnabled: true })
-    setOverlayEditing(true)
+    startOverlayEditing()
     expect(b.calls.configs.at(-1)?.enabled).toBe(true)
     expect(b.calls.editing).toEqual([true])
-    setOverlayEditing(false)
+    finishOverlayEditing()
     expect(b.calls.editing).toEqual([true, false])
     stop()
   })
@@ -246,7 +249,8 @@ describe('atalhos escolhidos', () => {
         calls.set.push(s)
         return status
       },
-      pauseShortcuts: (p) => calls.paused.push(p)
+      pauseShortcuts: () => calls.paused.push(true),
+      resumeShortcuts: () => calls.paused.push(false)
     })
     return calls
   }

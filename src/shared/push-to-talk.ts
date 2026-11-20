@@ -32,9 +32,11 @@ export function cleanPttConfig(raw: unknown): PttConfig {
   return { enabled: c?.enabled === true, binding: cleanBinding(c?.binding) }
 }
 
+export type PttCapture = { kind: 'chosen'; binding: PttBinding } | { kind: 'cancelled' }
+
 export interface PushToTalkBridge {
   setConfig: (config: PttConfig) => void
-  capture: () => Promise<PttBinding | null>
+  capture: () => Promise<PttCapture>
   onChange: (listener: (pressed: boolean) => void) => () => void
   onUnavailable: (listener: () => void) => () => void
 }
