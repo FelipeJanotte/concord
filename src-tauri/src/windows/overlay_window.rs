@@ -124,6 +124,7 @@ impl TauriOverlayEnvironment {
         )
         .initialization_script(DesktopEnvironment::current().initialization_script()?)
         .title("Concord overlay")
+        .additional_browser_args(crate::windows::browser_arguments::WEBVIEW_BROWSER_ARGUMENTS)
         .inner_size(250.0, 100.0)
         .visible(false)
         .transparent(true)

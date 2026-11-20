@@ -45,7 +45,9 @@ pub fn create(app: &AppHandle) -> Result<WebviewWindow, MainWindowError> {
 
     #[cfg(windows)]
     {
-        builder = builder.transparent(true);
+        builder = builder
+            .additional_browser_args(crate::windows::browser_arguments::WEBVIEW_BROWSER_ARGUMENTS)
+            .transparent(true);
     }
 
     let window = builder
