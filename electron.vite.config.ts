@@ -2,6 +2,7 @@ import { resolve } from 'path'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { version } from './package.json'
 
 export default defineConfig({
   main: {
@@ -18,6 +19,9 @@ export default defineConfig({
       }
     },
     plugins: [react(), tailwindcss()],
+    define: {
+      'import.meta.env.VITE_APP_VERSION': JSON.stringify(version)
+    },
     // duas páginas: o app e a janela do overlay em jogos (B15)
     build: {
       rollupOptions: {

@@ -1,4 +1,5 @@
 // VoiceClient (B2) com Room, microfone e faixas do LiveKit falsos.
+import { MicGainProcessor } from './mic-gain'
 import { DisconnectReason, RoomEvent, Track, type AudioCaptureOptions, type LocalAudioTrack, type Room } from 'livekit-client'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { JoinVoiceResult } from '@shared/types'
@@ -700,7 +701,7 @@ describe('silenciar alguém só para mim', () => {
 
 describe('supressão de ruído automática (B13)', () => {
   let micOpts: ({ noiseSuppression: boolean } | undefined)[]
-  let processors: { onMode: (m: 'light' | 'advanced' | 'light-fallback') => void }[]
+  let processors: { onMode: (m: 'advanced' | 'light-fallback') => void }[]
   let contexts: { close: ReturnType<typeof vi.fn> }[]
   let watchdogs: { ctx: unknown; onStuck: () => Promise<void>; stop: ReturnType<typeof vi.fn> }[]
   let modes: (string | null)[]
@@ -812,12 +813,13 @@ describe('supressão de ruído automática (B13)', () => {
     warn.mockRestore()
   })
 
-  it('desligado antes de entrar: microfone cru (sem nativa e sem processador)', async () => {
+  it('desligado antes de entrar: sem nativa e sem RNNoise, só o processador de volume e sensibilidade', async () => {
     const c = noiseClient()
     await c.setNoiseSuppression(false)
     await c.join('sala-1')
     expect(micOpts).toEqual([{ noiseSuppression: false }])
-    expect(mic!.setProcessor).not.toHaveBeenCalled()
+    expect(processors).toHaveLength(0)
+    expect(mic!.setProcessor.mock.calls[0][0]).toBeInstanceOf(MicGainProcessor)
   })
 
   it('desligar dentro da sala reabre a captura sem a nativa (o Chromium ignora applyConstraints); ligar devolve', async () => {
@@ -829,7 +831,8 @@ describe('supressão de ruído automática (B13)', () => {
     expect(modes.at(-1)).toBe('off')
     await c.setNoiseSuppression(true)
     expect(mic!.nativeSuppression).toBe(true)
-    expect(mic!.setProcessor).toHaveBeenCalledTimes(2)
+    expect(mic!.setProcessor).toHaveBeenCalledTimes(3)
+    expect(mic!.setProcessor).toHaveBeenLastCalledWith(processors[1])
   })
 
   it('entrou com a supressão desligada e liga na sala: a captura ganha a nativa', async () => {
@@ -838,7 +841,7 @@ describe('supressão de ruído automática (B13)', () => {
     await c.join('sala-1')
     await c.setNoiseSuppression(true)
     expect(mic!.nativeSuppression).toBe(true)
-    expect(mic!.setProcessor).toHaveBeenCalledTimes(1)
+    expect(mic!.setProcessor).toHaveBeenLastCalledWith(processors[0])
   })
 
   it('reabrir a captura mantém o microfone escolhido e a captura de voz', async () => {
@@ -1219,8 +1222,9 @@ describe('pressione para falar (B20)', () => {
 describe('volume do microfone e de saída', () => {
   const micOf = (accountId: string) => ({ identity: 'sock-' + accountId, attributes: { accountId } })
   type FakeGainProc = { gain: number; setGain: ReturnType<typeof vi.fn> }
-  let noiseProcs: FakeGainProc[]
-  let gainProcs: FakeGainProc[]
+  type FakeMicProc = FakeGainProc & { sensitivityDb: number; onLevel: (db: number) => void; setSensitivity: ReturnType<typeof vi.fn> }
+  let noiseProcs: FakeMicProc[]
+  let gainProcs: FakeMicProc[]
 
   function volumeClient(): VoiceClient {
     noiseProcs = []
@@ -1237,13 +1241,13 @@ describe('volume do microfone e de saída', () => {
       },
       createAudioContext: () => ({ close: vi.fn(async () => {}) }) as unknown as AudioContext,
       createClockWatchdog: () => ({ stop: vi.fn() }),
-      createNoiseProcessor: (_onMode, gain) => {
-        const p = { gain, setGain: vi.fn() }
+      createNoiseProcessor: (_onMode, { gain, sensitivityDb, onLevel }) => {
+        const p = { gain, sensitivityDb, onLevel, setGain: vi.fn(), setSensitivity: vi.fn() }
         noiseProcs.push(p)
         return p as never
       },
-      createGainProcessor: (gain) => {
-        const p = { gain, setGain: vi.fn() }
+      createGainProcessor: ({ gain, sensitivityDb, onLevel }) => {
+        const p = { gain, sensitivityDb, onLevel, setGain: vi.fn(), setSensitivity: vi.fn() }
         gainProcs.push(p)
         return p as never
       }
@@ -1262,18 +1266,52 @@ describe('volume do microfone e de saída', () => {
     expect(noiseProcs[0].setGain).toHaveBeenLastCalledWith(0.5)
   })
 
-  it('supressão desligada em 100%: microfone cru; mudar o volume dentro da sala põe o processador de volume', async () => {
+  it('supressão desligada: o processador do microfone (volume e sensibilidade) entra mesmo em 100%', async () => {
     const c = volumeClient()
     await c.setNoiseSuppression(false)
     await c.join('sala-1')
-    expect(mic!.setProcessor).not.toHaveBeenCalled()
-    await c.setMicGain(1.8)
     expect(gainProcs).toHaveLength(1)
-    expect(gainProcs[0].gain).toBe(1.8)
     expect(mic!.setProcessor).toHaveBeenCalledWith(gainProcs[0])
-    await c.setMicGain(1)
-    expect(gainProcs[0].setGain).toHaveBeenLastCalledWith(1)
+    await c.setMicGain(1.8)
+    expect(gainProcs[0].setGain).toHaveBeenLastCalledWith(1.8)
     expect(gainProcs).toHaveLength(1)
+  })
+
+  it('sensibilidade: vale ao entrar, muda na hora e o nível medido chega em onMicLevel', async () => {
+    const c = volumeClient()
+    const levels: number[] = []
+    c.onMicLevel = (db) => levels.push(db)
+    c.setMicSensitivity(-45)
+    await c.setNoiseSuppression(false)
+    await c.join('sala-1')
+    expect(gainProcs[0].sensitivityDb).toBe(-45)
+    c.setMicSensitivity(-200)
+    expect(gainProcs[0].setSensitivity).toHaveBeenLastCalledWith(-100)
+    gainProcs[0].onLevel(-33)
+    expect(levels).toEqual([-33])
+  })
+
+  it('com a supressão ligada, a sensibilidade vai no processador de ruído (ao entrar, na hora e o nível)', async () => {
+    const c = volumeClient()
+    const levels: number[] = []
+    c.onMicLevel = (db) => levels.push(db)
+    c.setMicSensitivity(-45)
+    await c.join('sala-1')
+    expect(noiseProcs[0].sensitivityDb).toBe(-45)
+    c.setMicSensitivity(-30)
+    expect(noiseProcs[0].setSensitivity).toHaveBeenLastCalledWith(-30)
+    noiseProcs[0].onLevel(-25)
+    expect(levels).toEqual([-25])
+  })
+
+  it('trocar a supressão na sala leva a sensibilidade para o processador novo', async () => {
+    const c = volumeClient()
+    await c.setNoiseSuppression(false)
+    await c.join('sala-1')
+    await c.setNoiseSuppression(true)
+    c.setMicSensitivity(-30)
+    expect(gainProcs[0].setSensitivity).not.toHaveBeenCalled()
+    expect(noiseProcs[0].setSensitivity).toHaveBeenLastCalledWith(-30)
   })
 
   it('supressão desligada com volume ajustado: o processador de volume entra antes de publicar', async () => {

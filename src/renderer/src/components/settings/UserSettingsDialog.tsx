@@ -53,6 +53,7 @@ export function UserSettingsDialog() {
                 {s.label}
               </button>
             ))}
+            <p className="mt-auto px-2 pt-2 text-xs text-muted-foreground">Versão {import.meta.env.VITE_APP_VERSION}</p>
           </nav>
         )}
         <div data-testid="settings-body" className="min-h-0 min-w-0 flex-1 overflow-y-auto p-6">

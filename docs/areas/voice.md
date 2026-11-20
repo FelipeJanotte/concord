@@ -437,7 +437,7 @@ duas barras laterais), como no Discord:
 - **Silenciar alguém:** também por conta. O volume aplicado vira 0, mas o valor ajustado continua em `userVolumes`;
   ao tirar o silêncio, volta ao que era. Mexer no volume enquanto silenciado só guarda o valor. Não afeta os outros:
   é só no meu app (para silenciar para todos, B6 "silenciar pelo servidor").
-- **Preferências desta máquina:** `localStorage` `concord:audio` = `{ input, output, camera, volumes, muted, sounds, noise, micGain, outputVolume, leveler, levelerTarget, soundboardVolume, screenVolumes, screenMuted }` (`screenVolumes` = `{ accountId: 0–1 }`, só os abaixo de 100%; `screenMuted` = lista de contas), lido ao carregar o
+- **Preferências desta máquina:** `localStorage` `concord:audio` = `{ input, output, camera, volumes, muted, sounds, noise, micGain, micSensitivity, outputVolume, leveler, levelerTarget, soundboardVolume, screenVolumes, screenMuted }` (`screenVolumes` = `{ accountId: 0–1 }`, só os abaixo de 100%; `screenMuted` = lista de contas), lido ao carregar o
   app (`loadAudioPreferences`) e de novo depois do `disconnect()` (sair da conta não apaga). Dados inválidos ou
   armazenamento bloqueado: volta aos padrões sem quebrar.
 - **Lista:** `Room.getLocalDevices(kind, false)` (não pede permissão só para listar). Os apelidos do Windows
@@ -459,16 +459,15 @@ Dois controles em Configurações de voz (`VolumeSettings` em `settings/VoiceSet
 
 | Peça | Papel |
 |---|---|
-| `lib/mic-gain.ts` | `clampMicGain` (0 a `MIC_GAIN_MAX` = 2), `clampOutputVolume` (0 a 1; inválido volta a 1), interface `GainControl` e `MicGainProcessor` (processador do `livekit-client`: microfone → `GainNode` → faixa publicada). |
+| `lib/mic-gain.ts` | `clampMicGain` (0 a `MIC_GAIN_MAX` = 2), `clampOutputVolume` (0 a 1; inválido volta a 1), interface `GainControl` e `MicGainProcessor` (processador do `livekit-client` com a supressão desligada: microfone → volume → portão da sensibilidade → faixa publicada; ver "Sensibilidade do microfone"). |
 | `lib/noise/processor.ts` | O `AutoNoiseProcessor` ganhou um `GainNode` "volume" entre seco/molhado e a saída, e `setGain`. |
 | `lib/voice.ts` | `setMicGain(0–2)` e `setOutputVolume(0–1)`; `attachProcessor` escolhe o processador antes de publicar; `gainControl` é quem aplica o volume agora. |
 | `lib/actions/devices.ts` + `store/devices.ts` | `micGain`/`outputVolume` (padrão 1), `setMicGain`, `setOutputVolume`, carregados em `loadAudioPreferences`. |
 
 - **Microfone (0–200%):** com a supressão de ruído ligada, o volume vai no próprio processador de ruído (não há dois
-  processadores: o `livekit-client` aceita só um por faixa). Com ela desligada e em 100%, o microfone vai **cru, sem
-  processador** (como antes); ao sair de 100% dentro da sala entra o `MicGainProcessor` e fica até sair da sala.
-  Desligar a supressão dentro da sala troca o de ruído pelo de volume (se o volume não está em 100%). Fora da sala só
-  guarda o valor. A mudança é suave (`setTargetAtTime`), sem estalo. Quem escuta recebe o áudio já com o volume.
+  processadores: o `livekit-client` aceita só um por faixa). Com ela desligada, o `MicGainProcessor` entra **sempre**
+  (mesmo em 100%), porque ele também faz o corte da sensibilidade. Desligar a supressão dentro da sala troca o de
+  ruído por ele. Fora da sala só guarda o valor. A mudança é suave (`setTargetAtTime`), sem estalo. Quem escuta recebe o áudio já com o volume.
   O `autoGainControl` do WebRTC continua ligado: ele age antes, este volume multiplica depois.
 - **Saída (0–100%):** multiplica o volume de cada pessoa (`applyVolume` = pessoa × saída) e vale também para o áudio
   das telas, os efeitos sonoros (`sounds.ts`) e os sons de entrar/sair (`voice-sounds.ts`, inclusive o "Testar").
@@ -481,6 +480,33 @@ Dois controles em Configurações de voz (`VolumeSettings` em `settings/VoiceSet
   (controles, "Voltar para 100%", "Testar" com o volume de saída), `sounds.test.ts` e `voice-sounds.test.ts`.
   À mão: numa sala com outra janela, subir o microfone para 200% e baixar para 0% (o outro ouve mudar na hora, com e
   sem a supressão de ruído); baixar a saída e conferir voz, tela e efeitos sonoros.
+
+## Sensibilidade do microfone
+
+Um slider em Configurações de voz (`MicSensitivity` em
+`settings/VoiceSettings.tsx`) escolhe a partir de que volume o microfone abre (portão de ruído, como a sensibilidade
+do Discord). Por trás do slider, uma barra (`Meter` do ui-sdk) mostra o volume do microfone ao vivo: verde quando
+passa da linha, cinza quando fica cortado. Vale **com e sem** a supressão de ruído: com ela, o corte vem depois do
+RNNoise e cuida do que ele não tira (voz de vídeo na caixa de som), deixando o microfone em silêncio nas pausas.
+**Só cliente:** nenhum evento novo; salvo em `concord:audio` como `micSensitivity`.
+
+| Peça | Papel |
+|---|---|
+| `lib/mic-gate.ts` | Puras: `clampSensitivity` (-100 a 0 dB; inválido volta a **-60**, o padrão) e `nextGate` (abre com nível ≥ linha; fecha só depois de `GATE_HOLD_MS` = 300 ms abaixo, para não cortar o fim da palavra). |
+| `lib/mic-gate.ts` | `MicGate`: põe um `GainNode` (portão) e um analisador depois do volume do processador; a cada 50 ms mede o nível (`rmsDb` de `lib/leveler/level.ts`), avisa `onLevel` e abre/fecha o portão (abre em ~5 ms, fecha em ~50 ms, sem estalo). `setSensitivity` muda na hora. Começa fechado. |
+| `lib/mic-gain.ts`, `lib/noise/processor.ts` | Os dois processadores do microfone montam um `MicGate` no fim da cadeia (`MicProcessorSettings`: `gain`, `sensitivityDb`, `onLevel`, `clock`) e repassam `setSensitivity`. Com o RNNoise, o nível medido já é o da voz limpa. |
+| `lib/mic-level.ts` | `MicLevelMonitor` (`micLevelMonitor`): fora da sala, abre o microfone escolhido só para medir o nível enquanto o slider está na tela; `stop` fecha captura e AudioContext (e solta uma captura que chegar depois do `stop`). |
+| `lib/voice.ts` | `setMicSensitivity(db)` e `onMicLevel` (nível vindo do processador na sala); `micProcessor` é o processador atual (de ruído ou de volume), que recebe volume e sensibilidade. |
+| `lib/actions/devices.ts` + `store/devices.ts` | `micSensitivity`, `micLevel` (dBFS ou `null`), `setMicSensitivity`, `startMicLevelPreview` (fora da sala liga o monitor; na sala o nível já vem do processador) e `stopMicLevelPreview` (ao desmontar o slider). |
+
+- **Linha e barra na mesma escala:** as duas vão de -100 a 0 dBFS; a barra é `nível + 100` (0 a 100).
+- **Fora da sala** a medição é do microfone sem o RNNoise e sem o volume do microfone; na sala, depois dos dois. Com
+  a supressão ligada, o teclado aparece mais alto na barra fora da sala do que vai chegar de fato.
+- **Testes:** `lib/mic-gate.test.ts`, `lib/mic-gain.test.ts` (bloco "com sensibilidade"), `lib/mic-level.test.ts`,
+  `lib/voice.test.ts` (sensibilidade com e sem supressão, ao entrar, na hora, `onMicLevel`, trocar a supressão na sala), `lib/noise/noise.test.ts` (bloco "com sensibilidade"), `lib/actions/devices.test.ts`
+  e `components/settings/VoiceSettings.test.tsx` (slider, barra, frases, para o monitor ao fechar). **À mão:** desligar
+  a supressão, falar e digitar olhando a barra; numa sala com outra janela, conferir que o teclado abaixo da linha não
+  chega e o começo das frases não some.
 
 ## Equalizador automático de vozes
 
@@ -550,20 +576,25 @@ Um som curto quando alguém **entra** na sala de voz em que estou (duas notas su
 
 ## Supressão de ruído automática (B13)
 
-Tira teclado, ventilador e ruído de fundo do microfone **antes de enviar**, sem a pessoa escolher nada. Roda no app
+Tira teclado, ventilador, som de vídeo vazando e ruído de fundo do microfone **antes de enviar**, sem a pessoa escolher nada. Roda no app
 de quem fala (processador da faixa do microfone no `livekit-client`); quem ouve recebe limpo. Um único interruptor
 ("Supressão de ruído automática", ligado por padrão, salvo em `concord:audio` como `noise`) desliga tudo: microfone cru.
 
 | Peça | Papel |
 |---|---|
-| `lib/noise/decide.ts` | `NoiseDecider` (função pura): ruído de fundo = percentil 20% do nível dos últimos 4 s (a fala é alta e intermitente; o fundo fica nos valores baixos). Fundo acima de **-50 dBFS por 2 s** liga o avançado; abaixo de **-58 dBFS por 10 s** desliga. O vão entre os dois evita ficar trocando. |
-| `lib/noise/processor.ts` | `AutoNoiseProcessor` (`TrackProcessor` do LiveKit): microfone → seco + (RNNoise → molhado) → faixa publicada, e um analisador que mede o nível a cada 250 ms. A troca de modo é um crossfade (sem estalo, sem republicar). Não mexe na captura: a supressão nativa continua como o microfone foi aberto (ver "Supressão nativa só muda reabrindo a captura"). |
+| `lib/noise/processor.ts` | `AutoNoiseProcessor` (`TrackProcessor` do LiveKit): microfone → seco + (RNNoise → molhado) → volume → portão da sensibilidade (`MicGate`) → faixa publicada. Com o RNNoise carregado, fica no molhado **o tempo todo**; se ele falha no meio, crossfade para o seco (sem estalo, sem republicar). Não mexe na captura: a supressão nativa continua como o microfone foi aberto (ver "Supressão nativa só muda reabrindo a captura"). |
 | `lib/noise/engine.ts` | Motor: **RNNoise** (MIT) de `@sapphi-red/web-noise-suppressor`, WASM + AudioWorklet, carregado com `import()` só quando o filtro liga. Os arquivos (`rnnoise*.wasm`, worklet) vão empacotados pelo Vite (`?url`). O WASM é baixado uma vez e o worklet é registrado uma vez por AudioContext. |
 | `lib/voice.ts` | `setNoiseSuppression(on)`, `onNoiseModeChange`. Antes de publicar o microfone: `mic.setAudioContext(ctx48k)` + `mic.setProcessor(...)` (um AudioContext a 48 kHz **novo a cada entrada na sala**, fechado no `teardown`, com o vigia do relógio). Ligar/desligar na sala: `stopProcessor`/`setProcessor` + `mic.restartTrack(micCapture(...))`, que reabre a captura com a nativa ligada ou desligada, no mesmo microfone escolhido (o mesmo AudioContext continua). |
 | `lib/audio-clock.ts` | `AudioClockWatchdog`: a cada 2 s (`CLOCK_CHECK_MS`) compara o `currentTime` do AudioContext com o relógio real; abaixo de 0,9x (`MIN_CLOCK_RATE`) em 2 medições seguidas, `suspend()` + `resume()`, o log `[voz] áudio do microfone rodava a Nx...; microfone reaberto` e o `VoiceClient` refaz o microfone (`reopenMic`: `stopProcessor` + `restartTrack` + processador novo, o mesmo que desligar e ligar a supressão). Contexto suspenso de propósito não conta. Ver "Voz robotizada" abaixo. |
-| `store/devices.ts` | `noiseSuppression` e `noiseMode` (`'light' \| 'advanced' \| 'light-fallback' \| 'off' \| null`), mostrado como frase em Configurações de voz. |
+| `store/devices.ts` | `noiseSuppression` e `noiseMode` (`'advanced' \| 'light-fallback' \| 'off' \| null`), mostrado como frase em Configurações de voz. |
 
-- **Modos:** `light` = só a nativa do WebRTC (ambiente silencioso); `advanced` = RNNoise; `light-fallback` = o avançado
+- **Por que sempre ligado (antes era automático):** o modo automático (`NoiseDecider`, removido) só ligava o RNNoise
+  com ruído de fundo **constante** acima de -50 dBFS por 2 s, medido pelo percentil 20% do nível. Teclado e áudio de
+  vídeo são intermitentes: não subiam esse fundo, e o microfone ficava só com a nativa, que deixa passar os dois. Com a
+  supressão ligada, o RNNoise processa tudo. Custo: o worklet roda o tempo todo (antes também rodava, só ficava em
+  espera). Voz de vídeo vazando é voz: o RNNoise não tira; contra isso valem o cancelamento de eco (fone/caixa) e a
+  sensibilidade (corta nas pausas).
+- **Modos:** `advanced` = RNNoise (+ a nativa); `light-fallback` = o RNNoise
   não está disponível (não carregou, erro no AudioWorklet, PC com menos de 3 núcleos, ou o `setProcessor` falhou);
   `off` = desligada pela pessoa; `null` = fora de sala.
 - **Nunca derruba a voz:** qualquer falha do filtro cai para a supressão nativa e a pessoa entra/continua falando; só
@@ -601,18 +632,17 @@ de quem fala (processador da faixa do microfone no `livekit-client`); quem ouve 
   branco -35 → -40 (ruído branco é o ponto fraco do RNNoise); tom puro passa intacto. Com microfone falso
   (`--use-fake-device-for-media-stream --use-file-for-fake-audio-capture=<wav>`) tocando ruído rosa: a 40 dBFS cru, o
   analisador (que mede **depois** da nativa, porque a faixa já sai processada do `getUserMedia`) vê -45,5 dBFS e o
-  avançado liga; a -45 dBFS cru, vê -50,8 e fica no leve (a nativa tira só ~5 dB desse ruído). Ou seja, o RNNoise entra
-  com ruído de fundo a partir de ~-45 dBFS no microfone; abaixo disso fica só a nativa. Se ventilador mais baixo passar,
-  a proposta é baixar `noisyDb` (ex.: -55) medindo antes com o mesmo roteiro.
+  avançado ligava; a -45 dBFS cru, via -50,8 e ficava no leve (a nativa tira só ~5 dB desse ruído). Essa medição é a
+  origem da troca para o RNNoise sempre ligado.
 - **Núcleos:** o avançado exige 3 ou mais (`navigator.hardwareConcurrency`); qualquer dual-core com hyper-threading já
   informa 4.
 - **CSP:** `script-src` ganhou `'wasm-unsafe-eval'` (necessário para compilar WebAssembly; não libera `eval` de JS).
 - **Trocar de motor:** outra função com a assinatura de `NoiseEngineLoader` (ex.: o GTCRN do mesmo pacote, ou
   DeepFilterNet3). O resto não muda.
-- **Testes:** `lib/noise/noise.test.ts` (decisor: silêncio, ventilador, fala sobre silêncio × sobre ruído, histerese,
-  barulho curto; processador com Web Audio falso: crossfade, motor que falha, PC fraco, erro no worklet, destroy),
+- **Testes:** `lib/noise/noise.test.ts` (processador com Web Audio falso: RNNoise ligado desde o início, motor que
+  falha, PC fraco, erro no worklet, destroy, mono),
   `lib/voice.test.ts` (bloco B13: filtro antes de publicar, contexto novo a cada entrada e fechado ao sair, vigia ligado
-  e desligado, falha → entra com a nativa, desligado = cru, ligar/desligar dentro da sala reabrindo a captura (o
+  e desligado, falha → entra com a nativa, desligado = sem nativa e sem RNNoise (só o processador de volume e sensibilidade), ligar/desligar dentro da sala reabrindo a captura (o
   microfone falso, como o Chromium, ignora `applyConstraints`), mesmo microfone escolhido ao reabrir, microfone que não
   reabre, sair), `lib/actions/devices.test.ts`,
   `lib/audio-clock.test.ts` (vigia: relógio em dia, preso a 2/3, medição lenta isolada, recomeça depois de destravar,

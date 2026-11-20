@@ -17,10 +17,10 @@
  * Tudo por conta, porque a identidade muda a cada conexão.
  *
  * Supressão de ruído automática (B13): `lib/noise/processor.ts` entra como processador do microfone
- * (`setProcessor`) antes de publicar; `setNoiseSuppression(false)` manda o áudio cru.
+ * (`setProcessor`) antes de publicar; `setNoiseSuppression(false)` troca pelo `MicGainProcessor`.
  *
  * Volumes (Configurações de voz): `setMicGain` (0 a 200%) entra no processador do microfone (o de
- * ruído, ou o `MicGainProcessor` com a supressão desligada; em 100% sem supressão, nenhum) e
+ * ruído, ou o `MicGainProcessor` com a supressão desligada; os dois com a sensibilidade) e
  * `setOutputVolume` (0 a 100%) multiplica o volume de cada pessoa e vale para todo áudio da sala.
  */
 import {
@@ -41,7 +41,8 @@ import type { JoinVoiceResult, VoicePermissions } from '@shared/types'
 import { permissionsFrom } from './voice-permissions'
 import { loadRnnoiseEngine } from './noise/engine'
 import { AutoNoiseProcessor, type NoiseMode } from './noise/processor'
-import { clampMicGain, clampOutputVolume, MicGainProcessor, type GainControl } from './mic-gain'
+import { clampMicGain, clampOutputVolume, MicGainProcessor, type MicProcessorSettings } from './mic-gain'
+import { clampSensitivity, SENSITIVITY_DEFAULT_DB } from './mic-gate'
 import { AudioClockWatchdog } from './audio-clock'
 import { SpeakingDetector } from './speaking/detector'
 import { VoiceLeveler, type LevelerGains } from './leveler/leveler'
@@ -76,15 +77,21 @@ export interface VoiceDeps {
   createRoom: (opts: { outputDeviceId: string | null }) => Room
   /** `deviceId` null = microfone padrão do sistema; `noiseSuppression` = supressão nativa do WebRTC */
   createMicTrack: (deviceId: string | null, opts?: { noiseSuppression: boolean }) => Promise<LocalAudioTrack>
-  /** processador da supressão automática; avisa o modo atual; `gain` = volume do microfone */
-  createNoiseProcessor: (onMode: (mode: NoiseMode) => void, gain: number) => AutoNoiseProcessor
-  /** só o volume do microfone (supressão desligada) */
-  createGainProcessor: (gain: number) => MicGainProcessor
+  createNoiseProcessor: (onMode: (mode: NoiseMode) => void, settings: MicSettings) => AutoNoiseProcessor
+  createGainProcessor: (settings: MicSettings) => MicGainProcessor
   /** AudioContext a 48 kHz (o RNNoise só trabalha nessa taxa) */
   createAudioContext: () => AudioContext
   createClockWatchdog: (ctx: AudioContext, onStuck: () => Promise<void>) => { stop: () => void }
   listDevices: (kind: MediaDeviceKind) => Promise<MediaDeviceInfo[]>
   createLeveler: () => VoiceLeveler
+}
+
+type MicSettings = Omit<MicProcessorSettings, 'clock'>
+
+const MIC_CLOCK: MicProcessorSettings['clock'] = {
+  now: () => performance.now(),
+  setInterval: (fn, ms) => window.setInterval(fn, ms),
+  clearInterval: (id) => window.clearInterval(id as number)
 }
 
 const defaultDeps: VoiceDeps = {
@@ -100,18 +107,15 @@ const defaultDeps: VoiceDeps = {
       dynacast: true
     }),
   createMicTrack: (deviceId, opts) => createLocalAudioTrack(micCapture(deviceId, opts?.noiseSuppression ?? true)),
-  createGainProcessor: (gain) => new MicGainProcessor(gain),
-  createNoiseProcessor: (onMode, gain) =>
+  createGainProcessor: (settings) => new MicGainProcessor({ ...settings, clock: MIC_CLOCK }),
+  createNoiseProcessor: (onMode, settings) =>
     new AutoNoiseProcessor(
       {
         loadEngine: loadRnnoiseEngine,
-        cores: () => navigator.hardwareConcurrency || 4,
-        now: () => Date.now(),
-        setInterval: (fn, ms) => window.setInterval(fn, ms),
-        clearInterval: (id) => window.clearInterval(id as number)
+        cores: () => navigator.hardwareConcurrency || 4
       },
       onMode,
-      gain
+      { ...settings, clock: MIC_CLOCK }
     ),
   createAudioContext: () => new AudioContext({ sampleRate: 48000 }),
   createClockWatchdog: (ctx, onStuck) => {
@@ -216,7 +220,9 @@ export class VoiceClient {
   private clockWatchdog: { stop: () => void } | null = null
   /** volume do microfone (0 a 2) e o processador que o aplica agora (null = microfone sem processador) */
   private micGain = 1
-  private gainControl: GainControl | null = null
+  private micSensitivity = SENSITIVITY_DEFAULT_DB
+  private micProcessor: MicGainProcessor | AutoNoiseProcessor | null = null
+  onMicLevel: ((db: number) => void) | null = null
   /** volume de saída (0 a 1), multiplica o de cada pessoa */
   private outputVolume = 1
   private levelerEnabled = false
@@ -359,7 +365,7 @@ export class VoiceClient {
     this.publishScreenAudio()
     this.mic?.stop() // o LiveKit destrói o processador junto com a faixa
     this.closeAudioContext()
-    this.gainControl = null
+    this.micProcessor = null
     this.onNoiseModeChange?.(null)
     this.mic = null
     this.measuredSpeakers = []
@@ -428,7 +434,7 @@ export class VoiceClient {
     if (prev.canSpeak && !next.canSpeak && this.mic) {
       const mic = this.mic
       this.mic = null
-      this.gainControl = null
+      this.micProcessor = null
       await room.localParticipant.unpublishTrack(mic).catch(() => {})
       mic.stop()
     } else if (!prev.canSpeak && next.canSpeak && !this.mic) {
@@ -514,14 +520,15 @@ export class VoiceClient {
     const mic = this.mic
     if (!mic || !this.room) return
     if (enabled) {
+      this.micProcessor = null
       await this.recaptureMic(mic, true)
       await this.attachNoise(mic)
     } else {
       await mic.stopProcessor()
-      this.gainControl = null
+      this.micProcessor = null
       await this.recaptureMic(mic, false)
       this.onNoiseModeChange?.('off')
-      if (this.micGain !== 1) await this.attachGain(mic)
+      await this.attachGain(mic)
     }
   }
 
@@ -529,7 +536,7 @@ export class VoiceClient {
     const mic = this.mic
     if (!mic || !this.room) return
     await mic.stopProcessor()
-    this.gainControl = null
+    this.micProcessor = null
     await this.recaptureMic(mic, this.noiseEnabled)
     await this.attachProcessor(mic)
   }
@@ -539,9 +546,12 @@ export class VoiceClient {
   /** Volume do microfone (0 a 2). Na hora, se estiver numa sala; senão vale para a próxima entrada. */
   async setMicGain(gain: number): Promise<void> {
     this.micGain = clampMicGain(gain)
-    if (this.gainControl) return this.gainControl.setGain(this.micGain)
-    // supressão desligada e microfone cru: só põe um processador quando o volume sai de 100%
-    if (this.mic && this.room && !this.noiseEnabled && this.micGain !== 1) await this.attachGain(this.mic)
+    this.micProcessor?.setGain(this.micGain)
+  }
+
+  setMicSensitivity(db: number): void {
+    this.micSensitivity = clampSensitivity(db)
+    this.micProcessor?.setSensitivity(this.micSensitivity)
   }
 
   /** Volume de saída (0 a 1): todo áudio da sala, junto com o volume de cada pessoa. */
@@ -596,7 +606,7 @@ export class VoiceClient {
   /** Processador do microfone antes de publicar: o de ruído (com o volume) ou só o volume. */
   private async attachProcessor(mic: LocalAudioTrack): Promise<void> {
     if (this.noiseEnabled) await this.attachNoise(mic)
-    else if (this.micGain !== 1) await this.attachGain(mic)
+    else await this.attachGain(mic)
   }
 
   private openAudioContext(): AudioContext {
@@ -618,11 +628,11 @@ export class VoiceClient {
   private async attachGain(mic: LocalAudioTrack): Promise<void> {
     try {
       await mic.setAudioContext(this.openAudioContext())
-      const processor = this.deps.createGainProcessor(this.micGain)
+      const processor = this.deps.createGainProcessor(this.micSettings())
       await mic.setProcessor(processor)
-      this.gainControl = processor
+      this.micProcessor = processor
     } catch (err) {
-      this.gainControl = null
+      this.micProcessor = null
       console.warn('[voz] não foi possível ajustar o volume do microfone:', err)
     }
   }
@@ -631,14 +641,18 @@ export class VoiceClient {
   private async attachNoise(mic: LocalAudioTrack): Promise<void> {
     try {
       await mic.setAudioContext(this.openAudioContext())
-      const processor = this.deps.createNoiseProcessor((mode) => this.onNoiseModeChange?.(mode), this.micGain)
+      const processor = this.deps.createNoiseProcessor((mode) => this.onNoiseModeChange?.(mode), this.micSettings())
       await mic.setProcessor(processor)
-      this.gainControl = processor
+      this.micProcessor = processor
     } catch (err) {
-      this.gainControl = null
+      this.micProcessor = null
       console.warn('[ruído] não foi possível ligar o filtro automático:', err)
       this.onNoiseModeChange?.('light-fallback')
     }
+  }
+
+  private micSettings(): MicSettings {
+    return { gain: this.micGain, sensitivityDb: this.micSensitivity, onLevel: (db) => this.onMicLevel?.(db) }
   }
 
   private async recaptureMic(mic: LocalAudioTrack, nativeSuppression: boolean): Promise<void> {
