@@ -81,7 +81,7 @@ export interface VoiceDeps {
   createGainProcessor: (settings: MicSettings) => MicGainProcessor
   /** AudioContext a 48 kHz (o RNNoise só trabalha nessa taxa) */
   createAudioContext: () => AudioContext
-  createClockWatchdog: (ctx: AudioContext) => { stop: () => void }
+  createClockWatchdog: (ctx: AudioContext, onStuck: () => Promise<void>) => { stop: () => void }
   listDevices: (kind: MediaDeviceKind) => Promise<MediaDeviceInfo[]>
   createLeveler: () => VoiceLeveler
 }
@@ -118,12 +118,15 @@ const defaultDeps: VoiceDeps = {
       { ...settings, clock: MIC_CLOCK }
     ),
   createAudioContext: () => new AudioContext({ sampleRate: 48000 }),
-  createClockWatchdog: (ctx) => {
+  createClockWatchdog: (ctx, onStuck) => {
     const watchdog = new AudioClockWatchdog(ctx, {
       now: () => performance.now(),
       setInterval: (fn, ms) => window.setInterval(fn, ms),
       clearInterval: (id) => window.clearInterval(id as number),
-      onRecover: (rate) => console.warn(`[voz] áudio do microfone rodava a ${rate}x da velocidade; processamento reiniciado`)
+      onRecover: (rate) => {
+        console.warn(`[voz] áudio do microfone rodava a ${rate}x da velocidade; microfone reaberto`)
+        void onStuck()
+      }
     })
     watchdog.start()
     return watchdog
@@ -529,6 +532,15 @@ export class VoiceClient {
     }
   }
 
+  private async reopenMic(): Promise<void> {
+    const mic = this.mic
+    if (!mic || !this.room) return
+    await mic.stopProcessor()
+    this.micProcessor = null
+    await this.recaptureMic(mic, this.noiseEnabled)
+    await this.attachProcessor(mic)
+  }
+
   // ---------- volumes ----------
 
   /** Volume do microfone (0 a 2). Na hora, se estiver numa sala; senão vale para a próxima entrada. */
@@ -600,7 +612,7 @@ export class VoiceClient {
   private openAudioContext(): AudioContext {
     if (!this.audioContext) {
       this.audioContext = this.deps.createAudioContext()
-      this.clockWatchdog = this.deps.createClockWatchdog(this.audioContext)
+      this.clockWatchdog = this.deps.createClockWatchdog(this.audioContext, () => this.reopenMic())
     }
     return this.audioContext
   }
