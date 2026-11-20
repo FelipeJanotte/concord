@@ -29,7 +29,6 @@ export function MusicView() {
         <h1 className="font-semibold text-accent-foreground">Música</h1>
         <span aria-hidden className="h-5 w-px bg-border" />
         <p className="min-w-0 flex-1 truncate text-sm text-muted-foreground">{roomName ?? 'Fora de uma sala de voz'}</p>
-        <PlaylistsDrawer channelId={channelId} />
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6 sm:px-6">
@@ -52,7 +51,7 @@ function RoomMusic({ channelId }: { channelId: string }) {
     <>
       {state && track ? <NowPlaying state={state} track={track} /> : <NothingPlaying />}
       <div className="flex flex-col gap-3">
-        <MusicRequestForm channelId={channelId} />
+        <MusicRequestBar channelId={channelId} />
         <SaveCollectionChip />
       </div>
       {state && track && <MusicQueue channelId={channelId} queue={state.queue} />}
@@ -71,7 +70,18 @@ function RoomRequired() {
         <p className="relative text-xl font-bold text-accent-foreground">Entre numa sala de voz para ouvir música juntos</p>
         <p className="relative max-w-md text-sm text-muted-foreground">A música toca para todo mundo da sala. Escolha uma sala de voz na barra ao lado e volte aqui para pedir.</p>
       </section>
-      <MusicRequestForm channelId={null} />
+      <MusicRequestBar channelId={null} />
     </>
+  )
+}
+
+function MusicRequestBar({ channelId }: { channelId: string | null }) {
+  return (
+    <div role="group" aria-label="Pedir música" className="flex items-start gap-2">
+      <div className="min-w-0 flex-1">
+        <MusicRequestForm channelId={channelId} />
+      </div>
+      <PlaylistsDrawer channelId={channelId} />
+    </div>
   )
 }

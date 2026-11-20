@@ -351,6 +351,21 @@ describe('playlists da comunidade', () => {
     return screen.getByRole('dialog', { name: 'Playlists da comunidade' })
   }
 
+  it('o botão "Playlists" fica ao lado do campo de pedir música, com o nome escrito, e não no cabeçalho', async () => {
+    renderView()
+    const button = screen.getByRole('button', { name: 'Playlists' })
+    expect(button.textContent).toBe('Playlists')
+    expect(within(screen.getByRole('banner')).queryByRole('button', { name: 'Playlists' })).toBeNull()
+    expect(within(screen.getByRole('group', { name: 'Pedir música' })).getByRole('button', { name: 'Playlists' })).toBe(button)
+    expect(within(screen.getByRole('group', { name: 'Pedir música' })).getByRole('textbox', { name: 'Pedir uma música' })).toBeTruthy()
+  })
+
+  it('fora de uma sala, o botão "Playlists" também fica ao lado do campo', () => {
+    useApp.setState({ myVoiceChannelId: null })
+    renderView()
+    expect(within(screen.getByRole('group', { name: 'Pedir música' })).getByRole('button', { name: 'Playlists' })).toBeTruthy()
+  })
+
   it('lista nome, tipo e quem salvou; Tocar toca o link na minha sala', async () => {
     socket.replyTo('playlist:list', () => ({ ok: true, playlists: [saved('p1', 'Bossa do domingo', 'acc-eu'), saved('a1', 'Elis & Tom', 'acc-bia', 'album')] }))
     socket.replyTo('music:play', () => ({ ok: true, state: room(), added: 20, collection: null }))
