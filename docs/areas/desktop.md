@@ -29,7 +29,7 @@ A tela não conhece o Tauri: ela usa `window.api`, o mesmo objeto de antes. Um a
 | `src-tauri/capabilities/main.json`, `overlay.json` | O que cada janela pode chamar (tabela abaixo). |
 | `src-tauri/src/lib.rs` | `run()`: plugins (instância única, deep link, log, iniciar com o Windows, abrir links, atalhos globais, atualizador), estados, `setup` (janela principal, overlay, encerramento da tela, pressione para falar, ocioso, notificações, iniciar com o Windows, atualizador) e `RunEvent::Exit`. |
 | `src-tauri/src/commands/` | Um arquivo por domínio, só `#[tauri::command]`. `mod.rs` registra os comandos em `command_registry!` (`handler()` e `NAMES`). |
-| `src-tauri/src/native/` | `environment`, `permissions`, `links`, `data_url`, `windows_version`, `logging`, `main_window_events` e a lógica de cada domínio (`notifications`, `startup`, `translucency`, `thumbar`, `window_controls`, `idle`, `google_auth`, `push_to_talk`, `screen_share`, `overlay/`, `updater/`, `migration/`). |
+| `src-tauri/src/native/` | `environment`, `permissions`, `links`, `data_url`, `windows_version`, `logging`, `main_window_events` e a lógica de cada domínio (`notifications`, `startup`, `translucency`, `thumbar`, `window_controls`, `idle`, `google_auth`, `push_to_talk`, `screen_share`, `main_window_focus` (`MainWindowFocus`: foco da janela principal como enum), `overlay/`, `updater/`, `migration/`). |
 | `src-tauri/src/windows/main_window.rs`, `overlay_window.rs` | Criação e comportamento das duas janelas. |
 | `src-tauri/src/events.rs` | `event_names!`: os nomes dos eventos que o Rust emite (`events::ALL`). |
 | `src-tauri/src/errors.rs` | `domain_error!`: erro de cada domínio, serializado como a mensagem em texto (a promessa do `invoke` rejeita com ela). |
@@ -77,11 +77,11 @@ principal; `overlay` = também a página do overlay.
 | `screen-preview` | `commands/screen.rs` | Captura única da fonte em uso (prévia do "ao vivo"). | main |
 | `overlay-config`, `overlay-room`, `overlay-theme`, `overlay-shortcuts`, `overlay-shortcuts-pause` | `commands/overlay.rs` | Configuração, sala, tema e atalhos do overlay. | main |
 | `overlay-edit`, `overlay-resize` | `commands/overlay.rs` | Modo de mover e largura. | main, overlay |
-| `ptt-config`, `ptt-capture` | `commands/push_to_talk.rs` | Liga/desliga o modo e captura a próxima tecla. | main |
+| `ptt-config`, `ptt-capture` | `commands/push_to_talk.rs` | Liga/desliga o modo e captura a próxima tecla (a ponte devolve `PttCapture`: `{ kind: 'chosen', binding }` ou `{ kind: 'cancelled' }`). | main |
 | `idle-get` | `commands/idle.rs` | Está ocioso agora? | main |
 | `notify`, `badge` | `commands/notifications.rs` | Toast nativo e selo no ícone. | main |
 | `thumbar-buttons` | `commands/thumbar.rs` | Botões da miniatura da barra de tarefas. | main |
-| `update-get`, `update-check`, `update-install` | `commands/updater.rs` | Situação, procurar agora e instalar. | main |
+| `update-get`, `update-check`, `update-install` | `commands/updater.rs` | Situação, procurar agora e instalar. `update-install` sem nada baixado rejeita com `NothingDownloaded` ("Não há atualização baixada para instalar"). | main |
 | `window-translucency` | `commands/translucency.rs` | Liga o vidro e o esquema claro/escuro. | main |
 | `startup-get`, `startup-set` | `commands/startup.rs` | Iniciar com o Windows. | main |
 | `window-control`, `window-maximized-get`, `show-main-window` | `commands/window_controls.rs` | Minimizar/maximizar/fechar, estado e mostrar a janela. | main |
@@ -101,7 +101,7 @@ principal; `overlay` = também a página do overlay.
 | `ptt-change` | `commands/push_to_talk.rs` | `bool` (tecla apertada) | main |
 | `ptt-unavailable` | idem | vazio (não foi possível ouvir a tecla) | main |
 | `idle-change` | `commands/idle.rs` | `bool` | main |
-| `notification-click` | `commands/notifications.rs` | alvo (`dm`, `channel`, `friends`) ou nulo | main |
+| `notification-click` | `commands/notifications.rs` | alvo (`dm`, `channel`, `friends`) ou nulo; a ponte entrega `NotificationClick` (`{ kind: 'target', target }` ou `{ kind: 'no-target' }`) | main |
 | `thumbar-click` | `commands/thumbar.rs` | `mute`, `deafen` ou `leave` | main |
 | `update-status` | `commands/updater.rs` | situação do atualizador | todas |
 | `screen-ended` | `commands/screen.rs` | `stopped`, `source-closed`, `disconnected` ou `failed` | main |
@@ -137,6 +137,19 @@ capacidade da janela, ponte em `lib/desktop/` e tipo em `src/shared/`.
 `Shutdown` guarda os "parar" das threads nativas (tela, overlay, ocioso, pressione para falar). No
 `RunEvent::Exit`, `run_all` roda todos em **ordem inversa** ao registro e só uma vez. Thread nativa nova registra o
 seu "parar" no `setup`.
+
+Nenhuma espera do encerramento é infinita:
+
+| Espera | Limite | Onde |
+|---|---|---|
+| Thread do pressione para falar avisar que saiu (`exit_handshake.rs`: junta a thread só depois do aviso) | 2 s | `crates/concord-ptt/src/push_to_talk.rs` (`EXIT_LIMIT`) |
+| `SendMessageTimeoutW` para a janela de mensagens do pressione para falar | 2 s | idem (`SYNC_LIMIT`) |
+| Resposta do registro dos atalhos do overlay | 2 s | `native/overlay/worker.rs` (`SHORTCUTS_ANSWER_LIMIT`) |
+| Conectar a sala do LiveKit na tela nativa (espera pelo pronto: 12 s, 10 s mais 2 s de folga) | 10 s | `crates/concord-capture/src/room_start.rs` (`ROOM_CONNECT_LIMIT`) |
+| Fechar a sala do LiveKit ao parar a tela | 3 s | `crates/concord-capture/src/platform/session.rs` (`ROOM_CLOSE_LIMIT`) |
+
+O token da sala é um `LiveKitToken` (`crates/concord-capture/src/livekit_token.rs`): o `Debug` mostra só
+`LiveKitToken(…)`; o texto sai apenas por `expose()` na hora de conectar.
 
 ## Logs e dados
 

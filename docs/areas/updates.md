@@ -29,7 +29,7 @@ baixar (aí o botão some e aparece o de progresso no topo).
 | `.github/workflows/pr-version.yml` | Em cada PR para a `main` (aberto, push, label): calcula a versão e faz o commit `chore: versão X.Y.Z` no PR com o `RELEASE_TOKEN` (ou o `GITHUB_TOKEN`). Só PR do próprio repositório. |
 | `.github/workflows/auto-release.yml` | A cada push na `main` (PR mergeado): acha o PR do commit e os labels, calcula a versão, cria e envia a tag e chama o `release.yml` com a tag e o título do PR. |
 | `.github/scripts/next-version.mjs` | `prVersion({ tags, mainVersion, labels })` (a versão do PR) e `nextVersion({ tags, packageVersion, labels })` (a do merge), puras e testadas; tipos em `next-version.d.mts`. Linha de comando: `node next-version.mjs pr "<labels>"` (PR, lê a `main` em `origin/main`) ou `node next-version.mjs "<labels>"` (merge). |
-| `.github/workflows/release.yml` | Chamado pelo auto-release (`workflow_call`, entradas `tag` e `notes`) ou por tag `vX.Y.Z` criada à mão → Windows: `npm ci`, aplica a versão da tag no `package.json`, typecheck, `npx tauri build` (assinado com os secrets `TAURI_SIGNING_PRIVATE_KEY` e `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`), monta `concord-X.Y.Z-setup.exe`, o `.sig`, o `latest.json` e o `latest.yml`, cria a release (se não existir) e envia os arquivos com `gh release upload --clobber`. O servidor padrão da tela de login vem da **variável do repositório** `VITE_DEFAULT_SERVER` (Settings → Secrets and variables → Actions → Variables); vazia = `localhost:3001`. |
+| `.github/workflows/release.yml` | Chamado pelo auto-release (`workflow_call`, entradas `tag` e `notes`) ou por tag `vX.Y.Z` criada à mão → Windows: `npm ci`, aplica a versão da tag no `package.json`, typecheck, `npm test`, `cargo test --workspace`, `npx tauri build` (assinado com os secrets `TAURI_SIGNING_PRIVATE_KEY` e `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`), monta `concord-X.Y.Z-setup.exe`, o `.sig`, o `latest.json` e o `latest.yml`, cria a release (se não existir) e envia os arquivos com `gh release upload --clobber`. O servidor padrão da tela de login vem da **variável do repositório** `VITE_DEFAULT_SERVER` (Settings → Secrets and variables → Actions → Variables); vazia = `localhost:3001`. |
 | `.github/scripts/latest-json.mjs`, `latest-yml.mjs` | Geram o `latest.json` (formato do `tauri-plugin-updater`: versão, notas, data e, em `platforms.windows-x86_64`, a assinatura e a URL do instalador) e o `latest.yml` (formato do `electron-updater`: versão, arquivo, `sha512` e tamanho do **instalador Tauri**). Testados em `*.test.mjs` ao lado. |
 | `.github/scripts/electron-guid.mjs`, `cutover-test.ps1` | O GUID do desinstalador do Electron (UUID v5 do `appId` no espaço de nomes do electron-builder) e o teste de troca do CI. |
 
@@ -96,17 +96,22 @@ O instalador Tauri (`src-tauri/windows/hooks.nsh`, gancho `NSIS_HOOK_PREINSTALL`
    (o GUID é o UUID v5 do `appId` `com.concord.app`; `.github/scripts/electron-guid.mjs`). Sem ela, procura em todas as
    chaves de desinstalação uma `UninstallString` que termine em `\Uninstall Concord.exe`. Não achou: não há Electron e
    a instalação segue normal.
-2. Define a pasta do Electron como a do desinstalador.
+2. Define a pasta do Electron como a do desinstalador e **confere antes de rodar o desinstalador** se ela é mesmo uma
+   instalação do Electron: tem `concord.exe`, `Uninstall Concord.exe` e `resources\app.asar`, não é o `$INSTDIR` nem
+   a raiz de um disco. Não confere: o resto segue, mas a pasta nunca é apagada (registra "Pasta do Electron não
+   confere, mantida").
 3. **Regra do iniciar com o Windows:** se nenhuma entrada de `HKCU\...\Run` aponta para o `concord.exe` dessa pasta (o
    Electron estava com o início desligado), cria `%APPDATA%\com.concord.app\startup-default-applied`. Com a marca, o
    padrão "ligado" do Tauri não se aplica e a escolha da pessoa vale; sem a marca (Electron ligado), o Tauri liga.
-4. Fecha o `concord.exe` (`taskkill /F`).
+4. Fecha o `concord.exe` (`taskkill /F`); o código de saída vai para o registro do instalador.
 5. Copia `%APPDATA%\Concord\migrate.json` para `%APPDATA%\com.concord.app\migrate.json`, se existir.
 6. Copia o desinstalador para `%TEMP%\concord-electron-uninstaller.exe` e roda `/S /currentuser _?=<pasta>` esperando.
-7. Só com código de saída 0 apaga o resto: a pasta antiga, `%APPDATA%\Concord`, `%APPDATA%\concord`,
+   Código diferente de 0: registra "O desinstalador do Electron terminou com o código N", mostra a mensagem "Não foi
+   possível remover a versão anterior do Concord ..." e **aborta a instalação** (a pessoa fica na versão atual e a
+   atualização é tentada de novo depois). Nada mais é apagado.
+7. Com código 0 apaga o resto: a pasta antiga (só se confirmada no passo 2), `%APPDATA%\Concord`, `%APPDATA%\concord`,
    `%LOCALAPPDATA%\concord-updater`, as chaves `HKCU\Software\<GUID>` e de desinstalação do GUID e as entradas de `Run`
-   que apontavam para o `concord.exe` antigo. Com outro código, registra "O desinstalador do Electron terminou com o
-   código N" e deixa o resto.
+   que apontavam para o `concord.exe` antigo.
 8. O instalador segue e grava o Tauri na mesma pasta. No `NSIS_HOOK_POSTINSTALL`, com `--force-run` (como o
    `electron-updater` chama), abre o app como o usuário.
 
@@ -120,7 +125,8 @@ principal ganha um script de inicialização que, **antes de a tela ler o `local
 instalador Electron (`latest.yml` e `.blockmap`), cria dados falsos (`migrate.json`, cache do updater, entrada de `Run`
 quando `-AutostartWasOn`), roda o instalador novo com `--updated /S --force-run /D=<pasta antiga>` e confere: nenhuma
 pasta nem chave do Electron, `concord.exe` do Tauri na mesma pasta, entrada de desinstalação do Tauri, `migrate.json`
-copiado, marca do iniciar com o Windows só quando o Electron estava com ele desligado e saída 0. Roda com o início
+copiado, marca do iniciar com o Windows só quando o Electron estava com ele desligado e saída 0. Também cria uma pasta isca (só `concord.exe`, sem `app.asar`) com uma chave de desinstalação falsa e confere
+que ela continua intacta. Roda com o início
 ligado e desligado e depende de existir uma release Electron publicada.
 
 ## Testes

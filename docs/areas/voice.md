@@ -190,10 +190,10 @@ Dois caminhos, escolhidos por `window.api.screen` (`lib/actions/voice.ts`):
 ```
 botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
   nativo:    abre o ScreenPicker ─► window.api.screen.getSources() ─► comando screen-sources
-             escolhe ─► startScreenShare(fonte, áudio) ─► emitWithAck('voice:screen-credentials') ─► { url, token }
+             escolhe ─► startNativeScreenShare(fonte, audioChoice) ─► emitWithAck('voice:screen-credentials') ─► { url, token }
              ─► window.api.screen.start({ sourceId, audio, url, token }) ─► comando screen-start (Rust publica)
              ─► voice.showOwnScreen(miniatura) ─► emit('voice:sharing', true)
-  navegador: o próprio navegador pergunta ─► voice.startScreenShare(áudio) ─► setScreenShareEnabled(true, {...})
+  navegador: o próprio navegador pergunta ─► startBrowserScreenShare(audioChoice) ─► voice.startScreenShare(audioChoice) ─► setScreenShareEnabled(true, {...})
              ─► emit('voice:sharing', true)
   ─► todos veem "ao vivo" na sidebar e no tile
 ```
@@ -203,8 +203,8 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
   (ADR 0013); por isso o app instalado sempre usa o caminho nativo.
 - **Receber:** `TrackSubscribed` de vídeo com `source === ScreenShare` entra em `store.screens` (ids de conexão, o
   dono vem de `screenOwnerOf`). No navegador a própria tela entra como prévia via `LocalTrackPublished`; no nativo a
-  própria tela é o card "Sua tela" com a miniatura da fonte escolhida (`ownScreenThumbnail`, imagem parada: o app
-  não assina a própria `:screen`). O áudio da tela (`ScreenShareAudio`) toca como os
+  própria tela é o card "Sua tela" com a miniatura da fonte escolhida (`store.ownScreenShare`, união `none` / `browser` / `native` com `thumbnail`: imagem
+  parada, o app não assina a própria `:screen`). O áudio da tela (`ScreenShareAudio`) toca como os
   outros áudios (respeita deafen e o volume de saída), mas com **volume próprio por pessoa**, separado da voz dela
   (ver "Volume do áudio da tela" abaixo). O `ScreenVideo` (em `ScreenTile.tsx`) liga a faixa num `<video muted>` com `attachScreen(userId, el)` (de `@/lib/client`).
 - **Parar:** botão de novo (`stopScreenShare`: nativo chama o comando `screen-stop`, navegador desliga a faixa) ou
@@ -316,12 +316,12 @@ O app Tauri não usa o `getDisplayMedia`: o Rust captura, codifica e publica no 
 
 | Peça | Papel |
 |---|---|
-| `src/shared/screen.ts` | `ScreenSource`, `ScreenShareStart`, `ScreenShareEndReason`, `ScreenShareBridge`. |
+| `src/shared/screen.ts` | `ScreenAudioChoice`, `ScreenSource`, `ScreenShareStart`, `ScreenShareEndReason`, `ScreenShareBridge`. |
 | `src/renderer/src/lib/desktop/screen.ts` | `window.api.screen`: `getSources`, `start`, `stop`, `preview`, `onEnded`, `canShareAudio`. |
 | `src-tauri/src/commands/screen.rs` | Comandos `screen-sources`, `screen-start`, `screen-stop`, `screen-preview` e o evento `screen-ended`. Trabalho pesado em `spawn_blocking`. |
 | `src-tauri/src/native/screen_share.rs` | `ShareSlot`: uma captura por vez, com geração. Começar outra para a anterior e ignora o fim dela; parar durante o início cancela. |
 | `crates/concord-capture/` | Fontes e miniaturas (`platform/sources.rs`), captura (`platform/capture.rs`, Windows Graphics Capture), processador de vídeo para NV12 na GPU, encoder de hardware do Media Foundation, reserva por CPU, áudio (`platform/audio.rs`), sala LiveKit (`platform/room.rs`), ritmo (`pacing.rs`), taxa (`rate_control.rs`). |
-| `lib/actions/voice.ts` | `startScreenShare`, `startNativeShare`, `stopScreenShare`, `nativeShareEnded`, avisos do fim. |
+| `lib/actions/voice.ts` | `startNativeScreenShare(source, audioChoice)`, `startBrowserScreenShare(audioChoice)` (`ScreenAudioChoice`: `with-system-audio` ou `without-audio`, de `src/shared/screen.ts`), `stopScreenShare`, `nativeShareEnded`, avisos do fim. |
 
 **Fontes.** `screen-sources` devolve telas e janelas com miniatura PNG (data URL) e `appIcon` nulo. O id é
 `screen:<handle>` ou `window:<handle>`; id fora desse formato é recusado.
@@ -366,7 +366,7 @@ Erro ao começar vira o aviso "Não foi possível compartilhar a tela: <mensagem
 | Identidade | `<accountId>:screen` (`screenIdentityOf`). Nome = nome da pessoa. `metadata` = `{"screenOf":"<accountId>"}`. |
 | Grants | Sala da pessoa; `canSubscribe: false`; `canPublish: true` só com `ScreenShare` e `ScreenShareAudio`; sem dados, metadata, admin, criar ou listar sala. |
 | Validade | 60 s (só para conectar). |
-| Limite | `LIMITS.screenCredentials`: rajada de 5, depois 1 a cada 10 s, por conta. Excesso: "Muitos pedidos para compartilhar a tela. ...". |
+| Limite | `LIMITS.screenCredentials`: rajada de 5, depois 1 a cada 10 s, por conta; conferido **antes** da permissão `share`. Excesso: "Muitos pedidos para compartilhar a tela. ...". |
 | Remoção | `endScreenShare` (`RemoveParticipant` da identidade `:screen`) ao sair da sala, trocar de sala, desconectar, ser tirado/movido e ao perder `share` (`applyVoiceAccess`). `voice:sharing false` não remove: o app já parou a captura. |
 
 **Prévia do "ao vivo".** Com a tela nativa, `lib/actions/screen-preview.ts` chama `window.api.screen.preview()`
@@ -383,7 +383,7 @@ outra janela que a tela chega, que o participante `:screen` não aparece na list
 
 **Limites conhecidos.**
 - Duas conexões da mesma conta na mesma sala dividem **uma** identidade `<accountId>:screen`: a segunda tela derruba
-  a primeira no LiveKit, e sair com uma das conexões remove a tela da outra.
+  a primeira no LiveKit. Sair com uma das conexões **não** remove a tela: a `:screen` só termina quando a última conexão da conta naquela sala sai (`accountStillInRoom`).
 - O encoder de hardware só se prova numa máquina real; o CI testa o de software.
 - `Sharp` existe na crate e não tem como ser escolhido no app.
 

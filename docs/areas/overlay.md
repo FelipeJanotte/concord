@@ -21,7 +21,7 @@ desligado ou **enquanto a janela do Concord está em foco** (estou olhando o pr�
 | `src/renderer/src/lib/desktop/overlay.ts` | `window.api.overlay` (janela principal) e `window.api.overlayView` (página do overlay). |
 | `vite.config.ts` | Duas páginas no renderer: `index` e `overlay` (`build.rollupOptions.input`). |
 | `src/renderer/overlay.html` | Página da janela do overlay: fundo transparente e CSP só com o necessário. |
-| `src/renderer/src/overlay/{main,OverlayApp}.tsx` | Aplica o último tema da máquina ao abrir e o tema que chega por `overlayView.onTheme` (troca ao vivo), e desenha a sala que chega por `overlayView.onUpdate` (tokens do tema; cor própria só na bolinha sem foto). No modo de mover: moldura tracejada, a página inteira com `-webkit-app-region: drag`, barra "Arraste para mover" + "Concluir" (`no-drag`), alça "Redimensionar" na lateral (`no-drag`, `ResizeGrip`: arrastar manda `overlayView.resize(largura, false)` e, ao soltar, `resize(largura, true)`), Esc e uma prévia ("Sala de voz"/"Prévia") fora de sala. |
+| `src/renderer/src/overlay/{main,OverlayApp}.tsx` | Aplica o último tema da máquina ao abrir e o tema que chega por `overlayView.onTheme` (troca ao vivo), e desenha a sala que chega por `overlayView.onUpdate` (tokens do tema; cor própria só na bolinha sem foto). No modo de mover: moldura tracejada, a página inteira com `-webkit-app-region: drag`, barra "Arraste para mover" + "Concluir" (`no-drag`), alça "Redimensionar" na lateral (`no-drag`, `ResizeGrip`: arrastar manda `overlayView.resizing(largura)` e, ao soltar, `overlayView.resized(largura)`), Esc e uma prévia ("Sala de voz"/"Prévia") fora de sala. |
 | `src/renderer/src/store/overlay.ts` | `overlayEnabled`, `overlayCorner`, `overlaySize`, `overlayPosition`, `overlayWidth`, `overlayShortcuts` (salvos), `overlayShortcutTaken` (atalhos que o sistema recusou), `overlayRecording` (gravando qual atalho) e `overlayEditing` (modo de mover agora); os três últimos não são salvos. |
 | `src/renderer/src/lib/actions/overlay.ts` | `overlayRoom(state)` (pura: só quem fala na minha sala; ninguém falando = `{ members: [] }`), `loadOverlayPreferences`/`setOverlay*` (salvo em `concord:overlay`), `syncOverlay` (manda só o que mudou), `setOverlayEditing` (botão "Mover"/"Concluir"; sincroniza a configuração antes), `startOverlay` (chamado no `main.tsx`: assina a store, ouve o atalho, `onEditing`, `onMoved` e `onResized`, e registra os atalhos salvos). `setOverlayCorner` zera a posição; `setOverlaySize` zera a largura. Atalhos: `startOverlayShortcutRecording`, `recordOverlayShortcutKey`, `cancelOverlayShortcutRecording`, `resetOverlayShortcuts`. Tema: `syncOverlay` manda `theme` da store (depois de `preferencesLoaded`, só quando muda). `overlayEnv.bridge` é substituído nos testes. |
 | `src/renderer/src/components/settings/VoiceSettings.tsx` (Configurações → "Voz e vídeo") | Seção "Sobreposição em jogos": interruptor, canto (com "Onde você arrastou" quando há posição), tamanho, botão "Mover"/"Concluir" (só no app, com o overlay ligado), explicação da tela cheia e `OverlayShortcutSettings` (só no app): os dois atalhos com "Trocar", aviso "já é usado por outro programa" e "Restaurar padrão". A gravação ouve `keydown` na janela (captura); Esc, perder o foco ou fechar a tela desistem. |
@@ -33,11 +33,11 @@ store (voz, quem fala, preferência) ──syncOverlay──► comandos overlay
 janela principal ganha/perde o foco (evento `Focused` da janela) ──► set_main_focused
 Rust: is_visible (ligado + alguém falando + Concord sem foco, ou modo de mover)? ──► cria/posiciona a janela (set_bounds) + overlay-update ──► página do overlay
 atalho de ligar (atalho global, com o jogo na frente) ──► toggle ──► overlay-toggled ──► setOverlayEnabled (salva)
-atalho do modo de mover ou botão Mover (overlay-edit true) ──► set_editing ──► janela recebe o mouse + overlay-editing ──► overlayEditing
+atalho do modo de mover ou botão Mover (`startEditing`, comando overlay-edit com editing true) ──► set_editing ──► janela recebe o mouse + overlay-editing ──► overlayEditing
 arrastar e soltar (evento `Moved` da janela) ──► moved ──► overlay-moved ──► overlayPosition (salva) ──► overlay-config
-alça Redimensionar (overlay-resize largura, false) ──► resize ──► set_bounds; ao soltar (true) ──► overlay-resized ──► overlayWidth (salva)
-"Concluir" / Esc na página (overlay-edit false) ou o atalho de novo ──► trava (o clique volta a passar para o jogo)
-Trocar atalho ──► overlay-shortcuts-pause true ──► keydown ──► shortcutFromKey ──► comando overlay-shortcuts ──► registro do atalho global ──► { toggle, edit } registrou? ──► overlayShortcutTaken
+alça Redimensionar (`resizing(largura)`, overlay-resize com done false) ──► resize ──► set_bounds; ao soltar (`resized(largura)`, done true) ──► overlay-resized ──► overlayWidth (salva)
+"Concluir" / Esc na página (`finishEditing`, overlay-edit com editing false) ou o atalho de novo ──► trava (o clique volta a passar para o jogo)
+Trocar atalho ──► `pauseShortcuts` (overlay-shortcuts-pause) ──► keydown ──► shortcutFromKey ──► comando overlay-shortcuts ──► registro do atalho global ──► { toggle, edit } registrou? ──► overlayShortcutTaken
 setTheme / preferences:updated ──► store.theme ──► overlay-theme ──► set_theme (guarda) ──► overlay-theme ──► página (applyTheme sem efeito de janela)
 ```
 
@@ -78,7 +78,7 @@ setTheme / preferences:updated ──► store.theme ──► overlay-theme ─
   `code` (posição física), não do caractere. Os dois atalhos não podem ser iguais (aviso na tela). Salvos em
   `concord:overlay` (`shortcuts`); o Rust valida de novo (`sanitized`). Se outro programa já usa a combinação, o registro do atalho global falha: o comando devolve `{ toggle, edit }` e a tela mostra "já é usado por outro programa"
   (e o log `overlay: atalho ... indisponível`). **Por que gravar na tela e não com o Raw Input do pressione para falar:** aqui é uma combinação para o plugin de atalhos globais (formato de acelerador), gravada com a janela do Concord em foco; o Raw Input só é necessário para saber quando a tecla é solta. Enquanto grava, os atalhos do overlay ficam soltos
-  (`overlay-shortcuts-pause`), senão apertar a combinação atual dispararia o overlay em vez de chegar na tela.
+  (`pauseShortcuts`/`resumeShortcuts`, comando `overlay-shortcuts-pause`), senão apertar a combinação atual dispararia o overlay em vez de chegar na tela.
 - **Redimensionar arrastando (só a largura):** no modo de mover aparece uma alça na lateral (à direita; à esquerda
   quando o overlay está num canto da direita, porque ali ele cresce para a esquerda). A largura vai de 140 a 640 px,
   fica em `width` (como a posição) e escolher um tamanho no seletor volta à largura dele. A altura continua sendo a

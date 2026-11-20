@@ -70,10 +70,10 @@ daí a seção nova curta, como a "Configurações do Windows" do Discord.
 |---|---|
 | `src-tauri/src/native/startup.rs` | `StartupController { supported, login_items, marker }`: `apply_default()` (liga uma vez só e marca), `get()`, `set(valor)`. `supports_open_at_login(is_windows, is_packaged)`: só Windows **e** build de release. `FileMarker`: a marca "padrão já aplicado". Traits `LoginItems` e `DefaultMarker` (falsos nos testes). |
 | `src-tauri/src/commands/startup.rs` | Liga ao `tauri-plugin-autostart` (`enable`, `disable`, `is_enabled`), marca `startup-default-applied` na pasta de dados do app, `install` (aplica o padrão na partida) e comandos `startup-get`/`startup-set`. |
-| `src/shared/startup.ts` | `OpenAtLogin = boolean \| null` (null = não suportado) e `StartupBridge` (`get`, `set`). |
+| `src/shared/startup.ts` | `OpenAtLogin = { supported: false } \| { supported: true; enabled }` e `StartupBridge` (`get`, `enable`, `disable`). |
 | `src/renderer/src/lib/desktop/startup.ts` | `window.api.startup`: comandos `startup-get` e `startup-set` (devolvem o estado real do sistema). |
-| `src/renderer/src/lib/actions/startup.ts` | `loadStartup()` (na abertura, em `main.tsx`) e `setOpenAtLogin(bool)`; `startupEnv.bridge()` é a costura dos testes. Falha ao mudar: aviso "Não foi possível mudar o início com o Windows." e o interruptor fica como estava. |
-| `src/renderer/src/store/startup.ts` | `openAtLogin: boolean \| null`. Não é salvo no renderer: a fonte é o sistema. |
+| `src/renderer/src/lib/actions/startup.ts` | `loadStartup()` (na abertura, em `main.tsx`) e `enableOpenAtLogin()` e `disableOpenAtLogin()`; `startupEnv.bridge()` é a costura dos testes. Falha ao mudar: aviso "Não foi possível mudar o início com o Windows." e o interruptor fica como estava. |
+| `src/renderer/src/store/startup.ts` | `openAtLogin: OpenAtLogin`. Não é salvo no renderer: a fonte é o sistema. |
 | `src/renderer/src/components/settings/WindowsSettings.tsx` | A seção "Windows" com o interruptor. |
 
 **Onde fica guardado.** A escolha é o próprio registro do Windows (chave `Run` do usuário, escrita pelo
