@@ -21,7 +21,7 @@ const key = (code: string, mods: Partial<Record<'ctrlKey' | 'shiftKey' | 'altKey
 })
 
 describe('shortcutFromKey', () => {
-  it('combinação com modificador vira acelerador do Electron', () => {
+  it('combinação com modificador vira acelerador do app desktop', () => {
     expect(shortcutFromKey(key('KeyO', { ctrlKey: true, shiftKey: true }))).toBe('Ctrl+Shift+O')
     expect(shortcutFromKey(key('Digit3', { altKey: true }))).toBe('Alt+3')
     expect(shortcutFromKey(key('Backquote', { shiftKey: true }))).toBe('Shift+`')

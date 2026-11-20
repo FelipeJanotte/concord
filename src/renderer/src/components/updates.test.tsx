@@ -1,6 +1,4 @@
 // @vitest-environment jsdom
-// Atualização automática no app (A13): situação vinda da ponte, faixa "Reiniciar para atualizar",
-// "Depois" e fora do Electron.
 import { act, cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -64,7 +62,7 @@ describe('atualização', () => {
     expect(screen.getByRole('status').textContent).toContain('1.2.0')
   })
 
-  it('instalar sem versão pronta não faz nada; fora do Electron não quebra', () => {
+  it('instalar sem versão pronta não faz nada; fora do app desktop não quebra', () => {
     installUpdate()
     expect(install).not.toHaveBeenCalled()
     stop()

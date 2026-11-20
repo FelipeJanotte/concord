@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-thumbar-buttons"
+description = "Enables the thumbar_buttons command without any pre-configured scope."
+commands.allow = ["thumbar_buttons"]
+
+[[permission]]
+identifier = "deny-thumbar-buttons"
+description = "Denies the thumbar_buttons command without any pre-configured scope."
+commands.deny = ["thumbar_buttons"]

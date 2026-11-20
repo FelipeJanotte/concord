@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-ptt-config"
+description = "Enables the ptt_config command without any pre-configured scope."
+commands.allow = ["ptt_config"]
+
+[[permission]]
+identifier = "deny-ptt-config"
+description = "Denies the ptt_config command without any pre-configured scope."
+commands.deny = ["ptt_config"]

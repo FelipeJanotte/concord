@@ -22,18 +22,20 @@ jobs:
   windows:
     name: instalador do Windows
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       TAG: ${{ inputs.tag || github.ref_name }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ inputs.tag || github.ref }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 22
           cache: npm
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
 
       - name: Instalar dependências
         run: npm ci
@@ -51,21 +53,42 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Criar a release
+      - name: Testes do app
+        run: npm test
+
+      - name: Testes do desktop
+        run: cargo test --workspace
+
+      - name: Gerar o instalador assinado
+        run: npx tauri build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          VITE_DEFAULT_SERVER: ${{ vars.VITE_DEFAULT_SERVER }}
+
+      - name: Montar os arquivos da release
+        shell: bash
+        env:
+          NOTES: ${{ inputs.notes }}
+        run: |
+          version="${TAG#v}"
+          installer="$(ls target/release/bundle/nsis/*-setup.exe)"
+          name="concord-$version-setup.exe"
+          mkdir release-assets
+          cp "$installer" "release-assets/$name"
+          cp "$installer.sig" "release-assets/$name.sig"
+          node .github/scripts/latest-json.mjs "$version" "$name" "release-assets/$name.sig" "$GITHUB_REPOSITORY" "${NOTES:-$TAG}" > release-assets/latest.json
+          node .github/scripts/latest-yml.mjs "release-assets/$name" "$version" > release-assets/latest.yml
+
+      - name: Criar a release e publicar os arquivos
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NOTES: ${{ inputs.notes }}
         run: |
           if gh release view "$TAG" > /dev/null 2>&1; then
-            echo "Release $TAG já existe: o electron-builder só envia os arquivos."
+            echo "Release $TAG já existe: só envia os arquivos."
           else
             gh release create "$TAG" --verify-tag --title "${TAG#v}" --notes "${NOTES:-$TAG}"
           fi
-
-      - name: Gerar e publicar
-        run: npm run release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VITE_DEFAULT_SERVER: ${{ vars.VITE_DEFAULT_SERVER }}
-
+          gh release upload "$TAG" release-assets/* --clobber

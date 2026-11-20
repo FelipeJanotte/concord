@@ -39,8 +39,8 @@ Constantes compartilhadas em `src/shared/types/account.ts`: `NAME_MAX`, `TAG_MAX
 | `server/modules/accounts.ts` | rotas HTTP `/auth/*` e `/avatars/*`, evento `account:update` |
 | `server/modules/presence.ts` | `hello` (`userFor()` monta o `User`) |
 | `server/index.ts` | middleware `io.use` que exige token (erro do banco vira `server_error`, que **não** apaga o token no app) |
-| `src/main/google-auth.ts` | abre o navegador e captura o código do Google (IPC `google-sign-in`) |
-| `src/preload/index.ts` | expõe `window.api.googleSignIn(clientId)` |
+| `src-tauri/src/native/google_auth.rs`, `src-tauri/src/commands/google.rs` | abre o navegador e captura o código do Google (comando `google-sign-in`, prazo de 180 s) |
+| `src/renderer/src/lib/desktop/google.ts` | expõe `window.api.googleSignIn(clientId)` |
 | `src/renderer/src/lib/client.ts` | `register`, `login`, `loginWithGoogle`, `restoreSession`, `cancelRestore`, `logout` |
 | `src/renderer/src/lib/actions/account.ts` | `updateProfile`, `resolveAvatarUrl`, listener `user:updated` |
 | `src/renderer/src/lib/image.ts` | `fileToAvatarDataUrl` (recorte quadrado 256×256 em WebP) e `randomTag` |
@@ -101,7 +101,7 @@ Configuração: copie `server/.env.example` para `server/.env` e preencha `GOOGL
 serviços → Credenciais). O servidor mostra `Login com Google: ativado/desativado` ao iniciar. O `redirectUri` só é
 aceito se for `http://127.0.0.1:<porta>`.
 
-Erros vindos do IPC chegam com o prefixo `Error invoking remote method ...: Error:`; `loginWithGoogle` remove isso.
+Erros do comando `google-sign-in` chegam à tela como o texto escrito no Rust (`Login com Google não configurado`, tempo esgotado, acesso negado).
 
 ## Foto de perfil
 
@@ -150,7 +150,7 @@ A `MemberList` deduplica por `accountId` (a mesma conta pode estar em duas janel
   conta ou e-mail banido: login (só com a senha certa), Google, cadastro e sessão antiga recusados (`server/auth.test.ts`,
   "banimento da comunidade").
 - No app (`npm run dev:all`), o renderer também abre em `http://localhost:5173` no navegador; só o botão do Google
-  depende do Electron (`window.api`).
+  depende do app desktop (`window.api`).
 
 ## Limitações atuais
 

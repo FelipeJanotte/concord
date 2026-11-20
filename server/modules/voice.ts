@@ -1,16 +1,3 @@
-/**
- * Salas de voz: valida a entrada, emite o token do LiveKit (o áudio e a tela passam
- * pelo LiveKit, não por aqui) e mantém a lista de quem está em cada sala. Skill `concord-voice`.
- *
- * Permissões (v2, skill `concord-permissions`): entrar exige `view` + `connect`; o token
- * sai com microfone se `speak` e tela se `share`; cada um só vê o `voice:state` das salas
- * que pode ver; `applyVoiceAccess` reaplica tudo quando cargos ou regras mudam.
- *
- * Moderação (B6, `server/modules/moderation.ts`): `kickFromVoice` tira uma conexão da sala e
- * `setServerMuted` silencia uma conta para todos (entra no cálculo do `speak`, então vale no
- * token, ao vivo no LiveKit e se a pessoa sair e voltar). O silêncio fica no banco (`server_mutes`,
- * `server/repo/moderation.ts`), carregado no `init`: sobrevive a reiniciar o servidor.
- */
 import {
   can,
   channelPermissions,
@@ -24,23 +11,23 @@ import {
 } from '../../src/shared/types'
 import { accessSnapshot, allowed, currentAccess, dmMembersOf } from '../access'
 import { guard, type AppServer, type AppSocket, type ServerModule } from '../context'
-import { closeRoom, createVoiceCredentials, kickFromRoom, liveKitConfig, updateVoicePermissions } from '../livekit'
+import {
+  closeRoom,
+  createScreenCredentials,
+  createVoiceCredentials,
+  kickFromRoom,
+  liveKitConfig,
+  screenIdentityOf,
+  updateVoicePermissions
+} from '../livekit'
 import { limiters, retryText } from '../middleware/rate-limit'
 import { findChannel } from '../repo/channels'
 import { listServerMutes, setServerMute } from '../repo/moderation'
 import { isTimedOut, onTimeoutsChange } from './timeouts'
 
-/** socket.id → estado de voz */
 const voice = new Map<string, VoiceState>()
-/** socket.id → o que o token/LiveKit permite publicar agora (para só atualizar o que mudou) */
 const published = new Map<string, VoicePermissions>()
-/**
- * socket.id → a escolha da própria pessoa (botão de microfone, sem microfone), separada do silêncio
- * forçado (sem `speak`, moderador). Quando ela volta a poder falar, o `muted` da lista volta a ser
- * isto na hora, sem esperar o app avisar (antes ficava "mutada" até clicar para se desmutar).
- */
 const selfMuted = new Map<string, boolean>()
-/** contas silenciadas por um moderador (B6): cache do banco (`server_mutes`), carregado no `init`. */
 const serverMuted = new Set<string>()
 const screenPreviews = new Map<string, string>()
 const watchRequests = new Map<string, string[]>()
@@ -89,31 +76,26 @@ function voicePermissions(access: AccessState, accountId: string, channelId: str
   return { canSpeak: perms.has('speak') && !isServerMuted(accountId), canShare: perms.has('share'), canVideo: perms.has('video') }
 }
 
-/** Permissões de voz em qualquer sala: numa DM valem os membros e o bloqueio (`allowed`), não os cargos. */
 async function voicePermissionsIn(accountId: string, channelId: string): Promise<VoicePermissions> {
   if (!dmMembersOf(channelId)) return voicePermissions(await currentAccess(), accountId, channelId)
   return { canSpeak: await allowed(accountId, 'speak', channelId), canShare: await allowed(accountId, 'share', channelId), canVideo: await allowed(accountId, 'video', channelId) }
 }
 
-/** A conta vê a sala? Numa DM, só os dois membros (nem a dona); nas outras, a regra dos cargos. */
 function seesRoom(access: AccessState, accountId: string, channelId: string): boolean {
   const dm = dmMembersOf(channelId)
   return dm ? dm.includes(accountId) : can(access, accountId, 'view', channelId)
 }
 
-/** Sala de voz em que a conexão está (ou undefined). */
 export function voiceChannelOf(socketId: string): string | undefined {
   return voice.get(socketId)?.channelId
 }
 
-/** Conexões que estão na sala de voz `channelId`. */
 export function voiceSocketsIn(channelId: string): string[] {
   return voiceStates()
     .filter((v) => v.channelId === channelId)
     .map((v) => v.userId)
 }
 
-/** Estado de voz que a conta pode ver (quem está em sala privada não aparece para quem não vê a sala). */
 export function voiceStatesFor(accountId: string, socketId?: string): VoiceState[] {
   const access = accessSnapshot()
   const room = socketId ? voiceChannelOf(socketId) : undefined
@@ -122,15 +104,12 @@ export function voiceStatesFor(accountId: string, socketId?: string): VoiceState
     .map((v) => (room && v.channelId === room ? { ...v, watching: watchedScreens(v) } : v))
 }
 
-/** Quem quer saber quando as salas mudam (B8: a chamada acaba quando os dois saem da sala da conversa). */
 const roomListeners = new Set<(io: AppServer) => void>()
 
-/** Registra um aviso chamado depois de toda mudança nas salas (junto com o `voice:state`). */
 export function onVoiceRoomsChange(fn: (io: AppServer) => void): void {
   roomListeners.add(fn)
 }
 
-/** `voice:state` (sempre a lista completa que cada conexão pode ver). */
 export function emitVoice(io: AppServer): void {
   for (const socket of io.sockets.sockets.values()) {
     const user = socket.data.user
@@ -139,18 +118,11 @@ export function emitVoice(io: AppServer): void {
   for (const fn of roomListeners) fn(io)
 }
 
-/**
- * Ponto único chamado depois de qualquer mudança de cargos/membros/regras (A4):
- * quem perdeu `view`/`connect` sai da sala (e do LiveKit); quem continua tem
- * `speak`/`share` atualizados ao vivo no LiveKit (sem `speak` fica silenciado, sem
- * `share` a tela para). No fim, cada um recebe o `voice:state` das salas que vê.
- */
 export function applyVoiceAccess(io: AppServer, access: AccessState): void {
   for (const state of voiceStates()) {
     const socket = io.sockets.sockets.get(state.userId)
     const accountId = socket?.data.user?.accountId
     if (!socket || !accountId) continue
-    // conversa privada: cargos e regras não valem (o bloqueio é tratado por `leaveDmVoice`)
     if (dmMembersOf(state.channelId)) continue
     if (!can(access, accountId, 'connect', state.channelId)) {
       leaveVoice(io, socket, { emit: false })
@@ -161,12 +133,12 @@ export function applyVoiceAccess(io: AppServer, access: AccessState): void {
     const before = published.get(socket.id)
     if (before && before.canSpeak === next.canSpeak && before.canShare === next.canShare && before.canVideo === next.canVideo) continue
     published.set(socket.id, next)
-    // sem `speak` aparece silenciado; voltou a poder falar: volta ao que a própria pessoa escolheu
     state.muted = !next.canSpeak || (selfMuted.get(socket.id) ?? state.muted)
     if (!next.canShare) {
       state.sharing = false
       screenPreviews.delete(socket.id)
       forgetScreen(socket.id)
+      endScreenShare(accountId, state.channelId)
     }
     if (liveKitConfig) void updateVoicePermissions(liveKitConfig, state.channelId, socket.id, next)
   }
@@ -182,15 +154,23 @@ function leaveVoice(io: AppServer, socket: AppSocket, { emit = true } = {}): voi
   screenPreviews.delete(socket.id)
   forgetConnection(socket.id)
   if (liveKitConfig) void kickFromRoom(liveKitConfig, state.channelId, socket.id)
+  const accountId = socket.data.user?.accountId
+  if (accountId && !accountStillInRoom(io, accountId, state.channelId)) endScreenShare(accountId, state.channelId)
   if (emit) emitVoice(io)
 }
 
-/** A conta está silenciada por um moderador? */
+function accountStillInRoom(io: AppServer, accountId: string, channelId: string): boolean {
+  return voiceStates().some((state) => state.channelId === channelId && io.sockets.sockets.get(state.userId)?.data.user?.accountId === accountId)
+}
+
+function endScreenShare(accountId: string, channelId: string): void {
+  if (liveKitConfig) void kickFromRoom(liveKitConfig, channelId, screenIdentityOf(accountId))
+}
+
 export function isServerMuted(accountId: string): boolean {
   return serverMuted.has(accountId) || isTimedOut(accountId)
 }
 
-/** Tira a conexão `socketId` da sala (moderação). Devolve o estado que ela tinha, ou undefined se não estava em sala. */
 export function kickFromVoice(io: AppServer, socketId: string): VoiceState | undefined {
   const socket = io.sockets.sockets.get(socketId)
   const state = voice.get(socketId)
@@ -199,11 +179,6 @@ export function kickFromVoice(io: AppServer, socketId: string): VoiceState | und
   return state
 }
 
-/**
- * Silencia (ou tira o silêncio) da conta para todos. Vale para todas as conexões dela
- * nas salas e para as próximas entradas; no LiveKit o microfone deixa de ser aceito.
- * Grava no banco antes de aplicar: se a gravação falhar, nada muda (e o erro sobe para o `guard`).
- */
 export async function setServerMuted(io: AppServer, accountId: string, muted: boolean, mutedBy: string | null = null): Promise<void> {
   await setServerMute(accountId, muted, mutedBy)
   if (muted) serverMuted.add(accountId)
@@ -211,10 +186,6 @@ export async function setServerMuted(io: AppServer, accountId: string, muted: bo
   applyVoiceAccess(io, accessSnapshot())
 }
 
-/**
- * Bloqueio entre duas contas (v3): quem estiver na sala de voz da conversa delas sai (e do LiveKit).
- * Chamado pelo `friend:block`; emite `voice:state` se alguém saiu.
- */
 export function leaveDmVoice(io: AppServer, dmChannelId: string): void {
   let changed = false
   for (const state of voiceStates()) {
@@ -228,7 +199,6 @@ export function leaveDmVoice(io: AppServer, dmChannelId: string): void {
   if (changed) emitVoice(io)
 }
 
-/** Tira todo mundo de uma sala (usado quando o canal é apagado). Não emite `voice:state`. */
 export function clearVoiceChannel(_io: AppServer, channelId: string): void {
   for (const [sid, state] of voice) {
     if (state.channelId !== channelId) continue
@@ -238,12 +208,10 @@ export function clearVoiceChannel(_io: AppServer, channelId: string): void {
     screenPreviews.delete(sid)
     forgetConnection(sid)
   }
-  // Sempre encerra: pode haver alguém no LiveKit que a lista não conhece (o 404 é ignorado).
   if (liveKitConfig) void closeRoom(liveKitConfig, channelId)
 }
 
 export const voiceModule: ServerModule = {
-  /** Silêncios guardados no banco (B6): valem desde a primeira entrada depois de o servidor subir. */
   async init() {
     serverMuted.clear()
     for (const accountId of await listServerMutes()) serverMuted.add(accountId)
@@ -258,22 +226,17 @@ export const voiceModule: ServerModule = {
         if (!user) return ack({ ok: false, error: 'Não autenticado' })
         if (!liveKitConfig) return ack({ ok: false, error: 'A voz não está configurada neste servidor' })
         const found = typeof payload?.channelId === 'string' ? await findChannel(payload.channelId) : undefined
-        // sala de voz da comunidade ou conversa privada (v3: chamada entre os dois membros)
         const channel = found && (found.type === 'voice' || found.type === 'dm') ? found : undefined
-        // Sem permissão de ver, responde como se o canal não existisse (não revela salas privadas).
         if (!channel || !(await allowed(user.accountId, 'view', channel.id))) {
           return ack({ ok: false, error: 'Canal de voz não encontrado' })
         }
         if (!(await allowed(user.accountId, 'connect', channel.id))) {
-          // numa DM o único motivo é bloqueio: a mensagem não diz quem bloqueou
           const error = channel.type === 'dm' ? 'Não foi possível entrar na chamada' : 'Você não tem permissão para entrar nesta sala'
           return ack({ ok: false, error })
         }
-        // Sem `speak`, entra só para ouvir (e os outros veem silenciado); sem `share`, sem tela.
         const permissions = await voicePermissionsIn(user.accountId, channel.id)
         const credentials = await createVoiceCredentials(liveKitConfig, user, channel.id, permissions)
         if (!socket.connected) return
-        // Trocar de sala: sai da anterior (inclusive no LiveKit) antes de entrar na nova.
         if (voice.get(socket.id)?.channelId !== channel.id) leaveVoice(io, socket)
         voice.set(socket.id, {
           userId: socket.id,
@@ -281,7 +244,6 @@ export const voiceModule: ServerModule = {
           muted: !!payload.muted || !permissions.canSpeak,
           serverMuted: isServerMuted(user.accountId),
           deafened: !!payload.deafened,
-          // Entrar (ou trocar de sala) começa sem tela; o app avisa com voice:sharing ao publicar.
           sharing: false
         })
         published.set(socket.id, permissions)
@@ -299,10 +261,7 @@ export const voiceModule: ServerModule = {
       const state = voice.get(socket.id)
       if (!state) return
       const canSpeak = published.get(socket.id)?.canSpeak !== false
-      // Sem poder falar o app sempre manda "mutado" (por causa do silêncio): isso não é escolha da
-      // pessoa e não pode ficar valendo depois que o moderador tirar o silêncio.
       if (canSpeak) selfMuted.set(socket.id, !!payload?.muted)
-      // quem não pode falar continua aparecendo silenciado
       state.muted = !!payload?.muted || !canSpeak
       state.deafened = !!payload?.deafened
       emitVoice(io)
@@ -311,7 +270,6 @@ export const voiceModule: ServerModule = {
     socket.on('voice:sharing', (sharing) => {
       const state = voice.get(socket.id)
       if (!state || typeof sharing !== 'boolean' || state.sharing === sharing) return
-      // sem `share` não aparece "ao vivo" (o LiveKit também não aceita a tela)
       if (sharing && published.get(socket.id)?.canShare === false) return
       state.sharing = sharing
       if (!sharing) {
@@ -319,6 +277,22 @@ export const voiceModule: ServerModule = {
         forgetScreen(socket.id)
       }
       emitVoice(io)
+    })
+
+    socket.on('voice:screen-credentials', (ack) => {
+      if (typeof ack !== 'function') return
+      void guard('voice:screen-credentials', async () => {
+        const user = socket.data.user
+        const state = voice.get(socket.id)
+        if (!user || !state) return ack({ ok: false, error: 'Entre numa sala de voz para compartilhar a tela' })
+        if (!liveKitConfig) return ack({ ok: false, error: 'A voz não está configurada neste servidor' })
+        const limited = limiters.screenCredentials.take(user.accountId)
+        if (!limited.ok) return ack({ ok: false, error: `Muitos pedidos para compartilhar a tela. ${retryText(limited.retryAfterMs)}` })
+        if (!(await allowed(user.accountId, 'share', state.channelId))) {
+          return ack({ ok: false, error: 'Você não tem permissão para compartilhar a tela nesta sala' })
+        }
+        ack({ ok: true, ...(await createScreenCredentials(liveKitConfig, user, state.channelId)) })
+      })
     })
 
     socket.on('voice:watching', (screenIds) => {

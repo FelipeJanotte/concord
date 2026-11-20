@@ -1,12 +1,3 @@
-/**
- * Sobreposição em jogos (overlay, B15), lado da janela principal: guarda a preferência desta
- * máquina (`concord:overlay`), manda a configuração para o processo principal e, a cada mudança
- * da store, quem está falando na minha sala de voz (com mute/deafen). O atalho global
- * (padrão Shift + `, escolhido nas Configurações) chega por `onToggled` e vira a mesma preferência. Modo de mover (Ctrl + Shift + ` ou
- * `setOverlayEditing`): o processo principal avisa por `onEditing` e, ao soltar, manda a posição por
- * `onMoved` (salva em `position`; escolher um canto volta para o canto). Fora do Electron, não faz nada.
- * Skill `concord-overlay`.
- */
 import {
   cleanShortcuts,
   cleanWidth,
@@ -38,7 +29,6 @@ export const overlayEnv = {
 
 type St = Pick<AppState, 'myVoiceChannelId' | 'voice' | 'users' | 'speaking' | 'serverUrl'>
 
-/** O que o overlay mostra: só quem está falando na minha sala de voz, ou null fora de sala. */
 export function overlayRoom(st: St): OverlayRoom | null {
   const channelId = st.myVoiceChannelId
   if (!channelId) return null
@@ -71,11 +61,9 @@ function save(): void {
     const saved: SavedOverlay = { ...overlayConfig(get()), shortcuts: get().overlayShortcuts }
     localStorage.setItem(OVERLAY_KEY, JSON.stringify(saved))
   } catch {
-    // sem armazenamento: vale só até fechar o app
   }
 }
 
-/** Lê a preferência salva (valores desconhecidos voltam ao padrão). */
 export function loadOverlayPreferences(): void {
   let raw: SavedOverlay = {}
   try {
@@ -93,7 +81,6 @@ export function loadOverlayPreferences(): void {
   })
 }
 
-/** Posição salva/recebida válida (números finitos) ou null. */
 function validPosition(raw: unknown): OverlayPosition | null {
   const p = raw as Partial<OverlayPosition> | null | undefined
   const ok = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
@@ -105,22 +92,25 @@ export function setOverlayEnabled(enabled: boolean): void {
   save()
 }
 
-/** Escolher um canto tira a posição arrastada (volta para o canto). */
 export function setOverlayCorner(corner: OverlayCorner): void {
   set({ overlayCorner: corner, overlayPosition: null })
   save()
 }
 
-/** Modo de mover (como no Discord): o overlay passa a receber o mouse para ser arrastado. */
-export function setOverlayEditing(editing: boolean): void {
+export function startOverlayEditing(): void {
   const bridge = overlayEnv.bridge()
   if (!bridge) return
-  // a configuração (ligado) precisa chegar antes: o processo principal só entra com o overlay ligado
   syncOverlay()
-  bridge.setEditing(editing)
+  bridge.startEditing()
 }
 
-/** O processo principal avisou onde o overlay foi solto. */
+export function finishOverlayEditing(): void {
+  const bridge = overlayEnv.bridge()
+  if (!bridge) return
+  syncOverlay()
+  bridge.finishEditing()
+}
+
 function overlayMoved(raw: unknown): void {
   const position = validPosition(raw)
   if (!position) return
@@ -160,13 +150,13 @@ const ALREADY_USED_BY: Record<OverlayShortcutAction, string> = {
 
 export function startOverlayShortcutRecording(action: OverlayShortcutAction): void {
   set({ overlayRecording: action })
-  overlayEnv.bridge()?.pauseShortcuts(true)
+  overlayEnv.bridge()?.pauseShortcuts()
 }
 
 export function cancelOverlayShortcutRecording(): void {
   if (!get().overlayRecording) return
   set({ overlayRecording: null })
-  overlayEnv.bridge()?.pauseShortcuts(false)
+  overlayEnv.bridge()?.resumeShortcuts()
 }
 
 export function recordOverlayShortcutKey(event: ShortcutKeyEvent & { key: string }): void {
@@ -190,7 +180,6 @@ let lastRoom = ''
 let lastTheme = ''
 let stop: (() => void) | null = null
 
-/** Manda configuração e sala para o processo principal, só quando mudam. */
 export function syncOverlay(): void {
   const bridge = overlayEnv.bridge()
   if (!bridge) return
@@ -215,7 +204,6 @@ export function syncOverlay(): void {
   }
 }
 
-/** Começa a acompanhar (uma vez, na abertura do app): store → overlay e atalho → preferência. */
 export function startOverlay(): () => void {
   if (stop) return stop
   loadOverlayPreferences()

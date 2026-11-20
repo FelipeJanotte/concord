@@ -1,10 +1,10 @@
-// Entrar/sair da sala de voz, mute, deafen, compartilhar a tela e câmera (B21). A conexão com o LiveKit fica em `lib/voice.ts`.
-import { get, getSocket, notify, set, type AppSocket } from '../core'
+import type { ScreenAudioChoice, ScreenShareBridge, ScreenShareEndReason, ScreenSource } from '@shared/screen'
+import { NO_OWN_SCREEN_SHARE } from '@/store/voice'
+import { get, getSocket, notify, requireSocket, set, type AppSocket } from '../core'
 import { findDm } from '../dms'
 import { voice } from '../voice'
 import { enteredVoiceRoom, handleVoiceStateChange, leftVoiceRoom } from './voice-sounds'
 
-/** Estado de quem não está em nenhuma sala (sair, cair, perder a conexão). */
 export const OUT_OF_VOICE = {
   myVoiceChannelId: null,
   speaking: {},
@@ -17,25 +17,17 @@ export const OUT_OF_VOICE = {
   voiceCanVideo: true
 } as const
 
-/**
- * Fui silenciado por um moderador (B6)? Vem do meu `VoiceState.serverMuted` e só muda quando
- * eu apareço no `voice:state` (fora da sala continua valendo, como no servidor).
- */
 let mutedByModerator = false
 const CANT_SPEAK_MODERATOR = 'Um moderador silenciou você nas salas de voz.'
 
-// A sala do LiveKit caiu sem a pessoa pedir (removida, sala encerrada, servidor de voz fora do ar).
 voice.onUnexpectedDisconnect = (message) => {
   set({ ...OUT_OF_VOICE })
   leftVoiceRoom()
   notify(message)
 }
 
-// A tela parou sem ser pelo botão (janela compartilhada fechada, "parar" do sistema...).
 voice.onScreenShareEnded = () => setSharing(false)
 
-// Cargo/regra mudou com a pessoa na sala (v2): o LiveKit já trocou o que ela pode publicar.
-// A câmera parou sem ser pelo botão (perdeu `video`, câmera desconectada...).
 voice.onCameraEnded = () => set({ cameraOn: false })
 
 voice.onPermissionsChange = ({ canSpeak, canShare, canVideo }) => {
@@ -45,13 +37,11 @@ voice.onPermissionsChange = ({ canSpeak, canShare, canVideo }) => {
   if (was.voiceCanSpeak && !canSpeak) notify(mutedByModerator ? CANT_SPEAK_MODERATOR : 'Você não pode mais falar nesta sala.', 'info')
   if (!was.voiceCanSpeak && canSpeak) notify('Agora você pode falar nesta sala.', 'info')
   if (!canShare && was.sharing) setSharing(false)
-  // O servidor deixa quem não pode falar sempre silenciado; ao recuperar, avisa o estado real.
   if (was.voiceCanSpeak !== canSpeak && was.myVoiceChannelId) {
     getSocket()?.emit('voice:update', { muted: was.muted || was.noMic || !canSpeak, deafened: was.deafened })
   }
 }
 
-/** Depois do fim do silêncio: lê as permissões já e de novo em `UNMUTE_RESYNC_MS` (se ainda faltar). */
 export const UNMUTE_RESYNC_MS = 1500
 function resyncAfterUnmute(): void {
   void voice.syncPermissions()
@@ -61,20 +51,17 @@ function resyncAfterUnmute(): void {
 }
 
 export function bindVoiceEvents(s: AppSocket): void {
-  mutedByModerator = false // conexão nova: o próximo voice:state diz de novo
+  mutedByModerator = false
   s.on('voice:state', (states) => {
     const prev = get().voice
     set({ voice: states })
-    handleVoiceStateChange(prev, states) // sons de entrar/sair (B16)
+    handleVoiceStateChange(prev, states)
     const mine = states.find((v) => v.userId === get().self?.id)
     if (mine) {
       const wasMutedByModerator = mutedByModerator
       mutedByModerator = !!mine.serverMuted
-      // O moderador tirou o silêncio: o microfone volta sozinho (sem precisar se desmutar). O normal é
-      // o LiveKit avisar a permissão nova; se ainda não chegou, relê agora e de novo um pouco depois.
       if (wasMutedByModerator && !mutedByModerator && !get().voiceCanSpeak) resyncAfterUnmute()
     }
-    // O servidor tirou esta conexão da sala (ex.: perdeu a permissão de entrar, v2): sai localmente.
     const { myVoiceChannelId, joiningVoice, self } = get()
     if (myVoiceChannelId && !joiningVoice && self && !states.some((v) => v.userId === self.id)) {
       voice.teardown()
@@ -94,10 +81,6 @@ function describeMediaError(err: unknown): string {
   return err instanceof Error ? err.message : 'Falha ao entrar no canal de voz'
 }
 
-/**
- * Entra na sala de voz. `show: false` = entra sem mudar a tela (ex.: um moderador me moveu e eu
- * estava no chat de texto: a voz troca, a tela fica onde estava).
- */
 export async function joinVoice(channelId: string, { show = true }: { show?: boolean } = {}): Promise<void> {
   const st = get()
   if (show && !findDm(st.dms, channelId)) set({ section: 'community', view: { kind: 'voice', channelId } })
@@ -105,9 +88,7 @@ export async function joinVoice(channelId: string, { show = true }: { show?: boo
   set({ joiningVoice: true })
   try {
     const { micError, cancelled, canSpeak, canShare, canVideo } = await voice.join(channelId)
-    // Interrompida no meio (saiu, trocou de sala, conexão caiu): não grava a sala.
     if (cancelled) return
-    // Trocar de sala encerra a tela (o servidor também zera o "ao vivo").
     set({
       myVoiceChannelId: channelId,
       noMic: canSpeak && micError !== null,
@@ -127,8 +108,6 @@ export async function joinVoice(channelId: string, { show = true }: { show?: boo
     }
     else if (micError !== null) notify(`${describeMediaError(micError)} Você entrou só para ouvir.`, 'info')
   } catch (err) {
-    // Troca recusada pelo servidor: a sala antiga continua de pé e o estado também.
-    // Falha depois de aceita (LiveKit fora do ar): o VoiceClient já saiu de tudo; o estado acompanha.
     if (!voice.inRoom && get().myVoiceChannelId) {
       set({ ...OUT_OF_VOICE })
       leftVoiceRoom()
@@ -140,6 +119,8 @@ export async function joinVoice(channelId: string, { show = true }: { show?: boo
 }
 
 export function leaveVoice(): void {
+  const bridge = screenBridge()
+  if (bridge && get().sharing) void stopNativeShare(bridge)
   voice.leave()
   set({ ...OUT_OF_VOICE })
   leftVoiceRoom()
@@ -149,7 +130,6 @@ function applyAudio(muted: boolean, deafened: boolean): void {
   set({ muted, deafened })
   voice.setMuted(muted)
   voice.setDeafened(deafened)
-  // Sem microfone ou sem permissão de falar, os outros sempre veem o usuário como silenciado.
   const { noMic, voiceCanSpeak } = get()
   if (get().myVoiceChannelId) getSocket()?.emit('voice:update', { muted: muted || noMic || !voiceCanSpeak, deafened })
 }
@@ -175,15 +155,12 @@ export function toggleDeafen(): void {
   applyAudio(!deafened, !deafened)
 }
 
-// ---------- Tela ----------
-
 function setSharing(sharing: boolean): void {
   if (get().sharing === sharing) return
   set({ sharing })
   if (get().myVoiceChannelId) getSocket()?.emit('voice:sharing', sharing)
 }
 
-/** No Electron existe o seletor próprio; no navegador (npm run dev), o do próprio navegador. */
 function screenBridge() {
   return typeof window !== 'undefined' ? window.api?.screen : undefined
 }
@@ -192,7 +169,6 @@ export function canShareSystemAudio(): boolean {
   return screenBridge()?.canShareAudio ?? false
 }
 
-/** Liga a tela de `userId` num <video> (usado pelo ScreenTile). Devolve a função que desliga. */
 export function attachScreen(userId: string, el: HTMLVideoElement): () => void {
   return voice.attachScreen(userId, el)
 }
@@ -201,46 +177,106 @@ export function closeScreenPicker(): void {
   set({ screenPickerOpen: false })
 }
 
-/** Botão "Compartilhar tela": abre o seletor, ou para se já estiver compartilhando. */
 export function toggleScreenShare(): void {
   const { sharing, myVoiceChannelId } = get()
   if (!myVoiceChannelId) return notify('Entre numa sala de voz para compartilhar a tela.', 'info')
   if (!get().voiceCanShare) return notify('Você não tem permissão para compartilhar a tela nesta sala.', 'info')
   if (sharing) return void stopScreenShare()
   if (screenBridge()) set({ screenPickerOpen: true })
-  else void startScreenShare(null, false)
+  else void startBrowserScreenShare('without-audio')
 }
 
-/**
- * Começa a compartilhar. `sourceId` vem do ScreenPicker (Electron); null = deixa o
- * navegador perguntar. `audio` = levar junto o áudio do sistema (só Windows).
- */
-export async function startScreenShare(sourceId: string | null, audio: boolean): Promise<void> {
+export async function startNativeScreenShare(source: ScreenSource, audioChoice: ScreenAudioChoice): Promise<void> {
+  const bridge = screenBridge()
+  if (!bridge) throw new Error('Compartilhar uma fonte da tela exige o app desktop')
+  await shareScreen(async () => startNativeShare(bridge, source, audioChoice))
+}
+
+export async function startBrowserScreenShare(audioChoice: ScreenAudioChoice): Promise<void> {
+  await shareScreen(async () => {
+    await voice.startScreenShare(audioChoice)
+    voice.showOwnScreen({ kind: 'browser' })
+    return true
+  })
+}
+
+async function shareScreen(start: () => Promise<boolean>): Promise<void> {
   set({ screenPickerOpen: false })
   try {
-    const bridge = screenBridge()
-    if (bridge && sourceId) await bridge.select(sourceId, audio && bridge.canShareAudio)
-    await voice.startScreenShare(audio)
+    if (!(await start())) return
     setSharing(true)
   } catch (err) {
-    // Cancelou o seletor do navegador: não é erro.
     if (err instanceof DOMException && err.name === 'NotAllowedError') return
     console.error('[tela] não foi possível compartilhar:', err)
     notify(err instanceof Error && err.message ? `Não foi possível compartilhar a tela: ${err.message}` : 'Não foi possível compartilhar a tela.')
   }
 }
 
-export async function stopScreenShare(): Promise<void> {
+let stopListeningForNativeEnd: (() => void) | null = null
+let nativeStart: { endedWith: ScreenShareEndReason | null } | null = null
+
+async function startNativeShare(bridge: ScreenShareBridge, source: ScreenSource, audioChoice: ScreenAudioChoice): Promise<boolean> {
+  const credentials = await requireSocket().emitWithAck('voice:screen-credentials')
+  if (!credentials.ok) throw new Error(credentials.error)
+  stopListeningForNativeEnd?.()
+  stopListeningForNativeEnd = bridge.onEnded(nativeShareEnded)
+  const attempt: { endedWith: ScreenShareEndReason | null } = { endedWith: null }
+  nativeStart = attempt
   try {
-    await voice.stopScreenShare()
+    await bridge.start({ sourceId: source.id, audio: audioChoice === 'with-system-audio' && bridge.canShareAudio, url: credentials.url, token: credentials.token })
   } finally {
+    if (nativeStart === attempt) nativeStart = null
+  }
+  if (attempt.endedWith) {
+    announceNativeEnd(attempt.endedWith)
+    return false
+  }
+  voice.showOwnScreen({ kind: 'native', thumbnail: source.thumbnail })
+  return true
+}
+
+const NATIVE_END_NOTICES: Partial<Record<ScreenShareEndReason, { text: string; kind: 'error' | 'info' }>> = {
+  'source-closed': { text: 'A janela compartilhada foi fechada', kind: 'info' },
+  failed: { text: 'O compartilhamento de tela parou', kind: 'error' }
+}
+
+function announceNativeEnd(reason: ScreenShareEndReason): void {
+  const notice = NATIVE_END_NOTICES[reason]
+  if (notice) notify(notice.text, notice.kind)
+}
+
+function nativeShareEnded(reason: ScreenShareEndReason): void {
+  if (nativeStart) {
+    nativeStart.endedWith ??= reason
+    return
+  }
+  const wasSharing = get().sharing
+  voice.showOwnScreen(NO_OWN_SCREEN_SHARE)
+  setSharing(false)
+  if (wasSharing) announceNativeEnd(reason)
+}
+
+async function stopNativeShare(bridge: ScreenShareBridge): Promise<void> {
+  try {
+    await bridge.stop()
+  } catch (err) {
+    console.error('[tela] não foi possível parar a tela nativa:', err)
+  } finally {
+    voice.showOwnScreen(NO_OWN_SCREEN_SHARE)
+  }
+}
+
+export async function stopScreenShare(): Promise<void> {
+  const bridge = screenBridge()
+  try {
+    if (bridge) await stopNativeShare(bridge)
+    else await voice.stopScreenShare()
+  } finally {
+    voice.showOwnScreen(NO_OWN_SCREEN_SHARE)
     setSharing(false)
   }
 }
 
-// ---------- câmera (B21) ----------
-
-/** Liga a câmera de `userId` num <video> (usado pelo CameraTile). Devolve a função que desliga. */
 export function attachCamera(userId: string, el: HTMLVideoElement): () => void {
   return voice.attachCamera(userId, el)
 }
@@ -254,7 +290,6 @@ function describeCameraError(err: unknown): string {
   return err instanceof Error && err.message ? `Não foi possível ligar a câmera: ${err.message}` : 'Não foi possível ligar a câmera.'
 }
 
-/** Botão "Ligar câmera": liga ou desliga a própria câmera na sala atual. */
 export async function toggleCamera(): Promise<void> {
   const { cameraOn, myVoiceChannelId, voiceCanVideo } = get()
   if (!myVoiceChannelId) return notify('Entre numa sala de voz para ligar a câmera.', 'info')

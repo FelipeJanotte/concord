@@ -5,5 +5,5 @@ export interface StartupState {
 }
 
 export const startupInitial: StartupState = {
-  openAtLogin: null
+  openAtLogin: { supported: false }
 }

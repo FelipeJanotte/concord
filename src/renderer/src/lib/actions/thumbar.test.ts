@@ -140,7 +140,7 @@ describe('botões na miniatura da barra de tarefas', () => {
     expect(useApp.getState().myVoiceChannelId).toBeNull()
   })
 
-  it('parar desliga o clique e tira os botões; fora do Electron não faz nada', async () => {
+  it('parar desliga o clique e tira os botões; fora do app desktop não faz nada', async () => {
     useApp.setState(inVoice)
     stop = startThumbar()
     await flush()

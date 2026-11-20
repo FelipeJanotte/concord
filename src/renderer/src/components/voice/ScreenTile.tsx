@@ -4,6 +4,7 @@ import { attachScreen } from '@/lib/client'
 import { useFullscreen } from '@/lib/fullscreen'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
+import { NO_OWN_SCREEN_SHARE } from '@/store/voice'
 import { ScreenAudioControl } from './ScreenAudioControl'
 import { ScreenViewers } from './ScreenViewers'
 
@@ -36,6 +37,21 @@ function useScreenLabels(userIds: string[]): string {
 }
 
 function ScreenVideo({ userId, label, onDoubleClick }: { userId: string; label: string; onDoubleClick?: () => void }) {
+  const ownScreenShare = useApp((s) => (s.self?.id === userId ? s.ownScreenShare : NO_OWN_SCREEN_SHARE))
+  if (ownScreenShare.kind === 'native') return <OwnScreenCard thumbnail={ownScreenShare.thumbnail} label={label} onDoubleClick={onDoubleClick} />
+  return <LiveScreenVideo userId={userId} label={label} onDoubleClick={onDoubleClick} />
+}
+
+function OwnScreenCard({ thumbnail, label, onDoubleClick }: { thumbnail: string; label: string; onDoubleClick?: () => void }) {
+  return (
+    <div onDoubleClick={onDoubleClick} className="relative flex size-full min-h-0 items-center justify-center">
+      <img src={thumbnail} alt={label} className="size-full min-h-0 object-contain opacity-60" />
+      <span className="absolute rounded-md bg-black/60 px-3 py-1 text-sm font-semibold text-white">Você está compartilhando</span>
+    </div>
+  )
+}
+
+function LiveScreenVideo({ userId, label, onDoubleClick }: { userId: string; label: string; onDoubleClick?: () => void }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   useEffect(() => {
     const el = videoRef.current

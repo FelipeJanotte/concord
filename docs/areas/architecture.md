@@ -3,10 +3,9 @@
 ## Peças
 
 ```
-┌──────────── App Electron (um por usuário) ────────────┐        ┌──────── server/ ─────────────────┐
-│ main (src/main)      janela, microfone, login Google  │        │ index.ts: http + Socket.IO       │
-│ preload (src/preload) window.api                      │        │   (porta 3001) + lista de módulos│
-│ renderer (React)                                      │  HTTP  │ modules/<dominio>.ts: handlers   │
+┌──────── App Concord (um por usuário, Windows) ────────┐        ┌──────── server/ ─────────────────┐
+│ shell Rust (src-tauri)  janelas, nativo, Google, tela │        │ index.ts: http + Socket.IO       │
+│ renderer (React no WebView2)  ── window.api           │  HTTP  │ modules/<dominio>.ts: handlers   │
 │   components ──lê──> store/ (zustand, slices)         │  + WS  │ repo/<dominio>.ts: dados (async) │
 │        └──chama──> lib/client.ts ──fetch/socket────────┼───────>│   └─> db/ (Drizzle → Postgres    │
 │                                                       │        │        ou PGlite)                │
@@ -34,14 +33,20 @@ Cada domínio (`account`, `channel`, `message`, `presence`, `voice`) aparece nas
 seu próprio mapa dentro de `modules/voice.ts` e expõe `voiceStates()`, `emitVoice()` e `clearVoiceChannel()`.
 No renderer, `lib/core.ts` guarda o socket atual, `set`/`get` e `notify`.
 
-O processo main não fala com o servidor do Concord. Ele só abre o navegador para o login com Google e devolve o
-código ao renderer (IPC `google-sign-in`), cuida do compartilhamento de tela (IPC `screen-*`), mostra as
-notificações nativas e o selo do ícone (IPC `notify`/`badge`/`notification-click`, `docs/areas/notifications.md`)
-a janela do overlay em jogos (IPC `overlay-*`, atalhos globais escolhidos, tema ao vivo, segunda página do renderer; skill
-`docs/areas/overlay.md`), a atualização automática (IPC `update-*`, `docs/areas/updates.md`) e o pressione para falar
-(IPC `ptt-*`, gancho de teclado/mouse do sistema com `uiohook-napi`; `docs/areas/voice.md`) e o vidro do tema translúcido
-(IPC `window-translucency`, `docs/areas/themes.md`) e a barra de título própria (IPC `window-control`/`window-maximized`, `docs/areas/themes.md`) e o iniciar com o Windows (IPC `startup-get`/`startup-set`, `docs/areas/settings.md`) e os botões na miniatura da barra de tarefas (IPC `thumbar-buttons`/`thumbar-click`, `docs/areas/voice.md`). Toda a rede com o servidor acontece no renderer: **HTTP** para
-cadastro/login (antes de existir socket) e **Socket.IO** para o resto. Detalhes das contas: `docs/areas/accounts.md`.
+O app é um **shell Tauri em Rust** (`src-tauri/`, `crates/`) que abre a tela React no WebView2 (`docs/areas/desktop.md`).
+`window.api` é montado na partida por `lib/desktop/` sobre `invoke` e eventos do Tauri; a lista de comandos e eventos
+está em `src/shared/desktop-channels.json`. O shell não fala com o servidor do Concord. Ele abre o navegador para o login
+com Google e devolve o código ao renderer (`google-sign-in`); captura, codifica e publica a tela no LiveKit com o token
+que a tela pediu ao servidor (`screen-*`, `voice:screen-credentials`, `docs/areas/voice.md`); mostra as notificações
+nativas e o selo do ícone (`notify`/`badge`/`notification-click`, `docs/areas/notifications.md`); abre a janela do
+overlay em jogos (`overlay-*`, atalhos globais escolhidos, tema ao vivo, segunda página do renderer,
+`docs/areas/overlay.md`); atualiza o app (`update-*`, `docs/areas/updates.md`); escuta a tecla do pressione para falar por
+Raw Input (`ptt-*`, `docs/areas/voice.md`); mede o ocioso (`idle-*`, `docs/areas/presence.md`); liga o vidro do tema
+(`window-translucency`, `docs/areas/themes.md`); desenha os botões da barra de título e da miniatura da barra de tarefas
+(`window-control`, `thumbar-*`); e cuida de iniciar com o Windows (`startup-*`, `docs/areas/settings.md`). Threads
+nativas (Raw Input, ocioso, overlay, captura) param juntas no encerramento (`src-tauri/src/shutdown.rs`). Toda a rede
+com o servidor acontece no renderer: **HTTP** para cadastro/login (antes de existir socket) e **Socket.IO** para o resto.
+Detalhes das contas: `docs/areas/accounts.md`.
 
 ## Modelo de dados (`src/shared/types/`)
 
@@ -132,6 +137,7 @@ Cliente → servidor (`ClientToServerEvents`):
 | `voice:update` | `{ muted, deafened }` | — | `voice:state` |
 | `voice:sharing` | `boolean` | — | liga/desliga o "ao vivo" (só para quem está numa sala); `voice:state` |
 | `voice:watching` | `string[]` (ids das telas em destaque, até `MAX_WATCHED_SCREENS` = 25) | — | quais telas estou assistindo; só da mesma sala, sem a própria, `LIMITS.screenWatching`; lista igual não emite; `voice:state` com `VoiceState.watching` (só conta quem está compartilhando) apenas para quem está na mesma sala — `docs/areas/voice.md` |
+| `voice:screen-credentials` | — | `ScreenCredentialsResult` (`url`, `token` do participante `<accountId>:screen`) | token curto (60 s) para o app Rust publicar a tela no LiveKit; exige estar numa sala e `share`; `LIMITS.screenCredentials` — `docs/areas/voice.md` |
 | `voice:preview` | `string` (JPEG em data URL) | — | miniatura da própria tela, só compartilhando; o servidor guarda a última (limite `screenPreview`) — `docs/areas/voice.md` |
 | `voice:preview-get` | `userId` | `ScreenPreviewResult` | prévia do "ao vivo" sem entrar na sala; exige `view` + `connect` na sala de quem compartilha (limite `screenPreviewGet`) — `docs/areas/voice.md` |
 | `typing` | `channelId` | — | broadcast `typing` (o cliente limita a 1 envio a cada 2,5 s) |

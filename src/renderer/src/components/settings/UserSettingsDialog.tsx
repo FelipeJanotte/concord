@@ -1,7 +1,3 @@
-// Configurações do usuário (como no Discord): uma janela só, com menu lateral — Minha conta, Voz e vídeo,
-// Aparência e Notificações. Aberta pela engrenagem do painel da conta (`openSettings()`) ou já numa seção
-// (`openSettings('voice')` pelos botões de configurações de voz). Conta nova do Google ainda escolhendo o id:
-// só "Minha conta", sem o menu, até salvar.
 import type { ComponentType, ReactNode } from 'react'
 import { Bell, Mic, Monitor, Palette, UserRound } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
@@ -25,7 +21,7 @@ const SECTIONS: { id: SettingsSection; label: string; icon: ReactNode; Body: Com
 export function UserSettingsDialog() {
   const section = useApp((s) => s.settingsSection)
   const choosingTag = useApp((s) => s.account?.tagLocked === false)
-  const startupAvailable = useApp((s) => s.openAtLogin !== null)
+  const startupAvailable = useApp((s) => s.openAtLogin.supported)
   const sections = SECTIONS.filter((s) => s.id !== 'windows' || startupAvailable)
   const current = sections.find((s) => s.id === (choosingTag ? 'account' : section)) ?? sections[0]
   const Body = current.Body
@@ -56,7 +52,6 @@ export function UserSettingsDialog() {
           </nav>
         )}
         <div data-testid="settings-body" className="min-h-0 min-w-0 flex-1 overflow-y-auto p-6">
-          {/* key: trocar de seção monta a nova do zero (e a anterior descarta o que não foi salvo) */}
           <Body key={current.id} />
         </div>
       </DialogContent>

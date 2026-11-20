@@ -8,6 +8,7 @@
     "jsx": "react-jsx",
     "strict": true,
     "isolatedModules": true,
+    "resolveJsonModule": true,
     "skipLibCheck": true,
     "noUnusedLocals": true,
     "baseUrl": ".",
@@ -16,5 +17,5 @@
       "@shared/*": ["src/shared/*"]
     }
   },
-  "include": ["src/renderer/src/**/*", "src/shared/**/*", "src/preload/*.d.ts"]
+  "include": ["src/renderer/src/**/*", "src/shared/**/*"]
 }

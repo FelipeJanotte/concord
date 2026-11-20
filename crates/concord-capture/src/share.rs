@@ -1,0 +1,106 @@
+use crate::error::CaptureError;
+use crate::events::ShareEvent;
+use crate::livekit_token::LiveKitToken;
+use crate::quality::ShareQuality;
+use crate::source::CaptureSource;
+
+#[derive(Debug, Clone)]
+pub struct ShareRequest {
+    pub source_id: String,
+    pub with_audio: bool,
+    pub livekit_url: String,
+    pub token: LiveKitToken,
+    pub quality: ShareQuality,
+}
+
+pub struct ScreenShare {
+    #[cfg(windows)]
+    session: crate::platform::session::Session,
+}
+
+#[cfg(windows)]
+impl ScreenShare {
+    pub fn start(
+        request: ShareRequest,
+        on_event: impl Fn(ShareEvent) + Send + Sync + 'static,
+    ) -> Result<Self, CaptureError> {
+        let session = crate::platform::session::Session::start(request, Box::new(on_event))?;
+        Ok(Self { session })
+    }
+
+    pub fn stop(self) {
+        self.session.stop();
+    }
+}
+
+#[cfg(windows)]
+pub fn list_sources() -> Result<Vec<CaptureSource>, CaptureError> {
+    crate::platform::sources::list_sources()
+}
+
+#[cfg(windows)]
+pub fn thumbnail_of(source_id: &str) -> Result<Vec<u8>, CaptureError> {
+    crate::platform::sources::thumbnail_of(source_id)
+}
+
+#[cfg(not(windows))]
+impl ScreenShare {
+    pub fn start(
+        _request: ShareRequest,
+        _on_event: impl Fn(ShareEvent) + Send + Sync + 'static,
+    ) -> Result<Self, CaptureError> {
+        Err(CaptureError::UnsupportedPlatform)
+    }
+
+    pub fn stop(self) {}
+}
+
+#[cfg(not(windows))]
+pub fn list_sources() -> Result<Vec<CaptureSource>, CaptureError> {
+    Err(CaptureError::UnsupportedPlatform)
+}
+
+#[cfg(not(windows))]
+pub fn thumbnail_of(_source_id: &str) -> Result<Vec<u8>, CaptureError> {
+    Err(CaptureError::UnsupportedPlatform)
+}
+
+#[cfg(all(test, not(windows)))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_debug_output_of_a_request_never_contains_the_token() {
+        let request = ShareRequest {
+            source_id: "screen:1".into(),
+            with_audio: true,
+            livekit_url: "wss://example.invalid".into(),
+            token: LiveKitToken::new("secret-jwt-value"),
+            quality: ShareQuality::Smooth,
+        };
+        assert!(!format!("{request:?}").contains("secret-jwt-value"));
+    }
+
+    #[test]
+    fn other_platforms_report_unsupported() {
+        assert!(matches!(
+            list_sources(),
+            Err(CaptureError::UnsupportedPlatform)
+        ));
+        assert!(matches!(
+            thumbnail_of("screen:1"),
+            Err(CaptureError::UnsupportedPlatform)
+        ));
+        let request = ShareRequest {
+            source_id: "screen:1".into(),
+            with_audio: true,
+            livekit_url: "wss://example.invalid".into(),
+            token: LiveKitToken::new("token"),
+            quality: ShareQuality::Smooth,
+        };
+        assert!(matches!(
+            ScreenShare::start(request, |_| {}),
+            Err(CaptureError::UnsupportedPlatform)
+        ));
+    }
+}

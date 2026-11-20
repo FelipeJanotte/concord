@@ -1,32 +1,26 @@
-// Salas de voz.
 import type { VoiceState } from '@shared/types'
 
+export type OwnScreenShare = { kind: 'none' } | { kind: 'browser' } | { kind: 'native'; thumbnail: string }
+
+export const NO_OWN_SCREEN_SHARE: OwnScreenShare = { kind: 'none' }
+
 export interface VoiceSliceState {
-  /** quem está em qual sala (lista completa vinda do servidor) */
   voice: VoiceState[]
   myVoiceChannelId: string | null
   joiningVoice: boolean
   muted: boolean
   deafened: boolean
-  /** na sala de voz sem microfone (só ouvindo) */
   noMic: boolean
   speaking: Record<string, boolean>
-  /** estou compartilhando a tela */
   sharing: boolean
-  /** quem tem tela disponível para assistir na sala atual (ids de conexão; inclui a própria, como prévia) */
   screens: string[]
+  ownScreenShare: OwnScreenShare
   screenAudio: string[]
-  /** minha câmera está ligada (B21) */
   cameraOn: boolean
-  /** quem está com a câmera ligada na sala atual (ids de conexão; inclui a própria, como prévia) */
   cameras: string[]
-  /** seletor de tela/janela aberto */
   screenPickerOpen: boolean
-  /** pode falar na sala atual (v2, `speak`); sem isso entra só para ouvir */
   voiceCanSpeak: boolean
-  /** pode compartilhar a tela na sala atual (v2, `share`) */
   voiceCanShare: boolean
-  /** pode ligar a câmera na sala atual (B21, `video`) */
   voiceCanVideo: boolean
 }
 
@@ -40,6 +34,7 @@ export const voiceInitial: VoiceSliceState = {
   speaking: {},
   sharing: false,
   screens: [],
+  ownScreenShare: NO_OWN_SCREEN_SHARE,
   screenAudio: [],
   cameraOn: false,
   cameras: [],

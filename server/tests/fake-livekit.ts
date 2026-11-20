@@ -1,8 +1,3 @@
-/**
- * LiveKit falso para testes de voz: finge ser a API Twirp do LiveKit (RoomService),
- * guarda as chamadas e responde como o de verdade. O servidor de teste aponta para ele
- * com `liveKitEnv(apiUrl)`. (Veio do voice.test.ts da B1; compartilhado com permissions.test.ts.)
- */
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { sleep } from './helpers'
@@ -19,7 +14,6 @@ export interface ApiCall {
 
 export class FakeLiveKit {
   calls: ApiCall[] = []
-  /** quando true, RemoveParticipant responde 404 (pessoa que não está na sala) */
   notFound = false
   private server: Server = createServer((req, res) => {
     let raw = ''
@@ -27,7 +21,6 @@ export class FakeLiveKit {
     req.on('end', () => {
       const method = req.url?.split('/').pop() ?? ''
       this.calls.push({ method, body: raw ? JSON.parse(raw) : {}, auth: req.headers.authorization ?? '' })
-      // Como o LiveKit de verdade: tirar alguém que não está na sala dá 404.
       if (method === 'RemoveParticipant' && this.notFound) {
         res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ code: 'not_found', msg: 'participant not found' }))
         return
@@ -45,7 +38,6 @@ export class FakeLiveKit {
     return new Promise((r) => this.server.close(() => r()))
   }
 
-  /** Espera uma chamada que satisfaça `match` (as chamadas da API são assíncronas). */
   async waitCall(method: string, match: (body: Record<string, unknown>) => boolean = () => true): Promise<ApiCall> {
     const deadline = Date.now() + 3000
     while (Date.now() < deadline) {
@@ -57,12 +49,10 @@ export class FakeLiveKit {
   }
 }
 
-/** Variáveis para o servidor de teste usar o LiveKit falso (`TestServer.start({ env })`). */
 export function liveKitEnv(apiUrl: string): Record<string, string> {
   return { LIVEKIT_URL, LIVEKIT_API_URL: apiUrl, LIVEKIT_API_KEY, LIVEKIT_API_SECRET }
 }
 
-/** Roda `fn` com variáveis de ambiente trocadas (o servidor de teste herda process.env). */
 export function withEnv<T>(vars: Record<string, string>, fn: () => Promise<T>): Promise<T> {
   const saved = Object.fromEntries(Object.keys(vars).map((k) => [k, process.env[k]]))
   Object.assign(process.env, vars)

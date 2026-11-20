@@ -45,6 +45,9 @@ O áudio (e a tela, na B3) passa pelo LiveKit, um SFU self-hosted que roda pelo 
    `onVoiceRoomsChange` (aviso depois de toda mudança nas salas, junto com o `voice:state`) para encerrar a chamada
    quando os dois saem da sala. No app, `joinVoice` com um canal `dm` não troca a tela (fica na conversa).
 
+6. **Token da tela nativa** (`voice:screen-credentials`, seção "Tela nativa (Windows)"): um segundo token, só
+   para o participante `<accountId>:screen` que o app Rust publica. Sai da sala junto com a pessoa (`endScreenShare`).
+
 Não existe mais `voice:signal`, `voice:peer-left` nem `peers` no ack.
 
 Configuração (`server/.env`, valores de dev em `server/.env.example`):
@@ -76,10 +79,17 @@ em `lib/actions/voice.ts` (reexportados por `lib/client.ts`). A API pública (`j
 clica na sala ─► createLocalAudioTrack(echoCancellation/noiseSuppression/autoGainControl)
                  (falhou? entra só para ouvir e devolve micError)
               ─► emitWithAck('voice:join', {channelId, muted, deafened}) ─► { url, token }
-              ─► new Room(...).connect(url, token, { autoSubscribe: true })
+              ─► new Room(...).connect(url, token, { autoSubscribe: false })
               ─► publishTrack(mic, { source: Microphone })  +  room.startAudio()
 ```
 
+- **Assinatura manual:** com `autoSubscribe: false` o app assina cada faixa com `publication.setSubscribed(true)`
+  (`subscribeToPresent` ao conectar e `RoomEvent.TrackPublished` depois), **menos as da própria tela**
+  (`subscribeUnlessOwnScreen`: participante `<minha conta>:screen`). Quem compartilha não baixa a própria tela.
+- **Quem é o dono da tela:** `screenOwnerOf(identity, metadata)` devolve a conta dona quando a identidade termina em
+  `:screen` (primeiro `metadata.screenOf`, depois o prefixo da identidade). As faixas de tela e áudio da tela desse
+  participante são atribuídas ao membro da mesma conta (`trackOwner`/`memberOfAccount`); qualquer outra faixa dele é
+  ignorada, então ele não aparece como membro, como "falando" nem na contagem.
 - **Áudio dos outros:** `TrackSubscribed` (só `Track.Kind.Audio`; vídeo/tela fica para a B3) → `track.attach()`
   cria o `<audio>`; `TrackUnsubscribed` → `detach()` + `remove()`.
 - **Mute:** `mic.mute()` / `unmute()` (o LiveKit para de enviar e avisa os outros).
@@ -129,7 +139,7 @@ próprio: voz baixa que todo mundo ouvia não acendia a borda. Agora a regra é 
 | `lib/speaking/speaking.ts` | Pura `nextSpeaking(estado, nívelDb, ms)`: acende em `SPEAKING_ON_DB` (-50 dBFS), entre -50 e `SPEAKING_OFF_DB` (-56) mantém como estava (histerese), abaixo de -56 segura aceso por `SPEAKING_HOLD_MS` (300 ms) e só então apaga (sem piscar entre palavras). |
 | `lib/speaking/detector.ts` | `SpeakingDetector`: um `AnalyserNode` por voz num `AudioContext` próprio (só mede, não toca nada), lido a cada `SPEAKING_TICK_MS` (50 ms) com `rmsDb` (de `lib/leveler/level.ts`). `watch(id, trackOf)` recebe uma função que devolve a faixa atual: se a faixa trocou (microfone trocado, filtro de ruído ligado/desligado, `restartTrack`), o detector solta a antiga e mede a nova; sem faixa = silêncio. `onChange` só quando o conjunto muda; `unwatch` apaga na hora. |
 | `lib/voice.ts` | Cria o detector na entrada: `watch` do meu microfone (`this.mic?.mediaStreamTrack`, que é a faixa já processada pelo filtro de ruído/volume) e do microfone de cada pessoa no `TrackSubscribed` (bot de música incluído; áudio da tela não conta); `unwatch` no `TrackUnsubscribed`; `destroy` no `teardown`. |
-| `src/main/index.ts` | `backgroundThrottling: false` na janela principal: sem isso o Chromium segura os timers em 1 vez por segundo com a janela escondida (jogo na frente) e a borda do overlay atrasaria. |
+| `src-tauri/src/windows/main_window.rs` | A janela principal não muda a limitação de timers em segundo plano do WebView2 (o Electron usava `backgroundThrottling: false`). Conferir num Windows real se a borda do overlay atrasa com um jogo na frente. |
 
 **Testes:** `lib/speaking/speaking.test.ts` (limiares, histerese, espera, voltar a falar), `lib/speaking/detector.test.ts`
 (AudioContext falso: acender/apagar, faixa trocada, sem faixa, `unwatch`, não avisar à toa, `destroy`),
@@ -170,28 +180,36 @@ servidor acima). O app acompanha:
 
 ## Compartilhar a tela (B3)
 
+Dois caminhos, escolhidos por `window.api.screen` (`lib/actions/voice.ts`):
+
+| Caminho | Quando | Quem captura e publica |
+|---|---|---|
+| **Nativo** | App Tauri no Windows (`window.api.screen` existe) | Rust (`crates/concord-capture`), como participante `<accountId>:screen`. |
+| **Navegador** | `npm run dev:web` ou versão web (sem ponte) | O próprio navegador (`getDisplayMedia`), pela conexão de voz da pessoa. |
+
 ```
 botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
-  Electron:  abre o ScreenPicker ─► window.api.screen.getSources() ─► IPC screen-sources (desktopCapturer)
-             escolhe ─► startScreenShare(id, áudio) ─► IPC screen-select (guarda a escolha no main, 15 s)
-  navegador: (npm run dev em localhost:5173) o próprio navegador pergunta
-  ─► voice.startScreenShare(áudio) ─► localParticipant.setScreenShareEnabled(true, {...})
-  ─► getDisplayMedia ─► setDisplayMediaRequestHandler entrega a fonte escolhida (sem escolha: recusa)
-  ─► emit('voice:sharing', true)  ─► todos veem "ao vivo" na sidebar e no tile
+  nativo:    abre o ScreenPicker ─► window.api.screen.getSources() ─► comando screen-sources
+             escolhe ─► startNativeScreenShare(fonte, audioChoice) ─► emitWithAck('voice:screen-credentials') ─► { url, token }
+             ─► window.api.screen.start({ sourceId, audio, url, token }) ─► comando screen-start (Rust publica)
+             ─► voice.showOwnScreen(miniatura) ─► emit('voice:sharing', true)
+  navegador: o próprio navegador pergunta ─► startBrowserScreenShare(audioChoice) ─► voice.startScreenShare(audioChoice) ─► setScreenShareEnabled(true, {...})
+             ─► emit('voice:sharing', true)
+  ─► todos veem "ao vivo" na sidebar e no tile
 ```
 
-- **Main** (`src/main/screen-share.ts`): `createScreenShareController` (testável sem Electron) só aceita ids da
-  última listagem; a escolha vale para **um** `getDisplayMedia` e expira em 15 s. Áudio = `'loopback'` (só Windows;
-  `window.api.screen.canShareAudio`). O loopback captura **todo** o áudio do PC, inclusive a voz dos outros que o
-  Concord toca: quem assiste pode ouvir eco. Por isso o áudio vem desmarcado.
-- **Captura:** 1080p a 15 fps, `contentHint: 'detail'` (texto legível). O token já libera `screen_share` e
-  `screen_share_audio`.
-- **Receber:** `TrackSubscribed` de vídeo com `source === ScreenShare` entra em `store.screens` (ids de conexão);
-  a própria tela entra como prévia via `LocalTrackPublished`. O áudio da tela (`ScreenShareAudio`) toca como os
+- **Captura no navegador:** 1080p a 15 fps, `contentHint: 'detail'` (texto legível). O token de voz libera
+  `screen_share` e `screen_share_audio`. O WebView2 do app não deixa escolher a fonte do `getDisplayMedia`
+  (ADR 0013); por isso o app instalado sempre usa o caminho nativo.
+- **Receber:** `TrackSubscribed` de vídeo com `source === ScreenShare` entra em `store.screens` (ids de conexão, o
+  dono vem de `screenOwnerOf`). No navegador a própria tela entra como prévia via `LocalTrackPublished`; no nativo a
+  própria tela é o card "Sua tela" com a miniatura da fonte escolhida (`store.ownScreenShare`, união `none` / `browser` / `native` com `thumbnail`: imagem
+  parada, o app não assina a própria `:screen`). O áudio da tela (`ScreenShareAudio`) toca como os
   outros áudios (respeita deafen e o volume de saída), mas com **volume próprio por pessoa**, separado da voz dela
   (ver "Volume do áudio da tela" abaixo). O `ScreenVideo` (em `ScreenTile.tsx`) liga a faixa num `<video muted>` com `attachScreen(userId, el)` (de `@/lib/client`).
-- **Parar:** botão de novo (`stopScreenShare`) ou pelo sistema (janela fechada): `LocalTrackUnpublished` chama
-  `voice.onScreenShareEnded`, que desliga `sharing` e avisa o servidor uma vez só.
+- **Parar:** botão de novo (`stopScreenShare`: nativo chama o comando `screen-stop`, navegador desliga a faixa) ou
+  pelo sistema (janela fechada): no navegador `LocalTrackUnpublished` chama `voice.onScreenShareEnded`; no nativo
+  o Rust emite `screen-ended`. Nos dois, `sharing` desliga e o servidor é avisado uma vez só.
 - **Assistir é opcional** (`components/voice/VoiceGrid.tsx` + `ScreenTile.tsx` + `lib/featured-screens.ts`): ninguém
   entra assistindo sozinho. Quando alguém compartilha, os outros veem na grade um card da tela (`ScreenTile`: o
   vídeo, "Ao vivo" e "Tela de Ana") e no quadro da pessoa o botão "Assistir". Clicar assiste: a tela vai para o
@@ -266,12 +284,12 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
   medir (ou sem `ResizeObserver`), 240 px.
 - **Tela cheia** (`lib/fullscreen.ts`: `useFullscreen`, `toggleFullscreen`): vai para tela cheia o **quadro inteiro**
   do `ScreenStage` (não só o `<video>`), então a barra com o seletor e "Sair da tela cheia" continua à vista. Botão,
-  duplo clique no vídeo ou Esc. Recusa do sistema vira o aviso "Não foi possível abrir em tela cheia.". **No
-  Electron precisa da permissão `fullscreen`**: `src/main/permissions.ts` (`allowPermission`) libera `media`,
-  `notifications` e `fullscreen` no `setPermissionRequestHandler`. Antes só as duas primeiras eram liberadas e o
-  botão "Tela cheia" não fazia nada (o `requestFullscreen` era recusado em silêncio).
+  duplo clique no vídeo ou Esc. Recusa do sistema vira o aviso "Não foi possível abrir em tela cheia.". A
+  tela cheia é do HTML (`requestFullscreen`); o shell não precisa de permissão extra (`native/permissions.rs` só
+  decide microfone, câmera e notificações).
 - `sharing` no servidor é só indicador (o cliente avisa); quem pode publicar a tela é decidido pelo token do LiveKit.
-- **Testes:** `src/main/screen-share.test.ts` (controlador, sem Electron), `lib/voice.test.ts` (blocos "tela" e
+- **Testes:** `cargo test -p concord-capture` e `cargo test -p concord` (`ShareSlot`, fonte, ritmo, taxa, tipos de
+  evento), `lib/voice.test.ts` (blocos "tela" e
   "volume do áudio da tela"), `lib/actions/devices.test.ts` (bloco "volume do áudio da tela": guardar por conta,
   salvar e reabrir),
   `lib/actions/screen.test.ts` (botão, seletor, erros, aviso único ao servidor), `components/voice/voice.test.tsx`
@@ -282,7 +300,7 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
   centralizada com o tamanho medido), `components/voice-panel.test.tsx` (espectadores no "Voz conectada"),
   `lib/actions/screen-watching.test.ts` (envia só quando muda, fora da sala não envia),
   `lib/featured-screens.test.ts` (escolha, pôr/tirar, reordenar, `watchedScreens`, `screenViewers`),
-  `lib/tile-layout.test.ts` (colunas e tamanho, limites, sem altura, gente demais), `src/main/permissions.test.ts`
+  `lib/tile-layout.test.ts` (colunas e tamanho, limites, sem altura, gente demais)
   e `server/tests/voice.test.ts` (`voice:sharing` e o bloco `voice:watching`: só a sala recebe, validação, lista
   igual, parar de compartilhar, sair/desconectar, trocar de sala e o limite real com `RATE_LIMIT_MULTIPLIER=1`).
   À mão: três janelas (A, B, C) na mesma sala com o LiveKit rodando. A compartilha: B e C veem o card, sem
@@ -291,6 +309,83 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
   assistir": volta à grade e A vê só C. A abre a própria prévia: não conta. C sai da sala: some da lista. A para de
   compartilhar e volta: ninguém assistindo. Com duas telas: destaque pelo seletor, arrastar, empilhar, tela cheia
   (botão, duplo clique, Esc) e o "ao vivo" some ao parar.
+
+## Tela nativa (Windows)
+
+O app Tauri não usa o `getDisplayMedia`: o Rust captura, codifica e publica no LiveKit, e a tela só dá o comando.
+
+| Peça | Papel |
+|---|---|
+| `src/shared/screen.ts` | `ScreenAudioChoice`, `ScreenSource`, `ScreenShareStart`, `ScreenShareEndReason`, `ScreenShareBridge`. |
+| `src/renderer/src/lib/desktop/screen.ts` | `window.api.screen`: `getSources`, `start`, `stop`, `preview`, `onEnded`, `canShareAudio`. |
+| `src-tauri/src/commands/screen.rs` | Comandos `screen-sources`, `screen-start`, `screen-stop`, `screen-preview` e o evento `screen-ended`. Trabalho pesado em `spawn_blocking`. |
+| `src-tauri/src/native/screen_share.rs` | `ShareSlot`: uma captura por vez, com geração. Começar outra para a anterior e ignora o fim dela; parar durante o início cancela. |
+| `crates/concord-capture/` | Fontes e miniaturas (`platform/sources.rs`), captura (`platform/capture.rs`, Windows Graphics Capture), processador de vídeo para NV12 na GPU, encoder de hardware do Media Foundation, reserva por CPU, áudio (`platform/audio.rs`), sala LiveKit (`platform/room.rs`), ritmo (`pacing.rs`), taxa (`rate_control.rs`). |
+| `lib/actions/voice.ts` | `startNativeScreenShare(source, audioChoice)`, `startBrowserScreenShare(audioChoice)` (`ScreenAudioChoice`: `with-system-audio` ou `without-audio`, de `src/shared/screen.ts`), `stopScreenShare`, `nativeShareEnded`, avisos do fim. |
+
+**Fontes.** `screen-sources` devolve telas e janelas com miniatura PNG (data URL) e `appIcon` nulo. O id é
+`screen:<handle>` ou `window:<handle>`; id fora desse formato é recusado.
+
+**Início.** A tela pede `voice:screen-credentials` (a pessoa precisa estar numa sala) e manda `{ sourceId, audio, url,
+token }` ao Rust. `audio` só vale com `canShareAudio` (Windows). O Rust conecta no LiveKit com o token da tela,
+publica o vídeo e, se pedido, o áudio. Se a captura terminar antes de o início voltar, `screen-start` rejeita ("O
+compartilhamento de tela parou antes de começar") e o app não marca `sharing`.
+
+**Vídeo.** Padrão `ShareQuality::Smooth`: até 1920x1080 a 60 fps e 8 Mbps. A crate também tem `Sharp` (2560x1440, 30
+fps, 12 Mbps), mas nenhum comando escolhe: `ScreenShareStart` não leva qualidade.
+
+| Caminho | Como |
+|---|---|
+| Hardware (preferido) | Quadro da GPU → NV12 por `ID3D11VideoProcessor` → encoder H.264 do Media Foundation (CBR, sem quadro B) → `NativeVideoSource::new_encoded`, codec H.264 pré-codificado. Quadro-chave e taxa seguem os pedidos do LiveKit (`take_keyframe_request`, rate control). |
+| Reserva por CPU | Se o encoder da placa falhar: `NativeVideoSource::new` com codec VP8. O log do Rust diz "Codificador de vídeo da placa indisponível, usando o do processador". |
+
+O ritmo descarta quadro que chega antes de 3/4 do intervalo e reenvia o último quadro depois de 1 s sem quadro novo
+(tela parada continua viva).
+
+**Áudio.** WASAPI *process loopback* do próprio processo do Concord **excluindo a árvore dele** (a voz da chamada não
+volta como eco), 48 kHz, 2 canais, publicado como `ScreenshareAudio`. O resto do áudio do PC entra.
+
+**Fim.** O Rust emite `screen-ended` só para a captura ativa (nunca duas vezes, nunca para a que o app mandou parar):
+
+| Motivo | Quando | Aviso na tela |
+|---|---|---|
+| `stopped` | Parada pedida | Nenhum. |
+| `source-closed` | A janela capturada fechou | Info "A janela compartilhada foi fechada". |
+| `disconnected` | O LiveKit derrubou o participante da tela | Nenhum (o app desliga `sharing`). |
+| `failed` | Erro de captura, encoder ou rede | Erro "O compartilhamento de tela parou". |
+
+Erro ao começar vira o aviso "Não foi possível compartilhar a tela: <mensagem do Rust>". O encerramento do app
+(`RunEvent::Exit`) para a captura.
+
+**Token e participante** (`server/livekit.ts`, `createScreenCredentials`; `server/modules/voice.ts`):
+
+| Item | Valor |
+|---|---|
+| Evento | `voice:screen-credentials` (sem argumento, ack `ScreenCredentialsResult`: `{ ok: true, url, token }` ou `{ ok: false, error }`). |
+| Exige | Estar numa sala (`voice:join`), LiveKit configurado e `allowed(share)` na sala. |
+| Identidade | `<accountId>:screen` (`screenIdentityOf`). Nome = nome da pessoa. `metadata` = `{"screenOf":"<accountId>"}`. |
+| Grants | Sala da pessoa; `canSubscribe: false`; `canPublish: true` só com `ScreenShare` e `ScreenShareAudio`; sem dados, metadata, admin, criar ou listar sala. |
+| Validade | 60 s (só para conectar). |
+| Limite | `LIMITS.screenCredentials`: rajada de 5, depois 1 a cada 10 s, por conta; conferido **antes** da permissão `share`. Excesso: "Muitos pedidos para compartilhar a tela. ...". |
+| Remoção | `endScreenShare` (`RemoveParticipant` da identidade `:screen`) ao sair da sala, trocar de sala, desconectar, ser tirado/movido e ao perder `share` (`applyVoiceAccess`). `voice:sharing false` não remove: o app já parou a captura. |
+
+**Prévia do "ao vivo".** Com a tela nativa, `lib/actions/screen-preview.ts` chama `window.api.screen.preview()`
+(captura única da fonte em uso, PNG) e reduz para JPEG de até 480 px (`snapshotImage`) antes do `voice:preview`.
+Sem fonte ativa, `screen-preview` rejeita ("Nenhuma tela está sendo compartilhada").
+
+**Testar.** `cargo test --workspace` cobre `ShareSlot`, ids, ritmo, taxa, tamanho de quadro, Annex B e a seleção do
+encoder. No Windows, o job `desktop-windows` do CI roda também o encoder do Media Foundation com quadros sintéticos.
+Servidor: `server/tests/voice.test.ts` (token da tela, permissões, remoção) e `server/livekit.test.ts`. App:
+`lib/actions/screen.test.ts` e `lib/voice.test.ts` (`screenOwnerOf`, assinatura manual). À mão, num Windows com GPU
+(NVIDIA, AMD e Intel): compartilhar tela e janela, com e sem áudio, fechar a janela, derrubar a rede, e conferir na
+outra janela que a tela chega, que o participante `:screen` não aparece na lista nem como "falando" e que o eco do
+áudio da chamada não volta.
+
+**Limites conhecidos.**
+- Duas conexões da mesma conta na mesma sala dividem **uma** identidade `<accountId>:screen`: a segunda tela derruba
+  a primeira no LiveKit. Sair com uma das conexões **não** remove a tela: a `:screen` só termina quando a última conexão da conta naquela sala sai (`accountStillInRoom`).
+- O encoder de hardware só se prova numa máquina real; o CI testa o de software.
+- `Sharp` existe na crate e não tem como ser escolhido no app.
 
 ## Prévia do "ao vivo"
 
@@ -319,7 +414,7 @@ quem passa o mouse: LivePreview (HoverCard) ─► fetchScreenPreview(userId) �
   `screenPreviewGet` por conta (10 seguidas, depois 1/s; excesso responde "Muitos pedidos de prévia. Tente de novo em N s.").
 - **App:** `lib/actions/screen-preview.ts` liga/desliga o envio observando `store.sharing` (`useApp.subscribe`), então
   vale para todo caminho que para a tela (botão, sistema, sair, perder `share`). A faixa vem de
-  `voice.screenMediaTrack(selfId)`; `lib/screen-snapshot.ts` desenha um quadro num `<canvas>` por um `<video>`
+  `voice.screenMediaTrack(selfId)` (navegador) ou do comando `screen-preview` (tela nativa); `lib/screen-snapshot.ts` desenha um quadro num `<canvas>` por um `<video>`
   temporário (`previewSize` mantém a proporção). Imagem maior que o limite não é enviada.
 - **Tela:** `components/voice/LivePreview.tsx` troca o `LiveBadge` do `VoiceMember` na `ChannelSidebar` por um
   `HoverCard` (abre em 250 ms, à direita) com o título "Tela de Ana", a imagem ou "Carregando prévia...",
@@ -423,7 +518,7 @@ duas barras laterais), como no Discord:
   hora com `room.switchActiveDevice('audioinput', id)` (sem microfone, "só ouvindo", não mexe). Se o escolhido
   sumiu (desconectado), entra com o padrão do sistema em vez de cair no modo só ouvir.
 - **Saída:** vai na criação da `Room` (`audioOutput`) e troca na hora com `switchActiveDevice('audiooutput', id)`.
-  Só aparece se o ambiente tem `HTMLMediaElement.setSinkId` (o Electron tem).
+  Só aparece se o ambiente tem `HTMLMediaElement.setSinkId` (o WebView2 tem).
 - **Volume por pessoa:** guardado por **conta** (o token traz `attributes.accountId`; a identidade muda a cada
   conexão). Aplicado com `RemoteAudioTrack.setVolume` ao receber o microfone da pessoa e na hora ao mexer no
   controle. Só o microfone; o áudio da tela tem volume e silêncio próprios (`screenVolumes`/`screenMuted`, mesmas
@@ -577,7 +672,7 @@ de quem fala (processador da faixa do microfone no `livekit-client`); quem ouve 
   `MIC_PUBLISH` (`forceStereo: false`) em `lib/voice.ts`, então RED e DTX continuam ligados mesmo com microfone
   estéreo cru. Testes: blocos "em mono" de `noise.test.ts` e `mic-gain.test.ts` e "microfone publicado em mono" de
   `voice.test.ts`.
-- **Voz robotizada (AudioContext preso a 2/3):** medido no Electron 37 (Chromium 138), em 3 de 7 tentativas: depois de
+- **Voz robotizada (AudioContext preso a 2/3):** medido no Chromium 138 do Electron antigo, em 3 de 7 tentativas; o WebView2 usa o Chromium do sistema e o vigia continua valendo: depois de
   um pico de CPU (um jogo, por exemplo), o AudioContext com o worklet do RNNoise passa a andar a **~0,65x** do relógio
   real e **não volta** quando a CPU folga. A faixa publicada entrega só ~2/3 do áudio; quem ouve recebe o resto
   "inventado" pelo Opus (voz metálica) e o jitter buffer cresce sem parar (30 → 320 ms). O estado fica no contexto
@@ -585,7 +680,7 @@ de quem fala (processador da faixa do microfone no `livekit-client`); quem ouve 
   destrava na hora. Cadeia sem AudioWorklet (só o ganho), no mesmo pico, nunca travou. Duas defesas em `lib/voice.ts`:
   o **vigia** (`AudioClockWatchdog`, destrava sozinho em ~4 s) e um **AudioContext novo a cada entrada** (sair e
   entrar recomeça o áudio). Antes o contexto era criado uma vez e reaproveitado entre salas.
-- **Supressão nativa só muda reabrindo a captura:** no Electron 37 (Chromium 138), `applyConstraints({ noiseSuppression })`
+- **Supressão nativa só muda reabrindo a captura:** no Chromium 138 do Electron antigo, `applyConstraints({ noiseSuppression })`
   numa faixa de microfone aberta **resolve sem erro e não muda nada** (`getSettings().noiseSuppression` continua igual e o
   nível medido também). Antes, desligar a supressão dentro da sala deixava a nativa ligada (não era "microfone cru"), e
   ligar numa sala em que se entrou com ela desligada deixava o modo leve sem nenhuma supressão. Agora
@@ -594,10 +689,9 @@ de quem fala (processador da faixa do microfone no `livekit-client`); quem ouve 
   a nativa continua ligada junto com o RNNoise** (o processador tentava desligá-la com `applyConstraints`, sem efeito, e
   essa tentativa foi removida). Desligá-la de verdade a cada troca de modo exigiria reabrir o microfone a cada troca
   (corte no áudio e o processador recomeçando a medição); fica como proposta se a dupla supressão soar "abafada".
-- **Verificado no app empacotado** (`electron-builder --dir`, `dist/win-unpacked/concord.exe` com
-  `--remote-debugging-port` e um script CDP): o WASM e o worklet ficam dentro do `app.asar`
-  (`out/renderer/assets/rnnoise*.wasm`, `workletProcessor-*.js`) e carregam por `file://` sem `asarUnpack` e sem erro de
-  CSP (WASM SIMD, ~70 ms). Atenuação medida do nó do RNNoise: ruído rosa -33 dBFS → -47; rosa -47 → -91; marrom -26 → -82;
+- **WASM e worklet no Tauri:** o RNNoise e o worklet saem em `out/renderer/assets/` e entram no instalador como
+  recursos da tela; a CSP do `tauri.conf.json` libera `'wasm-unsafe-eval'` em `script-src` e `blob:` em `worker-src`. Medida
+  feita no app empacotado do Electron antigo (WASM SIMD, ~70 ms de carga); não repetida no WebView2. Atenuação medida do nó do RNNoise: ruído rosa -33 dBFS → -47; rosa -47 → -91; marrom -26 → -82;
   branco -35 → -40 (ruído branco é o ponto fraco do RNNoise); tom puro passa intacto. Com microfone falso
   (`--use-fake-device-for-media-stream --use-file-for-fake-audio-capture=<wav>`) tocando ruído rosa: a 40 dBFS cru, o
   analisador (que mede **depois** da nativa, porque a faixa já sai processada do `getUserMedia`) vê -45,5 dBFS e o
@@ -623,13 +717,15 @@ de quem fala (processador da faixa do microfone no `livekit-client`); quem ouve 
 
 Como no Discord: em chamada (sala de voz ou chamada privada, `myVoiceChannelId`), passar o mouse no ícone do Concord
 na barra de tarefas do Windows mostra 3 botões: **silenciar/ativar microfone**, **desativar/ativar áudio** e **sair
-da chamada**. Fora de chamada os botões somem. Só Windows (`BrowserWindow.setThumbarButtons`).
+da chamada**. Fora de chamada os botões somem. Só Windows (`ITaskbarList3`, pela crate `concord-taskbar`).
 
 | Peça | Papel |
 |---|---|
 | `src/shared/thumbar.ts` | Contrato: `ThumbarAction` (`mute`, `deafen`, `leave`), `ThumbarButton` (`action`, `tooltip`, `icon` em data URL PNG), `ThumbarBridge`, `THUMBAR_ICON_SIZE` (32 px) e `THUMBAR_TOOLTIP_MAX` (64). |
-| `src/main/thumbar.ts` | `cleanThumbarButtons` (só ações conhecidas, sem repetir, ícone PNG, dica cortada) e `setupThumbar` (IPC `thumbar-buttons` → `setThumbarButtons`; clique manda `thumbar-click` com a ação). O ícone vira `nativeImage` com `scaleFactor` 2 (32 px desenhados = 16 px lógicos, nítido em tela de alta densidade). Fora do Windows não faz nada. |
-| `src/preload/index.ts` | `window.api.thumbar`: `setButtons`, `onClick`. |
+| `src-tauri/src/native/thumbar.rs` | `clean_buttons` (sem ação repetida, dica não vazia e cortada em 64 caracteres, ícone PNG válido; ícone inválido é ignorado com log). |
+| `src-tauri/src/commands/thumbar.rs` | Comando `thumbar-buttons` (roda na thread principal da janela) e evento `thumbar-click` com a ação. Fora do Windows ignora os botões. |
+| `crates/concord-taskbar/` | `ThumbBar`: `ITaskbarList3` e `SetWindowSubclass` na janela; refaz os botões no `TaskbarButtonCreated` (Explorer reiniciado). Três botões fixos: `mute`, `deafen`, `leave`. |
+| `src/renderer/src/lib/desktop/thumbar.ts` | `window.api.thumbar`: `setButtons`, `onClick`. |
 | `lib/thumbar-icons.tsx` | Ícones desenhados no app: o ícone do lucide (`Mic`, `MicOff`, `Headphones`, `HeadphoneOff`, `PhoneOff`) vira SVG (`renderToStaticMarkup`) e depois PNG num canvas. Ligado em branco; desligado e sair na cor do token `--destructive` (mesma do selo das notificações). |
 | `lib/actions/thumbar.ts` | `startThumbar` (chamado em `main.tsx`): acompanha a store e manda os botões só quando microfone/áudio/estar em chamada mudam; clique chama `toggleMute`, `toggleDeafen` e `leaveVoice` (as mesmas ações dos botões do `UserPanel`). |
 
@@ -640,14 +736,14 @@ da chamada**. Fora de chamada os botões somem. Só Windows (`BrowserWindow.setT
   (o Windows não aceita botão sem ícone).
 - Saiu da chamada enquanto os ícones eram desenhados: os botões não aparecem depois.
 
-**Testes:** `src/main/thumbar.test.ts` (validação, Windows × outros sistemas, ícone em 2x, clique avisa a ação),
+**Testes:** `cargo test -p concord-taskbar` e `cargo test -p concord` (validação dos botões, ação por id),
 `lib/actions/thumbar.test.ts` (aparecer/sumir, troca de ícone e dica, sem microfone/sem `speak`, sem reenviar à toa,
 corrida com o desenho, clique) e `lib/thumbar-icons.test.ts` (SVG do tamanho e cor certos). **À mão (Windows):**
 entrar numa sala, passar o mouse no ícone da barra de tarefas, clicar nos 3 botões e conferir que o ícone troca e que
 a outra janela vê o silêncio; sair e os botões somem.
 
-**Problemas conhecidos:** o Windows só mostra os botões depois que a janela apareceu na barra de tarefas; reiniciar o
-Explorer tira os botões até o próximo estado mudar (entrar, silenciar etc.).
+**Problemas conhecidos:** o Windows só mostra os botões depois que a janela apareceu na barra de tarefas. O
+`TaskbarButtonCreated` refaz os botões quando o Explorer reinicia; isso só se prova num Windows real.
 
 ## Pressione para falar (B20)
 
@@ -658,29 +754,31 @@ primeiro plano. Fica em Configurações de voz ("Pressione para falar"), é pref
 | Peça | Papel |
 |---|---|
 | `src/shared/push-to-talk.ts` | `PttBinding` (`kind: 'key' \| 'mouse'`, `code`, `label`), `PttConfig`, `PushToTalkBridge`, `cleanBinding`/`cleanPttConfig`, `PTT_RELEASE_DELAY_MS` (200 ms), `PTT_CAPTURE_TIMEOUT_MS` (10 s), `PTT_MOUSE_BUTTONS` (3, 4, 5). |
-| `src/main/push-to-talk.ts` | `createPushToTalkController` (lógica, testável) e `setupPushToTalk` (IPC `ptt-config`, `ptt-capture`; avisos `ptt-change` e `ptt-unavailable` para a janela principal). Nomes das teclas em `keyLabel`. |
-| `src/preload/index.ts` | `window.api.pushToTalk`: `setConfig`, `capture`, `onChange`, `onUnavailable`. |
+| `src-tauri/src/native/push_to_talk.rs` | `PttController` (liga o gancho só com o modo ativo e uma tecla, espera de 200 ms ao soltar, escolha da tecla com limite de 10 s) e a validação da tecla (`valid_binding`: código de 1 a 0xFFFF; mouse só 3, 4 e 5). |
+| `src-tauri/src/commands/push_to_talk.rs` | Comandos `ptt-config` e `ptt-capture`; eventos `ptt-change` e `ptt-unavailable` para a janela principal; para o gancho no encerramento. |
+| `crates/concord-ptt/` | `PushToTalk` (Windows): thread com janela só de mensagens e Raw Input; `keymap.rs` converte scan code para o código do `uiohook`; `binding.rs` guarda os nomes das teclas. |
+| `src/renderer/src/lib/desktop/push-to-talk.ts` | `window.api.pushToTalk`: `setConfig`, `capture`, `onChange`, `onUnavailable`. |
 | `lib/actions/push-to-talk.ts` | Preferência, `syncMicGate`, `handlePttChange` (abre/fecha + som), `setPushToTalk`, `setPttSounds`, `choosePttKey`, `startPushToTalk` (chamado em `main.tsx`; `disconnect` recarrega a preferência). |
 | `store/push-to-talk.ts` | `pushToTalk`, `pttBinding`, `pttSounds`, `pttPressed`, `pttCapturing`, `pttAvailable`. |
 | `lib/voice.ts` | `setMicGate(open)`: portão do microfone separado do mute (`micSilenced = muted \|\| gateClosed`). |
 | `components/voice/PushToTalk.tsx` | `PushToTalkSettings` (seção do diálogo) e `PushToTalkHint` (indicador "Pressione V para falar" / "Microfone aberto" na sala e no painel da chamada). |
 | `lib/sounds/chime.ts` | Sons `ptt-on` (Lá5) e `ptt-off` (Mi5), uma nota curta cada. |
 
-**Por que `uiohook-napi`:** o `globalShortcut` do Electron só avisa quando o atalho é pressionado, nunca quando é solto.
-O `uiohook-napi` (MIT, N-API com binários prontos para Windows/macOS/Linux, sem compilar e sem `electron-rebuild`)
-é um gancho de teclado e mouse do sistema inteiro. Está em `dependencies` (vai no instalador; o
-`externalizeDepsPlugin` deixa fora do bundle) e é carregado com `require` só na primeira vez que o gancho é preciso:
-se o binário faltar, o resto do app continua e a janela recebe `ptt-unavailable` (o modo desliga com aviso).
-O `electron-builder.yml` tem `npmRebuild: false`: sem isso o `npm run dist` tentava recompilar o `uiohook-napi` com
-o `node-gyp` (exige Python e Visual Studio) mesmo ele já trazendo o binário pronto em `prebuilds/win32-x64`.
+**Por que Raw Input:** o `RegisterHotKey` só avisa quando o atalho é pressionado, nunca quando é solto, e um gancho
+`WH_*_LL` pode ser removido em silêncio pelo Windows se atrasar. O Raw Input com `RIDEV_INPUTSINK` recebe tecla e
+botão do mouse com a janela em segundo plano e sem gancho (método do Mumble). A thread existe só com o modo ligado
+(ou durante a escolha da tecla). Se o registro falhar, a janela recebe `ptt-unavailable` e o modo desliga com aviso.
+**Códigos:** a tecla continua guardada no espaço de códigos do `uiohook` (`concord:ptt`), então a preferência de quem
+vinha do Electron vale sem conversão; o `keymap.rs` traduz o scan code do Raw Input (com o bit estendido) para esses
+códigos, sem depender do layout do teclado.
 
-**Fluxo:** ligar o modo → `setConfig({ enabled: true, binding })` → o main liga o gancho → tecla pressionada →
+**Fluxo:** ligar o modo → `setConfig({ enabled: true, binding })` → o Rust liga o Raw Input → tecla pressionada →
 `ptt-change true` → `pttPressed` + `voice.setMicGate(true)` (+ som `ptt-on`) → solta → depois de 200 ms
 `ptt-change false` → portão fecha (+ `ptt-off`).
 
 **Regras:**
 - **Privacidade:** o gancho só roda com o modo ligado e uma tecla escolhida, ou enquanto a pessoa escolhe a tecla.
-  Só a tecla escolhida é comparada; nenhuma outra tecla sai do processo principal.
+  Só a tecla escolhida é comparada; nenhuma outra tecla sai do Rust.
 - **Não é "silenciado":** o portão fechado não muda `muted` no `voice:join`/`voice:update`; os outros não veem o ícone
   de microfone cortado, só deixam de ouvir (o LiveKit recebe o `mute()` da faixa). O "falando" da própria pessoa some.
 - Silenciado (mute/deafen), sem microfone ou sem `speak` ganham do portão: pressionar não abre nada e não toca som.
@@ -689,20 +787,19 @@ o `node-gyp` (exige Python e Visual Studio) mesmo ele já trazendo o binário pr
 - Escolher a tecla: a próxima tecla ou botão do meio/lateral do mouse; clique esquerdo/direito são ignorados; Esc ou
   10 s sem nada = desiste. Durante a escolha a tecla atual não abre o microfone.
 - O som respeita o interruptor da seção e usa o volume dos sons de entrar/sair (B16) e a saída escolhida (B4).
-- No navegador (`npm run dev` sem Electron) não existe a ponte: a seção mostra "Disponível só no app instalado".
+- No navegador (`npm run dev:web`) não existe a ponte: a seção mostra "Disponível só no app instalado".
 
-**Testes:** `src/main/push-to-talk.test.ts` (gancho só quando precisa, indisponível, pressionar/repetir/soltar com
-atraso, mouse, trocar tecla, escolher tecla, Esc, tempo esgotado, nomes), `src/shared/push-to-talk.test.ts`
+**Testes:** `cargo test -p concord-ptt` e `cargo test -p concord` (gancho só quando precisa, indisponível, pressionar/repetir/soltar com
+atraso, mouse, trocar tecla, escolher tecla, Esc, tempo esgotado, nomes e mapa de teclas; o registro do Raw Input roda no job `desktop-windows` do CI), `src/shared/push-to-talk.test.ts`
 (validação), `lib/actions/push-to-talk.test.ts` (preferência, portão, sons, trocar tecla, indisponível, fora do
-Electron), `lib/voice.test.ts` (bloco B20: portão fechado entra mudo mas não "silenciado", abre/fecha, mute ganha),
+app), `lib/voice.test.ts` (bloco B20: portão fechado entra mudo mas não "silenciado", abre/fecha, mute ganha),
 `lib/sounds/sounds.test.ts` e `components/voice/PushToTalk.test.tsx`. **À mão:** com um jogo (ou outro programa) na
 frente, segurar a tecla e conferir na outra janela que ela ouve e vê o "falando"; soltar e o som some.
 
 **Problemas conhecidos:**
-- macOS exige permissão de **Acessibilidade/Monitoramento de entrada** para o gancho; sem ela, nenhuma tecla chega
-  (ainda não há aviso específico; o Concord hoje só gera instalador Windows).
-- Jogos rodando **como administrador** no Windows não repassam teclas para programas sem privilégio: o push-to-talk
-  não vê a tecla enquanto esse jogo está em foco (mesma limitação do Discord; rodar o Concord como administrador resolve).
+- Jogo ou janela rodando **como administrador**: o isolamento de privilégio do Windows (UIPI) pode impedir o Concord
+  de ver a tecla enquanto essa janela está em foco. O ADR 0013 manda provar o caso num Windows real (checklist do
+  `ROADMAP.md`); até lá, rodar o Concord como administrador resolve.
 - A tecla escolhida continua chegando aos outros programas (não é "engolida"): escolher uma tecla que o jogo não usa.
 
 ## Limites e evolução
@@ -716,23 +813,22 @@ frente, segurar a tecla e conferir na outra janela que ela ouve e vê o "falando
 - **Supressão de ruído e CPU:** o "se adapta ao PC" hoje é por núcleos (≥ 3) e por erro no AudioWorklet; ainda não
   mede atraso real do processamento. Se o RNNoise pesar em algum PC, o próximo passo é medir a carga do worklet e
   cair para o leve automaticamente.
-- **Áudio da tela sem eco:** o Electron ≥ 43.4.0 respeita `restrictOwnAudio: true` no
-  `setDisplayMediaRequestHandler` (exclui o próprio app do loopback no Windows/macOS). O projeto está no Electron 37,
-  então a correção definitiva exige subir o Electron. Enquanto isso, quem assiste pode silenciar ou baixar o áudio
-  da tela de quem compartilha (`ScreenAudioControl`).
+- **Áudio da tela sem eco:** a tela nativa captura o áudio do sistema **sem** a árvore de processos do Concord, então
+  a voz da chamada não volta. No caminho do navegador (`dev:web`) o `getDisplayMedia` captura tudo; quem assiste pode
+  silenciar ou baixar o áudio da tela de quem compartilha (`ScreenAudioControl`).
 
 ## Depuração
 
 1. Servidor: o log ao iniciar mostra `Voz (LiveKit): <url>` ou `desativada`. Falhas da API do LiveKit aparecem
    como `[livekit] ... falhou`.
 2. LiveKit: `docker compose logs -f livekit` mostra quem entrou, candidatos ICE e erros de token.
-3. App: no DevTools do Electron (Ctrl+Shift+I), filtre o console por `[voz]` (`livekit-client` também loga lá).
+3. App: no DevTools (no `npm run dev`, botão direito → Inspecionar; ou `npm run dev:web` no navegador), filtre o console por `[voz]` (`livekit-client` também loga lá). O log do Rust fica na pasta de logs do app (`docs/areas/desktop.md`).
 4. "Não foi possível conectar ao servidor de voz": o LiveKit não está rodando, `LIVEKIT_URL` aponta para um
    endereço que o app não alcança (ex.: `localhost` em outro PC) ou as chaves de `server/.env` não batem com
    `livekit.yaml`.
 5. Conecta mas não passa áudio: ICE não fecha. Confira `LIVEKIT_NODE_IP` e a porta 7882/UDP no firewall (ver
-   `docs/areas/dev-workflow.md`). `chrome://webrtc-internals` numa janela do Electron mostra bytes enviados/recebidos.
-6. Microfone negado: `main/index.ts` libera `media` em `setPermissionRequestHandler`. O toast traduz
+   `docs/areas/dev-workflow.md`). `chrome://webrtc-internals` no navegador (`dev:web`) mostra bytes enviados/recebidos.
+6. Microfone negado: `src-tauri/src/native/permissions.rs` libera microfone, câmera e notificações. O toast traduz
    `NotAllowedError`, `NotFoundError` e `NotReadableError`.
 7. Testar sozinho numa máquina: duas janelas no mesmo PC funcionam, mas dá microfonia sem fone.
 8. Trocou de fone e não ouve nada: a saída salva pode ser um aparelho desconectado; volte para "Padrão do
@@ -748,10 +844,7 @@ frente, segurar a tecla e conferir na outra janela que ela ouve e vê o "falando
     desligue o interruptor para comparar com o microfone cru. Robótico que começa no meio da chamada, uma pessoa por
     vez, e passa ao sair e entrar: veja no console de quem fala o log `[voz] áudio do microfone rodava a Nx` (o vigia
     destravou o AudioContext; seção "Voz robotizada"). Para medir: `ctx.currentTime` contra `performance.now()`.
-    **No app instalado** o Ctrl+Shift+I não abre o DevTools (o `optimizer.watchWindowShortcuts` bloqueia em produção):
-    feche o Concord, abra `%LOCALAPPDATA%\Programs\concord\concord.exe --remote-debugging-port=9222`, vá em
-    `edge://inspect` (ou `chrome://inspect`) no navegador, "Configure..." com `localhost:9222`, e clique em "inspect"
-    na página `index.html`. Roteiro do filtro: entre numa sala, abra Configurações → Voz e vídeo e leia a frase do
+    Roteiro do filtro: entre numa sala, abra Configurações → Voz e vídeo e leia a frase do
     modo; com um ventilador ou chiado perto do microfone, em ~4 s ela passa para o avançado; no console não deve haver
     `[ruído]`. Desligar e religar o interruptor na sala reabre o microfone (um corte curto no áudio é esperado).
 12. Voz de alguém só num lado do fone, ou picotando: confira no `chrome://webrtc-internals` de quem fala se o

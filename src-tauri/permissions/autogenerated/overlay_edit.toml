@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-overlay-edit"
+description = "Enables the overlay_edit command without any pre-configured scope."
+commands.allow = ["overlay_edit"]
+
+[[permission]]
+identifier = "deny-overlay-edit"
+description = "Denies the overlay_edit command without any pre-configured scope."
+commands.deny = ["overlay_edit"]

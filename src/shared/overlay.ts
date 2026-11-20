@@ -1,6 +1,3 @@
-// Sobreposição em jogos (overlay, B15). Não é evento do Socket.IO: vai pela ponte do preload.
-// A janela principal manda a configuração e o estado da minha sala de voz; o processo principal
-// (`src/main/overlay.ts`) posiciona a janela transparente e repassa o estado para a página do overlay.
 
 import type { ThemeConfig } from './types/theme'
 
@@ -10,7 +7,6 @@ export type OverlayCorner = (typeof OVERLAY_CORNERS)[number]
 export const OVERLAY_SIZES = ['small', 'medium', 'large'] as const
 export type OverlaySize = (typeof OVERLAY_SIZES)[number]
 
-/** Posição escolhida arrastando (canto de cima à esquerda, em pixels da tela); null = no canto. */
 export interface OverlayPosition {
   x: number
   y: number
@@ -20,7 +16,6 @@ export interface OverlayConfig {
   enabled: boolean
   corner: OverlayCorner
   size: OverlaySize
-  /** arrastada para outro lugar no modo de mover; escolher um canto volta para null */
   position: OverlayPosition | null
   width: number | null
 }
@@ -122,25 +117,16 @@ export function shortcutLabel(accelerator: string): string {
     .join(' + ')
 }
 
-/** No máximo tantas pessoas aparecem (o resto vira "+N"). */
 export const OVERLAY_MAX_MEMBERS = 12
 
-/**
- * Medidas do overlay, **um lugar só** para a página (altura de cada linha, foto) e para o processo
- * principal (tamanho da janela). Antes eram números separados que não batiam (a linha real era maior
- * que a reservada) e a última pessoa ficava cortada embaixo.
- * `line` = altura de cada linha (pessoa, "+N", barra do modo de mover); `avatar` = foto.
- */
 export const OVERLAY_METRICS: Record<OverlaySize, { width: number; line: number; avatar: number }> = {
   small: { width: 200, line: 26, avatar: 20 },
   medium: { width: 250, line: 34, avatar: 28 },
   large: { width: 320, line: 44, avatar: 36 }
 }
-/** espaço entre as linhas e a margem em volta (px) */
 export const OVERLAY_GAP = 4
 export const OVERLAY_PADDING = 8
 
-/** Altura exata da janela para `lines` linhas (pessoas + "+N" + a barra do modo de mover). */
 export const OVERLAY_MIN_WIDTH = 140
 export const OVERLAY_MAX_WIDTH = 640
 
@@ -159,10 +145,8 @@ export function overlayHeight(size: OverlaySize, lines: number): number {
 }
 
 export interface OverlayMember {
-  /** conexão (socket.id) */
   id: string
   name: string
-  /** endereço completo da foto ou null */
   avatarUrl: string | null
   color: string
   speaking: boolean
@@ -170,37 +154,30 @@ export interface OverlayMember {
   deafened: boolean
 }
 
-/** O que o overlay mostra: a minha sala de voz (null = fora de sala, o overlay some). */
 export interface OverlayRoom {
   members: OverlayMember[]
-  /** quantos ficaram de fora por causa de `OVERLAY_MAX_MEMBERS` */
   more: number
 }
 
-/** Ponte da janela principal. */
 export interface OverlayBridge {
   setConfig: (config: OverlayConfig) => void
   setRoom: (room: OverlayRoom | null) => void
-  /** o atalho global ligou/desligou o overlay (a janela principal salva a preferência) */
   onToggled: (listener: (enabled: boolean) => void) => () => void
-  /** entra/sai do modo de mover (o overlay passa a receber o mouse para ser arrastado) */
-  setEditing: (editing: boolean) => void
-  /** o modo de mover começou/acabou (pelo botão, pelo atalho, pelo "Concluir" ou Esc) */
+  startEditing: () => void
+  finishEditing: () => void
   onEditing: (listener: (editing: boolean) => void) => () => void
-  /** a pessoa soltou o overlay num lugar novo (a janela principal salva a posição) */
   onMoved: (listener: (position: OverlayPosition) => void) => () => void
   onResized: (listener: (width: number) => void) => () => void
   setShortcuts: (shortcuts: OverlayShortcuts) => Promise<OverlayShortcutStatus>
-  pauseShortcuts: (paused: boolean) => void
+  pauseShortcuts: () => void
+  resumeShortcuts: () => void
   setTheme: (theme: ThemeConfig) => void
 }
 
-/** Ponte da página do overlay. */
 export interface OverlayViewBridge {
-  /** `editing` = modo de mover: mostra a moldura, "Concluir" e (fora de sala) uma prévia */
   onUpdate: (listener: (room: OverlayRoom | null, config: OverlayConfig, editing: boolean) => void) => () => void
-  /** "Concluir" ou Esc no modo de mover */
   finishEditing: () => void
-  resize: (width: number, done: boolean) => void
+  resizing: (width: number) => void
+  resized: (width: number) => void
   onTheme: (listener: (theme: ThemeConfig) => void) => () => void
 }

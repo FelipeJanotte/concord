@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-// Overlay em jogos no app (B15): o que vai para o overlay (minha sala), preferência salva e atalho.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_OVERLAY_SHORTCUTS, type OverlayBridge, type OverlayConfig, type OverlayPosition, type OverlayRoom, type OverlayShortcuts } from '@shared/overlay'
 import type { Channel, DmEntry, ThemeConfig, User, VoiceState } from '@shared/types'
@@ -12,7 +11,8 @@ import {
   recordOverlayShortcutKey,
   resetOverlayShortcuts,
   setOverlayCorner,
-  setOverlayEditing,
+  finishOverlayEditing,
+  startOverlayEditing,
   setOverlayEnabled,
   setOverlaySize,
   startOverlay,
@@ -36,12 +36,14 @@ const noopBridge = (): OverlayBridge => ({
   setConfig: () => {},
   setRoom: () => {},
   onToggled: () => () => {},
-  setEditing: () => {},
+  startEditing: () => {},
+  finishEditing: () => {},
   onEditing: () => () => {},
   onMoved: () => () => {},
   onResized: () => () => {},
   setShortcuts: async () => ({ toggle: true, edit: true }),
   pauseShortcuts: () => {},
+  resumeShortcuts: () => {},
   setTheme: () => {}
 })
 
@@ -107,7 +109,6 @@ describe('sincronia com o processo principal', () => {
         toggled = fn
         return () => (toggled = null)
       },
-      setEditing: () => {},
       onEditing: () => () => {},
       onMoved: () => () => {}
     })
@@ -116,7 +117,7 @@ describe('sincronia com o processo principal', () => {
     expect(rooms).toEqual([null])
 
     useApp.setState({ myVoiceChannelId: 'jogos', users: [user('s1', 'Ana')], voice: [vs('s1', 'jogos')] })
-    useApp.setState({ typing: {} }) // nada que o overlay mostra mudou
+    useApp.setState({ typing: {} })
     syncOverlay()
     expect(rooms).toHaveLength(2)
     expect(rooms[1]).toEqual({ members: [], more: 0 })
@@ -134,11 +135,11 @@ describe('sincronia com o processo principal', () => {
     expect(rooms.at(-1)).not.toBeNull()
   })
 
-  it('fora do Electron (sem ponte) não quebra', () => {
+  it('fora do app desktop (sem ponte) não quebra', () => {
     vi.spyOn(overlayEnv, 'bridge').mockReturnValue(null)
     const stop = startOverlay()
     expect(() => syncOverlay()).not.toThrow()
-    expect(() => setOverlayEditing(true)).not.toThrow()
+    expect(() => startOverlayEditing()).not.toThrow()
     stop()
   })
 })
@@ -153,7 +154,8 @@ describe('mover (como no Discord)', () => {
       setConfig: (c) => calls.configs.push(c),
       setRoom: () => {},
       onToggled: () => () => {},
-      setEditing: (e) => calls.editing.push(e),
+      startEditing: () => calls.editing.push(true),
+      finishEditing: () => calls.editing.push(false),
       onEditing: (fn) => {
         onEditing = fn
         return () => (onEditing = null)
@@ -170,10 +172,10 @@ describe('mover (como no Discord)', () => {
     const b = bridge()
     const stop = startOverlay()
     useApp.setState({ overlayEnabled: true })
-    setOverlayEditing(true)
+    startOverlayEditing()
     expect(b.calls.configs.at(-1)?.enabled).toBe(true)
     expect(b.calls.editing).toEqual([true])
-    setOverlayEditing(false)
+    finishOverlayEditing()
     expect(b.calls.editing).toEqual([true, false])
     stop()
   })
@@ -187,7 +189,7 @@ describe('mover (como no Discord)', () => {
     expect(useApp.getState().overlayPosition).toEqual({ x: 421, y: 99 })
     expect(JSON.parse(localStorage.getItem(OVERLAY_KEY)!).position).toEqual({ x: 421, y: 99 })
     expect(b.calls.configs.at(-1)?.position).toEqual({ x: 421, y: 99 })
-    b.moved({ x: 'a', y: 1 }) // inválido: ignora
+    b.moved({ x: 'a', y: 1 })
     expect(useApp.getState().overlayPosition).toEqual({ x: 421, y: 99 })
     stop()
     expect(b.listening()).toBe(false)
@@ -247,7 +249,8 @@ describe('atalhos escolhidos', () => {
         calls.set.push(s)
         return status
       },
-      pauseShortcuts: (p) => calls.paused.push(p)
+      pauseShortcuts: () => calls.paused.push(true),
+      resumeShortcuts: () => calls.paused.push(false)
     })
     return calls
   }

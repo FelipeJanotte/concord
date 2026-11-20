@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-// Pressione para falar na tela (B20): seção das Configurações de voz e indicador na sala.
 import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -11,7 +10,7 @@ import { PushToTalkHint, PushToTalkSettings } from './PushToTalk'
 
 const bridge: PushToTalkBridge = {
   setConfig: vi.fn(),
-  capture: vi.fn(async () => ({ kind: 'key' as const, code: 57, label: 'Espaço' })),
+  capture: vi.fn(async () => ({ kind: 'chosen' as const, binding: { kind: 'key' as const, code: 57, label: 'Espaço' } })),
   onChange: () => () => {},
   onUnavailable: () => () => {}
 }

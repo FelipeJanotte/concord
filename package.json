@@ -1,22 +1,21 @@
 {
   "name": "concord",
   "version": "0.1.28",
-  "description": "Chat de texto e voz estilo Discord, feito com Electron + React + shadcn/ui",
+  "description": "Chat de texto e voz estilo Discord, feito com Tauri + React + ui-sdk",
   "private": true,
-  "main": "./out/main/index.js",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
+    "dev": "tauri dev",
     "dev:all": "concurrently -k -n server,app -c cyan,magenta \"npm run server\" \"npm run dev\"",
-    "dev": "electron-vite dev",
+    "dev:web": "vite",
     "server": "tsx watch server/index.ts",
     "server:start": "tsx server/index.ts",
-    "build": "npm run typecheck && electron-vite build",
-    "start": "electron-vite preview",
+    "build": "npm run typecheck && tauri build",
+    "build:web": "vite build",
     "typecheck": "tsc --noEmit -p tsconfig.node.json --composite false && tsc --noEmit -p tsconfig.web.json --composite false",
-    "dist": "electron-vite build && electron-builder --win --publish never",
-    "release": "electron-vite build && electron-builder --win --publish always",
+    "dist": "tauri build",
     "test": "vitest run",
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
@@ -24,17 +23,16 @@
     "db:restore": "tsx server/scripts/restore-pglite.ts"
   },
   "dependencies": {
-    "@electron-toolkit/utils": "^4.0.0",
+    "@tauri-apps/api": "2.12.5",
     "@ui-sdk/core": "0.1.0-beta.10",
-    "@ui-sdk/react": "0.1.0-beta.10",
-    "electron-updater": "6.8.12",
-    "uiohook-napi": "^1.5.5"
+    "@ui-sdk/react": "0.1.0-beta.10"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.16",
     "@livekit/rtc-node": "^1.2.2",
     "@sapphi-red/web-noise-suppressor": "^0.4.1",
     "@tailwindcss/vite": "^4.1.11",
+    "@tauri-apps/cli": "2.12.6",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.10",
@@ -48,9 +46,6 @@
     "concurrently": "^9.2.0",
     "drizzle-kit": "^0.31.11",
     "drizzle-orm": "^0.45.4",
-    "electron": "^37.2.0",
-    "electron-builder": "^26.0.12",
-    "electron-vite": "^4.0.0",
     "jsdom": "^31.0.1",
     "livekit-client": "^2.23.0",
     "livekit-server-sdk": "^2.19.2",

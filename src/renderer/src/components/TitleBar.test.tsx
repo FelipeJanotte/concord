@@ -37,7 +37,7 @@ afterEach(() => {
 const labels = () => screen.queryAllByRole('button').map((b) => b.getAttribute('aria-label'))
 
 describe('barra de título', () => {
-  it('fora do Electron (versão web): não aparece', () => {
+  it('fora do app desktop (versão web): não aparece', () => {
     vi.spyOn(windowEnv, 'bridge').mockReturnValue(null)
     const { container } = render(<TitleBar />)
     expect(container.innerHTML).toBe('')

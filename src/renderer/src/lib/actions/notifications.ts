@@ -1,9 +1,3 @@
-/**
- * Notificações (B9): liga os eventos às notificações nativas e mantém o selo do ícone em dia.
- * As regras (quando avisar, número do selo) ficam em `lib/notifications.ts`. A ponte com o
- * processo principal (`window.api.notifications`) e o "a janela está em foco?" ficam em
- * `notificationEnv`, que os testes substituem. Fora do Electron (navegador), não faz nada.
- */
 import type { Message } from '@shared/types'
 import type { NativeNotification, NotificationsBridge, NotificationTarget } from '@shared/notifications'
 import { useApp, type ChannelNotifyMode } from '@/store'
@@ -36,21 +30,16 @@ function show(n: NativeNotification | null, soundPlayed = false): void {
   notificationEnv.bridge()?.show(soundPlayed ? { ...n, silent: true } : n)
 }
 
-/** Clique numa notificação: abre a conversa ou a tela de amigos. */
-export function openNotificationTarget(target: NotificationTarget | null): void {
-  if (!target) return
+export function openNotificationTarget(target: NotificationTarget): void {
   if (target.kind === 'friends') showFriends()
-  // menção num canal da comunidade (B19): abre o canal, se eu ainda vejo
   else if (target.kind === 'channel') {
     const channel = get().channels.find((c) => c.id === target.channelId)
     if (channel?.type === 'text') selectTextChannel(channel.id)
-    // chat da sala de voz: abre a sala com o painel "Chat"
     else if (channel?.type === 'voice') openVoiceChat(channel.id)
   } else if (get().dms.some((d) => d.channel.id === target.channelId)) openDmChat(target.channelId)
 }
 
 let lastBadge = -1
-/** Manda o número (e a imagem, no Windows) só quando muda. */
 export function syncBadge(): void {
   const count = get().notificationsEnabled ? badgeCount(get()) : 0
   if (count === lastBadge) return
@@ -61,7 +50,6 @@ export function syncBadge(): void {
 let stopBadge: (() => void) | null = null
 let stopClick: (() => void) | null = null
 
-/** Para de acompanhar (sair da conta) e zera o selo. */
 export function stopNotifications(): void {
   stopBadge?.()
   stopClick?.()
@@ -94,7 +82,7 @@ export function bindNotificationEvents(s: AppSocket): void {
     stopBadge = useApp.subscribe(syncBadge)
     syncBadge()
   }
-  if (!stopClick) stopClick = notificationEnv.bridge()?.onClick(openNotificationTarget) ?? null
+  if (!stopClick) stopClick = notificationEnv.bridge()?.onClick((click) => click.kind === 'target' && openNotificationTarget(click.target)) ?? null
 }
 
 const STORAGE_KEY = 'concord:notifications'

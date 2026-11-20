@@ -2,8 +2,8 @@
 
 [![CI](https://github.com/FelipeJanotte/concord/actions/workflows/ci.yml/badge.svg)](https://github.com/FelipeJanotte/concord/actions/workflows/ci.yml)
 
-App de chat estilo Discord para um grupo de amigos, com servidor próprio. Desktop em **Electron + React 19 +
-TypeScript + Tailwind CSS v4 + shadcn/ui**, tempo real com **Socket.IO**, voz e vídeo com **LiveKit** (SFU
+App de chat estilo Discord para um grupo de amigos, com servidor próprio. Desktop em **Tauri 2 (Rust) + React 19 +
+TypeScript + Tailwind CSS v4 + ui-sdk**, tempo real com **Socket.IO**, voz e vídeo com **LiveKit** (SFU
 self-hosted) e dados em **PostgreSQL** (ou PGlite embutido).
 
 ## O que tem
@@ -35,7 +35,7 @@ limites em [`docs/areas/music.md`](docs/areas/music.md).
 
 ## Como rodar
 
-Requer **Node.js 20+** (o CI usa 22) e **Docker** (para o Postgres e o LiveKit).
+Requer **Node.js 20+** (o CI usa 22; servidor, versão web e ferramentas), **Rust** estável (toolchain do Tauri), **WebView2** no Windows (já vem no Windows 11) e **Docker** (para o Postgres e o LiveKit).
 
 ```bash
 npm install
@@ -55,7 +55,8 @@ Na tela de login, use `http://localhost:3001` como servidor e crie uma conta. A 
 comunidade.
 
 - **Sem Docker:** apague `DATABASE_URL` do `server/.env` e o servidor usa o PGlite embutido. A voz precisa do LiveKit.
-- **Separado:** `npm run server` (porta 3001) e `npm run dev` em dois terminais.
+- **Separado:** `npm run server` (porta 3001) e `npm run dev` (app Tauri) em dois terminais.
+- **Só no navegador:** `npm run dev:web` abre a versão web, sem os recursos nativos do app.
 
 ### Opcionais
 
@@ -67,8 +68,8 @@ comunidade.
 
 ### Testar com mais de um usuário
 
-- **Na mesma máquina:** com o `npm run dev:all` rodando, abra outra janela com `npx electron .` (rode
-  `npm run build` uma vez antes) e entre com outra conta.
+- **Na mesma máquina:** com o `npm run dev:all` rodando, abra outra janela com o `concord.exe` de `target/debug/` (gerado pelo `tauri dev`) ou
+  `npm run dev:web` no navegador, e entre com outra conta.
 - **Na rede local:** o servidor mostra o IP da rede ao iniciar (ex.: `http://192.168.0.10:3001`). Libere a porta
   3001 no firewall e configure o `LIVEKIT_NODE_IP` para a voz.
 - **Pela internet:** veja [Hospedar](#hospedar).
@@ -79,13 +80,15 @@ Mais detalhes e problemas conhecidos em [`docs/areas/dev-workflow.md`](docs/area
 
 | Comando | O que faz |
 |---|---|
-| `npm run dev:all` | Servidor (porta 3001) e app juntos |
+| `npm run dev:all` | Servidor (porta 3001) e app Tauri juntos |
+| `npm run dev:web` | Só a versão web (Vite) |
 | `npm run typecheck` | Checagem de tipos de tudo |
 | `npm test` | Todos os testes (vitest) |
 | `npm run db:generate` | Gera a migration depois de mudar `server/db/schema` |
 | `npm run db:restore [arquivo]` | Restaura um backup do PGlite (servidor parado) |
-| `npm run build` | Typecheck e build em `out/` |
-| `npm run dist` | Instalador Windows em `dist/`, sem publicar |
+| `npm run build` | Typecheck e build do app (`tauri build`) |
+| `npm run build:web` | Build da versão web |
+| `npm run dist` | Instalador Windows (`tauri build`), sem publicar |
 
 ## Hospedar
 
@@ -104,8 +107,8 @@ instalador no GitHub Releases. O app instalado se atualiza sozinho. Detalhes em
 ```
 server/                 servidor Node: HTTP + Socket.IO, um módulo por domínio (server/modules), dados em server/repo
 src/shared/types/       contrato entre app e servidor (tipos e eventos), um arquivo por domínio
-src/main/               processo principal do Electron (janela, permissões, notificações, overlay, atualização)
-src/preload/            ponte segura entre o processo principal e a página
+src-tauri/              app desktop em Rust (janela, comandos nativos, notificações, overlay, atualização)
+crates/                 crates Rust do app (pressione para falar, captura de tela, miniatura da barra de tarefas)
 src/renderer/src/       app React: telas em components/, estado (zustand) em store/, ações em lib/actions/
 docs/                   documentação por área, decisões (ADRs) e roadmap
 ```

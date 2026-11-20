@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-idle-get"
+description = "Enables the idle_get command without any pre-configured scope."
+commands.allow = ["idle_get"]
+
+[[permission]]
+identifier = "deny-idle-get"
+description = "Denies the idle_get command without any pre-configured scope."
+commands.deny = ["idle_get"]
