@@ -23,6 +23,8 @@ fn the_installer_bridge_writes_into_the_data_folder_of_the_app_identifier() {
     let configuration: serde_json::Value = serde_json::from_str(CONFIGURATION).unwrap();
     let identifier = configuration["identifier"].as_str().unwrap();
     let bridge = include_str!("../windows/hooks.nsh");
-    assert!(bridge.contains(&format!("!define CONCORD_DATA_FOLDER \"$APPDATA\\{identifier}\"")));
+    assert!(bridge.contains(&format!(
+        "!define CONCORD_DATA_FOLDER \"$APPDATA\\{identifier}\""
+    )));
     assert!(!bridge.contains("BUNDLEID"));
 }
