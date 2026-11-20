@@ -30,6 +30,8 @@ pub trait OverlayEnvironment {
     fn notify_resized(&self, width: f64);
     fn register_shortcut(&self, accelerator: &str, action: ShortcutAction) -> bool;
     fn unregister_shortcut(&self, accelerator: &str);
+    fn remember_foreground(&self);
+    fn return_foreground(&self);
 }
 
 pub struct OverlayController<E: OverlayEnvironment> {
@@ -89,11 +91,17 @@ impl<E: OverlayEnvironment> OverlayController<E> {
         if editing == self.editing {
             return;
         }
+        if editing {
+            self.environment.remember_foreground();
+        }
         self.editing = editing;
         self.environment.notify_editing(editing);
         self.update();
         if let Some(window) = &self.window {
             window.set_interactive(editing);
+        }
+        if !editing {
+            self.environment.return_foreground();
         }
     }
 
@@ -312,6 +320,8 @@ mod tests {
         Editing(bool),
         Moved(OverlayPosition),
         Resized(f64),
+        FocusRemembered,
+        FocusReturned,
     }
 
     #[derive(Default)]
@@ -394,6 +404,12 @@ mod tests {
             }
             world.registered.push((accelerator.to_owned(), action));
             true
+        }
+        fn remember_foreground(&self) {
+            record(&self.0, Event::FocusRemembered);
+        }
+        fn return_foreground(&self) {
+            record(&self.0, Event::FocusReturned);
         }
         fn unregister_shortcut(&self, accelerator: &str) {
             self.0
@@ -651,10 +667,7 @@ mod tests {
             width: None
         }));
         controller.set_editing(false);
-        assert_eq!(
-            world.borrow().events.last(),
-            Some(&Event::Interactive(false))
-        );
+        assert!(world.borrow().events.contains(&Event::Interactive(false)));
         assert_eq!(last_notified_editing(&world), Some(false));
     }
 
@@ -867,5 +880,54 @@ mod tests {
             .events
             .iter()
             .any(|event| matches!(event, Event::Theme(_))));
+    }
+
+    #[test]
+    fn ending_move_mode_returns_the_focus_once_after_remembering_it_once() {
+        let (mut controller, world) = setup();
+        controller.set_config(enabled(OverlaySize::Medium));
+        controller.set_editing(true);
+        controller.set_editing(true);
+        assert_eq!(count(&world, &Event::FocusRemembered), 1);
+        assert_eq!(count(&world, &Event::FocusReturned), 0);
+        controller.set_editing(false);
+        controller.set_editing(false);
+        assert_eq!(count(&world, &Event::FocusReturned), 1);
+        assert_eq!(world.borrow().events.last(), Some(&Event::FocusReturned));
+    }
+
+    #[test]
+    fn focus_is_remembered_before_the_window_takes_it() {
+        let (mut controller, world) = setup();
+        controller.set_config(enabled(OverlaySize::Medium));
+        controller.set_editing(true);
+        let events = world.borrow().events.clone();
+        let remembered = events
+            .iter()
+            .position(|event| *event == Event::FocusRemembered);
+        let interactive = events
+            .iter()
+            .position(|event| *event == Event::Interactive(true));
+        assert!(remembered < interactive);
+    }
+
+    #[test]
+    fn focus_is_not_returned_when_move_mode_was_never_entered() {
+        let (mut controller, world) = setup();
+        controller.set_editing(true);
+        controller.set_editing(false);
+        controller.set_config(enabled(OverlaySize::Medium));
+        controller.set_editing(false);
+        assert_eq!(count(&world, &Event::FocusRemembered), 0);
+        assert_eq!(count(&world, &Event::FocusReturned), 0);
+    }
+
+    #[test]
+    fn disabling_the_overlay_during_move_mode_returns_the_focus() {
+        let (mut controller, world) = setup();
+        controller.set_config(enabled(OverlaySize::Medium));
+        controller.set_editing(true);
+        controller.toggle();
+        assert_eq!(count(&world, &Event::FocusReturned), 1);
     }
 }

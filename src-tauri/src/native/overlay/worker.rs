@@ -213,6 +213,8 @@ mod tests {
         fn register_shortcut(&self, _accelerator: &str, _action: ShortcutAction) -> bool {
             true
         }
+        fn remember_foreground(&self) {}
+        fn return_foreground(&self) {}
         fn unregister_shortcut(&self, _accelerator: &str) {}
     }
 

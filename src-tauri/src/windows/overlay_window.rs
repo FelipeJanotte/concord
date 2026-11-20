@@ -258,6 +258,14 @@ impl OverlayEnvironment for TauriOverlayEnvironment {
         result.is_ok()
     }
 
+    fn remember_foreground(&self) {
+        win32::remember_foreground();
+    }
+
+    fn return_foreground(&self) {
+        win32::return_foreground();
+    }
+
     fn unregister_shortcut(&self, accelerator: &str) {
         log_failure(
             "soltar atalho",
