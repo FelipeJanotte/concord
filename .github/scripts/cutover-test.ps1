@@ -114,6 +114,15 @@ $oldInstallDir = (Get-ItemProperty -Path $electronAppKey).InstallLocation
 Assert-That (Test-Path $electronUninstallKey) 'o Electron ficou instalado antes do teste'
 Assert-That (Test-Path (Join-Path $oldInstallDir $ElectronUninstallerName)) 'o desinstalador do Electron existe antes do teste'
 
+Write-Host '--- chave de desinstalação do Electron (valores crus) ---'
+$electronUninstallValues = Get-ItemProperty -Path $electronUninstallKey
+foreach ($name in 'DisplayName', 'UninstallString', 'QuietUninstallString', 'InstallLocation') {
+    $value = $electronUninstallValues.PSObject.Properties[$name]
+    Write-Host "$name=[$(if ($value) { $value.Value } else { '(ausente)' })]"
+}
+Write-Host "InstallLocation da chave Software=[$oldInstallDir]"
+Write-Host '--- fim ---'
+
 $electronData = Join-Path $env:APPDATA 'Concord'
 $updaterCache = Join-Path $env:LOCALAPPDATA 'concord-updater'
 New-Item -ItemType Directory -Force -Path $electronData, (Join-Path $updaterCache 'pending') | Out-Null

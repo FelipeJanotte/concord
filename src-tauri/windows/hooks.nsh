@@ -2,6 +2,7 @@
 !insertmacro WordFind
 
 !define ELECTRON_APP_GUID "5913399b-029d-504c-af52-ca654e517444"
+!define ELECTRON_INSTALL_KEY "Software\${ELECTRON_APP_GUID}"
 !define ELECTRON_UNINSTALL_ROOT "Software\Microsoft\Windows\CurrentVersion\Uninstall"
 !define ELECTRON_UNINSTALL_KEY "${ELECTRON_UNINSTALL_ROOT}\${ELECTRON_APP_GUID}"
 !define ELECTRON_RUN_KEY "Software\Microsoft\Windows\CurrentVersion\Run"
@@ -36,13 +37,48 @@ FunctionEnd
 
 Function ConcordReadUninstallerPath
   StrCpy $ElectronUninstaller ""
-  ${If} $0 != ""
-    ${WordFind} $0 '"' "+2" $ElectronUninstaller
+  ${If} $0 == ""
+    Return
+  ${EndIf}
+  StrCpy $1 $0 1
+  ${If} $1 == '"'
+    StrCpy $2 1
+    ${Do}
+      StrCpy $3 $0 1 $2
+      ${If} $3 == '"'
+      ${OrIf} $3 == ""
+        ${Break}
+      ${EndIf}
+      IntOp $2 $2 + 1
+    ${Loop}
+    IntOp $2 $2 - 1
+    StrCpy $ElectronUninstaller $0 $2 1
+  ${Else}
+    StrCpy $2 0
+    ${Do}
+      StrCpy $3 $0 2 $2
+      ${If} $3 == " /"
+      ${OrIf} $3 == ""
+        ${Break}
+      ${EndIf}
+      IntOp $2 $2 + 1
+    ${Loop}
+    StrCpy $ElectronUninstaller $0 $2
   ${EndIf}
 FunctionEnd
 
 Function ConcordFindElectronUninstaller
+  StrCpy $ElectronUninstaller ""
+  ReadRegStr $4 HKCU "${ELECTRON_INSTALL_KEY}" "InstallLocation"
+  !insertmacro ConcordLog "InstallLocation=$4"
+  ${If} $4 != ""
+    ${If} ${FileExists} "$4${ELECTRON_UNINSTALLER_SUFFIX}"
+      StrCpy $ElectronUninstaller "$4${ELECTRON_UNINSTALLER_SUFFIX}"
+      Return
+    ${EndIf}
+  ${EndIf}
   ReadRegStr $0 HKCU "${ELECTRON_UNINSTALL_KEY}" "UninstallString"
+  !insertmacro ConcordLog "UninstallString=$0"
   Call ConcordReadUninstallerPath
   ${If} $ElectronUninstaller != ""
     Return
@@ -57,6 +93,7 @@ Function ConcordFindElectronUninstaller
     Call ConcordReadUninstallerPath
     StrCpy $3 $ElectronUninstaller ${ELECTRON_UNINSTALLER_SUFFIX_LENGTH} -${ELECTRON_UNINSTALLER_SUFFIX_LENGTH}
     ${If} $3 == "${ELECTRON_UNINSTALLER_SUFFIX}"
+      !insertmacro ConcordLog "UninstallString da chave $2=$0"
       Return
     ${EndIf}
     IntOp $1 $1 + 1
