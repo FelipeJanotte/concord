@@ -129,6 +129,7 @@ New-Item -ItemType Directory -Force -Path $electronData, (Join-Path $updaterCach
 Set-Content -Path (Join-Path $electronData 'migrate.json') -Value $FakeMigration -NoNewline
 Set-Content -Path (Join-Path $updaterCache 'pending\update.bin') -Value 'x'
 if ($AutostartWasOn) {
+    New-Item -Path $RunKey -Force -ErrorAction SilentlyContinue | Out-Null
     Set-ItemProperty -Path $RunKey -Name $FakeRunValue -Value "`"$oldInstallDir\concord.exe`""
 }
 
@@ -146,6 +147,9 @@ $finished = Wait-Installer $newInstall
 Write-BridgeLog
 Assert-That $finished 'o instalador novo terminou no prazo'
 
+Write-Host '--- arquivos da ponte encontrados ---'
+Get-ChildItem -Path $env:APPDATA, $env:LOCALAPPDATA, $env:ProgramData -Recurse -Depth 2 -Force -ErrorAction SilentlyContinue -Include 'migrate.json', 'startup-default-applied' | ForEach-Object { Write-Host $_.FullName }
+Write-Host '--- fim ---'
 $autostartMarker = Join-Path $env:APPDATA "$AppId\startup-default-applied"
 Assert-That ((Test-Path $autostartMarker) -eq (-not $AutostartWasOn)) "marcador de iniciar com o Windows presente só quando o Electron estava com ele desligado (ligado antes: $AutostartWasOn)"
 

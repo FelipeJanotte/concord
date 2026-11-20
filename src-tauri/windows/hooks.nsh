@@ -131,6 +131,11 @@ Function ConcordKeepAutostartOffUnlessElectronHadIt
     CreateDirectory "$APPDATA\${BUNDLEID}"
     FileOpen $0 "$APPDATA\${BUNDLEID}\startup-default-applied" w
     FileClose $0
+    ${If} ${FileExists} "$APPDATA\${BUNDLEID}\startup-default-applied"
+      !insertmacro ConcordLog "marcador de iniciar com o Windows criado em $APPDATA\${BUNDLEID}"
+    ${Else}
+      !insertmacro ConcordLog "marcador de iniciar com o Windows nao foi criado em $APPDATA\${BUNDLEID}"
+    ${EndIf}
   ${EndIf}
 FunctionEnd
 
@@ -202,7 +207,11 @@ Function ConcordReplaceElectronInstall
   ${If} ${FileExists} "$APPDATA\Concord\migrate.json"
     CreateDirectory "$APPDATA\${BUNDLEID}"
     CopyFiles /SILENT "$APPDATA\Concord\migrate.json" "$APPDATA\${BUNDLEID}\migrate.json"
-    !insertmacro ConcordLog "migrate.json copiado"
+    ${If} ${FileExists} "$APPDATA\${BUNDLEID}\migrate.json"
+      !insertmacro ConcordLog "migrate.json copiado para $APPDATA\${BUNDLEID}"
+    ${Else}
+      !insertmacro ConcordLog "migrate.json nao foi copiado para $APPDATA\${BUNDLEID}"
+    ${EndIf}
   ${Else}
     !insertmacro ConcordLog "migrate.json nao existe"
   ${EndIf}
