@@ -8,10 +8,12 @@
 !define ELECTRON_UNINSTALLER_SUFFIX "\Uninstall Concord.exe"
 !define ELECTRON_UNINSTALLER_SUFFIX_LENGTH 22
 !define ELECTRON_MAIN_EXECUTABLE "concord.exe"
+!define ELECTRON_APP_ARCHIVE "resources\app.asar"
 !define ELECTRON_UNINSTALLER_COPY "$TEMP\concord-electron-uninstaller.exe"
 
 Var ElectronUninstaller
 Var ElectronInstallDir
+Var ElectronInstallConfirmed
 Var ElectronRunEntryFound
 Var ElectronRunEntryAction
 
@@ -78,25 +80,32 @@ Function ConcordKeepAutostartOffUnlessElectronHadIt
   ${EndIf}
 FunctionEnd
 
-Function ConcordLooksLikeElectronInstall
-  StrCpy $5 "0"
+Function ConcordDecideElectronInstall
+  StrCpy $ElectronInstallConfirmed "0"
   ${If} $ElectronInstallDir == ""
     Return
   ${EndIf}
-  StrLen $6 "$ElectronInstallDir"
-  ${If} $6 <= 3
+  StrLen $0 "$ElectronInstallDir"
+  ${If} $0 <= 3
     Return
   ${EndIf}
-  ${If} ${FileExists} "$ElectronInstallDir\${ELECTRON_MAIN_EXECUTABLE}"
-    StrCpy $5 "1"
-  ${ElseIf} ${FileExists} "$ElectronInstallDir${ELECTRON_UNINSTALLER_SUFFIX}"
-    StrCpy $5 "1"
+  ${If} $ElectronInstallDir == $INSTDIR
+    Return
   ${EndIf}
+  ${IfNot} ${FileExists} "$ElectronInstallDir\${ELECTRON_MAIN_EXECUTABLE}"
+    Return
+  ${EndIf}
+  ${IfNot} ${FileExists} "$ElectronInstallDir${ELECTRON_UNINSTALLER_SUFFIX}"
+    Return
+  ${EndIf}
+  ${IfNot} ${FileExists} "$ElectronInstallDir\${ELECTRON_APP_ARCHIVE}"
+    Return
+  ${EndIf}
+  StrCpy $ElectronInstallConfirmed "1"
 FunctionEnd
 
 Function ConcordRemoveElectronLeftovers
-  Call ConcordLooksLikeElectronInstall
-  ${If} $5 == "1"
+  ${If} $ElectronInstallConfirmed == "1"
     RMDir /r "$ElectronInstallDir"
   ${Else}
     DetailPrint "Pasta do Electron não confere, mantida: $ElectronInstallDir"
@@ -116,9 +125,11 @@ Function ConcordReplaceElectronInstall
     Return
   ${EndIf}
   ${WordFind} $ElectronUninstaller "\" "-1{" $ElectronInstallDir
+  Call ConcordDecideElectronInstall
   Call ConcordKeepAutostartOffUnlessElectronHadIt
   nsExec::Exec 'taskkill /F /IM ${ELECTRON_MAIN_EXECUTABLE}'
   Pop $0
+  DetailPrint "taskkill terminou com o código $0"
   ${If} ${FileExists} "$APPDATA\Concord\migrate.json"
     CreateDirectory "$APPDATA\${BUNDLEID}"
     CopyFiles /SILENT "$APPDATA\Concord\migrate.json" "$APPDATA\${BUNDLEID}\migrate.json"
@@ -126,13 +137,14 @@ Function ConcordReplaceElectronInstall
   CopyFiles /SILENT "$ElectronUninstaller" "${ELECTRON_UNINSTALLER_COPY}"
   SetOutPath $TEMP
   ExecWait '"${ELECTRON_UNINSTALLER_COPY}" /S /currentuser _?=$ElectronInstallDir' $0
-  ${If} $0 = 0
-    Call ConcordRemoveElectronLeftovers
-  ${Else}
-    DetailPrint "O desinstalador do Electron terminou com o código $0"
-  ${EndIf}
   Delete "${ELECTRON_UNINSTALLER_COPY}"
   SetOutPath $INSTDIR
+  ${If} $0 != 0
+    DetailPrint "O desinstalador do Electron terminou com o código $0"
+    MessageBox MB_OK|MB_ICONSTOP "Não foi possível remover a versão anterior do Concord (código $0). Você continua na versão atual e a atualização será tentada de novo mais tarde."
+    Abort "Falha ao remover a versão anterior do Concord."
+  ${EndIf}
+  Call ConcordRemoveElectronLeftovers
 FunctionEnd
 
 !macro NSIS_HOOK_PREINSTALL
