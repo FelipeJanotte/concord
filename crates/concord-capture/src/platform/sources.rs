@@ -136,7 +136,9 @@ impl MemoryDc {
 
 impl Drop for MemoryDc {
     fn drop(&mut self) {
-        let _ = unsafe { DeleteDC(self.0) };
+        if !unsafe { DeleteDC(self.0) }.as_bool() {
+            log::warn!("memory device context not deleted");
+        }
     }
 }
 
@@ -161,7 +163,9 @@ impl Drop for SelectedBitmap {
     fn drop(&mut self) {
         unsafe {
             SelectObject(self.dc, self.previous);
-            let _ = DeleteObject(self.bitmap.into());
+            if !DeleteObject(self.bitmap.into()).as_bool() {
+                log::warn!("thumbnail bitmap not deleted");
+            }
         }
     }
 }

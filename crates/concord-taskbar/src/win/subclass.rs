@@ -65,7 +65,9 @@ impl State {
             return;
         }
         unsafe {
-            let _ = RemoveWindowSubclass(self.window, Some(subclass_proc), SUBCLASS_ID);
+            if !RemoveWindowSubclass(self.window, Some(subclass_proc), SUBCLASS_ID).as_bool() {
+                log::warn!("window subclass not removed");
+            }
             drop(Rc::from_raw(self as *const State));
         }
     }

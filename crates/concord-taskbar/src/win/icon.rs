@@ -16,7 +16,9 @@ struct OwnedBitmap(HBITMAP);
 impl Drop for OwnedBitmap {
     fn drop(&mut self) {
         unsafe {
-            let _ = DeleteObject(HGDIOBJ(self.0 .0));
+            if !DeleteObject(HGDIOBJ(self.0 .0)).as_bool() {
+                log::warn!("icon bitmap not deleted");
+            }
         }
     }
 }
@@ -48,7 +50,9 @@ impl OwnedIcon {
 impl Drop for OwnedIcon {
     fn drop(&mut self) {
         unsafe {
-            let _ = DestroyIcon(self.0);
+            if let Err(error) = DestroyIcon(self.0) {
+                log::warn!("icon not destroyed: {error}");
+            }
         }
     }
 }

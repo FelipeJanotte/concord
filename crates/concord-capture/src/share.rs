@@ -46,10 +46,9 @@ pub fn thumbnail_of(source_id: &str) -> Result<Vec<u8>, CaptureError> {
 #[cfg(not(windows))]
 impl ScreenShare {
     pub fn start(
-        request: ShareRequest,
-        on_event: impl Fn(ShareEvent) + Send + Sync + 'static,
+        _request: ShareRequest,
+        _on_event: impl Fn(ShareEvent) + Send + Sync + 'static,
     ) -> Result<Self, CaptureError> {
-        let _ = (request, on_event);
         Err(CaptureError::UnsupportedPlatform)
     }
 
@@ -62,8 +61,7 @@ pub fn list_sources() -> Result<Vec<CaptureSource>, CaptureError> {
 }
 
 #[cfg(not(windows))]
-pub fn thumbnail_of(source_id: &str) -> Result<Vec<u8>, CaptureError> {
-    let _ = source_id;
+pub fn thumbnail_of(_source_id: &str) -> Result<Vec<u8>, CaptureError> {
     Err(CaptureError::UnsupportedPlatform)
 }
 

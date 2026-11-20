@@ -56,7 +56,9 @@ impl MediaFoundationRuntime {
 
 impl Drop for MediaFoundationRuntime {
     fn drop(&mut self) {
-        unsafe { MFShutdown() }.ok();
+        if let Err(error) = unsafe { MFShutdown() } {
+            log::warn!("Media Foundation not shut down: {error}");
+        }
     }
 }
 
