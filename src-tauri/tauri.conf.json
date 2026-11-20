@@ -8,7 +8,8 @@
     "devUrl": "http://localhost:5173",
     "frontendDist": "../out/renderer",
     "beforeDevCommand": "vite",
-    "beforeBuildCommand": "vite build"
+    "beforeBuildCommand": "vite build",
+    "windows": { "staticVCRuntime": false }
   },
   "app": {
     "withGlobalTauri": false,

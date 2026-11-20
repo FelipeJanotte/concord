@@ -9,3 +9,11 @@ fn every_plugin_is_configured_under_a_single_plugins_key() {
     assert!(plugins["updater"]["endpoints"].is_array());
     assert_eq!(plugins["deep-link"]["desktop"]["schemes"][0], "concord");
 }
+
+#[test]
+fn the_whole_c_runtime_is_linked_statically_like_libwebrtc() {
+    let configuration: serde_json::Value = serde_json::from_str(CONFIGURATION).unwrap();
+    assert_eq!(configuration["build"]["windows"]["staticVCRuntime"], false);
+    let cargo_configuration = include_str!("../../.cargo/config.toml");
+    assert!(cargo_configuration.contains("target-feature=+crt-static"));
+}
