@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 
 use super::controller::{OverlayController, OverlayEnvironment};
-use super::model::{OverlayConfig, OverlayPosition, OverlayRoom};
+use super::model::{OverlayConfig, OverlayPosition, OverlayRoom, ResizePhase};
 use super::settle::Settling;
 use super::shortcuts::{OverlayShortcutStatus, OverlayShortcuts, ShortcutAction};
 
@@ -27,7 +27,7 @@ enum Message {
     Editing(bool),
     Resize {
         width: f64,
-        done: bool,
+        phase: ResizePhase,
     },
     Theme(Value),
     Moved(OverlayPosition),
@@ -69,8 +69,8 @@ impl OverlayHandle {
         self.send(Message::Editing(editing));
     }
 
-    pub fn resize(&self, width: f64, done: bool) {
-        self.send(Message::Resize { width, done });
+    pub fn resize(&self, width: f64, phase: ResizePhase) {
+        self.send(Message::Resize { width, phase });
     }
 
     pub fn set_theme(&self, theme: Value) {
@@ -169,7 +169,7 @@ fn apply<E: OverlayEnvironment>(
         Message::Room(room) => controller.set_room(room),
         Message::MainFocused(focused) => controller.set_main_focused(focused),
         Message::Editing(editing) => controller.set_editing(editing),
-        Message::Resize { width, done } => controller.resize(width, done),
+        Message::Resize { width, phase } => controller.resize(width, phase),
         Message::Theme(theme) => controller.set_theme(theme),
         Message::Moved(position) => settling.push(position, Instant::now()),
         Message::PageLoaded => controller.page_loaded(),

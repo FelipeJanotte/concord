@@ -1,7 +1,7 @@
 use tauri::State;
 
 use crate::domain_error;
-use crate::native::overlay::model::{OverlayConfig, OverlayRoom};
+use crate::native::overlay::model::{OverlayConfig, OverlayRoom, ResizePhase};
 use crate::native::overlay::shortcuts::{OverlayShortcutStatus, OverlayShortcuts};
 use crate::native::overlay::worker::{OverlayHandle, ShortcutsError};
 
@@ -51,5 +51,5 @@ pub fn overlay_theme(handle: State<OverlayHandle>, theme: serde_json::Value) {
 
 #[tauri::command]
 pub fn overlay_resize(handle: State<OverlayHandle>, width: f64, done: bool) {
-    handle.resize(width, done);
+    handle.resize(width, ResizePhase::from(done));
 }

@@ -19,8 +19,14 @@ pub struct ButtonPlan<'a> {
     pub slots: [SlotPlan<'a>; SLOT_COUNT],
 }
 
-pub fn plan_buttons(buttons: &[ThumbButton], toolbar_added: bool) -> Option<ButtonPlan<'_>> {
-    if buttons.is_empty() && !toolbar_added {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolbarState {
+    NotAdded,
+    Added,
+}
+
+pub fn plan_buttons(buttons: &[ThumbButton], toolbar: ToolbarState) -> Option<ButtonPlan<'_>> {
+    if buttons.is_empty() && toolbar == ToolbarState::NotAdded {
         return None;
     }
     let slots = ThumbAction::ALL.map(|action| {
@@ -29,10 +35,9 @@ pub fn plan_buttons(buttons: &[ThumbButton], toolbar_added: bool) -> Option<Butt
             .find(|button| button.action == action)
             .map_or(SlotPlan::Hidden, SlotPlan::Visible)
     });
-    let kind = if toolbar_added {
-        PlanKind::Update
-    } else {
-        PlanKind::Add
+    let kind = match toolbar {
+        ToolbarState::Added => PlanKind::Update,
+        ToolbarState::NotAdded => PlanKind::Add,
     };
     Some(ButtonPlan { kind, slots })
 }
@@ -51,14 +56,14 @@ mod tests {
 
     #[test]
     fn nothing_to_show_and_nothing_added_plans_nothing() {
-        assert_eq!(plan_buttons(&[], false), None);
+        assert_eq!(plan_buttons(&[], ToolbarState::NotAdded), None);
     }
 
     #[test]
     fn first_buttons_are_added() {
         let buttons = [button(ThumbAction::Mute)];
         assert_eq!(
-            plan_buttons(&buttons, false).map(|p| p.kind),
+            plan_buttons(&buttons, ToolbarState::NotAdded).map(|p| p.kind),
             Some(PlanKind::Add)
         );
     }
@@ -67,14 +72,14 @@ mod tests {
     fn later_buttons_are_updated() {
         let buttons = [button(ThumbAction::Mute)];
         assert_eq!(
-            plan_buttons(&buttons, true).map(|p| p.kind),
+            plan_buttons(&buttons, ToolbarState::Added).map(|p| p.kind),
             Some(PlanKind::Update)
         );
     }
 
     #[test]
     fn empty_after_added_hides_every_slot() {
-        let plan = plan_buttons(&[], true);
+        let plan = plan_buttons(&[], ToolbarState::Added);
         assert_eq!(
             plan,
             Some(ButtonPlan {
@@ -87,7 +92,7 @@ mod tests {
     #[test]
     fn buttons_land_in_their_action_slot_regardless_of_order() {
         let buttons = [button(ThumbAction::Leave), button(ThumbAction::Mute)];
-        let plan = plan_buttons(&buttons, true).expect("plan");
+        let plan = plan_buttons(&buttons, ToolbarState::Added).expect("plan");
         assert_eq!(plan.slots[0], SlotPlan::Visible(&buttons[1]));
         assert_eq!(plan.slots[1], SlotPlan::Hidden);
         assert_eq!(plan.slots[2], SlotPlan::Visible(&buttons[0]));

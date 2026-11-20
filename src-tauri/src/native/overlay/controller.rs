@@ -1,8 +1,11 @@
 use serde_json::Value;
 
-use super::geometry::{self, Rect};
-use super::model::{clean_width, OverlayConfig, OverlayPosition, OverlayRoom, OverlayUpdate};
+use super::geometry::{self, EditMode, OverlaySwitch, Rect, RoomOccupancy, VisibilityInputs};
+use super::model::{
+    clean_width, OverlayConfig, OverlayPosition, OverlayRoom, OverlayUpdate, ResizePhase,
+};
 use super::shortcuts::{OverlayShortcutStatus, OverlayShortcuts, ShortcutAction};
+use crate::native::main_window_focus::MainWindowFocus;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Screen {
@@ -148,7 +151,7 @@ impl<E: OverlayEnvironment> OverlayController<E> {
         }
     }
 
-    pub fn resize(&mut self, width: f64, done: bool) {
+    pub fn resize(&mut self, width: f64, phase: ResizePhase) {
         let Some(width) = clean_width(width) else {
             return;
         };
@@ -157,7 +160,7 @@ impl<E: OverlayEnvironment> OverlayController<E> {
         }
         self.config.width = Some(width);
         self.update();
-        if done {
+        if phase == ResizePhase::Finished {
             self.environment.notify_resized(width);
         }
     }
@@ -221,12 +224,24 @@ impl<E: OverlayEnvironment> OverlayController<E> {
     }
 
     fn update(&mut self) {
-        let visible = geometry::is_visible(
-            self.config.enabled,
-            self.has_people(),
-            self.editing,
-            self.main_focused,
-        );
+        let visible = geometry::is_visible(VisibilityInputs {
+            switch: if self.config.enabled {
+                OverlaySwitch::Enabled
+            } else {
+                OverlaySwitch::Disabled
+            },
+            occupancy: if self.has_people() {
+                RoomOccupancy::HasPeople
+            } else {
+                RoomOccupancy::Empty
+            },
+            edit_mode: if self.editing {
+                EditMode::Editing
+            } else {
+                EditMode::Idle
+            },
+            main_window: MainWindowFocus::from(self.main_focused),
+        });
         if !visible {
             self.hide_window();
             return;
@@ -827,20 +842,20 @@ mod tests {
     fn resizing_only_works_in_move_mode_and_notifies_when_done() {
         let (mut controller, world) = setup();
         controller.set_config(enabled(OverlaySize::Medium));
-        controller.resize(400.0, true);
+        controller.resize(400.0, ResizePhase::Finished);
         assert_eq!(count(&world, &Event::Resized(400.0)), 0);
         controller.set_editing(true);
-        controller.resize(380.4, false);
+        controller.resize(380.4, ResizePhase::Dragging);
         assert_eq!(last_bounds(&world).map(|bounds| bounds.width), Some(380));
         assert!(!world
             .borrow()
             .events
             .iter()
             .any(|event| matches!(event, Event::Resized(_))));
-        controller.resize(9_999.0, true);
+        controller.resize(9_999.0, ResizePhase::Finished);
         assert_eq!(last_bounds(&world).map(|bounds| bounds.width), Some(640));
         assert_eq!(count(&world, &Event::Resized(640.0)), 1);
-        controller.resize(f64::NAN, true);
+        controller.resize(f64::NAN, ResizePhase::Finished);
         assert_eq!(count(&world, &Event::Resized(640.0)), 1);
         assert_eq!(
             world

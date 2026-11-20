@@ -9,6 +9,22 @@ const MAX_ID_CHARS: usize = 64;
 const MAX_COLOR_CHARS: usize = 16;
 const MAX_AVATAR_CHARS: usize = 2048;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResizePhase {
+    Dragging,
+    Finished,
+}
+
+impl From<bool> for ResizePhase {
+    fn from(done: bool) -> Self {
+        if done {
+            Self::Finished
+        } else {
+            Self::Dragging
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum OverlayCorner {

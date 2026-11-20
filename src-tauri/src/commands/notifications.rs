@@ -12,6 +12,7 @@ use crate::events;
 use crate::native::data_url::png_bytes;
 use crate::native::data_url::DataUrlError;
 use crate::native::main_window_events::emit_to_main;
+use crate::native::main_window_focus::MainWindowFocus;
 use crate::native::notifications::{
     activation_url, clean_badge_count, clean_notification, parse_activation, should_flash,
     toast_xml, ClickQueue, NotificationClick, NotificationRejection, ACTIVATION_SCHEME,
@@ -184,7 +185,7 @@ pub fn badge(
             .unwrap_or_else(PoisonError::into_inner);
         std::mem::replace(&mut *last, count)
     };
-    if cfg!(windows) && should_flash(count, previous, window.is_focused()?) {
+    if cfg!(windows) && should_flash(count, previous, MainWindowFocus::from(window.is_focused()?)) {
         install_focus_listener(&window, &state);
         window.request_user_attention(Some(UserAttentionType::Informational))?;
     }

@@ -1,4 +1,5 @@
 use super::model::{OverlayConfig, OverlaySize, MAX_MEMBERS};
+use crate::native::main_window_focus::MainWindowFocus;
 
 const MARGIN: f64 = 16.0;
 const GAP: i32 = 4;
@@ -45,8 +46,39 @@ pub fn width_of(config: &OverlayConfig) -> i32 {
         .map_or_else(|| metrics(config.size).width, |width| width as i32)
 }
 
-pub fn is_visible(enabled: bool, has_people: bool, editing: bool, main_focused: bool) -> bool {
-    enabled && (editing || (has_people && !main_focused))
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OverlaySwitch {
+    Enabled,
+    Disabled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RoomOccupancy {
+    Empty,
+    HasPeople,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditMode {
+    Editing,
+    Idle,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct VisibilityInputs {
+    pub switch: OverlaySwitch,
+    pub occupancy: RoomOccupancy,
+    pub edit_mode: EditMode,
+    pub main_window: MainWindowFocus,
+}
+
+pub fn is_visible(inputs: VisibilityInputs) -> bool {
+    if inputs.switch == OverlaySwitch::Disabled {
+        return false;
+    }
+    inputs.edit_mode == EditMode::Editing
+        || (inputs.occupancy == RoomOccupancy::HasPeople
+            && inputs.main_window == MainWindowFocus::Unfocused)
 }
 
 fn scaled(value: i32, scale: f64) -> i32 {
@@ -245,12 +277,24 @@ mod tests {
 
     #[test]
     fn hidden_while_main_is_focused_unless_editing() {
-        assert!(is_visible(true, true, false, false));
-        assert!(!is_visible(true, true, false, true));
-        assert!(!is_visible(true, false, false, false));
-        assert!(!is_visible(false, true, false, false));
-        assert!(is_visible(true, true, true, true));
-        assert!(is_visible(true, false, true, false));
-        assert!(!is_visible(false, true, true, false));
+        let visible = |switch, occupancy, edit_mode, main_window| {
+            is_visible(VisibilityInputs {
+                switch,
+                occupancy,
+                edit_mode,
+                main_window,
+            })
+        };
+        use EditMode::{Editing, Idle};
+        use MainWindowFocus::{Focused, Unfocused};
+        use OverlaySwitch::{Disabled, Enabled};
+        use RoomOccupancy::{Empty, HasPeople};
+        assert!(visible(Enabled, HasPeople, Idle, Unfocused));
+        assert!(!visible(Enabled, HasPeople, Idle, Focused));
+        assert!(!visible(Enabled, Empty, Idle, Unfocused));
+        assert!(!visible(Disabled, HasPeople, Idle, Unfocused));
+        assert!(visible(Enabled, HasPeople, Editing, Focused));
+        assert!(visible(Enabled, Empty, Editing, Unfocused));
+        assert!(!visible(Disabled, HasPeople, Editing, Unfocused));
     }
 }

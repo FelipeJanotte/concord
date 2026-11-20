@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use url::Url;
 
+use crate::native::main_window_focus::MainWindowFocus;
+
 pub const TITLE_MAX_CHARACTERS: usize = 64;
 pub const BODY_MAX_CHARACTERS: usize = 200;
 pub const CHANNEL_ID_MAX_CHARACTERS: usize = 64;
@@ -81,8 +83,8 @@ pub fn clean_badge_count(count: u32) -> u32 {
     count.min(BADGE_MAX)
 }
 
-pub fn should_flash(count: u32, previous_count: u32, window_focused: bool) -> bool {
-    count > previous_count && !window_focused
+pub fn should_flash(count: u32, previous_count: u32, main_window: MainWindowFocus) -> bool {
+    count > previous_count && main_window == MainWindowFocus::Unfocused
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -248,10 +250,10 @@ mod tests {
 
     #[test]
     fn flashes_only_when_the_count_rises_in_the_background() {
-        assert!(should_flash(2, 1, false));
-        assert!(!should_flash(2, 1, true));
-        assert!(!should_flash(1, 1, false));
-        assert!(!should_flash(0, 3, false));
+        assert!(should_flash(2, 1, MainWindowFocus::Unfocused));
+        assert!(!should_flash(2, 1, MainWindowFocus::Focused));
+        assert!(!should_flash(1, 1, MainWindowFocus::Unfocused));
+        assert!(!should_flash(0, 3, MainWindowFocus::Unfocused));
     }
 
     #[test]

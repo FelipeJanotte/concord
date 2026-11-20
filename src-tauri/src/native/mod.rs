@@ -5,6 +5,7 @@ pub mod idle;
 pub mod links;
 pub mod logging;
 pub mod main_window_events;
+pub mod main_window_focus;
 pub mod migration;
 pub mod notifications;
 pub mod overlay;

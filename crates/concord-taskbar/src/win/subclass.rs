@@ -14,7 +14,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use crate::action::{ThumbAction, SLOT_COUNT};
 use crate::button::ThumbButton;
 use crate::error::TaskbarError;
-use crate::plan::{plan_buttons, SlotPlan};
+use crate::plan::{plan_buttons, SlotPlan, ToolbarState};
 use crate::win::icon::OwnedIcon;
 use crate::win::taskbar::Taskbar;
 
@@ -27,7 +27,7 @@ struct State {
     on_error: Box<dyn Fn(TaskbarError)>,
     buttons: RefCell<Vec<ThumbButton>>,
     taskbar: RefCell<Option<Taskbar>>,
-    toolbar_added: Cell<bool>,
+    toolbar: Cell<ToolbarState>,
     icons: RefCell<[Option<OwnedIcon>; SLOT_COUNT]>,
     subclassed: Cell<bool>,
 }
@@ -39,7 +39,7 @@ impl State {
             return Ok(());
         };
         let buttons = self.buttons.borrow();
-        let Some(plan) = plan_buttons(&buttons, self.toolbar_added.get()) else {
+        let Some(plan) = plan_buttons(&buttons, self.toolbar.get()) else {
             return Ok(());
         };
         let mut icons: [Option<OwnedIcon>; SLOT_COUNT] = [None, None, None];
@@ -49,14 +49,14 @@ impl State {
             }
         }
         taskbar.apply(self.window, &plan, &icons)?;
-        self.toolbar_added.set(true);
+        self.toolbar.set(ToolbarState::Added);
         *self.icons.borrow_mut() = icons;
         Ok(())
     }
 
     fn rebuild_after_button_created(&self) -> Result<(), TaskbarError> {
         *self.taskbar.borrow_mut() = Some(Taskbar::create()?);
-        self.toolbar_added.set(false);
+        self.toolbar.set(ToolbarState::NotAdded);
         self.apply()
     }
 
@@ -100,7 +100,7 @@ impl ThumbBar {
             on_error: Box::new(on_error),
             buttons: RefCell::new(Vec::new()),
             taskbar: RefCell::new(taskbar),
-            toolbar_added: Cell::new(false),
+            toolbar: Cell::new(ToolbarState::NotAdded),
             icons: RefCell::new([None, None, None]),
             subclassed: Cell::new(false),
         });
