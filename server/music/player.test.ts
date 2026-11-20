@@ -111,12 +111,12 @@ class FakeClock {
   }
 }
 
-function setup(): { player: MusicPlayer; source: FakeSource; publisher: FakePublisher; states: MusicState[]; clock: FakeClock } {
+function setup(randomIndex: (max: number) => number = () => 0): { player: MusicPlayer; source: FakeSource; publisher: FakePublisher; states: MusicState[]; clock: FakeClock } {
   const source = new FakeSource()
   const publisher = new FakePublisher()
   const states: MusicState[] = []
   const clock = new FakeClock()
-  const player = new MusicPlayer({ source, publisher }, (s) => states.push(s), clock.now)
+  const player = new MusicPlayer({ source, publisher }, (s) => states.push(s), clock.now, randomIndex)
   return { player, source, publisher, states, clock }
 }
 
@@ -189,6 +189,53 @@ describe('MusicPlayer', () => {
     expect(first.closed).toBe(true)
     expect(titles(player.state('sala'))).toEqual(['Música b', 'Música c'])
     expect(source.opened.map((s) => s.title)).toEqual(['Música a', 'Música b'])
+  })
+
+  it('pular para uma da fila fecha a atual, toca a escolhida e tira as anteriores', async () => {
+    const { player, source, states } = setup()
+    player.add('sala', [track('a'), track('b'), track('c'), track('d')])
+    await settle()
+    const first = source.last()
+    expect(player.jump('sala', 'c')).toBe(true)
+    expect(titles(states.at(-1)!)).toEqual(['Música c', 'Música d'])
+    await settle()
+    expect(first.closed).toBe(true)
+    expect(source.last().title).toBe('Música c')
+    expect(source.preparedTitles()).not.toContain('Música b')
+  })
+
+  it('pular para uma que não está na fila: false e nada muda', async () => {
+    const { player, states } = setup()
+    expect(player.jump('sala', 'a')).toBe(false)
+    player.add('sala', [track('a'), track('b')])
+    const before = states.length
+    expect(player.jump('sala', 'a')).toBe(false)
+    expect(player.jump('sala', 'x')).toBe(false)
+    expect(states).toHaveLength(before)
+    expect(titles(player.state('sala'))).toEqual(['Música a', 'Música b'])
+    player.stop('sala')
+    await settle()
+  })
+
+  it('embaralhar muda só a ordem da fila, avisa o estado e prepara a nova próxima', async () => {
+    const { player, source, states } = setup(() => 0)
+    player.add('sala', [track('a'), track('b'), track('c'), track('d')])
+    await settle()
+    await startPlaying(source)
+    expect(source.live()).toEqual(['Música a', 'Música b'])
+    expect(player.shuffle('sala')).toBe(true)
+    expect(titles(states.at(-1)!)).toEqual(['Música a', 'Música c', 'Música d', 'Música b'])
+    expect(source.live()).toEqual(['Música a', 'Música c'])
+    expect(source.last().closed).toBe(false)
+  })
+
+  it('embaralhar com menos de 2 na fila ou sem sala: false', async () => {
+    const { player } = setup()
+    expect(player.shuffle('sala')).toBe(false)
+    player.add('sala', [track('a'), track('b')])
+    expect(player.shuffle('sala')).toBe(false)
+    player.stop('sala')
+    await settle()
   })
 
   it('parar esvazia a fila e tira o bot da sala', async () => {

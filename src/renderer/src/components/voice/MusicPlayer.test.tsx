@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MusicState, MusicTrack } from '@shared/types'
-import { bindMusicEvents } from '@/lib/actions/music'
+import { applyMusicState, bindMusicEvents } from '@/lib/actions/music'
 import { setSocket } from '@/lib/core'
 import { MUSIC_BOT_VOLUME_ID, voice } from '@/lib/voice'
 import { initialState, useApp } from '@/store'
@@ -68,6 +68,20 @@ describe('MusicPlayer', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Parar a música' }))
     expect(socket.sent('music:stop')).toEqual([[{ channelId: 'sala' }]])
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Tocando agora' })).toBeNull())
+  })
+
+  it('embaralhar fica junto dos controles, manda music:shuffle sem canal de texto e desliga com menos de 2 na fila', async () => {
+    const chega = track('t3', 'Chega de Saudade')
+    socket.replyTo('music:queue', () => ({ ok: true, state: playing({ queue: [aguas, chega] }) }))
+    socket.replyTo('music:shuffle', () => ({ ok: true, state: playing({ queue: [chega, aguas] }) }))
+    render(<MusicPlayer channelId="sala" />)
+    const button = await screen.findByRole('button', { name: 'Embaralhar a fila' })
+    expect(button.parentElement).toBe(screen.getByRole('button', { name: 'Pular música' }).parentElement)
+    await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false))
+    await userEvent.click(button)
+    expect(socket.sent('music:shuffle')).toEqual([[{ channelId: 'sala' }]])
+    act(() => applyMusicState(playing({ queue: [aguas] })))
+    expect((screen.getByRole('button', { name: 'Embaralhar a fila' }) as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('pausar e retomar valem para todos da sala e o botão troca com o estado', async () => {

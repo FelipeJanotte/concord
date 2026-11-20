@@ -1,6 +1,7 @@
+import { randomInt } from 'node:crypto'
 import type { MusicState, MusicTrack } from '../../src/shared/types'
 import type { MusicPlayback, PreparedAudio, QueuedTrack, RoomOutput } from './ports'
-import { advance, EMPTY_QUEUE, enqueue, type EnqueueResult, type RoomQueue } from './queue'
+import { advance, EMPTY_QUEUE, enqueue, jumpTo, shuffleUpcoming, type EnqueueResult, type RandomIndex, type RoomQueue } from './queue'
 
 interface Room {
   queue: RoomQueue
@@ -27,7 +28,8 @@ export class MusicPlayer {
   constructor(
     private readonly playback: MusicPlayback,
     private readonly onChange: MusicListener,
-    private readonly now: () => number = Date.now
+    private readonly now: () => number = Date.now,
+    private readonly randomIndex: RandomIndex = randomInt
   ) {}
 
   state(channelId: string): MusicState {
@@ -69,11 +71,32 @@ export class MusicPlayer {
   skip(channelId: string): boolean {
     const room = this.rooms.get(channelId)
     if (!room?.queue.nowPlaying) return false
-    room.queue = advance(room.queue)
+    this.changeTrack(channelId, room, advance(room.queue))
+    return true
+  }
+
+  jump(channelId: string, trackId: string): boolean {
+    const room = this.rooms.get(channelId)
+    const queue = room && jumpTo(room.queue, trackId)
+    if (!room || !queue) return false
+    this.changeTrack(channelId, room, queue)
+    return true
+  }
+
+  shuffle(channelId: string): boolean {
+    const room = this.rooms.get(channelId)
+    if (!room || room.queue.upcoming.length < 2) return false
+    room.queue = shuffleUpcoming(room.queue, this.randomIndex)
+    this.prefetch(room)
+    this.emit(channelId)
+    return true
+  }
+
+  private changeTrack(channelId: string, room: Room, queue: RoomQueue): void {
+    room.queue = queue
     this.prefetch(room)
     this.wake(room)
     this.emit(channelId)
-    return true
   }
 
   pause(channelId: string): boolean {

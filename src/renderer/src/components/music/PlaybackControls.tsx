@@ -1,7 +1,7 @@
 import type { ComponentProps } from 'react'
 import { Button } from '@ui-sdk/react/button'
-import { Pause, Play, SkipForward, Square } from 'lucide-react'
-import { notify, pauseMusic, resumeMusic, skipMusic, stopMusic } from '@/lib/client'
+import { Pause, Play, Shuffle, SkipForward, Square } from 'lucide-react'
+import { notify, pauseMusic, resumeMusic, shuffleMusic, skipMusic, stopMusic } from '@/lib/client'
 import { cn } from '@/lib/utils'
 
 const reportError = (err: unknown): void => notify(err instanceof Error ? err.message : 'Não foi possível falar com o bot de música')
@@ -27,9 +27,10 @@ function ControlButton({ className, label, ...props }: ComponentProps<typeof But
 interface PlaybackControlsProps {
   channelId: string
   paused: boolean
+  canShuffle: boolean
 }
 
-export function PlaybackControls({ channelId, paused }: PlaybackControlsProps) {
+export function PlaybackControls({ channelId, paused, canShuffle }: PlaybackControlsProps) {
   return (
     <div className="flex items-center gap-2">
       <ControlButton
@@ -41,6 +42,9 @@ export function PlaybackControls({ channelId, paused }: PlaybackControlsProps) {
       </ControlButton>
       <ControlButton label="Pular" onClick={run(skipMusic, channelId)}>
         <SkipForward aria-hidden />
+      </ControlButton>
+      <ControlButton label="Embaralhar a fila" disabled={!canShuffle} onClick={run(shuffleMusic, channelId)} className="data-disabled:pointer-events-none data-disabled:opacity-40">
+        <Shuffle aria-hidden />
       </ControlButton>
       <ControlButton label="Parar e limpar a fila" onClick={run(stopMusic, channelId)} className="hover:text-destructive">
         <Square aria-hidden />

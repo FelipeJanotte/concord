@@ -42,7 +42,7 @@ afterEach(() => {
 describe('menu de comandos no Composer', () => {
   it('"/" mostra todos os comandos com o argumento e a descrição', async () => {
     await userEvent.type(box(), '/')
-    expect(items()).toEqual(['/play', '/skip', '/stop', '/queue'])
+    expect(items()).toEqual(['/play', '/skip', '/stop', '/queue', '/shuffle'])
     const play = within(menu()!).getAllByRole('option')[0]
     expect(within(play).getByText('query')).toBeTruthy()
     expect(within(play).getByText('Toca uma música ou playlist do Spotify/YouTube, ou busca pelo nome')).toBeTruthy()

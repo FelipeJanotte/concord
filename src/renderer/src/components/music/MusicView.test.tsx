@@ -245,6 +245,44 @@ describe('fila', () => {
     renderView()
     expect(await screen.findByText('A fila está vazia')).toBeTruthy()
   })
+
+  it('clicar numa música da fila pula para ela na minha sala', async () => {
+    socket.replyTo('music:jump', () => ({ ok: true, state: room({ nowPlaying: chega, queue: [] }) }))
+    renderView()
+    await userEvent.click(await screen.findByRole('button', { name: 'Tocar agora: Chega de Saudade' }))
+    expect(socket.sent('music:jump')).toEqual([[{ channelId: 'sala', trackId: 't3' }]])
+    const hero = await screen.findByRole('region', { name: 'Tocando agora' })
+    await waitFor(() => expect(within(hero).getByRole('heading', { name: 'Chega de Saudade' })).toBeTruthy())
+    expect(await screen.findByText('A fila está vazia')).toBeTruthy()
+  })
+
+  it('pular para uma que já saiu da fila vira aviso', async () => {
+    socket.replyTo('music:jump', () => ({ ok: false, error: 'Essa música não está mais na fila' }))
+    renderView()
+    await userEvent.click(await screen.findByRole('button', { name: 'Tocar agora: Águas de Março' }))
+    await waitFor(() => expect(useApp.getState().notice?.text).toBe('Essa música não está mais na fila'))
+  })
+
+  it('Embaralhar manda music:shuffle para a minha sala e mostra a fila nova', async () => {
+    socket.replyTo('music:shuffle', () => ({ ok: true, state: room({ queue: [chega, aguas] }) }))
+    renderView()
+    const button = await screen.findByRole('button', { name: 'Embaralhar a fila' })
+    expect(button.parentElement).toBe(screen.getByRole('button', { name: 'Pular' }).parentElement)
+    expect(within(screen.getByRole('region', { name: 'Tocando agora' })).getByRole('button', { name: 'Embaralhar a fila' })).toBe(button)
+    await userEvent.click(button)
+    expect(socket.sent('music:shuffle')).toEqual([[{ channelId: 'sala' }]])
+    const queue = screen.getByRole('list', { name: 'Fila' })
+    await waitFor(() => expect(within(queue).getAllByRole('listitem')[0].textContent).toContain('Chega de Saudade'))
+  })
+
+  it('com menos de 2 músicas na fila, Embaralhar fica desativado', async () => {
+    socket.replyTo('music:queue', () => ({ ok: true, state: room({ queue: [aguas] }) }))
+    renderView()
+    const button = await screen.findByRole('button', { name: 'Embaralhar a fila' })
+    expect(button.getAttribute('aria-disabled') === 'true' || (button as HTMLButtonElement).disabled).toBe(true)
+    await userEvent.click(button)
+    expect(socket.sent('music:shuffle')).toEqual([])
+  })
 })
 
 describe('salvar a playlist tocada', () => {
@@ -315,6 +353,21 @@ describe('playlists da comunidade', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Playlists' }))
     return screen.getByRole('dialog', { name: 'Playlists da comunidade' })
   }
+
+  it('o botão "Playlists" fica ao lado do campo de pedir música, com o nome escrito, e não no cabeçalho', async () => {
+    renderView()
+    const button = screen.getByRole('button', { name: 'Playlists' })
+    expect(button.textContent).toBe('Playlists')
+    expect(within(screen.getByRole('banner')).queryByRole('button', { name: 'Playlists' })).toBeNull()
+    expect(within(screen.getByRole('group', { name: 'Pedir música' })).getByRole('button', { name: 'Playlists' })).toBe(button)
+    expect(within(screen.getByRole('group', { name: 'Pedir música' })).getByRole('textbox', { name: 'Pedir uma música' })).toBeTruthy()
+  })
+
+  it('fora de uma sala, o botão "Playlists" também fica ao lado do campo', () => {
+    useApp.setState({ myVoiceChannelId: null })
+    renderView()
+    expect(within(screen.getByRole('group', { name: 'Pedir música' })).getByRole('button', { name: 'Playlists' })).toBeTruthy()
+  })
 
   it('lista nome, tipo e quem salvou; Tocar toca o link na minha sala', async () => {
     socket.replyTo('playlist:list', () => ({ ok: true, playlists: [saved('p1', 'Bossa do domingo', 'acc-eu'), saved('a1', 'Elis & Tom', 'acc-bia', 'album')] }))
