@@ -48,7 +48,8 @@ O processo principal vira **Rust com Tauri 2**; a tela React continua a mesma, n
    codificados e decodificados de volta) e `tauri build` gerando o instalador.
 3. Teste de troca no CI Windows: instala a release Electron real da PR 0, roda o instalador novo como o
    `electron-updater` roda (`--updated /S --force-run`) e confere: nenhuma pasta nem chave do Electron, Tauri na
-   mesma pasta, preferências importadas, app aberto.
+   mesma pasta (o `electron-updater` passa `/D=<pasta>`, que o NSIS do Tauri precisa honrar), preferências
+   importadas, app aberto.
 4. `npm test` e `npm run typecheck` como hoje, mais os testes do adaptador e do contrato de canais.
 5. Revisão de doutrina do diff.
 6. Teste manual num Windows real (não dá para automatizar): tela com GPU NVIDIA/AMD/Intel, pressione para falar com
@@ -76,6 +77,9 @@ O processo principal vira **Rust com Tauri 2**; a tela React continua a mesma, n
 - Quem desenvolve precisa de Rust (`rustup`) e, no Windows, das ferramentas de build do MSVC.
 - No Linux o app abre para tela, chat e socket; voz e tela se testam no Windows ou na versão web.
 - A tela nativa só se prova num Windows real com GPU: o CI compila e testa o encoder em software, não o hardware.
+- O `migrate.json` leva o token de sessão em texto, como o próprio localStorage do Electron já guarda. Vive só até a
+  troca: o gancho NSIS apaga a pasta do Electron e o Tauri apaga a cópia depois de importar. Token de quem saiu da
+  conta já foi revogado no servidor (`/auth/logout`).
 - Perder a chave minisign = nenhum app instalado atualiza mais. Ela vive no secret do GitHub e numa cópia fora dele.
 - O servidor (ainda Node na fase 1) ganha a emissão do token do participante `<accountId>:screen`.
 - Os docs `docs/areas/{voice,overlay,updates,notifications,settings,dev-workflow,deploy}.md` mudam no PR da fase 1.

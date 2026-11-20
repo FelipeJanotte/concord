@@ -1,6 +1,6 @@
 {
   "name": "concord",
-  "version": "0.1.26",
+  "version": "0.1.27",
   "description": "Chat de texto e voz estilo Discord, feito com Tauri + React + ui-sdk",
   "private": true,
   "engines": {
