@@ -21,16 +21,16 @@ pub fn script_from_file(path: &Path) -> Option<String> {
         Ok(raw) => raw,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return None,
         Err(error) => {
-            eprintln!("Não foi possível ler {}: {error}", path.display());
+            log::warn!("Não foi possível ler {}: {error}", path.display());
             return None;
         }
     };
     match build_script(&raw) {
         Ok(script) => Some(script),
         Err(error) => {
-            eprintln!("Migração ignorada: {error}");
+            log::warn!("Migração ignorada: {error}");
             if let Err(error) = remove(path) {
-                eprintln!("Não foi possível apagar {}: {error}", path.display());
+                log::error!("Não foi possível apagar {}: {error}", path.display());
             }
             None
         }

@@ -76,7 +76,7 @@ fn migration_script(app: &AppHandle) -> Option<String> {
     match app.path().app_data_dir() {
         Ok(directory) => script_from_file(&directory.join(FILE_NAME)),
         Err(error) => {
-            eprintln!("Não foi possível localizar a pasta de dados: {error}");
+            log::warn!("Não foi possível localizar a pasta de dados: {error}");
             None
         }
     }
@@ -84,7 +84,7 @@ fn migration_script(app: &AppHandle) -> Option<String> {
 
 fn open_in_browser(app: &AppHandle, url: &Url) {
     if let Err(error) = app.opener().open_url(url.as_str(), None::<&str>) {
-        eprintln!("Não foi possível abrir {url} no navegador: {error}");
+        log::warn!("Não foi possível abrir {url} no navegador: {error}");
     }
 }
 
@@ -104,7 +104,7 @@ fn announce_maximized_changes(window: &WebviewWindow) {
                 .app_handle()
                 .emit(events::WINDOW_MAXIMIZED, maximized)
             {
-                eprintln!("Não foi possível avisar a mudança de maximizar: {error}");
+                log::warn!("Não foi possível avisar a mudança de maximizar: {error}");
             }
         }
     });
