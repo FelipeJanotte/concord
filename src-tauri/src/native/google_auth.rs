@@ -28,8 +28,6 @@ pub enum SignInFailure {
     Browser(String),
     #[error("Tempo esgotado para o login com Google")]
     Timeout,
-    #[error("Resposta inválida do Google")]
-    Rejected,
     #[error("Login com Google cancelado")]
     Denied,
     #[error("Google: {0}")]
@@ -172,8 +170,7 @@ async fn wait_for_code(listener: TcpListener, state: &str) -> Result<String, Sig
                 }
             };
         match outcome {
-            CallbackOutcome::NotFound => continue,
-            CallbackOutcome::Rejected => return Err(SignInFailure::Rejected),
+            CallbackOutcome::NotFound | CallbackOutcome::Rejected => continue,
             CallbackOutcome::Declined(reason) if reason == ACCESS_DENIED => {
                 return Err(SignInFailure::Denied)
             }
@@ -320,7 +317,7 @@ mod tests {
 
     fn browser_visiting(
         callback_query: &'static str,
-        use_real_state: bool,
+        forged_attempts: usize,
     ) -> (
         impl FnOnce(&str) -> Result<(), String>,
         oneshot::Receiver<Vec<String>>,
@@ -333,11 +330,7 @@ mod tests {
                 .into_owned()
                 .collect();
             let redirect = parameters["redirect_uri"].clone();
-            let state = if use_real_state {
-                parameters["state"].clone()
-            } else {
-                "forged".into()
-            };
+            let state = parameters["state"].clone();
             let port: u16 = redirect
                 .rsplit(':')
                 .next()
@@ -345,10 +338,12 @@ mod tests {
                 .unwrap_or(0);
             tokio::spawn(async move {
                 let mut responses = Vec::new();
-                for target in [
-                    "/favicon.ico".to_owned(),
-                    format!("/?{callback_query}&state={state}"),
-                ] {
+                let mut targets = vec!["/favicon.ico".to_owned()];
+                for _ in 0..forged_attempts {
+                    targets.push(format!("/?{callback_query}&state=forged"));
+                }
+                targets.push(format!("/?{callback_query}&state={state}"));
+                for target in targets {
                     let Ok(mut stream) = TcpStream::connect(("127.0.0.1", port)).await else {
                         break;
                     };
@@ -370,7 +365,7 @@ mod tests {
 
     #[tokio::test]
     async fn completes_with_the_code_the_verifier_and_the_loopback_uri() {
-        let (open, visit) = browser_visiting("code=the-code", true);
+        let (open, visit) = browser_visiting("code=the-code", 0);
         let result = sign_in("client", open, Duration::from_secs(5)).await;
         let responses = visit.await.unwrap_or_default();
         let google = result.map_err(|e| e.to_string());
@@ -384,17 +379,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_forged_state_fails_the_sign_in() {
-        let (open, visit) = browser_visiting("code=stolen", false);
+    async fn a_forged_state_is_answered_and_the_valid_callback_still_signs_in() {
+        let (open, visit) = browser_visiting("code=real-code", 1);
         let result = sign_in("client", open, Duration::from_secs(5)).await;
         let responses = visit.await.unwrap_or_default();
-        assert!(matches!(result, Err(SignInFailure::Rejected)));
+        assert_eq!(
+            result.map(|google| google.code).map_err(|e| e.to_string()),
+            Ok("real-code".to_owned())
+        );
         assert!(responses[1].contains("Algo deu errado"));
+        assert!(responses[2].contains("Pronto!"));
     }
 
     #[tokio::test]
     async fn access_denied_reads_as_cancelled() {
-        let (open, _visit) = browser_visiting("error=access_denied", true);
+        let (open, _visit) = browser_visiting("error=access_denied", 0);
         let result = sign_in("client", open, Duration::from_secs(5)).await;
         assert_eq!(
             result.err().map(|e| e.to_string()),
@@ -404,7 +403,7 @@ mod tests {
 
     #[tokio::test]
     async fn another_provider_error_is_reported_with_its_name() {
-        let (open, _visit) = browser_visiting("error=server_error", true);
+        let (open, _visit) = browser_visiting("error=server_error", 0);
         let result = sign_in("client", open, Duration::from_secs(5)).await;
         assert_eq!(
             result.err().map(|e| e.to_string()),
