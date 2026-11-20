@@ -78,8 +78,29 @@ Function ConcordKeepAutostartOffUnlessElectronHadIt
   ${EndIf}
 FunctionEnd
 
+Function ConcordLooksLikeElectronInstall
+  StrCpy $5 "0"
+  ${If} $ElectronInstallDir == ""
+    Return
+  ${EndIf}
+  StrLen $6 "$ElectronInstallDir"
+  ${If} $6 <= 3
+    Return
+  ${EndIf}
+  ${If} ${FileExists} "$ElectronInstallDir\${ELECTRON_MAIN_EXECUTABLE}"
+    StrCpy $5 "1"
+  ${ElseIf} ${FileExists} "$ElectronInstallDir${ELECTRON_UNINSTALLER_SUFFIX}"
+    StrCpy $5 "1"
+  ${EndIf}
+FunctionEnd
+
 Function ConcordRemoveElectronLeftovers
-  RMDir /r "$ElectronInstallDir"
+  Call ConcordLooksLikeElectronInstall
+  ${If} $5 == "1"
+    RMDir /r "$ElectronInstallDir"
+  ${Else}
+    DetailPrint "Pasta do Electron não confere, mantida: $ElectronInstallDir"
+  ${EndIf}
   RMDir /r "$APPDATA\Concord"
   RMDir /r "$APPDATA\concord"
   RMDir /r "$LOCALAPPDATA\concord-updater"
