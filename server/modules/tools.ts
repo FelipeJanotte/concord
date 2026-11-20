@@ -10,6 +10,7 @@
 import { randomInt, randomUUID } from 'node:crypto'
 import {
   canMoveMember,
+  messageAuthor,
   toolResultText,
   type ClientToServerEvents,
   type Message,
@@ -90,7 +91,7 @@ async function runTool(io: AppServer, socket: AppSocket, tool: Tool, req: unknow
   const message: Message = {
     id: randomUUID(),
     channelId: channel.id,
-    author: { ...user },
+    author: messageAuthor(user),
     content: toolResultText(payload),
     attachments: [],
     createdAt: Date.now(),

@@ -4,7 +4,9 @@ import type { Channel, ChannelType } from '../../src/shared/types'
 import { allowed, emitToViewers, reloadAccess } from '../access'
 import { guard, type ServerModule } from '../context'
 import { limiters, retryText } from '../middleware/rate-limit'
-import { channelNameExists, countChannels, deleteChannel, insertChannel } from '../repo/channels'
+import { recordAudit } from '../repo/audit'
+import { findCategory } from '../repo/categories'
+import { channelNameExists, countChannels, deleteChannel, findChannel, insertChannel } from '../repo/channels'
 import { DuplicateError } from '../repo/util'
 import { attachmentIdsInChannel } from '../repo/attachments'
 import { storage } from '../storage'
@@ -36,15 +38,18 @@ export const channelsModule: ServerModule = {
         if (!limited.ok) return ack({ ok: false, error: `Muitos canais criados seguidos. ${retryText(limited.retryAfterMs)}` })
         if ((await countChannels()) >= MAX_CHANNELS) return ack({ ok: false, error: 'Limite de canais atingido' })
         if (await channelNameExists(type, name)) return ack({ ok: false, error: 'Já existe um canal com esse nome' })
-        const channel: Channel = { id: randomUUID(), name, type, createdAt: Date.now() }
+        const categoryId = payload?.categoryId ?? null
+        if (categoryId !== null && !(await findCategory(String(categoryId)))) return ack({ ok: false, error: 'Essa categoria não existe' })
+        let channel: Channel = { id: randomUUID(), name, type, createdAt: Date.now(), categoryId }
         try {
-          await insertChannel(channel)
+          channel = await insertChannel(channel)
         } catch (err) {
           // Dois pedidos iguais ao mesmo tempo: o banco recusa o segundo.
           if (err instanceof DuplicateError) return ack({ ok: false, error: 'Já existe um canal com esse nome' })
           throw err
         }
         // canal novo não tem regras: aparece para quem o @todos (ou um cargo) deixa ver
+        await recordAudit({ actorId: socket.data.user.accountId, action: 'channel-create', targetId: channel.id, details: { name, type } })
         await emitToViewers(io, channel.id, 'channel:created', channel)
         ack({ ok: true, channel })
       })
@@ -55,8 +60,16 @@ export const channelsModule: ServerModule = {
       if (!user || typeof channelId !== 'string') return
       void guard('channel:delete', async () => {
         if (!(await allowed(user.accountId, 'manageChannels'))) return
+        const channel = await findChannel(channelId)
+        if (!channel) return
         const files = await attachmentIdsInChannel(channelId)
         if (!(await deleteChannel(channelId))) return
+        await recordAudit({
+          actorId: user.accountId,
+          action: 'channel-delete',
+          targetId: channelId,
+          details: { name: channel.name, type: channel.type }
+        })
         // os registros dos anexos saíram junto (cascade); os arquivos, apagamos aqui
         for (const id of files) await storage.remove(id)
         await reloadAccess() // as regras do canal também saíram (cascade)

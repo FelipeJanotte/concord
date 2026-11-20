@@ -1,7 +1,10 @@
 // Configurações → "Minha conta": foto, nome de exibição, id (escolha única nas contas novas do Google),
 // como a conta entra e "Sair da conta". Salvar fica nesta seção; trocar de seção sem salvar descarta.
 import { useEffect, useState, type FormEvent } from 'react'
+import { Field, FieldDescription, FieldLabel } from '@ui-sdk/react/field'
+import { Textarea } from '@ui-sdk/react/textarea'
 import { Dices, Loader2, Lock, LogOut } from 'lucide-react'
+import { BIO_MAX } from '@shared/profile'
 import { TAG_MAX, type ProfileUpdate } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -18,6 +21,7 @@ export function AccountSettings() {
   const [tag, setTag] = useState('')
   /** caminho atual no servidor ou novo data URL */
   const [avatar, setAvatar] = useState<string | null>(null)
+  const [bio, setBio] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -27,6 +31,7 @@ export function AccountSettings() {
     setName(account.name)
     setTag(account.tag)
     setAvatar(account.avatarUrl)
+    setBio(account.bio)
     setError(null)
     setLoading(false)
   }, [account])
@@ -40,6 +45,7 @@ export function AccountSettings() {
     const update: ProfileUpdate = { name }
     if (!account!.tagLocked) update.tag = tag // escolha única do id (contas do Google)
     if (avatar !== account!.avatarUrl) update.avatar = avatar // data URL nova ou null (remover)
+    if (bio !== account!.bio) update.bio = bio
     try {
       await updateProfile(update)
       notify('Perfil atualizado', 'info')
@@ -52,7 +58,7 @@ export function AccountSettings() {
 
   const loginMethods = [account.hasPassword && 'e-mail e senha', account.hasGoogle && 'Google'].filter(Boolean).join(' e ')
   const choosingTag = !account.tagLocked
-  const changed = name !== account.name || avatar !== account.avatarUrl || (choosingTag && tag !== account.tag)
+  const changed = name !== account.name || avatar !== account.avatarUrl || bio !== account.bio || (choosingTag && tag !== account.tag)
 
   return (
     <form onSubmit={submit} className="grid gap-5">
@@ -112,6 +118,19 @@ export function AccountSettings() {
           <span className="mt-1 block">O id é fixo e diferencia você de outras pessoas com o mesmo nome.</span>
         )}
       </p>
+
+      <Field className="space-y-2">
+        <FieldLabel className="text-xs font-bold tracking-wide text-muted-foreground uppercase">Bio</FieldLabel>
+        <Textarea
+          value={bio}
+          onValueChange={setBio}
+          maxLength={BIO_MAX}
+          rows={4}
+          placeholder="Conte um pouco sobre você. Aceita **negrito**, *itálico* e outras formatações do chat."
+          className="w-full resize-none rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        />
+        <FieldDescription className="text-right text-xs text-muted-foreground">{`${bio.length}/${BIO_MAX}`}</FieldDescription>
+      </Field>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 

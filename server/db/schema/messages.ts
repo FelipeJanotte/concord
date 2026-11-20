@@ -1,9 +1,11 @@
 // Mensagens dos canais de texto (e conversas privadas); `kind: 'tool'` = resultado de ferramenta (v4).
 import { sql } from 'drizzle-orm'
 import { bigserial, check, index, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
-import type { ToolPayload } from '../../../src/shared/types'
+import type { LinkEmbed, ToolPayload } from '../../../src/shared/types'
 import { accounts } from './accounts'
 import { channels } from './channels'
+
+export type StoredEmbed = Omit<LinkEmbed, 'imageUrl'> & { imageType?: string }
 
 export const messages = pgTable(
   'messages',
@@ -34,7 +36,8 @@ export const messages = pgTable(
      */
     replyToId: uuid('reply_to_id'),
     pinnedAt: timestamp('pinned_at', { withTimezone: true }),
-    pinnedBy: uuid('pinned_by').references(() => accounts.id, { onDelete: 'set null' })
+    pinnedBy: uuid('pinned_by').references(() => accounts.id, { onDelete: 'set null' }),
+    embed: jsonb('embed').$type<StoredEmbed>()
   },
   (t) => [
     // Vazio é permitido para mensagem só com anexos (o servidor exige texto ou anexo).

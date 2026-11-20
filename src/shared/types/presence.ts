@@ -1,5 +1,6 @@
 // Quem está online e o estado inicial enviado no `hello`.
 import type { AccountInfo, User } from './account'
+import type { ChannelCategory } from './categories'
 import type { Channel } from './channel'
 import type { AccessState } from './permissions'
 import type { VoiceState } from './voice'
@@ -22,6 +23,7 @@ export function presenceStatus(doNotDisturb: boolean, idleConnections: boolean[]
 export interface ServerState {
   /** só os canais que a pessoa pode ver */
   channels: Channel[]
+  categories?: ChannelCategory[]
   users: User[]
   /** só as salas que a pessoa pode ver */
   voice: VoiceState[]

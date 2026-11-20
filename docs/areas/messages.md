@@ -28,6 +28,8 @@ Tipos (`Message.kind`): `text` (escrita por alguém), `pin` (aviso "Fulano fixou
 |---|---|---|---|
 | `message:send` | `{ channelId, content, attachmentIds?, replyToId? }` | `OkResult` (a mensagem chega como `message:new`) | canal de texto, sala de voz (chat da sala) ou `dm`; texto ou anexo; até 2000; `send` (e `attach` com anexo); `replyToId` só de mensagem do **mesmo canal** (senão vai sem citação); `LIMITS.message`. Toda recusa volta com o motivo ("Canal não encontrado", "Você não tem permissão para enviar mensagens neste canal"...); o app espera até `SEND_TIMEOUT_MS` (10 s) e avisa "Mensagem não enviada: ..." (sem resposta: "o servidor não respondeu"). A resposta é opcional para o servidor: quem manda sem ack continua funcionando. |
 | `message:edit` | `{ messageId, content }` | `OkResult` | ver abaixo |
+| `message:embed` (servidor → app) | `MessageEmbedUpdate { channelId, messageId, embed: LinkEmbed \| null }` | — | prévia de link pronta, trocada ou removida; por `emitToViewers` ("Prévia de links") |
+| `message:embed-remove` | `{ messageId }` | `OkResult` | só o autor tira a prévia ("Prévia de links") |
 | `message:edited` (servidor → app) | `TextMessageEdited { channelId, messageId, content, editedAt, mentions? }` ou `ToolMessageUpdated { channelId, messageId, content, tool }` (`MessageEdited` = os dois) | — | por `emitToViewers`; a forma com `tool` é o servidor trocando o resultado de uma mensagem `kind: 'tool'` (hoje: o bot de música saindo de "procurando") |
 
 ## Buscar (B26)
@@ -154,10 +156,56 @@ Regras de reconhecimento:
 - `https://` ou `www.` sozinhos não são link.
 
 Onde **não** vale (de propósito, por enquanto): a citação de resposta (`ReplyPreview`) e as mensagens de ferramenta
-mostram texto puro. Prévia do site (embed) está pendente.
+mostram texto puro. A prévia do site fica em "Prévia de links", abaixo.
 
 Testes: `src/shared/links.test.ts` (reconhecimento, pontuação, parênteses, protocolos recusados) e
 `components/chat/links.test.tsx` (`<a>` com `href`/`target`/`rel`, `www.`, link junto com menção, `javascript:` fica texto).
+
+## Prévia de links
+
+Depois que a mensagem sai (o envio **não espera** a prévia), o servidor busca o **primeiro link** do texto, lê o
+Open Graph e grava a prévia na mensagem; quem vê o canal recebe `message:embed`. A imagem é baixada pelo servidor e
+servida por ele: o app nunca carrega nada do site, então quem lê não vaza o IP. Segurança e alternativas
+descartadas: ADR `docs/decisions/0015-previa-de-links.md`.
+
+| Arquivo | Papel |
+|---|---|
+| `src/shared/types/message.ts` | `LinkEmbed { url, title?, description?, siteName?, imageUrl?, music? }`, `Message.embed?`, `MessageEmbedUpdate { channelId, messageId, embed: LinkEmbed \| null }`, eventos `message:embed` e `message:embed-remove`. |
+| `server/embeds/first-link.ts` | `firstPreviewLink(texto)`: primeiro link de `splitLinks` no texto **visível** de `parseMarkdown` (ignora código, bloco de código e spoiler). |
+| `server/embeds/address.ts` | `isPublicAddress(ip)` (pura): recusa privado, loopback, link-local, CGNAT, multicast, reservados, documentação, IPv6 equivalentes (ULA, link-local, multicast, NAT64, 6to4) e IPv4 mapeado em IPv6 (decide pelo IPv4 de dentro). |
+| `server/embeds/safe-fetch.ts` | `createSafeFetcher({ allowAddress })`: só http/https; IP literal conferido antes; nome resolvido por um `lookup` próprio que só devolve IPs aceitos, e a conexão vai **nesse IP** (sem segunda resolução: nada de DNS rebinding); até 3 redirecionamentos, cada um conferido de novo; 3 s no total (`AbortController`); só status 2xx; tipo aceito pelo pedido; corpo cortado no limite (HTML) ou recusado (imagem). Toda falha vira `FetchRefused`. |
+| `server/embeds/open-graph.ts` | `parseOpenGraph(html, url)` (pura): `og:title`/`og:description`/`og:image`/`og:site_name`, com `<title>` e `meta description` de reserva; entidades (`&amp;`, `&#8212;`, `&#x1F600;`...), espaços juntados, cortes (título 256, descrição 500, site 100), imagem só http(s) e absoluta. Sem título nem descrição = `null`. |
+| `server/embeds/previewer.ts` | `LinkPreviewer`: página (até 512 KB, só `text/html`, lida como UTF-8) → metadados → imagem (até 2 MB, tipo pelos bytes com `sniffImage`; falhou = prévia sem imagem). `music: true` quando `parseMusicQuery` reconhece o link (YouTube/Spotify). Cache em memória por URL: 5 min, até 50 (guarda a promessa, então pedidos juntos buscam uma vez). |
+| `server/embeds/ports.ts`, `drivers.ts` | Porta `WebFetcher` e a montagem: produção usa `createSafeFetcher({ allowAddress: isPublicAddress })`; `overrideWebFetcher` troca (só os testes, via `server/tests/fake-web.ts`). |
+| `server/modules/embeds.ts` | `previewNewMessage` (chamado pelo `message:send` depois do `message:new`) e `previewEditedMessage` (pelo `message:edit`, só se o primeiro link mudou; sem link novo, tira a prévia). `message:embed-remove`. `GET /embeds/<messageId>` (imagem). Limpeza das imagens sem mensagem no boot e a cada `UPLOAD_SWEEP_INTERVAL_MS`. |
+| `server/repo/messages.ts` | `findEmbedState`, `setEmbed`, `messagesWithEmbedImage`, `toLinkEmbed`/`embedImagePath`; `toMessages` devolve o `embed` no histórico, na busca e nas fixadas. |
+| `server/db/schema/messages.ts` | Coluna `embed jsonb` (`StoredEmbed` = `LinkEmbed` sem `imageUrl`, com `imageType` quando há imagem). |
+| `server/files-signing.ts` | `signMessage` também assina `embed.imageUrl` (`signEmbed`, amarrado ao id da mensagem). |
+| `src/renderer/src/lib/actions/embeds.ts` | Listener `message:embed` (põe/tira `embed` da mensagem carregada), `removeEmbed(messageId)` (lança o erro do servidor), `playEmbedInBot(url, textChannelId)` (= `/play <url>` pelo `runMusicCommand`; nada duplicado do bot). |
+| `components/chat/LinkEmbed.tsx` | Cartão abaixo do texto (`MessageBody` no `ChatView`; some durante a edição): barra `border-primary`, site, título que abre fora (mesmo `<a target="_blank">` dos links), descrição em até 3 linhas, imagem até 300 px de altura, "Tocar no bot" (link de música e eu numa sala de voz) e X "Remover prévia" (só o autor). |
+
+Fluxo: `message:send` → `message:new` → `previewNewMessage` → (`LIMITS.embed` por conta: 10 seguidas, 1 a cada 3 s;
+estourou = sem prévia) → `LinkPreviewer` → relê a mensagem: se o primeiro link mudou no meio ou ela foi apagada,
+descarta → grava a imagem em `DATA_DIR/embeds/<messageId>` e o `embed` → `message:embed` por `emitToViewers`, com
+`imageUrl` assinada por conta. Página sem metadados, lenta, não HTML ou recusada: sem prévia e sem evento.
+
+Regras:
+
+- `url` da prévia é o link escrito (não o destino do redirecionamento).
+- Remover: só o autor (nem a dona); sem prévia = `ok` sem evento. Editar mantendo o mesmo primeiro link não traz de volta a prévia removida.
+- Imagem: `GET /embeds/<messageId>?a=&e=&s=`; assinatura, validade e `view` no canal conferidos a cada pedido (perder o canal invalida o link); qualquer falha = 404. `content-type` = tipo confirmado pelos bytes, `nosniff` e CSP `sandbox`.
+
+Como testar: `server/embeds/*.test.ts` (IP, primeiro link, parser com acentos/entidades/sem tags/gigante, buscador contra um
+servidor HTTP local: loopback recusado por IP e por nome, redirecionamento conferido, protocolo, limite, tipo, tempo;
+previewer com buscador falso: imagem pelos bytes, cache, música), `server/tests/embeds.test.ts` (servidor real com
+`fake-web.ts` e um site falso local: prévia para quem vê, canal privado, sem OG, vazia/não HTML/lenta, redirecionamento,
+editar, remover só o autor, histórico, imagem só para quem vê), `lib/actions/embeds.test.ts` e `components/chat/link-embed.test.tsx`.
+Manual: mandar um link de notícia e um do YouTube estando numa sala de voz.
+
+Problemas conhecidos: página em outra codificação que não UTF-8 pode mostrar acentos errados; site que só monta os
+metadados com JavaScript ou que bloqueia robôs fica sem prévia; a limpeza pode, numa janela de milissegundos, apagar
+a imagem de uma prévia que estava sendo gravada (a prévia fica sem imagem). Depuração: o servidor só loga erro
+inesperado (`[message:embed]`); recusa de rede é silenciosa de propósito.
 
 ## Formatação (B25)
 
@@ -307,4 +355,4 @@ Limites conhecidos:
 | Busca lenta | O `ILIKE '%q%'` usa o índice `pg_trgm` (ADR 0012). Medido no PGlite com 100 mil mensagens: termo raro 8–19 ms, termo comum ~100 ms, num canal só 20–25 ms; **1 ou 2 letras** não usam trigramas (~300 ms). Postgres próprio sem a extensão `pg_trgm` (contrib) falha na migration `0015`. |
 | Resultado não rola até a mensagem | A mensagem foi apagada depois da busca ("Mensagem não encontrada") ou a conta perdeu `view`. |
 | Mensagem nova não aparece depois de abrir um resultado antigo | De propósito: com `hasNewerHistory` o fim da lista não é o fim do canal. Role até o fim ou clique em "Ir para as mensagens recentes". |
-| Pendente | Busca e alfinete no chat embutido da sala de voz, filtros por data/anexo, busca por relevância; prévia de link (embed), links e formatação na citação, escape com ``, histórico de edições, editar anexos, responder já mencionando o autor e menção a cargo (@Moderadores). |
+| Pendente | Busca e alfinete no chat embutido da sala de voz, filtros por data/anexo, busca por relevância; links e formatação na citação, escape com ``, histórico de edições, editar anexos, responder já mencionando o autor e menção a cargo (@Moderadores). |

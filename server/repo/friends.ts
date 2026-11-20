@@ -3,6 +3,7 @@
  * As operações que mexem nos dois lados rodam numa transação.
  */
 import { and, count, eq, inArray, or, sql } from 'drizzle-orm'
+import { activeCustomStatus } from '../../src/shared/profile'
 import type { FriendAccount, FriendStatus } from '../../src/shared/types'
 import { db, type Database } from '../db/client'
 import { accounts, friendships } from '../db/schema'
@@ -24,7 +25,9 @@ export const toFriendAccount = (a: typeof accounts.$inferSelect): FriendAccount 
   name: a.name,
   tag: a.tag,
   color: a.color,
-  avatarUrl: avatarUrl(a)
+  avatarUrl: avatarUrl(a),
+  bio: a.bio,
+  customStatus: activeCustomStatus(a.customStatus, Date.now())
 })
 
 /** Como `me` vê `other` (ou undefined se não há relação). */

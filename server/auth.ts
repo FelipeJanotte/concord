@@ -22,6 +22,7 @@ import {
   type ProfileUpdateResult,
   type RegisterRequest
 } from '../src/shared/types'
+import { activeCustomStatus, parseBio, parseCustomStatus } from '../src/shared/profile'
 import { AVATAR_DIR } from './config'
 import {
   avatarUrl,
@@ -34,7 +35,7 @@ import {
 } from './repo/accounts'
 import { findCommunityBan } from './repo/moderation'
 import { deleteSession, findValidSession, insertSession, renewSession } from './repo/sessions'
-import type { Account } from './repo/types'
+import type { Account, NewAccount } from './repo/types'
 import { DuplicateError } from './repo/util'
 
 export { avatarUrl, findAccount }
@@ -74,8 +75,13 @@ export function toAccountInfo(a: Account): AccountInfo {
     avatarUrl: avatarUrl(a),
     hasPassword: !!a.passwordHash,
     hasGoogle: !!a.googleId,
-    tagLocked: a.tagLocked
+    tagLocked: a.tagLocked,
+    ...publicProfile(a)
   }
+}
+
+export function publicProfile(a: Pick<Account, 'bio' | 'customStatus'>): Pick<AccountInfo, 'bio' | 'customStatus'> {
+  return { bio: a.bio, customStatus: activeCustomStatus(a.customStatus, Date.now()) }
 }
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : '')
@@ -185,7 +191,7 @@ const success = async (a: Account): Promise<AuthResult> => ({
 type AvatarPatch = Pick<Account, 'avatarType' | 'avatarVersion'>
 
 /** Grava o arquivo e devolve os campos que a conta precisa atualizar. */
-function writeAvatar(account: Account, bytes: Buffer, type: string): AvatarPatch {
+function writeAvatar(account: NewAccount, bytes: Buffer, type: string): AvatarPatch {
   mkdirSync(AVATAR_DIR, { recursive: true })
   writeFileSync(join(AVATAR_DIR, account.id), bytes)
   return { avatarType: type, avatarVersion: account.avatarVersion + 1 }
@@ -278,7 +284,7 @@ interface GoogleIdToken {
   picture?: string
 }
 
-async function downloadGooglePicture(account: Account, url: string): Promise<AvatarPatch | null> {
+async function downloadGooglePicture(account: NewAccount, url: string): Promise<AvatarPatch | null> {
   try {
     const res = await fetch(url.replace(/=s\d+(-c)?$/, '=s256-c'))
     const type = res.headers.get('content-type')?.split(';')[0] ?? ''
@@ -349,7 +355,7 @@ export async function googleLogin(req: Partial<GoogleLoginRequest>): Promise<Aut
   if (!account) {
     const name = normalizeName(claims.name) ?? normalizeName(claims.given_name) ?? normalizeName(email.split('@')[0]) ?? 'Usuário'
     const id = randomUUID()
-    const draft: Account = {
+    const draft: NewAccount = {
       id,
       email,
       name,
@@ -381,8 +387,13 @@ export async function googleLogin(req: Partial<GoogleLoginRequest>): Promise<Aut
 // ---------- Perfil ----------
 
 export async function updateProfile(account: Account, payload: Partial<ProfileUpdate>): Promise<ProfileUpdateResult> {
-  const name = normalizeName(payload?.name)
+  const name = payload.name === undefined ? account.name : normalizeName(payload.name)
   if (!name) return { ok: false, error: 'O nome precisa ter pelo menos 2 caracteres (sem "#")' }
+
+  const bio = payload.bio === undefined ? undefined : parseBio(payload.bio)
+  if (bio?.ok === false) return bio
+  const customStatus = payload.customStatus === undefined ? undefined : parseCustomStatus(payload.customStatus, Date.now())
+  if (customStatus?.ok === false) return customStatus
 
   // O id é imutável. Exceção: conta do Google ainda com id provisório escolhe uma única vez.
   let tag: string | null = null
@@ -401,6 +412,8 @@ export async function updateProfile(account: Account, payload: Partial<ProfileUp
 
   const patch: Partial<Account> = { name }
   if (tag) patch.tag = tag
+  if (bio?.ok) patch.bio = bio.bio
+  if (customStatus?.ok) patch.customStatus = customStatus.status
   // Confirmar o id (mesmo mantendo o provisório) trava de vez.
   if (payload.tag !== undefined) patch.tagLocked = true
   if (avatar) Object.assign(patch, writeAvatar(account, avatar.bytes, avatar.type))

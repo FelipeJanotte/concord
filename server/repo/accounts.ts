@@ -5,7 +5,7 @@
 import { and, eq, inArray, ne, sql } from 'drizzle-orm'
 import { db, uniqueViolation } from '../db/client'
 import { accounts } from '../db/schema'
-import type { Account } from './types'
+import type { Account, NewAccount } from './types'
 import { DuplicateError, isUuid } from './util'
 
 type Row = typeof accounts.$inferSelect
@@ -63,7 +63,7 @@ function rethrowDuplicate(err: unknown): never {
 }
 
 /** Lança `DuplicateError` se e-mail, id ou Google id já existirem (garantido pelo banco). */
-export async function insertAccount(account: Account): Promise<Account> {
+export async function insertAccount(account: NewAccount): Promise<Account> {
   try {
     const [row] = await db()
       .insert(accounts)
@@ -86,4 +86,13 @@ export async function updateAccount(
   } catch (err) {
     rethrowDuplicate(err)
   }
+}
+
+export async function clearExpiredCustomStatuses(now: number): Promise<string[]> {
+  const rows = await db()
+    .update(accounts)
+    .set({ customStatus: null })
+    .where(sql`${accounts.customStatus}->>'expiresAt' <= ${new Date(now).toISOString()}`)
+    .returning({ id: accounts.id })
+  return rows.map((r) => r.id)
 }

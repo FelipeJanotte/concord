@@ -70,6 +70,7 @@ export const LIMITS = {
   upload: { capacity: 10, perSecond: 1 / 6 },
   /** canais criados por conta: 5 seguidos, depois 1 por minuto */
   channel: { capacity: 5, perSecond: 1 / 60 },
+  channelLayout: { capacity: 20, perSecond: 1 },
   /** mudanças de perfil por conta: 10 seguidas, depois 1 a cada 30 s */
   profile: { capacity: 10, perSecond: 1 / 30 },
   /** pedidos de amizade por conta: 10 seguidos, depois 1 a cada 10 s (v3) */
@@ -82,6 +83,7 @@ export const LIMITS = {
   reaction: { capacity: 20, perSecond: 2 },
   search: { capacity: 10, perSecond: 1 / 2 },
   pin: { capacity: 10, perSecond: 1 / 2 },
+  embed: { capacity: 10, perSecond: 1 / 3 },
   read: { capacity: 30, perSecond: 2 },
   /** sorteios das ferramentas do grupo por conta: 5 seguidos, depois 1 a cada 3 s (v4) */
   tool: { capacity: 5, perSecond: 1 / 3 },
