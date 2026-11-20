@@ -6,6 +6,7 @@ pub mod links;
 pub mod logging;
 pub mod main_window_events;
 pub mod notifications;
+pub mod overlay;
 pub mod permissions;
 pub mod push_to_talk;
 pub mod startup;

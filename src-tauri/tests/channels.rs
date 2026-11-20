@@ -57,8 +57,12 @@ fn main_window_may_call_each_command_and_nothing_else() -> TestResult {
 }
 
 #[test]
-fn overlay_window_only_gets_events() -> TestResult {
-    let expected = BTreeSet::from(["core:event:default".to_string()]);
+fn overlay_window_gets_events_and_only_the_two_commands_of_its_page() -> TestResult {
+    let expected = BTreeSet::from([
+        "core:event:default".to_string(),
+        "allow-overlay-edit".to_string(),
+        "allow-overlay-resize".to_string(),
+    ]);
     assert_eq!(
         serde_json::from_str::<Capability>(OVERLAY_CAPABILITY)?.permissions,
         expected
