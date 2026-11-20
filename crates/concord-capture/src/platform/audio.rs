@@ -1,6 +1,7 @@
 use super::com::ComApartment;
 use crate::audio_frames::{CHANNELS, SAMPLE_RATE};
 use crate::error::CaptureError;
+use crate::loopback_scope::LoopbackScope;
 use crate::pipeline::AudioSource;
 use std::collections::VecDeque;
 use std::time::Duration;
@@ -10,7 +11,7 @@ use wasapi::{
 };
 
 const BUFFER_DURATION_HUNDRED_NANOSECONDS: i64 = 200_000;
-const EXCLUDE_TARGET_PROCESS_TREE: bool = false;
+const LOOPBACK_SCOPE: LoopbackScope = LoopbackScope::ExcludeConcordProcessTree;
 
 fn audio_error(error: WasapiError) -> CaptureError {
     CaptureError::Audio(error.to_string())
@@ -29,7 +30,7 @@ impl SystemAudioLoopback {
         let apartment = ComApartment::enter()?;
         let mut client = AudioClient::new_application_loopback_client(
             std::process::id(),
-            EXCLUDE_TARGET_PROCESS_TREE,
+            LOOPBACK_SCOPE.includes_process_tree(),
         )
         .map_err(audio_error)?;
         let format = WaveFormat::new(

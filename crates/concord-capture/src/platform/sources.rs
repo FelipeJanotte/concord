@@ -22,14 +22,34 @@ pub(crate) fn list_sources() -> Result<Vec<CaptureSource>, CaptureError> {
     let windows = Window::enumerate().map_err(|error| CaptureError::Capture(error.to_string()))?;
     let mut sources = Vec::with_capacity(monitors.len() + windows.len());
     for monitor in monitors {
-        sources.push(screen_source(&monitor)?);
+        keep_listable("screen", screen_source(&monitor), &mut sources);
     }
     for window in windows {
-        if let Some(source) = window_source(&window)? {
+        if let Some(source) = keep_listable_window(window_source(&window)) {
             sources.push(source);
         }
     }
     Ok(sources)
+}
+
+fn keep_listable(
+    kind: &str,
+    outcome: Result<CaptureSource, CaptureError>,
+    sources: &mut Vec<CaptureSource>,
+) {
+    match outcome {
+        Ok(source) => sources.push(source),
+        Err(error) => log::warn!("skipping {kind} source: {error}"),
+    }
+}
+
+fn keep_listable_window(
+    outcome: Result<Option<CaptureSource>, CaptureError>,
+) -> Option<CaptureSource> {
+    outcome.unwrap_or_else(|error| {
+        log::warn!("skipping window source: {error}");
+        None
+    })
 }
 
 pub(crate) fn thumbnail_of(source_id: &str) -> Result<Vec<u8>, CaptureError> {

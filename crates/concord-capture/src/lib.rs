@@ -2,10 +2,12 @@
 
 mod annex_b;
 mod audio_frames;
+mod bounded;
 mod encoder_selection;
 mod error;
 mod events;
 mod frame_size;
+mod loopback_scope;
 mod pacing;
 mod pipeline;
 #[cfg(windows)]
@@ -14,6 +16,7 @@ mod quality;
 mod rate_control;
 mod share;
 mod source;
+mod stop_outcome;
 mod thumbnail;
 
 pub use error::CaptureError;

@@ -8,6 +8,7 @@ use super::room::{
 };
 use super::software_sink::SoftwareVideoSink;
 use super::target::CaptureTarget;
+use crate::bounded::within;
 use crate::encoder_selection::select_encoder;
 use crate::error::CaptureError;
 use crate::events::{EncoderKind, EndReason, EventCallback, EventEmitter, ShareEvent};
@@ -19,12 +20,16 @@ use crate::pipeline::{
 use crate::quality::QualityPreset;
 use crate::share::ShareRequest;
 use crate::source::SourceId;
+use livekit::Room;
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver};
 use std::thread::{self, JoinHandle};
+use std::time::Duration;
 use tokio::runtime::{Builder, Handle};
 
 const ROOM_RUNTIME_THREADS: usize = 2;
+const ROOM_CONNECT_LIMIT: Duration = Duration::from_secs(10);
+const ROOM_CLOSE_LIMIT: Duration = Duration::from_secs(3);
 
 type Worker = JoinHandle<()>;
 
@@ -126,7 +131,7 @@ impl Session {
             .map_err(|error| CaptureError::Thread(error.to_string()))?;
         self.room_worker = Some(worker);
         ready
-            .recv()
+            .recv_timeout(ROOM_CONNECT_LIMIT)
             .map_err(|_| CaptureError::Thread("room thread ended before connecting".into()))?
     }
 
@@ -242,7 +247,11 @@ fn run_room(
         Ok(runtime) => runtime,
         Err(error) => return report_start_failure(&ready, CaptureError::Thread(error.to_string())),
     };
-    let connected = match runtime.block_on(room::connect(plan)) {
+    let connected = match runtime.block_on(within(
+        ROOM_CONNECT_LIMIT,
+        "connecting to the room",
+        room::connect(plan),
+    )) {
         Ok(connected) => connected,
         Err(error) => return report_start_failure(&ready, error),
     };
@@ -250,9 +259,7 @@ fn run_room(
         .send(Ok((connected.tracks, runtime.handle().clone())))
         .is_err()
     {
-        return runtime
-            .block_on(connected.room.close())
-            .map_err(|error| CaptureError::Publish(error.to_string()));
+        return runtime.block_on(close_room(connected.room));
     }
     let disconnect_events = Arc::clone(events);
     let disconnect_stop = media_stop.clone();
@@ -264,9 +271,16 @@ fn run_room(
         disconnect_stop.stop();
     });
     release.wait();
-    runtime
-        .block_on(connected.room.close())
-        .map_err(|error| CaptureError::Publish(error.to_string()))
+    runtime.block_on(close_room(connected.room))
+}
+
+async fn close_room(room: Room) -> Result<(), CaptureError> {
+    within(ROOM_CLOSE_LIMIT, "closing the room", async {
+        room.close()
+            .await
+            .map_err(|error| CaptureError::Publish(error.to_string()))
+    })
+    .await
 }
 
 fn report_start_failure(

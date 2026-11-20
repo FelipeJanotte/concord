@@ -3,13 +3,14 @@ use super::target::CaptureTarget;
 use crate::error::CaptureError;
 use crate::frame_size::FrameSize;
 use crate::pipeline::{FrameSource, SizedFrame, SourceEvent};
+use crate::stop_outcome::finish_stop;
 use parking_lot::Mutex;
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender, TrySendError};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 use windows::System::DispatcherQueueController;
-use windows::Win32::Foundation::{LPARAM, WPARAM};
+use windows::Win32::Foundation::{ERROR_INVALID_THREAD_ID, LPARAM, WPARAM};
 use windows::Win32::Graphics::Direct3D11::{
     D3D11_BIND_RENDER_TARGET, D3D11_BIND_SHADER_RESOURCE, D3D11_TEXTURE2D_DESC,
     D3D11_USAGE_DEFAULT, ID3D11Texture2D,
@@ -24,6 +25,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, GetMessageW, MSG, PostQuitMessage, PostThreadMessageW, TranslateMessage,
     WM_QUIT,
 };
+use windows::core::HRESULT;
 use windows_capture::capture::{Context, GraphicsCaptureApiHandler};
 use windows_capture::frame::Frame;
 use windows_capture::graphics_capture_api::{GraphicsCaptureApi, InternalCaptureControl};
@@ -214,10 +216,20 @@ impl CaptureThread {
     }
 
     pub fn stop(self) -> Result<(), CaptureError> {
-        if !self.handle.is_finished() {
-            unsafe { PostThreadMessageW(self.thread_id, WM_QUIT, WPARAM(0), LPARAM(0))? };
-        }
-        join_capture(self.handle)
+        let post = if self.handle.is_finished() {
+            Ok(())
+        } else {
+            post_quit(self.thread_id)
+        };
+        finish_stop(post, join_capture(self.handle))
+    }
+}
+
+fn post_quit(thread_id: u32) -> Result<(), CaptureError> {
+    match unsafe { PostThreadMessageW(thread_id, WM_QUIT, WPARAM(0), LPARAM(0)) } {
+        Ok(()) => Ok(()),
+        Err(error) if error.code() == HRESULT::from_win32(ERROR_INVALID_THREAD_ID.0) => Ok(()),
+        Err(error) => Err(error.into()),
     }
 }
 

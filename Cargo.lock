@@ -678,6 +678,7 @@ name = "concord-capture"
 version = "0.1.0"
 dependencies = [
  "livekit",
+ "log",
  "parking_lot",
  "png",
  "thiserror 2.0.21",
