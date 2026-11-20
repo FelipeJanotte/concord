@@ -152,7 +152,7 @@ export function connect(url: string, token: string): Promise<void> {
           account,
           channels: state.channels,
           users: state.users,
-          statuses: state.statuses,
+          statuses: state.statuses ?? {},
           voice: state.voice,
           access: state.access,
           messages: {},
