@@ -1,15 +1,9 @@
-/**
- * Dispositivos de áudio, câmera (B21), volume do microfone e de saída, e volume por pessoa (B4). Tudo é preferência desta máquina:
- * fica no localStorage (`concord:audio`) e é aplicado ao VoiceClient ao abrir o app.
- * Nada vai para o servidor.
- */
 import { get, notify, set } from '../core'
 import { voice } from '../voice'
 import { openSettings } from './settings'
 import { clampMicGain, clampOutputVolume } from '../mic-gain'
 import { clampLevelerTarget, type LevelerTarget } from '../leveler/level'
 
-// O que a supressão de ruído está fazendo agora (aparece em Configurações de voz).
 voice.onNoiseModeChange = (mode) => set({ noiseMode: mode })
 voice.onLevelerGains = (gains) => set({ levelerGains: gains })
 
@@ -23,18 +17,12 @@ export interface AudioDevice {
 interface SavedAudio {
   input: string | null
   output: string | null
-  /** câmera escolhida (B21) */
   camera: string | null
   volumes: Record<string, number>
-  /** contas silenciadas */
   muted: string[]
-  /** sons de entrar/sair da sala (B16) */
   sounds: { enabled: boolean; volume: number }
-  /** supressão de ruído automática (B13) */
   noise: boolean
-  /** volume do microfone (0 a 2) */
   micGain: number
-  /** volume de saída (0 a 1) */
   outputVolume: number
   leveler: boolean
   levelerTarget: LevelerTarget
@@ -151,11 +139,9 @@ function save(): void {
       })
     )
   } catch {
-    // modo privado / armazenamento bloqueado: vale só até fechar o app
   }
 }
 
-/** Lê as preferências salvas e aplica no VoiceClient. Chamado uma vez ao carregar. */
 export function loadAudioPreferences(): void {
   const saved = readSaved()
   set({
@@ -191,15 +177,10 @@ export function loadAudioPreferences(): void {
 
 loadAudioPreferences()
 
-/** O sistema deixa escolher a saída de áudio? (Electron/Chrome sim; alguns navegadores não) */
 export function canChooseAudioOutput(): boolean {
   return typeof HTMLMediaElement !== 'undefined' && 'setSinkId' in HTMLMediaElement.prototype
 }
 
-/**
- * Microfones e saídas disponíveis. Sem permissão de microfone o sistema não
- * informa os nomes: aparecem como "Microfone 1", "Saída 2"...
- */
 export async function listAudioDevices(): Promise<{ inputs: AudioDevice[]; outputs: AudioDevice[]; cameras: AudioDevice[] }> {
   const [inputs, outputs, cameras] = await Promise.all([
     voice.listDevices('audioinput'),
@@ -208,7 +189,6 @@ export async function listAudioDevices(): Promise<{ inputs: AudioDevice[]; outpu
   ])
   const clean = (list: MediaDeviceInfo[], fallback: string): AudioDevice[] =>
     list
-      // 'default' e 'communications' são apelidos do Windows; a opção "Padrão do sistema" já cobre.
       .filter((d) => d.deviceId && d.deviceId !== 'default' && d.deviceId !== 'communications')
       .map((d, i) => ({ deviceId: d.deviceId, label: d.label || `${fallback} ${i + 1}` }))
   return { inputs: clean(inputs, 'Microfone'), outputs: clean(outputs, 'Saída'), cameras: clean(cameras, 'Câmera') }
@@ -225,7 +205,6 @@ export async function selectAudioInput(deviceId: string | null): Promise<void> {
   }
 }
 
-/** Câmera usada ao ligar a câmera na sala (B21); troca na hora se já estiver ligada. */
 export async function selectCamera(deviceId: string | null): Promise<void> {
   set({ cameraId: deviceId })
   save()
@@ -248,7 +227,6 @@ export async function selectAudioOutput(deviceId: string | null): Promise<void> 
   }
 }
 
-/** Volume da voz de uma pessoa (0 a 1), lembrado por conta. */
 export function setUserVolume(accountId: string, volume: number): void {
   const v = clampVolume(volume)
   set((st) => {
@@ -261,7 +239,6 @@ export function setUserVolume(accountId: string, volume: number): void {
   voice.setUserVolume(accountId, v)
 }
 
-/** Silencia (ou volta) alguém só para mim. O volume ajustado antes continua guardado. */
 export function setUserMuted(accountId: string, muted: boolean): void {
   set((st) => {
     const userMuted = { ...st.userMuted }
@@ -296,7 +273,6 @@ export function setScreenMuted(accountId: string, muted: boolean): void {
   voice.setScreenMuted(accountId, muted)
 }
 
-/** Volume do microfone (0 a 2 = 0% a 200%). Vale na hora, mesmo dentro da sala. */
 export async function setMicGain(gain: number): Promise<void> {
   const v = clampMicGain(gain)
   set({ micGain: v })
@@ -309,7 +285,6 @@ export async function setMicGain(gain: number): Promise<void> {
   }
 }
 
-/** Volume de saída (0 a 1): voz de todos, áudio da tela, efeitos sonoros e sons da sala. */
 export function setOutputVolume(volume: number): void {
   const v = clampOutputVolume(volume)
   set({ outputVolume: v })
@@ -322,7 +297,6 @@ export function setSoundboardVolume(volume: number): void {
   save()
 }
 
-/** Liga/desliga e ajusta o volume dos sons de entrar/sair da sala (B16). */
 export function setVoiceSounds(change: { enabled?: boolean; volume?: number }): void {
   const patch: { voiceSoundsEnabled?: boolean; voiceSoundsVolume?: number } = {}
   if (typeof change.enabled === 'boolean') patch.voiceSoundsEnabled = change.enabled
@@ -333,7 +307,6 @@ export function setVoiceSounds(change: { enabled?: boolean; volume?: number }): 
   save()
 }
 
-/** Liga/desliga a supressão de ruído automática (B13). Desligada = microfone cru. */
 export async function setNoiseSuppression(enabled: boolean): Promise<void> {
   set({ noiseSuppression: enabled })
   save()
@@ -358,7 +331,6 @@ export function setVoiceLevelerTarget(target: LevelerTarget): void {
   voice.setLevelerTarget(t)
 }
 
-/** Botões de configurações de voz (sala, chamada, "Voz conectada"): abre as configurações em "Voz e vídeo". */
 export function openDeviceSettings(): void {
   openSettings('voice')
 }

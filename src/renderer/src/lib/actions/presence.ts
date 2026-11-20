@@ -1,4 +1,3 @@
-// Quem entra e sai do servidor.
 import type { IdleBridge } from '@shared/idle'
 import { get, getSocket, notify, requireSocket, set, type AppSocket } from '../core'
 

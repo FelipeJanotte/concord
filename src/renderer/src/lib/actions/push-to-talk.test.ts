@@ -1,6 +1,4 @@
 // @vitest-environment jsdom
-// Pressione para falar no app (B20): preferência salva, microfone abre só com a tecla, sons, trocar a
-// tecla e biblioteca nativa indisponível.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PttBinding, PttConfig, PushToTalkBridge } from '@shared/push-to-talk'
 import { voice } from '@/lib/voice'
@@ -72,7 +70,7 @@ describe('preferência', () => {
     expect(useApp.getState()).toMatchObject({ pushToTalk: false, pttBinding: { code: 47 }, pttSounds: true })
   })
 
-  it('fora do Electron: indisponível e não liga', () => {
+  it('fora do app desktop: indisponível e não liga', () => {
     vi.spyOn(pttEnv, 'bridge').mockReturnValue(null)
     loadPushToTalkPreferences()
     setPushToTalk(true)

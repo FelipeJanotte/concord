@@ -1,4 +1,3 @@
-// Pressione para falar (B20): validação da tecla escolhida e da configuração.
 import { describe, expect, it } from 'vitest'
 import { cleanBinding, cleanPttConfig } from './push-to-talk'
 

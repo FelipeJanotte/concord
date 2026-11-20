@@ -48,7 +48,7 @@ pub fn initialization_script(
 ) -> Result<String, serde_json::Error> {
     let literal = serde_json::to_string(entries)?;
     Ok(format!(
-        "(function () {{\n  try {{\n    const entries = {literal};\n    if (localStorage.getItem('{MIGRATED_KEY}') === null) {{\n      for (const [key, value] of Object.entries(entries)) localStorage.setItem(key, value);\n      localStorage.setItem('{MIGRATED_KEY}', '1');\n    }}\n  }} catch (error) {{\n    console.error('Falha ao importar as preferências do Electron', error);\n  }}\n}})();\n"
+        "(function () {{\n  try {{\n    const entries = {literal};\n    if (localStorage.getItem('{MIGRATED_KEY}') === null) {{\n      for (const [key, value] of Object.entries(entries)) localStorage.setItem(key, value);\n      localStorage.setItem('{MIGRATED_KEY}', '1');\n    }}\n  }} catch (error) {{\n    console.error('Falha ao importar as preferências do app anterior', error);\n  }}\n}})();\n"
     ))
 }
 

@@ -1,5 +1,3 @@
-// Notificações no app (B9): regras (quando avisar, texto, selo) e a ligação com os eventos
-// (ponte e foco falsos): conversa privada, chamada, pedido de amizade, clique e selo.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CallInfo, DmEntry, FriendEntry, Message, User } from '@shared/types'
 import type { NativeNotification, NotificationTarget } from '@shared/notifications'
@@ -335,7 +333,7 @@ describe('clique numa menção de canal (B19)', () => {
     expect(useApp.getState().section).toBe('home')
     openNotificationTarget({ kind: 'channel', channelId: 'sala' })
     expect(useApp.getState()).toMatchObject({ section: 'community', view: { kind: 'voice', channelId: 'sala' }, voiceChatOpen: true })
-    expect(useApp.getState().myVoiceChannelId).toBeNull() // não entra na voz
+    expect(useApp.getState().myVoiceChannelId).toBeNull()
     openNotificationTarget({ kind: 'channel', channelId: 'geral' })
     expect(useApp.getState()).toMatchObject({ section: 'community', view: { kind: 'text', channelId: 'geral' } })
   })

@@ -65,7 +65,7 @@ describe('botão de atualizar na barra de úteis', () => {
     expect(screen.queryByRole('button', { name: /Procura/ })).toBeNull()
   })
 
-  it('fora do Electron (versão web): sem botão de procurar', () => {
+  it('fora do app desktop (versão web): sem botão de procurar', () => {
     vi.spyOn(updatesEnv, 'bridge').mockReturnValue(null)
     rail()
     expect(labels()).toEqual(['Início', 'Concord', 'Ferramentas', 'Música'])

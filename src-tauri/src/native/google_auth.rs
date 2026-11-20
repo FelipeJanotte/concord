@@ -300,7 +300,7 @@ mod tests {
     }
 
     #[test]
-    fn responses_carry_the_electron_pages() {
+    fn responses_carry_the_previous_desktop_app_pages() {
         let granted = response_for(&CallbackOutcome::Granted("c".into()));
         assert!(granted.starts_with("HTTP/1.1 200 OK\r\n"));
         assert!(granted.contains("<h1 style=\"color:#fff\">Pronto!</h1><p>Login feito. Pode fechar esta aba e voltar ao Concord.</p>"));

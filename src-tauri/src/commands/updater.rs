@@ -33,7 +33,7 @@ fn publish(app: &AppHandle, event: UpdateEvent) -> bool {
     match changed {
         Some(status) => {
             if let Err(error) = app.emit(events::UPDATE_STATUS, status) {
-                eprintln!("Não foi possível avisar a atualização: {error}");
+                log::warn!("não foi possível avisar a atualização: {error}");
             }
             true
         }
@@ -73,7 +73,7 @@ async fn run_check(app: AppHandle) {
         return;
     }
     if let Err(error) = download_available(&app).await {
-        eprintln!("[atualização] {error}");
+        log::error!("atualização falhou: {error}");
         publish(&app, UpdateEvent::Failed);
     }
 }

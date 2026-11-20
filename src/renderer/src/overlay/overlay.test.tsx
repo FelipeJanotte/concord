@@ -1,6 +1,4 @@
 // @vitest-environment jsdom
-// Página do overlay em jogos (B15): desenha o que chega pela ponte (sala, quem fala, mute/deafen, +N)
-// e o modo de mover (moldura arrastável, prévia fora de sala, "Concluir" e Esc).
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -57,7 +55,6 @@ describe('OverlayApp', () => {
       members: [member('a', 'Ana', { speaking: true }), member('b', 'Bia', { muted: true }), member('c', 'Caio', { deafened: true, muted: true }), member('d', 'Duda', { avatarUrl: 'http://srv/d.png' })],
       more: 4
     })
-    // só as pessoas: sem a linha com o nome da sala em cima
     expect(screen.getByRole('list', { name: 'Pessoas na sala' }).previousElementSibling).toBeNull()
     const items = within(screen.getByRole('list', { name: 'Pessoas na sala' })).getAllByRole('listitem')
     expect(items.map((li) => li.textContent)).toEqual(['AAna', 'BBia', 'CCaio', 'Duda', '+4'])

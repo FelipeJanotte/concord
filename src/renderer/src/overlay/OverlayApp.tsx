@@ -1,12 +1,3 @@
-// Overlay em jogos (B15): quem está falando na minha sala de voz, com destaque e
-// microfone/áudio desligados (sem o nome da sala: só as pessoas). A janela não recebe cliques (o clique
-// passa para o jogo), menos no modo de mover: aí a página inteira vira área de arrastar
-// (`-webkit-app-region: drag`), com moldura, "Concluir" e Esc para travar de novo. Fora de sala, o modo de
-// mover mostra uma prévia.
-//
-// Alturas: cada linha (pessoa, "+N", barra do modo de mover) tem exatamente `OVERLAY_METRICS[size].line`,
-// com `OVERLAY_GAP` entre elas e `OVERLAY_PADDING` em volta — os mesmos números com que o processo principal
-// calcula o tamanho da janela (`overlayHeight`). Assim nada fica cortado embaixo.
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent } from 'react'
 import { HeadphoneOff, MicOff, Move } from 'lucide-react'
 import { validateTheme } from '@shared/types'
@@ -24,20 +15,17 @@ import {
 import { applyTheme } from '@/lib/theme/apply'
 import { cn } from '@/lib/utils'
 
-/** Tamanho dos textos e ícones (as alturas vêm de `OVERLAY_METRICS`). */
 const TEXT: Record<OverlaySize, { initial: string; name: string; icon: string; bar: string }> = {
   small: { initial: 'text-[10px]', name: 'text-xs', icon: 'size-3', bar: 'text-[10px]' },
   medium: { initial: 'text-xs', name: 'text-sm', icon: 'size-3.5', bar: 'text-xs' },
   large: { initial: 'text-sm', name: 'text-base', icon: 'size-4', bar: 'text-sm' }
 }
 
-/** O que aparece no modo de mover quando ainda não há ninguém na sala. */
 const PREVIEW: OverlayRoom = {
   members: [{ id: 'preview', name: 'Prévia', avatarUrl: null, color: '#5865f2', speaking: true, muted: false, deafened: false }],
   more: 0
 }
 
-// propriedades do Electron para arrastar a janela sem borda
 const DRAG = { WebkitAppRegion: 'drag' } as CSSProperties
 const NO_DRAG = { WebkitAppRegion: 'no-drag' } as CSSProperties
 
@@ -65,7 +53,6 @@ export function OverlayApp({ bridge }: { bridge: OverlayViewBridge | null }) {
     [bridge]
   )
 
-  // Esc trava de novo (a janela só tem foco no modo de mover)
   useEffect(() => {
     if (!editing) return
     const onKey = (e: KeyboardEvent): void => {
@@ -79,7 +66,6 @@ export function OverlayApp({ bridge }: { bridge: OverlayViewBridge | null }) {
   if (!shown || !config) return null
   const text = TEXT[config.size]
   const { line, avatar } = OVERLAY_METRICS[config.size]
-  // arrastado para um lugar livre: cresce para baixo, alinhado à esquerda
   const bottom = !config.position && config.corner.startsWith('bottom')
   const right = !config.position && config.corner.endsWith('right')
 
@@ -91,7 +77,6 @@ export function OverlayApp({ bridge }: { bridge: OverlayViewBridge | null }) {
         'relative flex h-screen flex-col select-none',
         bottom && 'justify-end',
         right && 'items-end',
-        // outline (e não border): não ocupa espaço, então não come a altura calculada para as linhas
         editing && 'cursor-move rounded-lg bg-background/40 outline-2 -outline-offset-2 outline-primary outline-dashed'
       )}
     >

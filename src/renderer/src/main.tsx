@@ -14,13 +14,9 @@ import { applyTheme, loadLocalTheme } from './lib/theme/apply'
 
 installDesktopApi()
 
-// O último tema desta máquina já na abertura (antes do login); depois do login vale o da conta.
 applyTheme(loadLocalTheme(), { animate: false })
-// B15: overlay em jogos acompanha a minha sala de voz (só no Electron)
 startOverlay()
-// A13: aviso de versão nova baixada (só no app instalado)
 startUpdates()
-// B20: pressione para falar (a tecla é ouvida pelo processo principal)
 startPushToTalk()
 startWindowControls()
 startThumbar()

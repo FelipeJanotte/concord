@@ -223,7 +223,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn labels_match_the_electron_implementation() {
+    fn labels_match_the_previous_desktop_app() {
         let cases = [
             (BindingKind::Key, 47, "V"),
             (BindingKind::Key, 0x0002, "1"),

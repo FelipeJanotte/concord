@@ -1,4 +1,3 @@
-// Dispositivos de áudio e volume (lib/actions/devices.ts): preferências salvas e aplicadas no VoiceClient.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { voice } from '@/lib/voice'
 import { initialState, useApp } from '@/store'

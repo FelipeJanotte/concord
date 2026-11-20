@@ -59,7 +59,7 @@ mod tests {
     }
 
     #[test]
-    fn glass_is_transparent_and_solid_matches_the_electron_color() {
+    fn glass_is_transparent_and_solid_matches_the_previous_desktop_app_color() {
         assert_eq!(window_color(true), Rgba(0, 0, 0, 0));
         assert_eq!(window_color(false), Rgba(30, 31, 34, 255));
     }
