@@ -20,7 +20,7 @@ import type {
   UploadResult,
   User
 } from '../../src/shared/types'
-import { createTestDatabase, type TestDatabase } from './database'
+import { createTestDatabase, PGLITE, type TestDatabase } from './database'
 
 const ROOT = resolve(__dirname, '../..')
 
@@ -58,13 +58,14 @@ export class TestServer {
    * `env` acrescenta variáveis de ambiente ao servidor.
    * `owner` (padrão true): cadastra logo a primeira conta, que vira a dona (`asOwner()`),
    * para os testes criarem canais. Use false quando o teste conta cadastros ou quer ser a dona.
+   * `pglite`: usa o PGlite no DATA_DIR mesmo com DATABASE_URL_TEST (o que só existe no PGlite, ex.: backup).
    */
   static async start(
-    opts: { prepare?: (dataDir: string) => void; env?: Record<string, string>; owner?: boolean; imports?: string[] } = {}
+    opts: { prepare?: (dataDir: string) => void; env?: Record<string, string>; owner?: boolean; imports?: string[]; pglite?: boolean } = {}
   ): Promise<TestServer> {
     const dataDir = mkdtempSync(join(tmpdir(), 'concord-test-'))
     opts.prepare?.(dataDir)
-    const server = new TestServer(dataDir, await createTestDatabase(), opts.env, opts.imports)
+    const server = new TestServer(dataDir, opts.pglite ? PGLITE : await createTestDatabase(), opts.env, opts.imports)
     try {
       await server.boot()
       if (opts.owner ?? true) {

@@ -15,10 +15,12 @@ export interface TestDatabase {
   drop: () => Promise<void>
 }
 
+export const PGLITE: TestDatabase = { url: null, drop: async () => {} }
+
 /** Cria um banco Postgres vazio e temporário (ou devolve `url: null` se não houver DATABASE_URL_TEST). */
 export async function createTestDatabase(): Promise<TestDatabase> {
   const base = process.env.DATABASE_URL_TEST?.trim()
-  if (!base) return { url: null, drop: async () => {} }
+  if (!base) return PGLITE
 
   const name = `concord_t_${randomBytes(5).toString('hex')}`
   const admin = new Client({ connectionString: base })
