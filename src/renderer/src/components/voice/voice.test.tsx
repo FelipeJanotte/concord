@@ -50,6 +50,7 @@ beforeEach(() => {
       bridge.sharing = null
     },
     onEnded: () => () => {},
+    preview: async () => 'data:image/png;base64,AA==',
     canShareAudio: true
   }
   socket.replyTo('voice:screen-credentials', () => ({ ok: true, url: 'ws://livekit.test', token: 'jwt-tela' }))

@@ -32,6 +32,7 @@
     "allow-window-maximized-get",
     "allow-show-main-window",
     "allow-screen-start",
-    "allow-screen-stop"
+    "allow-screen-stop",
+    "allow-screen-preview"
   ]
 }

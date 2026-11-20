@@ -19,6 +19,7 @@ export interface ScreenShareBridge {
   getSources: () => Promise<ScreenSource[]>
   start: (request: ScreenShareStart) => Promise<void>
   stop: () => Promise<void>
+  preview: () => Promise<string>
   onEnded: (listener: (reason: ScreenShareEndReason) => void) => () => void
   canShareAudio: boolean
 }

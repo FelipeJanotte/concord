@@ -96,6 +96,9 @@ describe('comandos', () => {
     expect(lastCall()).toEqual({ command: 'screen_start', args: { request } })
     await api.screen.stop()
     expect(lastCall()).toEqual({ command: 'screen_stop', args: {} })
+    replies['screen_preview'] = 'data:image/png;base64,AAAA'
+    await expect(api.screen.preview()).resolves.toBe('data:image/png;base64,AAAA')
+    expect(lastCall()).toEqual({ command: 'screen_preview', args: {} })
   })
 
   it('overlay (janela principal)', async () => {
@@ -232,6 +235,7 @@ describe('canais compartilhados', () => {
       api.screen.getSources(),
       api.screen.start({ sourceId: 's', audio: false, url: 'u', token: 't' }),
       api.screen.stop(),
+      api.screen.preview(),
       api.overlay.setShortcuts({ toggle: 'F1', edit: 'F2' }),
       api.pushToTalk.capture(),
       api.idle.isIdle(),

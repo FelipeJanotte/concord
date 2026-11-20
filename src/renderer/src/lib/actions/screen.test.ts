@@ -11,6 +11,7 @@ class FakeScreenBridge implements ScreenShareBridge {
   sharing: ScreenShareStart | null = null
   startFailure: Error | null = null
   stopFailure: Error | null = null
+  endDuringStart: ScreenShareEndReason | null = null
   private endListeners = new Set<(reason: ScreenShareEndReason) => void>()
 
   getSources = async (): Promise<ScreenSource[]> => []
@@ -18,7 +19,10 @@ class FakeScreenBridge implements ScreenShareBridge {
   start = async (request: ScreenShareStart): Promise<void> => {
     if (this.startFailure) throw this.startFailure
     this.sharing = request
+    if (this.endDuringStart) this.end(this.endDuringStart)
   }
+
+  preview = async (): Promise<string> => 'data:image/png;base64,AAAA'
 
   stop = async (): Promise<void> => {
     if (this.stopFailure) throw this.stopFailure
@@ -174,6 +178,16 @@ describe('fim da tela nativa', () => {
     bridge.end('stopped')
     expect(useApp.getState().sharing).toBe(false)
     expect(useApp.getState().notice).toBeNull()
+  })
+
+  it('o fim chega enquanto a tela ainda começa: fica sem compartilhar e avisa o motivo', async () => {
+    inVoice()
+    grantCredentials()
+    bridge.endDuringStart = 'source-closed'
+    await startScreenShare(SOURCE, false)
+    expect(useApp.getState()).toMatchObject({ sharing: false, ownScreenThumbnail: null, screens: [] })
+    expect(socket.sent('voice:sharing')).toEqual([])
+    expect(useApp.getState().notice).toMatchObject({ text: 'A janela compartilhada foi fechada', kind: 'info' })
   })
 
   it('stopScreenShare para a tela nativa e avisa o servidor uma vez, mesmo com o aviso de fim da ponte', async () => {

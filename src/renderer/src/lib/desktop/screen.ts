@@ -7,6 +7,7 @@ export function screenBridge(canShareAudio: boolean): ScreenShareBridge {
     getSources: () => command<ScreenSource[]>('screen-sources'),
     start: (request) => command('screen-start', { request }),
     stop: () => command('screen-stop'),
+    preview: () => command<string>('screen-preview'),
     onEnded: (listener) => subscribe<ScreenShareEndReason>('screen-ended', listener)
   }
 }

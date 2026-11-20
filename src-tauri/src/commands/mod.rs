@@ -25,6 +25,7 @@ command_registry! {
     screen::screen_sources,
     screen::screen_start,
     screen::screen_stop,
+    screen::screen_preview,
     overlay::overlay_config,
     overlay::overlay_room,
     overlay::overlay_edit,

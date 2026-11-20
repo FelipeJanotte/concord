@@ -37,6 +37,11 @@ pub fn list_sources() -> Result<Vec<CaptureSource>, CaptureError> {
     crate::platform::sources::list_sources()
 }
 
+#[cfg(windows)]
+pub fn thumbnail_of(source_id: &str) -> Result<Vec<u8>, CaptureError> {
+    crate::platform::sources::thumbnail_of(source_id)
+}
+
 #[cfg(not(windows))]
 impl ScreenShare {
     pub fn start(
@@ -55,6 +60,12 @@ pub fn list_sources() -> Result<Vec<CaptureSource>, CaptureError> {
     Err(CaptureError::UnsupportedPlatform)
 }
 
+#[cfg(not(windows))]
+pub fn thumbnail_of(source_id: &str) -> Result<Vec<u8>, CaptureError> {
+    let _ = source_id;
+    Err(CaptureError::UnsupportedPlatform)
+}
+
 #[cfg(all(test, not(windows)))]
 mod tests {
     use super::*;
@@ -63,6 +74,10 @@ mod tests {
     fn other_platforms_report_unsupported() {
         assert!(matches!(
             list_sources(),
+            Err(CaptureError::UnsupportedPlatform)
+        ));
+        assert!(matches!(
+            thumbnail_of("screen:1"),
             Err(CaptureError::UnsupportedPlatform)
         ));
         let request = ShareRequest {

@@ -1,16 +1,17 @@
-use std::sync::{Mutex, PoisonError};
-
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use concord_capture::{
-    list_sources, CaptureSource, EndReason, ScreenShare, ShareEvent, ShareQuality, ShareRequest,
-    SourceKind,
+    list_sources, thumbnail_of, CaptureSource, EndReason, ScreenShare, ShareEvent, ShareQuality,
+    ShareRequest, SourceKind,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::domain_error;
 use crate::events;
+use crate::native::screen_share::{
+    EndOutcome, RunningShare, ScreenEndReason, ShareSlot, StartFailure,
+};
 use crate::shutdown::Shutdown;
 use crate::windows::main_window::MAIN_WINDOW_LABEL;
 
@@ -19,6 +20,12 @@ domain_error!(ScreenError {
     Capture(#[from] concord_capture::CaptureError),
     #[error("A tarefa da tela parou: {0}")]
     Task(#[from] tauri::Error),
+    #[error("O compartilhamento de tela parou antes de começar")]
+    EndedBeforeStart,
+    #[error("O compartilhamento de tela foi cancelado")]
+    Cancelled,
+    #[error("Nenhuma tela está sendo compartilhada")]
+    NotSharing,
 });
 
 #[derive(Debug, PartialEq, Eq, Serialize)]
@@ -78,40 +85,29 @@ impl From<ScreenShareStart> for ShareRequest {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum ScreenEndReason {
-    Stopped,
-    SourceClosed,
-    Disconnected,
-    Failed,
-}
-
-impl From<&EndReason> for ScreenEndReason {
-    fn from(reason: &EndReason) -> Self {
-        match reason {
-            EndReason::Stopped => Self::Stopped,
-            EndReason::SourceClosed => Self::SourceClosed,
-            EndReason::Disconnected => Self::Disconnected,
-            EndReason::Failed(_) => Self::Failed,
-        }
+fn end_reason(reason: &EndReason) -> ScreenEndReason {
+    match reason {
+        EndReason::Stopped => ScreenEndReason::Stopped,
+        EndReason::SourceClosed => ScreenEndReason::SourceClosed,
+        EndReason::Disconnected => ScreenEndReason::Disconnected,
+        EndReason::Failed(_) => ScreenEndReason::Failed,
     }
 }
 
-#[derive(Default)]
-pub struct ScreenShareState {
-    share: Mutex<Option<ScreenShare>>,
+impl RunningShare for ScreenShare {
+    fn stop(self) {
+        ScreenShare::stop(self);
+    }
 }
 
-impl ScreenShareState {
-    fn replace(&self, next: Option<ScreenShare>) -> Option<ScreenShare> {
-        let mut share = self.share.lock().unwrap_or_else(PoisonError::into_inner);
-        std::mem::replace(&mut *share, next)
-    }
+pub type ScreenShareState = ShareSlot<ScreenShare>;
 
-    fn stop(&self) {
-        if let Some(share) = self.replace(None) {
-            share.stop();
+impl From<StartFailure<concord_capture::CaptureError>> for ScreenError {
+    fn from(failure: StartFailure<concord_capture::CaptureError>) -> Self {
+        match failure {
+            StartFailure::Failed(error) => Self::Capture(error),
+            StartFailure::EndedBeforeStart(_) => Self::EndedBeforeStart,
+            StartFailure::Cancelled => Self::Cancelled,
         }
     }
 }
@@ -122,7 +118,7 @@ pub fn stop_share_on_shutdown(app: &AppHandle) {
         .register(move || handle.state::<ScreenShareState>().stop());
 }
 
-fn on_share_event(app: &AppHandle, event: ShareEvent) {
+fn on_share_event(app: &AppHandle, generation: u64, event: ShareEvent) {
     match event {
         ShareEvent::HardwareEncoderUnavailable { reason } => {
             log::warn!(
@@ -132,22 +128,22 @@ fn on_share_event(app: &AppHandle, event: ShareEvent) {
         ShareEvent::Started { encoder } => {
             log::info!("Tela compartilhada com o codificador {encoder:?}");
         }
-        ShareEvent::Ended { reason } => announce_end(app, &reason),
+        ShareEvent::Ended { reason } => announce_end(app, generation, &reason),
     }
 }
 
-fn announce_end(app: &AppHandle, reason: &EndReason) {
+fn announce_end(app: &AppHandle, generation: u64, reason: &EndReason) {
     if let EndReason::Failed(message) = reason {
         log::error!("O compartilhamento de tela falhou: {message}");
     }
-    if let Some(finished) = app.state::<ScreenShareState>().replace(None) {
-        tauri::async_runtime::spawn_blocking(move || finished.stop());
-    }
-    if let Err(error) = app.emit_to(
-        MAIN_WINDOW_LABEL,
-        events::SCREEN_ENDED,
-        ScreenEndReason::from(reason),
-    ) {
+    let EndOutcome::Announce(reason, finished) = app
+        .state::<ScreenShareState>()
+        .end(generation, end_reason(reason))
+    else {
+        return;
+    };
+    tauri::async_runtime::spawn_blocking(move || finished.stop());
+    if let Err(error) = app.emit_to(MAIN_WINDOW_LABEL, events::SCREEN_ENDED, reason) {
         log::error!("Não foi possível avisar o fim da tela: {error}");
     }
 }
@@ -160,18 +156,17 @@ pub async fn screen_sources() -> Result<Vec<ScreenSource>, ScreenError> {
 
 #[tauri::command]
 pub async fn screen_start(app: AppHandle, request: ScreenShareStart) -> Result<(), ScreenError> {
-    let events_app = app.clone();
-    let starting_app = app.clone();
-    let share = tauri::async_runtime::spawn_blocking(move || {
-        starting_app.state::<ScreenShareState>().stop();
-        ScreenShare::start(request.into(), move |event| {
-            on_share_event(&events_app, event)
-        })
+    tauri::async_runtime::spawn_blocking(move || {
+        let source_id = request.source_id.clone();
+        let events_app = app.clone();
+        app.state::<ScreenShareState>()
+            .start(&source_id, move |generation| {
+                ScreenShare::start(request.into(), move |event| {
+                    on_share_event(&events_app, generation, event)
+                })
+            })
     })
     .await??;
-    if let Some(previous) = app.state::<ScreenShareState>().replace(Some(share)) {
-        tauri::async_runtime::spawn_blocking(move || previous.stop());
-    }
     Ok(())
 }
 
@@ -179,6 +174,16 @@ pub async fn screen_start(app: AppHandle, request: ScreenShareStart) -> Result<(
 pub async fn screen_stop(app: AppHandle) -> Result<(), ScreenError> {
     tauri::async_runtime::spawn_blocking(move || app.state::<ScreenShareState>().stop()).await?;
     Ok(())
+}
+
+#[tauri::command]
+pub async fn screen_preview(app: AppHandle) -> Result<String, ScreenError> {
+    let source_id = app
+        .state::<ScreenShareState>()
+        .current_source()
+        .ok_or(ScreenError::NotSharing)?;
+    let png = tauri::async_runtime::spawn_blocking(move || thumbnail_of(&source_id)).await??;
+    Ok(png_data_url(&png))
 }
 
 #[cfg(test)]
@@ -254,10 +259,21 @@ mod tests {
         ];
         for (reason, expected) in cases {
             assert_eq!(
-                serde_json::to_value(ScreenEndReason::from(&reason))?,
+                serde_json::to_value(end_reason(&reason))?,
                 serde_json::json!(expected)
             );
         }
+        Ok(())
+    }
+
+    #[test]
+    fn a_share_that_ended_before_starting_reaches_the_app_as_an_error(
+    ) -> Result<(), serde_json::Error> {
+        let error = ScreenError::from(StartFailure::EndedBeforeStart(ScreenEndReason::Failed));
+        assert_eq!(
+            serde_json::to_string(&error)?,
+            "\"O compartilhamento de tela parou antes de começar\""
+        );
         Ok(())
     }
 

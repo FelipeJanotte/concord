@@ -19,5 +19,5 @@ mod thumbnail;
 pub use error::CaptureError;
 pub use events::{EncoderKind, EndReason, ShareEvent};
 pub use quality::ShareQuality;
-pub use share::{ScreenShare, ShareRequest, list_sources};
+pub use share::{ScreenShare, ShareRequest, list_sources, thumbnail_of};
 pub use source::{CaptureSource, SourceKind};

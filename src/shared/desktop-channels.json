@@ -4,6 +4,7 @@
     "screen-sources",
     "screen-start",
     "screen-stop",
+    "screen-preview",
     "overlay-config",
     "overlay-room",
     "overlay-edit",

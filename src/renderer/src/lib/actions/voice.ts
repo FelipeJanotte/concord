@@ -189,8 +189,9 @@ export async function startScreenShare(source: ScreenSource | null, audio: boole
   set({ screenPickerOpen: false })
   try {
     const bridge = screenBridge()
-    if (bridge && source) await startNativeShare(bridge, source, audio)
-    else await voice.startScreenShare(audio)
+    if (bridge && source) {
+      if (!(await startNativeShare(bridge, source, audio))) return
+    } else await voice.startScreenShare(audio)
     setSharing(true)
   } catch (err) {
     if (err instanceof DOMException && err.name === 'NotAllowedError') return
@@ -200,14 +201,26 @@ export async function startScreenShare(source: ScreenSource | null, audio: boole
 }
 
 let stopListeningForNativeEnd: (() => void) | null = null
+let nativeStart: { endedWith: ScreenShareEndReason | null } | null = null
 
-async function startNativeShare(bridge: ScreenShareBridge, source: ScreenSource, audio: boolean): Promise<void> {
+async function startNativeShare(bridge: ScreenShareBridge, source: ScreenSource, audio: boolean): Promise<boolean> {
   const credentials = await requireSocket().emitWithAck('voice:screen-credentials')
   if (!credentials.ok) throw new Error(credentials.error)
   stopListeningForNativeEnd?.()
   stopListeningForNativeEnd = bridge.onEnded(nativeShareEnded)
-  await bridge.start({ sourceId: source.id, audio: audio && bridge.canShareAudio, url: credentials.url, token: credentials.token })
+  const attempt: { endedWith: ScreenShareEndReason | null } = { endedWith: null }
+  nativeStart = attempt
+  try {
+    await bridge.start({ sourceId: source.id, audio: audio && bridge.canShareAudio, url: credentials.url, token: credentials.token })
+  } finally {
+    if (nativeStart === attempt) nativeStart = null
+  }
+  if (attempt.endedWith) {
+    announceNativeEnd(attempt.endedWith)
+    return false
+  }
   voice.showOwnScreen(source.thumbnail)
+  return true
 }
 
 const NATIVE_END_NOTICES: Partial<Record<ScreenShareEndReason, { text: string; kind: 'error' | 'info' }>> = {
@@ -215,12 +228,20 @@ const NATIVE_END_NOTICES: Partial<Record<ScreenShareEndReason, { text: string; k
   failed: { text: 'O compartilhamento de tela parou', kind: 'error' }
 }
 
+function announceNativeEnd(reason: ScreenShareEndReason): void {
+  const notice = NATIVE_END_NOTICES[reason]
+  if (notice) notify(notice.text, notice.kind)
+}
+
 function nativeShareEnded(reason: ScreenShareEndReason): void {
+  if (nativeStart) {
+    nativeStart.endedWith ??= reason
+    return
+  }
   const wasSharing = get().sharing
   voice.showOwnScreen(null)
   setSharing(false)
-  const notice = NATIVE_END_NOTICES[reason]
-  if (wasSharing && notice) notify(notice.text, notice.kind)
+  if (wasSharing) announceNativeEnd(reason)
 }
 
 async function stopNativeShare(bridge: ScreenShareBridge): Promise<void> {
