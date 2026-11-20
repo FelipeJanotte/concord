@@ -33,6 +33,7 @@
     "allow-show-main-window",
     "allow-screen-start",
     "allow-screen-stop",
-    "allow-screen-preview"
+    "allow-screen-preview",
+    "allow-migration-done"
   ]
 }

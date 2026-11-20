@@ -27,8 +27,10 @@ pub fn run() -> Result<(), tauri::Error> {
                 .build(),
         )
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(shutdown::Shutdown::default())
         .manage(commands::screen::ScreenShareState::default())
+        .manage(commands::updater::UpdaterState::default())
         .setup(|app| {
             let main_window = windows::main_window::create(app.handle())?;
             windows::overlay_window::setup(app.handle(), &main_window);
@@ -37,6 +39,7 @@ pub fn run() -> Result<(), tauri::Error> {
             commands::idle::install(app.handle());
             commands::notifications::install(app.handle());
             commands::startup::install(app.handle());
+            commands::updater::start(app.handle());
             Ok(())
         })
         .invoke_handler(commands::handler())

@@ -12,7 +12,7 @@ export default defineConfig({
     }
   },
   test: {
-    include: ['server/**/*.test.ts', 'src/**/*.test.{ts,tsx}'],
+    include: ['server/**/*.test.ts', 'src/**/*.test.{ts,tsx}', '.github/scripts/**/*.test.mjs'],
     exclude: ['**/node_modules/**', 'out/**', 'dist/**'],
     environment: 'node',
     // Carrega server/.env (DATABASE_URL_TEST etc.) como o servidor faz.

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-migration-done"
+description = "Enables the migration_done command without any pre-configured scope."
+commands.allow = ["migration_done"]
+
+[[permission]]
+identifier = "deny-migration-done"
+description = "Denies the migration_done command without any pre-configured scope."
+commands.deny = ["migration_done"]

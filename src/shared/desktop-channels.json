@@ -26,7 +26,8 @@
     "startup-set",
     "window-control",
     "window-maximized-get",
-    "show-main-window"
+    "show-main-window",
+    "migration-done"
   ],
   "events": [
     "window-maximized",
