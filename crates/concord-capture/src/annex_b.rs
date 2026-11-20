@@ -1,6 +1,7 @@
 pub(crate) const NAL_TYPE_IDR: u8 = 5;
 pub(crate) const NAL_TYPE_SPS: u8 = 7;
 pub(crate) const NAL_TYPE_PPS: u8 = 8;
+const NAL_TYPE_ACCESS_UNIT_DELIMITER: u8 = 9;
 
 const NAL_TYPE_MASK: u8 = 0x1f;
 const START_CODE: [u8; 3] = [0, 0, 1];
@@ -46,6 +47,14 @@ pub(crate) fn is_keyframe(access_unit: &[u8]) -> bool {
     nal_unit_types(access_unit).contains(&NAL_TYPE_IDR)
 }
 
+fn without_access_unit_delimiters(access_unit: &[u8]) -> Vec<u8> {
+    nal_units(access_unit)
+        .iter()
+        .filter(|unit| unit.unit_type != NAL_TYPE_ACCESS_UNIT_DELIMITER)
+        .flat_map(|unit| unit.bytes.iter().copied())
+        .collect()
+}
+
 fn parameter_set_bytes(access_unit: &[u8]) -> Vec<u8> {
     nal_units(access_unit)
         .iter()
@@ -67,7 +76,8 @@ impl ParameterSets {
         }
     }
 
-    pub fn complete(&mut self, access_unit: Vec<u8>) -> Vec<u8> {
+    pub fn complete(&mut self, encoded: Vec<u8>) -> Vec<u8> {
+        let access_unit = without_access_unit_delimiters(&encoded);
         let types = nal_unit_types(&access_unit);
         if types.contains(&NAL_TYPE_SPS) {
             self.remember(&access_unit);
@@ -88,6 +98,7 @@ mod tests {
 
     const SPS: [u8; 4] = [0x67, 0x42, 0xc0, 0x1f];
     const PPS: [u8; 3] = [0x68, 0xce, 0x3c];
+    const ACCESS_UNIT_DELIMITER: [u8; 2] = [0x09, 0xf0];
     const IDR: [u8; 3] = [0x65, 0x88, 0x84];
     const SLICE: [u8; 3] = [0x41, 0x9a, 0x02];
 
@@ -167,6 +178,21 @@ mod tests {
         let mut sets = ParameterSets::default();
         let bare_idr = access_unit(&[&IDR], true);
         assert_eq!(sets.complete(bare_idr.clone()), bare_idr);
+    }
+
+    #[test]
+    fn access_unit_delimiters_are_dropped_so_parameter_sets_lead_the_keyframe() {
+        let mut sets = ParameterSets::default();
+        let with_delimiter = access_unit(&[&ACCESS_UNIT_DELIMITER, &SPS, &PPS, &IDR], true);
+        assert_eq!(
+            nal_unit_types(&sets.complete(with_delimiter)),
+            vec![NAL_TYPE_SPS, NAL_TYPE_PPS, NAL_TYPE_IDR]
+        );
+        let without_parameter_sets = access_unit(&[&ACCESS_UNIT_DELIMITER, &IDR], true);
+        assert_eq!(
+            nal_unit_types(&sets.complete(without_parameter_sets)),
+            vec![NAL_TYPE_SPS, NAL_TYPE_PPS, NAL_TYPE_IDR]
+        );
     }
 
     #[test]
