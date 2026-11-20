@@ -142,18 +142,16 @@ describe('ScreenPicker', () => {
 })
 
 describe('ScreenTile', () => {
-  it('liga a tela da pessoa no <video>, desliga ao sair e clicar assiste', async () => {
-    const detach = vi.fn()
-    vi.mocked(voice.attachScreen).mockReturnValue(detach)
+  it('é um cartão sem vídeo: quem compartilha, "Ao vivo" e "Assistir tela"; clicar assiste', async () => {
     const onSelect = vi.fn()
-    const { unmount } = render(<ScreenTile userId="ana" onSelect={onSelect} />)
-    const video = screen.getByLabelText('Tela de Ana')
-    expect(voice.attachScreen).toHaveBeenCalledWith('ana', video)
+    const { container } = render(<ScreenTile userId="ana" onSelect={onSelect} />)
+    expect(container.querySelector('video')).toBeNull()
+    expect(voice.attachScreen).not.toHaveBeenCalled()
+    expect(screen.getByText('Tela de Ana')).toBeTruthy()
     expect(screen.getByText('Ao vivo')).toBeTruthy()
+    expect(screen.getByText('Assistir tela')).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: 'Assistir: Tela de Ana' }))
     expect(onSelect).toHaveBeenCalled()
-    unmount()
-    expect(detach).toHaveBeenCalled()
   })
 
   it('a própria tela aparece como "Sua tela"', () => {
@@ -218,6 +216,19 @@ describe('VoiceGrid', () => {
     expect(stageLabel()).toBe('Assistindo: Sua tela')
     expect(screen.queryByRole('group', { name: 'Telas ao vivo' })).toBeNull()
     expect(watchSent()).toEqual([])
+  })
+
+  it('só a tela em destaque tem vídeo; parar de assistir volta ao cartão sem vídeo', async () => {
+    useApp.setState({ screens: ['ana', 'bia'] })
+    render(<VoiceGrid members={members} />)
+    expect(document.querySelectorAll('video')).toHaveLength(0)
+    await userEvent.click(card('Tela de Ana'))
+    expect([...document.querySelectorAll('video')].map((v) => v.getAttribute('aria-label'))).toEqual(['Tela de Ana'])
+    expect(voice.attachScreen).toHaveBeenCalledWith('ana', expect.any(HTMLVideoElement))
+    expect(voice.attachScreen).not.toHaveBeenCalledWith('bia', expect.anything())
+    await userEvent.click(screen.getByRole('button', { name: 'Parar de assistir' }))
+    expect(document.querySelectorAll('video')).toHaveLength(0)
+    expect(card('Tela de Ana')).toBeTruthy()
   })
 
   it('"Parar de assistir" volta para a grade com os cards e avisa o servidor', async () => {

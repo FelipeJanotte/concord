@@ -33,6 +33,7 @@ import {
   type LocalAudioTrack,
   type LocalTrackPublication,
   type Participant,
+  type RemoteParticipant,
   type RemoteTrack,
   type RemoteTrackPublication,
   type TrackPublication
@@ -71,6 +72,8 @@ const volumeIdOf = (participant: Participant | undefined): string | undefined =>
   participant?.attributes?.accountId ?? (participant?.attributes?.bot === 'music' ? MUSIC_BOT_VOLUME_ID : undefined)
 
 const SCREEN_CAPTURE = { resolution: { width: 1920, height: 1080, frameRate: 15 }, contentHint: 'detail' as const }
+
+const isScreenSource = (source: Track.Source): boolean => source === Track.Source.ScreenShare || source === Track.Source.ScreenShareAudio
 
 /** O que o VoiceClient usa de fora; os testes trocam por versões falsas. */
 export interface VoiceDeps {
@@ -185,6 +188,8 @@ export class VoiceClient {
   private speakingDetector: SpeakingDetector | null = null
   /** identidade → faixa de vídeo da tela (remota ou a própria, como prévia) */
   private screens = new Map<string, Track>()
+  private sharingScreens = new Set<string>()
+  private screenViews = new Map<string, Set<HTMLVideoElement>>()
   private watched: string[] = []
   /** câmera ligada de cada conexão da sala (B21), a própria inclusa como prévia */
   private cameras = new Map<string, Track>()
@@ -299,10 +304,13 @@ export class VoiceClient {
     this.mic = mic
     this.bindRoom(room)
     try {
-      await room.connect(res.url, res.token, { autoSubscribe: true })
+      await room.connect(res.url, res.token, { autoSubscribe: false })
       this.connecting = null
       // Saiu, trocou de sala ou a conexão com o Concord caiu enquanto conectava: não é sucesso.
       if (this.room !== room) return { micError, cancelled: true, ...permissions }
+      for (const participant of room.remoteParticipants.values()) {
+        for (const pub of participant.trackPublications.values()) this.trackPublished(pub, participant)
+      }
       this.detector().watch(room.localParticipant.identity, () => this.mic?.mediaStreamTrack)
       // O filtro entra antes de publicar: ninguém chega a ouvir o áudio cru.
       if (mic) await this.attachProcessor(mic)
@@ -372,6 +380,7 @@ export class VoiceClient {
     this.measuredSpeakers = []
     if (Object.keys(useApp.getState().speaking).length) useApp.setState({ speaking: {} })
     this.screens.clear()
+    this.sharingScreens.clear()
     this.watched = []
     this.publishScreens()
     this.cameras.clear()
@@ -710,10 +719,14 @@ export class VoiceClient {
 
   /** Liga a tela de `userId` num <video>. Devolve a função que desliga. */
   attachScreen(userId: string, el: HTMLVideoElement): () => void {
-    const track = this.screens.get(userId)
-    if (!track) return () => {}
-    track.attach(el)
-    return () => void track.detach(el)
+    const views = this.screenViews.get(userId) ?? new Set<HTMLVideoElement>()
+    this.screenViews.set(userId, views.add(el))
+    this.screens.get(userId)?.attach(el)
+    return () => {
+      views.delete(el)
+      if (views.size === 0) this.screenViews.delete(userId)
+      this.screens.get(userId)?.detach(el)
+    }
   }
 
   get watchedScreens(): readonly string[] {
@@ -722,6 +735,28 @@ export class VoiceClient {
 
   setWatchedScreens(screenIds: string[]): void {
     this.watched = [...new Set(screenIds)]
+    for (const participant of this.room?.remoteParticipants.values() ?? []) {
+      for (const pub of participant.trackPublications.values()) {
+        if (isScreenSource(pub.source)) this.applySubscription(pub, participant.identity)
+      }
+    }
+  }
+
+  private trackPublished(pub: RemoteTrackPublication, participant: RemoteParticipant): void {
+    if (pub.source === Track.Source.ScreenShare) this.markSharing(participant.identity, true)
+    this.applySubscription(pub, participant.identity)
+  }
+
+  private applySubscription(pub: RemoteTrackPublication, identity: string): void {
+    const wanted = !isScreenSource(pub.source) || this.watched.includes(identity)
+    if (pub.isDesired !== wanted) pub.setSubscribed(wanted)
+  }
+
+  private markSharing(identity: string, sharing: boolean): void {
+    if (sharing === this.sharingScreens.has(identity)) return
+    if (sharing) this.sharingScreens.add(identity)
+    else this.sharingScreens.delete(identity)
+    this.publishScreens()
   }
 
   screenMediaTrack(userId: string): MediaStreamTrack | undefined {
@@ -754,6 +789,10 @@ export class VoiceClient {
 
   private bindRoom(room: Room): void {
     room
+      .on(RoomEvent.TrackPublished, (pub: RemoteTrackPublication, participant: RemoteParticipant) => this.trackPublished(pub, participant))
+      .on(RoomEvent.TrackUnpublished, (pub: RemoteTrackPublication, participant: RemoteParticipant) => {
+        if (pub.source === Track.Source.ScreenShare) this.markSharing(participant.identity, false)
+      })
       .on(RoomEvent.TrackSubscribed, (track: RemoteTrack, _pub: RemoteTrackPublication, participant: Participant) => {
         if (track.kind === Track.Kind.Video) {
           if (track.source === Track.Source.ScreenShare) this.addScreen(participant.identity, track)
@@ -794,7 +833,10 @@ export class VoiceClient {
         track.detach().forEach((el) => el.remove())
       })
       .on(RoomEvent.LocalTrackPublished, (pub: LocalTrackPublication, participant: Participant) => {
-        if (pub.source === Track.Source.ScreenShare && pub.track) this.addScreen(participant.identity, pub.track)
+        if (pub.source === Track.Source.ScreenShare && pub.track) {
+          this.addScreen(participant.identity, pub.track)
+          this.markSharing(participant.identity, true)
+        }
         if (pub.source === Track.Source.Camera && pub.track) this.addCamera(participant.identity, pub.track)
       })
       // `setCameraEnabled(false)` não despublica: silencia a faixa (a publicação fica). Câmera silenciada = sem câmera
@@ -813,7 +855,8 @@ export class VoiceClient {
         }
         if (pub.source !== Track.Source.ScreenShare) return
         if (pub.track) this.removeScreen(participant.identity, pub.track)
-        else if (this.screens.delete(participant.identity)) this.publishScreens()
+        else this.screens.delete(participant.identity)
+        this.markSharing(participant.identity, false)
         this.onScreenShareEnded?.()
       })
       .on(RoomEvent.ParticipantPermissionsChanged, (_prev: unknown, participant: Participant) => {
@@ -840,13 +883,13 @@ export class VoiceClient {
 
   private addScreen(identity: string, track: Track): void {
     this.screens.set(identity, track)
-    this.publishScreens()
+    for (const el of this.screenViews.get(identity) ?? []) track.attach(el)
   }
 
   private removeScreen(identity: string, track: Track): void {
     if (this.screens.get(identity) !== track) return
     this.screens.delete(identity)
-    this.publishScreens()
+    for (const el of this.screenViews.get(identity) ?? []) track.detach(el)
   }
 
   private addCamera(identity: string, track: Track): void {
@@ -875,7 +918,7 @@ export class VoiceClient {
 
   /** `store.screens` = quem tem tela disponível agora (só muda a store se mudou). */
   private publishScreens(): void {
-    const next = [...this.screens.keys()]
+    const next = [...this.sharingScreens]
     const prev = useApp.getState().screens
     if (prev.length !== next.length || next.some((id, i) => prev[i] !== id)) useApp.setState({ screens: next })
   }

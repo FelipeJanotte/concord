@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type ReactNode } from 'react'
+import { Button } from '@ui-sdk/react/button'
 import { Columns2, EyeOff, LayoutGrid, Maximize2, Minimize2, Rows2, Users, UserX } from 'lucide-react'
+import { UserAvatar } from '@/components/UserAvatar'
 import { attachScreen } from '@/lib/client'
 import { nextArrangement, stageArrangement, type ScreenArrangement } from '@/lib/featured-screens'
 import { useFullscreen } from '@/lib/fullscreen'
@@ -47,23 +49,19 @@ export function ScreenVideo({ userId, label, onDoubleClick }: { userId: string; 
 
 export function ScreenTile({ userId, onSelect }: { userId: string; onSelect: () => void }) {
   const label = useScreenLabel(userId)
+  const user = useApp((s) => s.users.find((u) => u.id === userId))
   return (
-    <button
-      type="button"
+    <Button
       onClick={onSelect}
       aria-label={`Assistir: ${label}`}
       title={`Assistir: ${label}`}
-      className="group relative flex aspect-video items-center justify-center overflow-hidden rounded-lg bg-black ring-2 ring-transparent hover:ring-primary focus-visible:ring-primary"
+      className="group relative flex aspect-video flex-col items-center justify-center gap-1.5 overflow-hidden rounded-lg bg-background p-2 ring-2 ring-transparent hover:ring-primary focus-visible:ring-primary focus-visible:outline-none"
     >
-      <ScreenVideo userId={userId} label={label} />
-      <span className="absolute bottom-2 left-2 flex max-w-[calc(100%-1rem)] items-center gap-1.5 rounded-md bg-black/60 px-2 py-0.5 text-sm text-white">
-        <LiveBadge />
-        <span className="truncate">{label}</span>
-      </span>
-      <span className="absolute inset-0 flex items-center justify-center bg-black/40 text-sm font-semibold text-white opacity-0 transition-opacity group-hover:opacity-100">
-        Assistir
-      </span>
-    </button>
+      <LiveBadge className="absolute top-2 right-2" />
+      {user && <UserAvatar user={user} size="lg" />}
+      <span className="max-w-full truncate text-sm font-medium text-foreground">{label}</span>
+      <span className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground group-hover:opacity-90">Assistir tela</span>
+    </Button>
   )
 }
 

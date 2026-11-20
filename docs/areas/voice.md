@@ -76,9 +76,23 @@ em `lib/actions/voice.ts` (reexportados por `lib/client.ts`). A API pública (`j
 clica na sala ─► createLocalAudioTrack(echoCancellation/noiseSuppression/autoGainControl)
                  (falhou? entra só para ouvir e devolve micError)
               ─► emitWithAck('voice:join', {channelId, muted, deafened}) ─► { url, token }
-              ─► new Room(...).connect(url, token, { autoSubscribe: true })
+              ─► new Room(...).connect(url, token, { autoSubscribe: false })
+              ─► assina as faixas de quem já está na sala (menos tela; ver "Assinatura sob demanda")
               ─► publishTrack(mic, { source: Microphone })  +  room.startAudio()
 ```
+
+- **Assinatura sob demanda (B29):** a sala conecta com `autoSubscribe: false` e o `VoiceClient` decide o que assinar,
+  publicação por publicação (`RemoteTrackPublication.setSubscribed`, em `applySubscription`): tudo que **não** é tela
+  (microfone, câmera, bot de música) é assinado sempre; tela (`ScreenShare`) e áudio da tela (`ScreenShareAudio`)
+  só quando o id de conexão de quem compartilha está em `watchedScreens`. Vale em três momentos: logo depois do
+  `connect` (percorre `room.remoteParticipants`, porque o LiveKit não repassa `TrackPublished` de quem já estava na
+  sala antes de conectar), a cada `RoomEvent.TrackPublished` (quem entra depois ou publica depois) e a cada
+  `setWatchedScreens` (só as publicações de tela; microfone e câmera não recebem chamada nova). Só chama
+  `setSubscribed` quando `pub.isDesired` difere do desejado.
+  Por que `autoSubscribe: false` e não `true` + desassinar a tela no `TrackPublished`: com `true` o servidor já
+  assina e manda vídeo antes do app desassinar (pico de banda a cada tela nova), e quem já estava compartilhando ao
+  entrar chegaria assinado. O custo é ter de assinar o resto à mão: esquecer um caminho deixaria alguém mudo, por isso
+  os testes cobrem quem já estava, quem publica depois e a troca da lista.
 
 - **Áudio dos outros:** `TrackSubscribed` (só `Track.Kind.Audio`; vídeo/tela fica para a B3) → `track.attach()`
   cria o `<audio>`; `TrackUnsubscribed` → `detach()` + `remove()`.
@@ -186,15 +200,23 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
   Concord toca: quem assiste pode ouvir eco. Por isso o áudio vem desmarcado.
 - **Captura:** 1080p a 15 fps, `contentHint: 'detail'` (texto legível). O token já libera `screen_share` e
   `screen_share_audio`.
-- **Receber:** `TrackSubscribed` de vídeo com `source === ScreenShare` entra em `store.screens` (ids de conexão);
-  a própria tela entra como prévia via `LocalTrackPublished`. O áudio da tela (`ScreenShareAudio`) toca como os
+- **Receber:** `store.screens` (ids de conexão) = quem tem tela **publicada**, assinada ou não (B29): entra no
+  `TrackPublished` com `source === ScreenShare` (ou na varredura depois do `connect`) e sai no `TrackUnpublished`; a
+  própria tela entra como prévia via `LocalTrackPublished`. A faixa (`TrackSubscribed`) só chega para as telas
+  assistidas e fica no mapa interno `screens`; desassinar (`TrackUnsubscribed`) tira a faixa, mas a tela continua em
+  `store.screens`. O áudio da tela (`ScreenShareAudio`) toca como os
   outros áudios (respeita deafen e o volume de saída), mas com **volume próprio por pessoa**, separado da voz dela
-  (ver "Volume do áudio da tela" abaixo). O `ScreenVideo` (exportado de `ScreenTile.tsx` para a miniatura da A22 reusar) liga a faixa num `<video muted>` com `attachScreen(userId, el)` (de `@/lib/client`).
+  (ver "Volume do áudio da tela" abaixo). O `ScreenVideo` (exportado de `ScreenTile.tsx` para a miniatura da A22 reusar) liga a faixa num `<video muted>` com `attachScreen(userId, el)` (de `@/lib/client`). Como a assinatura vem depois do
+  clique, o `<video>` monta antes da faixa chegar: `attachScreen` guarda o elemento (`screenViews`) e o `VoiceClient`
+  liga a faixa nele quando ela chega (e desliga quando é desassinada); a função devolvida tira o elemento.
 - **Parar:** botão de novo (`stopScreenShare`) ou pelo sistema (janela fechada): `LocalTrackUnpublished` chama
   `voice.onScreenShareEnded`, que desliga `sharing` e avisa o servidor uma vez só.
 - **Assistir é opcional** (`components/voice/VoiceGrid.tsx` + `ScreenTile.tsx` + `lib/featured-screens.ts`): ninguém
-  entra assistindo sozinho. Quando alguém compartilha, os outros veem na grade um card da tela (`ScreenTile`: o
-  vídeo, "Ao vivo" e "Tela de Ana") e no quadro da pessoa o botão "Assistir". Clicar assiste: a tela vai para o
+  entra assistindo sozinho. Quando alguém compartilha, os outros veem na grade um card da tela (`ScreenTile`, B29:
+  **sem vídeo**, botão do ui-sdk com o avatar de quem compartilha, "Tela de Ana", "Ao vivo" e "Assistir tela"; nome
+  acessível "Assistir: Tela de Ana") e no quadro da pessoa o botão "Assistir". Só o `ScreenPane` do destaque tem
+  `<video>`: a faixa é assinada quando a tela entra no destaque e desassinada quando sai ("Parar de assistir", tirar
+  pelo seletor ou sair da tela da sala), voltando ao card. Clicar assiste: a tela vai para o
   destaque (`ScreenStage`) e a pessoa passa a contar como espectadora. Podem ficar **várias telas em destaque ao
   mesmo tempo**. `featuredScreens(telas, escolhidas)` devolve as escolhidas que ainda estão ao vivo, em ordem (sem
   escolha: `[]`, nem a própria); o `VoiceGrid` corrige `chosen` quando uma delas acaba, então a tela que volta não
@@ -255,9 +277,9 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
     `useApp.subscribe` no próprio módulo), junto com `voice.setWatchedScreens([])`: nada da sala anterior vai para a
     nova. Fora da sala não guarda nem envia nada.
   - **`VoiceClient.setWatchedScreens(ids)`** (`lib/voice.ts`): guarda, sem repetir, os ids de conexão das telas que
-    eu assisto, lidos em `voice.watchedScreens` (cópia); `teardown` esquece. Ainda não muda nenhuma assinatura: é
-    onde a B29 vai assinar (`setSubscribed`) só essas faixas de tela. O `watchScreens` chama com a união mesmo
-    quando não reenvia o `voice:watching` (o servidor já tinha a lista).
+    eu assisto, lidos em `voice.watchedScreens` (cópia); `teardown` esquece. Na sala, assina a tela e o áudio da tela
+    de quem entrou na lista e desassina de quem saiu (B29, ver "Assinatura sob demanda" em "Cliente"). Fora da sala só
+    guarda. O `watchScreens` chama com a união mesmo quando não reenvia o `voice:watching` (o servidor já tinha a lista).
   - **Contrato** (`src/shared/types/voice.ts`): `voice:watching (screenIds: string[])` (cliente → servidor) e o
     campo opcional `VoiceState.watching?: string[]` (ids de conexão das telas que aquela pessoa assiste).
     `MAX_WATCHED_SCREENS = 25`.
@@ -273,9 +295,10 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
   - **Tela:** `components/voice/ScreenViewers.tsx` (olho + até 3 avatares + "Assistindo: Ana e Bia" ou "Ninguém
     assistindo") aparece na barra do `ScreenStage` quando a **própria** tela está em destaque e no painel "Voz
     conectada" (`VoiceStatusPanel` em `UserPanel.tsx`) enquanto compartilho.
-  - **Banda:** o vídeo da tela continua assinado no LiveKit assim que chega (o card mostra o vídeo ao vivo). Só
-    assinar depois do clique exigiria trocar o card por uma imagem (a prévia do "ao vivo") e mexer na assinatura
-    em `lib/voice.ts`: próximo passo, não feito.
+  - **Banda (B29):** só as telas assistidas (sala ou miniatura, a união das origens) são assinadas no LiveKit; o card
+    da grade não baixa vídeo nem áudio da tela. O controle de volume da tela (`store.screenAudio`) só aparece depois
+    que o áudio da tela assinado chega. A própria tela não passa por assinatura (é local) e a prévia do "ao vivo"
+    (`LivePreview`) vem do servidor (`voice:preview-get`), então nenhuma das duas muda.
   - **Problema conhecido:** se a conexão cair e voltar com a mesma tela em destaque, o servidor esqueceu a lista e
     o app só reenvia quando ela mudar (tirar e pôr a tela de novo resolve).
 - **Grade centralizada com tamanho automático** (`TileGrid` em `VoiceGrid.tsx` + `lib/tile-layout.ts`): os quadros
@@ -298,7 +321,8 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
   "volume do áudio da tela"), `lib/actions/devices.test.ts` (bloco "volume do áudio da tela": guardar por conta,
   salvar e reabrir),
   `lib/actions/screen.test.ts` (botão, seletor, erros, aviso único ao servidor), `components/voice/voice.test.tsx`
-  (jsdom: bloco "áudio da tela em destaque"; seletor, card, ninguém entra assistindo, clicar no card assiste e avisa o servidor, própria prévia sem
+  (jsdom: bloco "áudio da tela em destaque"; seletor, card sem `<video>` com "Assistir tela", só o destaque tem vídeo e
+  parar volta ao card, ninguém entra assistindo, clicar no card assiste e avisa o servidor, própria prévia sem
   contar, "Parar de assistir", tirar a última pelo seletor, sair da tela da sala, tela assistida que acaba e volta,
   quem assiste a minha tela na barra, duas telas em destaque, arrastar para reordenar, lado a lado/empilhadas/grade, 3+ telas
   abrem em grade com o tamanho medido, arranjo escolhido que continua com a 3ª tela,
@@ -306,13 +330,16 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
   centralizada com o tamanho medido), `components/voice-panel.test.tsx` (espectadores no "Voz conectada"),
   `lib/actions/screen-watching.test.ts` (envia só quando muda, fora da sala não envia, união das origens `room`/`pip`,
   `pip` sozinha, tirar uma origem mantém a outra, união para o `VoiceClient`, trocar/sair da sala zera as origens),
-  `lib/voice.test.ts` (bloco "telas que eu assisto": `setWatchedScreens` sem repetir, cópia, `teardown` esquece),
+  `lib/voice.test.ts` (bloco "telas que eu assisto": `setWatchedScreens` sem repetir, cópia, `teardown` esquece;
+  bloco "assinatura das telas sob demanda (B29)": quem já estava, publicado depois, assistir/parar assina e desassina
+  só a tela e o áudio da tela, microfone e câmera intactos, `<video>` montado antes da faixa; `connect` com
+  `autoSubscribe: false` no bloco "join"; bloco "tela": publicada/despublicada e desassinar mantém disponível),
   `lib/featured-screens.test.ts` (escolha, pôr/tirar, reordenar, `watchedScreens`, `screenViewers`, arranjo padrão e ciclo),
   `lib/tile-layout.test.ts` (colunas e tamanho, limites, sem altura, gente demais), `src/main/permissions.test.ts`
   e `server/tests/voice.test.ts` (`voice:sharing` e o bloco `voice:watching`: só a sala recebe, validação, lista
   igual, parar de compartilhar, sair/desconectar, trocar de sala e o limite real com `RATE_LIMIT_MULTIPLIER=1`).
-  À mão: três janelas (A, B, C) na mesma sala com o LiveKit rodando. A compartilha: B e C veem o card, sem
-  destaque, e A vê "Ninguém assistindo" no "Voz conectada". B clica no card: A vê "Assistindo: B" (barra do
+  À mão: três janelas (A, B, C) na mesma sala com o LiveKit rodando. A compartilha: B e C veem o card (sem vídeo;
+  em `chrome://webrtc-internals`/DevTools de B não há faixa de vídeo recebida até clicar), sem destaque, e A vê "Ninguém assistindo" no "Voz conectada". B clica no card: A vê "Assistindo: B" (barra do
   destaque ao abrir a própria prévia e "Voz conectada"); C clica também: "Assistindo: B e C". B usa "Parar de
   assistir": volta à grade e A vê só C. A abre a própria prévia: não conta. C sai da sala: some da lista. A para de
   compartilhar e volta: ninguém assistindo. Com duas telas: destaque pelo seletor, arrastar, empilhar, tela cheia
