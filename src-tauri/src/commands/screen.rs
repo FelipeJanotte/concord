@@ -1,8 +1,8 @@
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use concord_capture::{
-    list_sources, thumbnail_of, CaptureSource, EndReason, ScreenShare, ShareEvent, ShareQuality,
-    ShareRequest, SourceKind,
+    list_sources, thumbnail_of, CaptureSource, EndReason, LiveKitToken, ScreenShare, ShareEvent,
+    ShareQuality, ShareRequest, SourceKind,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
@@ -70,7 +70,7 @@ pub struct ScreenShareStart {
     pub source_id: String,
     pub audio: bool,
     pub url: String,
-    pub token: String,
+    pub token: LiveKitToken,
 }
 
 impl From<ScreenShareStart> for ShareRequest {
@@ -244,8 +244,22 @@ mod tests {
         assert_eq!(request.source_id, "screen:65537");
         assert!(request.with_audio);
         assert_eq!(request.livekit_url, "wss://voz.exemplo");
-        assert_eq!(request.token, "jwt");
+        assert_eq!(request.token.expose(), "jwt");
         assert_eq!(request.quality, ShareQuality::Smooth);
+        Ok(())
+    }
+
+    #[test]
+    fn the_debug_output_of_a_start_request_never_contains_the_token(
+    ) -> Result<(), serde_json::Error> {
+        let start: ScreenShareStart = serde_json::from_value(serde_json::json!({
+            "sourceId": "screen:1",
+            "audio": false,
+            "url": "wss://voz.exemplo",
+            "token": "secret-jwt-value"
+        }))?;
+        assert!(!format!("{start:?}").contains("secret-jwt-value"));
+        assert!(!format!("{:?}", ShareRequest::from(start)).contains("secret-jwt-value"));
         Ok(())
     }
 

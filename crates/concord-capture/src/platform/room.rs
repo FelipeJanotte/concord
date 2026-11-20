@@ -2,6 +2,7 @@ use crate::audio_frames::{CHANNELS, SAMPLE_RATE, SAMPLES_PER_CHANNEL};
 use crate::error::CaptureError;
 use crate::events::EncoderKind;
 use crate::frame_size::FrameSize;
+use crate::livekit_token::LiveKitToken;
 use crate::pipeline::{AudioPublisher, EncodedPublisher, EncodedUnit};
 use crate::quality::QualityPreset;
 use crate::rate_control::RateRequest;
@@ -22,7 +23,7 @@ const AUDIO_QUEUE_MILLISECONDS: u32 = 100;
 
 pub(crate) struct RoomPlan {
     pub url: String,
-    pub token: String,
+    pub token: LiveKitToken,
     pub encoder: EncoderKind,
     pub resolution: FrameSize,
     pub preset: QualityPreset,
@@ -47,7 +48,7 @@ fn publish_error(error: impl std::fmt::Display) -> CaptureError {
 pub(crate) async fn connect(plan: RoomPlan) -> Result<ConnectedRoom, CaptureError> {
     let mut options = RoomOptions::default();
     options.auto_subscribe = false;
-    let (room, events) = Room::connect(&plan.url, &plan.token, options)
+    let (room, events) = Room::connect(&plan.url, plan.token.expose(), options)
         .await
         .map_err(publish_error)?;
     match publish_tracks(&room, &plan).await {

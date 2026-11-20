@@ -1,5 +1,6 @@
 use crate::error::CaptureError;
 use crate::events::ShareEvent;
+use crate::livekit_token::LiveKitToken;
 use crate::quality::ShareQuality;
 use crate::source::CaptureSource;
 
@@ -8,7 +9,7 @@ pub struct ShareRequest {
     pub source_id: String,
     pub with_audio: bool,
     pub livekit_url: String,
-    pub token: String,
+    pub token: LiveKitToken,
     pub quality: ShareQuality,
 }
 
@@ -71,6 +72,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_debug_output_of_a_request_never_contains_the_token() {
+        let request = ShareRequest {
+            source_id: "screen:1".into(),
+            with_audio: true,
+            livekit_url: "wss://example.invalid".into(),
+            token: LiveKitToken::new("secret-jwt-value"),
+            quality: ShareQuality::Smooth,
+        };
+        assert!(!format!("{request:?}").contains("secret-jwt-value"));
+    }
+
+    #[test]
     fn other_platforms_report_unsupported() {
         assert!(matches!(
             list_sources(),
@@ -84,7 +97,7 @@ mod tests {
             source_id: "screen:1".into(),
             with_audio: true,
             livekit_url: "wss://example.invalid".into(),
-            token: "token".into(),
+            token: LiveKitToken::new("token"),
             quality: ShareQuality::Smooth,
         };
         assert!(matches!(

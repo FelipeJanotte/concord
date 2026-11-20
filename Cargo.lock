@@ -681,6 +681,7 @@ dependencies = [
  "log",
  "parking_lot",
  "png",
+ "serde",
  "thiserror 2.0.21",
  "tokio",
  "wasapi",

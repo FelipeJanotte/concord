@@ -7,6 +7,7 @@ mod encoder_selection;
 mod error;
 mod events;
 mod frame_size;
+mod livekit_token;
 mod loopback_scope;
 mod pacing;
 mod pipeline;
@@ -21,6 +22,7 @@ mod thumbnail;
 
 pub use error::CaptureError;
 pub use events::{EncoderKind, EndReason, ShareEvent};
+pub use livekit_token::LiveKitToken;
 pub use quality::ShareQuality;
 pub use share::{ScreenShare, ShareRequest, list_sources, thumbnail_of};
 pub use source::{CaptureSource, SourceKind};
