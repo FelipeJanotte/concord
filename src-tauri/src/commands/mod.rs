@@ -1,5 +1,6 @@
 pub mod google;
 pub mod idle;
+pub mod migration;
 pub mod notifications;
 pub mod overlay;
 pub mod push_to_talk;
@@ -46,4 +47,5 @@ command_registry! {
     window_controls::window_control,
     window_controls::window_maximized_get,
     window_controls::show_main_window,
+    migration::migration_done,
 }

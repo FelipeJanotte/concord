@@ -263,7 +263,7 @@ describe('canais compartilhados', () => {
     expect([...usedCommands].filter((name) => !channels.commands.includes(name))).toEqual([])
     expect(new Set(listened)).toEqual(new Set(channels.events))
     const unusedCommands = channels.commands.filter((name) => !usedCommands.has(name))
-    expect(unusedCommands).toEqual(['show-main-window'])
+    expect(unusedCommands).toEqual(['show-main-window', 'migration-done'])
   })
 })
 
@@ -289,6 +289,21 @@ describe('installDesktopApi', () => {
     expect(calls.map((call) => call.command)).not.toContain('show_main_window')
     await new Promise((resolve) => setTimeout(resolve, 100))
     expect(calls.filter((call) => call.command === 'show_main_window')).toHaveLength(1)
+  })
+
+  it('a janela principal avisa que a migração foi lida, uma vez só', async () => {
+    ;(window as unknown as { __CONCORD_DESKTOP__: DesktopEnvironment }).__CONCORD_DESKTOP__ = environment
+    installDesktopApi()
+    await settle()
+    expect(calls.filter((call) => call.command === 'migration_done')).toHaveLength(1)
+  })
+
+  it('a janela do overlay não mexe na migração', async () => {
+    mockWindows('overlay')
+    ;(window as unknown as { __CONCORD_DESKTOP__: DesktopEnvironment }).__CONCORD_DESKTOP__ = environment
+    installDesktopApi()
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(calls.map((call) => call.command)).not.toContain('migration_done')
   })
 
   it('a janela do overlay não pede para mostrar a principal', async () => {

@@ -9,6 +9,7 @@ use url::Url;
 use crate::events;
 use crate::native::environment::DesktopEnvironment;
 use crate::native::links::{decide_navigation, external_url, NavigationDecision};
+use crate::native::migration::file::{script_from_file, FILE_NAME};
 use crate::native::permissions;
 use crate::native::window_controls::maximized_change;
 
@@ -36,8 +37,18 @@ pub fn create(app: &AppHandle) -> Result<WebviewWindow, MainWindowError> {
     let navigation_app = app.clone();
     let new_window_app = app.clone();
 
-    let window = WebviewWindowBuilder::from_config(app, configuration)?
-        .initialization_script(DesktopEnvironment::current().initialization_script()?)
+    let mut builder = WebviewWindowBuilder::from_config(app, configuration)?
+        .initialization_script(DesktopEnvironment::current().initialization_script()?);
+    if let Some(script) = migration_script(app) {
+        builder = builder.initialization_script(script);
+    }
+
+    #[cfg(windows)]
+    {
+        builder = builder.transparent(true);
+    }
+
+    let window = builder
         .on_navigation(
             move |target| match decide_navigation(target, development_server.as_ref()) {
                 NavigationDecision::Allow => true,
@@ -59,6 +70,16 @@ pub fn create(app: &AppHandle) -> Result<WebviewWindow, MainWindowError> {
 
     announce_maximized_changes(&window);
     Ok(window)
+}
+
+fn migration_script(app: &AppHandle) -> Option<String> {
+    match app.path().app_data_dir() {
+        Ok(directory) => script_from_file(&directory.join(FILE_NAME)),
+        Err(error) => {
+            eprintln!("Não foi possível localizar a pasta de dados: {error}");
+            None
+        }
+    }
 }
 
 fn open_in_browser(app: &AppHandle, url: &Url) {

@@ -12,5 +12,7 @@ function showMainWindowAfterFirstPaint(): void {
 export function installDesktopApi(): void {
   if (!('__TAURI_INTERNALS__' in window)) return
   window.api = buildDesktopApi(readDesktopEnvironment())
-  if (getCurrentWindow().label === MAIN_WINDOW_LABEL) showMainWindowAfterFirstPaint()
+  if (getCurrentWindow().label !== MAIN_WINDOW_LABEL) return
+  send('migration-done')
+  showMainWindowAfterFirstPaint()
 }

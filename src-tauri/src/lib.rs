@@ -14,9 +14,12 @@ pub fn run() -> Result<(), tauri::Error> {
                 .open_js_links_on_click(false)
                 .build(),
         )
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(shutdown::Shutdown::default())
+        .manage(commands::updater::UpdaterState::default())
         .setup(|app| {
             windows::main_window::create(app.handle())?;
+            commands::updater::start(app.handle());
             Ok(())
         })
         .invoke_handler(commands::handler())

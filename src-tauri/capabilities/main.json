@@ -31,6 +31,7 @@
     "allow-startup-set",
     "allow-window-control",
     "allow-window-maximized-get",
-    "allow-show-main-window"
+    "allow-show-main-window",
+    "allow-migration-done"
   ]
 }
