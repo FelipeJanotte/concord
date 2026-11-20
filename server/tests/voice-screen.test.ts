@@ -169,6 +169,24 @@ describe('fim da tela pelo servidor', () => {
     await screenRemoved(room.id, ana)
   })
 
+  it('com duas conexões da mesma conta na sala, sair com uma não tira a tela da outra', async () => {
+    const ana = await user()
+    const secondSocket = await server.connect(ana.token)
+    open.push(secondSocket)
+    await secondSocket.emitWithAck('hello')
+    const room = await voiceRoom()
+    await join(ana, room.id)
+    const result = await secondSocket.emitWithAck('voice:join', { channelId: room.id, muted: false, deafened: false })
+    expect(result.ok).toBe(true)
+    await issuedToken(ana)
+    secondSocket.emit('voice:leave')
+    await livekit.waitCall('RemoveParticipant', (body) => body.identity === secondSocket.id && body.room === room.id)
+    await sleep(150)
+    expect(livekit.calls.some((call) => call.method === 'RemoveParticipant' && call.body.identity === screenIdentityOf(ana))).toBe(false)
+    ana.socket.emit('voice:leave')
+    await screenRemoved(room.id, ana)
+  })
+
   it('perder outra permissão sem perder "compartilhar" mantém a tela', async () => {
     const ana = await user()
     const room = await voiceRoom()
@@ -199,5 +217,19 @@ describe('limite', () => {
     for (let attempt = 0; attempt < 6; attempt++) results.push(await screenCredentials(ana))
     expect(results.slice(0, 5).every((result) => result.ok)).toBe(true)
     expect(results[5]).toEqual({ ok: false, error: expect.stringMatching(/^Muitos pedidos para compartilhar a tela\. Tente de novo em \d+ s\.$/) })
+  })
+
+  it('o limite vem antes da permissão: quem não pode compartilhar e insiste recebe o aviso de limite', async () => {
+    const ana = await user(undefined, limited)
+    const room = await voiceRoom(limited)
+    const limitedOwner = await limited.asOwner()
+    open.push(limitedOwner.socket)
+    const override = await limitedOwner.socket.emitWithAck('channel:set-overrides', { channelId: room.id, overrides: [{ roleId: EVERYONE_ROLE_ID, allow: [], deny: ['share'] }] })
+    expect(override).toEqual({ ok: true })
+    await join(ana, room.id)
+    const results: ScreenCredentialsResult[] = []
+    for (let attempt = 0; attempt < 6; attempt++) results.push(await screenCredentials(ana))
+    expect(results.slice(0, 5).every((result) => !result.ok && result.error.startsWith('Você não tem permissão'))).toBe(true)
+    expect(results[5]).toEqual({ ok: false, error: expect.stringMatching(/^Muitos pedidos para compartilhar a tela\./) })
   })
 })

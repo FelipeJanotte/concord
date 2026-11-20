@@ -155,8 +155,12 @@ function leaveVoice(io: AppServer, socket: AppSocket, { emit = true } = {}): voi
   forgetConnection(socket.id)
   if (liveKitConfig) void kickFromRoom(liveKitConfig, state.channelId, socket.id)
   const accountId = socket.data.user?.accountId
-  if (accountId) endScreenShare(accountId, state.channelId)
+  if (accountId && !accountStillInRoom(io, accountId, state.channelId)) endScreenShare(accountId, state.channelId)
   if (emit) emitVoice(io)
+}
+
+function accountStillInRoom(io: AppServer, accountId: string, channelId: string): boolean {
+  return voiceStates().some((state) => state.channelId === channelId && io.sockets.sockets.get(state.userId)?.data.user?.accountId === accountId)
 }
 
 function endScreenShare(accountId: string, channelId: string): void {
@@ -282,11 +286,11 @@ export const voiceModule: ServerModule = {
         const state = voice.get(socket.id)
         if (!user || !state) return ack({ ok: false, error: 'Entre numa sala de voz para compartilhar a tela' })
         if (!liveKitConfig) return ack({ ok: false, error: 'A voz não está configurada neste servidor' })
+        const limited = limiters.screenCredentials.take(user.accountId)
+        if (!limited.ok) return ack({ ok: false, error: `Muitos pedidos para compartilhar a tela. ${retryText(limited.retryAfterMs)}` })
         if (!(await allowed(user.accountId, 'share', state.channelId))) {
           return ack({ ok: false, error: 'Você não tem permissão para compartilhar a tela nesta sala' })
         }
-        const limited = limiters.screenCredentials.take(user.accountId)
-        if (!limited.ok) return ack({ ok: false, error: `Muitos pedidos para compartilhar a tela. ${retryText(limited.retryAfterMs)}` })
         ack({ ok: true, ...(await createScreenCredentials(liveKitConfig, user, state.channelId)) })
       })
     })
