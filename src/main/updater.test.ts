@@ -15,7 +15,7 @@ class FakeUpdater extends EventEmitter {
   quitAndInstall = vi.fn()
 }
 
-function setup(isPackaged = true) {
+function setup(isPackaged = true, installDirectory?: string) {
   const updater = new FakeUpdater()
   const sent: UpdateStatus[] = []
   const timers: Array<{ fn: () => void; ms: number }> = []
@@ -23,6 +23,7 @@ function setup(isPackaged = true) {
   const controller = createUpdaterController({
     updater: updater as never,
     isPackaged,
+    installDirectory,
     send: (s) => sent.push(s),
     setInterval: (fn, ms) => timers.push({ fn, ms }),
     log
@@ -34,6 +35,16 @@ describe('createUpdaterController', () => {
   it('liga o download automático e a instalação ao fechar', () => {
     const { updater } = setup()
     expect([updater.autoDownload, updater.autoInstallOnAppQuit]).toEqual([true, true])
+  })
+
+  it('app instalado: manda o instalador para a pasta onde o app está', () => {
+    const { updater } = setup(true, 'C:/Apps/Concord')
+    expect((updater as unknown as { installDirectory?: string }).installDirectory).toBe('C:/Apps/Concord')
+  })
+
+  it('modo dev: não fixa a pasta de instalação', () => {
+    const { updater } = setup(false, '/opt/electron')
+    expect((updater as unknown as { installDirectory?: string }).installDirectory).toBeUndefined()
   })
 
   it('app instalado: procura ao abrir e a cada 30 min', () => {

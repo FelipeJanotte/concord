@@ -5,6 +5,7 @@ import { externalUrl } from '../shared/links'
 import { windowIconOptions } from './app-icon'
 import { googleSignIn } from './google-auth'
 import { setupIdle, type IdleWatcher } from './idle'
+import { setupMigration } from './migration'
 import { setupNotifications } from './notifications'
 import { allowPermission } from './permissions'
 import { setupOverlay, teardownOverlay, type OverlayController } from './overlay'
@@ -49,6 +50,7 @@ function createWindow(): void {
   })
   win.on('ready-to-show', () => win.show())
   watchMaximized(win)
+  setupMigration(win)
 
   // Links externos abrem no navegador padrão; só http/https (nada de file:, javascript: etc.).
   win.webContents.setWindowOpenHandler(({ url }) => {

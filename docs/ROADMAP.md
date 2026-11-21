@@ -371,6 +371,20 @@ B só na assinatura das faixas de tela. `ScreenTile.tsx` é só do Dev B.
 **Riscos:** 1440p/60 fps pesa na CPU de quem compartilha e na banda do SFU; se for decidido um teto, vira ADR. A
 miniatura assina a tela fora da `VoiceView`: conferir que fechar a miniatura tira a origem `pip` e para a assinatura.
 
+## v10 — App em Tauri/Rust e, depois, servidor em Rust
+
+Sai o Electron e, na fase 2, o Node (ADRs 0013 e 0014). Só Windows. A tela React não muda.
+
+| Task | O que faz | Arquivos | Tamanho |
+|---|---|---|---|
+| **M0 Pré-ponte (Electron)** ✅ (branch `feat/ponte-tauri`) | Última versão Electron: na partida grava as chaves `concord:*` do localStorage em `userData/migrate.json` e fixa a pasta de instalação do updater. Precisa virar release antes da M1. | `src/main/migration.ts`, `src/main/updater.ts` | pequeno |
+| **M1 App em Tauri (fase 1, PR única)** | Tudo do ADR 0013: `src-tauri/` + `crates/`, adaptador do `window.api`, tela nativa com GPU, pressione para falar por Raw Input, overlay, miniatura, notificações com deep link, updater, ponte NSIS e os portões de verificação (CI Windows, teste de troca). | `src-tauri/`, `crates/`, `src/shared/desktop-*`, `lib/desktop/`, `.github/workflows/`, `server/livekit.ts` (token da tela) | grande |
+| **M2 Servidor em Rust (fase 2)** | Por domínio, com os testes de `server/tests/` como especificação; escolhas abertas viram ADRs antes. | `server/` | grande |
+
+Ordem: M0 → release → M1 → M2. **Riscos:** o encoder de GPU pelo caminho `new_encoded` do LiveKit não tem uso
+público conhecido (reserva automática por CPU); pressione para falar com janela de administrador em foco e o clique
+de notificação com o app fechado só se provam num Windows real.
+
 ## Verificação (em toda task)
 
 - `npm run typecheck` e `npm test` (vitest: `can()`, sorteador, validação de upload, repos contra Postgres de teste).
