@@ -43,9 +43,34 @@ const detector = () => detectors.created[detectors.created.length - 1]
 
 type Listener = (...args: unknown[]) => void
 
+class FakePublication {
+  isDesired = false
+  constructor(readonly source: Track.Source) {}
+  setSubscribed = vi.fn((on: boolean) => {
+    this.isDesired = on
+  })
+}
+
+interface FakeParticipant {
+  identity: string
+  trackPublications: Map<string, FakePublication>
+}
+
+function remote(identity: string, ...sources: Track.Source[]): FakeParticipant {
+  return { identity, trackPublications: new Map(sources.map((source, i) => [`${identity}-${i}`, new FakePublication(source)])) }
+}
+
+const pubOf = (participant: FakeParticipant, source: Track.Source): FakePublication =>
+  [...participant.trackPublications.values()].find((pub) => pub.source === source)!
+
+let inRoomOnConnect: FakeParticipant[] = []
+
 class FakeRoom {
   listeners = new Map<string, Listener[]>()
-  connect = vi.fn(async (_url: string, _token: string, _opts?: unknown) => {})
+  remoteParticipants = new Map<string, FakeParticipant>()
+  connect = vi.fn(async (_url: string, _token: string, _opts?: unknown) => {
+    for (const p of inRoomOnConnect) this.remoteParticipants.set(p.identity, p)
+  })
   disconnect = vi.fn(async () => {})
   startAudio = vi.fn(async () => {})
   switchActiveDevice = vi.fn(async (_kind: string, _id: string) => true)
@@ -165,6 +190,7 @@ beforeEach(() => {
   socket = new FakeSocket()
   socket.replyTo('voice:join', () => CREDS)
   rooms = []
+  inRoomOnConnect = []
   mic = null
   micError = null
   client = makeClient()
@@ -177,7 +203,7 @@ describe('join', () => {
     expect(await client.join('sala-1')).toEqual({ micError: null, cancelled: false, canSpeak: true, canShare: true, canVideo: true })
     expect(socket.sent('voice:join')).toEqual([[{ channelId: 'sala-1', muted: false, deafened: false }]])
     const room = lastRoom()
-    expect(room.connect).toHaveBeenCalledWith('ws://livekit.test:7880', 'jwt-de-teste', { autoSubscribe: true })
+    expect(room.connect).toHaveBeenCalledWith('ws://livekit.test:7880', 'jwt-de-teste', { autoSubscribe: false })
     expect(room.localParticipant.publishTrack).toHaveBeenCalledWith(mic, { source: Track.Source.Microphone, forceStereo: false })
     expect(room.startAudio).toHaveBeenCalled()
   })
@@ -308,6 +334,79 @@ describe('telas que eu assisto', () => {
     client.setWatchedScreens(['ana'])
     client.teardown()
     expect(client.watchedScreens).toEqual([])
+  })
+})
+
+describe('assinatura das telas sob demanda (B29)', () => {
+  const SCREEN_SOURCES = [Track.Source.ScreenShare, Track.Source.ScreenShareAudio]
+  const ALL = [Track.Source.Microphone, Track.Source.Camera, ...SCREEN_SOURCES]
+
+  it('quem já estava na sala: microfone e câmera assinados, tela não; a tela aparece como disponível', async () => {
+    const ana = remote('ana', ...ALL)
+    inRoomOnConnect = [ana]
+    await client.join('sala-1')
+    expect(pubOf(ana, Track.Source.Microphone).setSubscribed).toHaveBeenCalledWith(true)
+    expect(pubOf(ana, Track.Source.Camera).setSubscribed).toHaveBeenCalledWith(true)
+    for (const source of SCREEN_SOURCES) expect(pubOf(ana, source).isDesired).toBe(false)
+    expect(useApp.getState().screens).toEqual(['ana'])
+  })
+
+  it('o que é publicado depois: microfone e câmera assinados, tela não', async () => {
+    await client.join('sala-1')
+    const bia = remote('bia', ...ALL)
+    for (const pub of bia.trackPublications.values()) lastRoom().fire(RoomEvent.TrackPublished, pub, bia)
+    expect(pubOf(bia, Track.Source.Microphone).isDesired).toBe(true)
+    expect(pubOf(bia, Track.Source.Camera).isDesired).toBe(true)
+    for (const source of SCREEN_SOURCES) expect(pubOf(bia, source).isDesired).toBe(false)
+    expect(useApp.getState().screens).toEqual(['bia'])
+  })
+
+  it('assistir assina a tela e o áudio da tela só de quem escolhi; parar desassina; microfone e câmera ficam', async () => {
+    const ana = remote('ana', ...ALL)
+    const bia = remote('bia', ...ALL)
+    inRoomOnConnect = [ana, bia]
+    await client.join('sala-1')
+    const micCalls = pubOf(ana, Track.Source.Microphone).setSubscribed.mock.calls.length
+
+    client.setWatchedScreens(['ana'])
+    for (const source of SCREEN_SOURCES) {
+      expect(pubOf(ana, source).isDesired).toBe(true)
+      expect(pubOf(bia, source).isDesired).toBe(false)
+    }
+
+    client.setWatchedScreens([])
+    for (const source of SCREEN_SOURCES) expect(pubOf(ana, source).setSubscribed).toHaveBeenLastCalledWith(false)
+    expect(pubOf(ana, Track.Source.Microphone).setSubscribed.mock.calls).toHaveLength(micCalls)
+    expect(pubOf(ana, Track.Source.Microphone).isDesired).toBe(true)
+    expect(pubOf(ana, Track.Source.Camera).isDesired).toBe(true)
+  })
+
+  it('tela publicada depois por quem eu já assisto entra assinada', async () => {
+    await client.join('sala-1')
+    client.setWatchedScreens(['ana'])
+    const ana = remote('ana', ...SCREEN_SOURCES)
+    for (const pub of ana.trackPublications.values()) lastRoom().fire(RoomEvent.TrackPublished, pub, ana)
+    for (const source of SCREEN_SOURCES) expect(pubOf(ana, source).isDesired).toBe(true)
+  })
+
+  it('o vídeo chega depois de a UI ligar o <video>: liga na hora e desliga ao sair', async () => {
+    await client.join('sala-1')
+    const video = new FakeElement()
+    const detach = client.attachScreen('ana', video as unknown as HTMLVideoElement)
+    const track = new FakeRemoteTrack(Track.Kind.Video, Track.Source.ScreenShare)
+    lastRoom().fire(RoomEvent.TrackSubscribed, track, {}, { identity: 'ana' })
+    expect(track.attachedElements).toEqual([video])
+    detach()
+    expect(track.attachedElements).toEqual([])
+    const next = new FakeRemoteTrack(Track.Kind.Video, Track.Source.ScreenShare)
+    lastRoom().fire(RoomEvent.TrackUnsubscribed, track, {}, { identity: 'ana' })
+    lastRoom().fire(RoomEvent.TrackSubscribed, next, {}, { identity: 'ana' })
+    expect(next.attachedElements).toEqual([])
+  })
+
+  it('fora da sala, escolher telas só guarda a lista', () => {
+    expect(() => client.setWatchedScreens(['ana'])).not.toThrow()
+    expect(client.watchedScreens).toEqual(['ana'])
   })
 })
 
@@ -488,14 +587,24 @@ describe('tela', () => {
     await expect(new VoiceClient().stopScreenShare()).resolves.toBeUndefined() // fora da sala: nada
   })
 
-  it('a tela de quem compartilha aparece em store.screens e some quando acaba', async () => {
+  it('a tela de quem compartilha aparece em store.screens ao ser publicada e some ao ser despublicada', async () => {
     await client.join('sala-1')
+    const pub = new FakePublication(Track.Source.ScreenShare)
+    lastRoom().fire(RoomEvent.TrackPublished, pub, participant('ana'))
+    expect(useApp.getState().screens).toEqual(['ana'])
+    lastRoom().fire(RoomEvent.TrackUnpublished, pub, participant('ana'))
+    expect(useApp.getState().screens).toEqual([])
+  })
+
+  it('desassinar a tela tira o vídeo, mas a tela continua disponível', async () => {
+    await client.join('sala-1')
+    lastRoom().fire(RoomEvent.TrackPublished, new FakePublication(Track.Source.ScreenShare), participant('ana'))
     const track = screenTrack()
     lastRoom().fire(RoomEvent.TrackSubscribed, track, {}, participant('ana'))
-    expect(useApp.getState().screens).toEqual(['ana'])
-    expect(track.attachedElements).toHaveLength(0) // vídeo só toca quando a UI liga num <video>
+    expect(track.attachedElements).toHaveLength(0)
     lastRoom().fire(RoomEvent.TrackUnsubscribed, track, {}, participant('ana'))
-    expect(useApp.getState().screens).toEqual([])
+    expect(useApp.getState().screens).toEqual(['ana'])
+    expect(client.screenMediaTrack('ana')).toBeUndefined()
   })
 
   it('vídeo que não é tela (câmera) é ignorado', async () => {
@@ -553,7 +662,7 @@ describe('tela', () => {
     const ended = vi.fn()
     client.onScreenShareEnded = ended
     await client.join('sala-1')
-    lastRoom().fire(RoomEvent.TrackSubscribed, screenTrack(), {}, participant('ana'))
+    lastRoom().fire(RoomEvent.TrackPublished, new FakePublication(Track.Source.ScreenShare), participant('ana'))
     client.leave()
     expect(useApp.getState().screens).toEqual([])
     expect(ended).not.toHaveBeenCalled()

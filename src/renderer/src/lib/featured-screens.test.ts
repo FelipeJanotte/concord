@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { VoiceState } from '@shared/types'
-import { featuredScreens, moveScreen, screenViewers, toggleFeatured, watchedScreens } from './featured-screens'
+import { defaultArrangement, featuredScreens, moveScreen, nextArrangement, screenViewers, stageArrangement, toggleFeatured, watchedScreens } from './featured-screens'
 
 describe('featuredScreens', () => {
   it('sem escolha: nenhuma, nem a própria (assistir é opcional)', () => {
@@ -60,5 +60,27 @@ describe('screenViewers', () => {
     expect(screenViewers(voice, 'eu')).toEqual(['ana', 'bia'])
     expect(screenViewers(voice, 'ana')).toEqual(['bia', 'cid'])
     expect(screenViewers(voice, 'cid')).toEqual([])
+  })
+})
+
+describe('arranjo das telas em destaque', () => {
+  it('padrão: lado a lado com 1 ou 2 telas, grade com 3 ou mais', () => {
+    expect(defaultArrangement(1)).toBe('side-by-side')
+    expect(defaultArrangement(2)).toBe('side-by-side')
+    expect(defaultArrangement(3)).toBe('grid')
+    expect(defaultArrangement(5)).toBe('grid')
+  })
+
+  it('o arranjo escolhido vale por cima do padrão; sem escolha, o padrão pela quantidade', () => {
+    expect(stageArrangement(4, null)).toBe('grid')
+    expect(stageArrangement(2, null)).toBe('side-by-side')
+    expect(stageArrangement(4, 'stacked')).toBe('stacked')
+    expect(stageArrangement(2, 'grid')).toBe('grid')
+  })
+
+  it('o botão alterna lado a lado, empilhadas e grade, e volta ao começo', () => {
+    expect(nextArrangement('side-by-side')).toBe('stacked')
+    expect(nextArrangement('stacked')).toBe('grid')
+    expect(nextArrangement('grid')).toBe('side-by-side')
   })
 })
