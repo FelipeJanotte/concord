@@ -198,8 +198,8 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
   última listagem; a escolha vale para **um** `getDisplayMedia` e expira em 15 s. Áudio = `'loopback'` (só Windows;
   `window.api.screen.canShareAudio`). O loopback captura **todo** o áudio do PC, inclusive a voz dos outros que o
   Concord toca: quem assiste pode ouvir eco. Por isso o áudio vem desmarcado.
-- **Captura:** 1080p a 15 fps, `contentHint: 'detail'` (texto legível). O token já libera `screen_share` e
-  `screen_share_audio`.
+- **Captura:** escolhida pela pessoa (A21, ver "Qualidade e FPS da tela" abaixo); padrão 1080p a 15 fps com
+  `contentHint: 'detail'` (texto legível). O token já libera `screen_share` e `screen_share_audio`.
 - **Receber:** `store.screens` (ids de conexão) = quem tem tela **publicada**, assinada ou não (B29): entra no
   `TrackPublished` com `source === ScreenShare` (ou na varredura depois do `connect`) e sai no `TrackUnpublished`; a
   própria tela entra como prévia via `LocalTrackPublished`. A faixa (`TrackSubscribed`) só chega para as telas
@@ -241,8 +241,8 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
     medida por `useElementSize` (espaço de 4 px; `data-columns` e `--tile-w`); sem espaço, rola na vertical.
     Cada tela mostra o nome embaixo. A ordem é local do `VoiceGrid` e o arranjo, do `ScreenStage` (não salvos;
     parar de assistir volta ao padrão).
-  - **Pendente (A22):** o botão "Abrir miniatura" na barra do `ScreenStage`, que chama `openScreenPip`, entra quando a
-    miniatura flutuante (A22) existir.
+  - **Pendente (B30):** o botão "Abrir miniatura" na barra do `ScreenStage`, chamando `openScreenPip` (de
+    `@/lib/client`, já existe com a A22).
   - Embaixo, a fileira "Membros da chamada" (`role="group"`), **centralizada**, com os cards das
     telas que não estão em destaque (`ScreenTile`, clicar = assistir **só** essa) e os participantes. A centralização usa `ml-auto` no primeiro e
     `mr-auto` no último filho (não `justify-center`, que cortaria o começo quando a fileira rola de lado).
@@ -344,6 +344,54 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
   assistir": volta à grade e A vê só C. A abre a própria prévia: não conta. C sai da sala: some da lista. A para de
   compartilhar e volta: ninguém assistindo. Com duas telas: destaque pelo seletor, arrastar, empilhar, tela cheia
   (botão, duplo clique, Esc) e o "ao vivo" some ao parar.
+
+### Qualidade e FPS da tela (A21)
+
+Quem compartilha escolhe a resolução (720p, 1080p, 1440p, Original) e a taxa de quadros (15, 30, 60 fps). Só
+cliente, sem evento novo.
+
+| Peça | Arquivo |
+|---|---|
+| `screenCapture(quality)` (pura: tamanho, `contentHint`, bitrate), `parseScreenQuality`, `DEFAULT_SCREEN_QUALITY` | `src/shared/screen.ts` |
+| Escolha guardada na máquina (`concord:screen-quality`), `chooseScreenQuality`, `store.screenQuality` | `lib/actions/screen-quality.ts`, `store/voice.ts` |
+| Publicar e trocar no ar (`startScreenShare(audio, quality)`, `setScreenQuality`) | `lib/voice.ts` |
+| Seletores "Resolução" e "Taxa de quadros" | `components/voice/ScreenQualitySelect.tsx` (no `ScreenPicker` e no "Voz conectada" enquanto compartilha) |
+
+- **Regras:** até 15 fps usa `contentHint: 'detail'` (texto nítido); acima, `'motion'` (fluidez). "Original" pede
+  até 3840×2160 (o LiveKit usa 1080p quando a resolução não vem, por isso há um teto). Bitrate (bps) por resolução
+  × fps: 720p 1,5M/2,5M/4M; 1080p 2,5M/4M/6M; 1440p 4M/7M/12M; Original 6M/10M/16M. Sem simulcast (`screenShareEncoding`).
+- **Trocar no ar:** `setScreenQuality` pega a publicação `ScreenShare` local, muda o `contentHint`, chama
+  `applyConstraints` na faixa e `sender.setParameters` (bitrate e fps). Não republica: quem assiste não perde a tela.
+- **Riscos:** 1440p/60 e Original pesam na CPU de quem compartilha e na banda do SFU. Sem teto por enquanto; se for
+  preciso, vira ADR. `applyConstraints` pode entregar menos que o pedido (a fonte é menor ou a GPU não acompanha).
+- **Testes:** `src/shared/screen.test.ts`, `lib/actions/screen-quality.test.ts`, bloco "tela" de `lib/voice.test.ts`
+  (publica com a qualidade, troca sem republicar, sem tela não faz nada), `components/voice/ScreenQualitySelect.test.tsx`.
+  À mão: compartilhar em 720p/60 e olhar em `chrome://webrtc-internals` de quem assiste (`frameWidth`, `framesPerSecond`);
+  trocar para 1080p/15 no "Voz conectada" sem a tela piscar para os outros.
+
+### Miniatura flutuante da tela (A22)
+
+Janela flutuante dentro do app com a tela de alguém da minha sala enquanto não estou na tela da sala.
+
+| Peça | Arquivo |
+|---|---|
+| Posição e tamanho (puras: 16:9 + cabeçalho de 36 px, mínimo 240 px, dentro da janela; guardados em `concord:screen-pip`) | `lib/screen-pip.ts` |
+| `pipScreenId` | `store/screen-pip.ts` |
+| `openScreenPip`, `closeScreenPip`, `leaveRoomView`, `enterRoomView`, `backToRoom` | `lib/actions/screen-pip.ts` |
+| Janela (arrastar pelo cabeçalho, redimensionar pelo canto, trocar de tela, voltar, fechar) | `components/voice/ScreenPip.tsx`, montada em `App.tsx` |
+
+- **Abrir:** ao sair da tela da sala (o `VoiceGrid` desmonta) com tela em destaque, abre a primeira do destaque.
+  `openScreenPip(id)` só abre com a pessoa numa sala e a tela existindo. Entrar de novo na sala (`VoiceGrid` monta)
+  fecha a miniatura. Vale também para a chamada privada (o `CallPanel` usa o `VoiceGrid`).
+- **Assistir:** a miniatura informa a origem `pip` (`watchScreens('pip', [id])`); fechar zera a origem. Ao sair da
+  sala, a miniatura abre **antes** de zerar a origem `room`, para o servidor não receber um "não assisto nada" no meio.
+- **Fecha sozinha:** quando a tela acaba (sai de `store.screens`) ou a pessoa sai/troca de sala.
+- **"Voltar para a sala":** botão ou duplo clique no vídeo: abre a sala de voz da comunidade ou a conversa (DM).
+- **Testes:** `lib/screen-pip.test.ts`, `lib/actions/screen-pip.test.ts`, `components/voice/ScreenPip.test.tsx` e o
+  bloco `VoiceGrid` de `components/voice/voice.test.tsx` (sair com destaque abre e continua assistindo, sem destaque
+  para, voltar fecha). À mão: assistir a uma tela, ir para um canal de texto: a miniatura aparece no canto inferior
+  direito; arrastar, redimensionar, reabrir o app (volta no mesmo lugar), "Trocar de tela" com duas telas e a tela
+  que acaba fechando a miniatura.
 
 ## Prévia do "ao vivo"
 

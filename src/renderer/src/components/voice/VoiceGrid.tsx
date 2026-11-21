@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import { HeadphoneOff, MicOff, VolumeX } from 'lucide-react'
 import type { VoiceState } from '@shared/types'
 import { UserAvatar } from '@/components/UserAvatar'
-import { watchScreens } from '@/lib/client'
+import { enterRoomView, leaveRoomView, watchScreens } from '@/lib/client'
 import { featuredScreens, moveScreen, toggleFeatured, watchedScreens } from '@/lib/featured-screens'
 import { bestTileLayout, useElementSize } from '@/lib/tile-layout'
 import { cn } from '@/lib/utils'
@@ -45,7 +45,15 @@ export function VoiceGrid({ members, fill = true }: { members: VoiceState[]; fil
 
   const watched = watchedScreens(featured, selfId)
   useEffect(() => watchScreens('room', watched), [watched.join(' ')])
-  useEffect(() => () => watchScreens('room', []), [])
+  const featuredOnLeave = useRef(featured)
+  featuredOnLeave.current = featured
+  useEffect(() => {
+    enterRoomView()
+    return () => {
+      leaveRoomView(featuredOnLeave.current)
+      watchScreens('room', [])
+    }
+  }, [])
 
   const watch = (id: string): void => setChosen([id])
   const watchable = (userId: string): (() => void) | undefined =>

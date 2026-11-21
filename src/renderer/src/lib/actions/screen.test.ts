@@ -1,6 +1,6 @@
 // Ações de compartilhar a tela (lib/actions/voice.ts) com socket falso e VoiceClient espionado.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ScreenShareBridge } from '@shared/screen'
+import { DEFAULT_SCREEN_QUALITY, type ScreenShareBridge } from '@shared/screen'
 import { setSocket } from '@/lib/core'
 import { voice } from '@/lib/voice'
 import { initialState, useApp } from '@/store'
@@ -50,7 +50,7 @@ describe('toggleScreenShare', () => {
     vi.stubGlobal('window', {})
     inVoice()
     toggleScreenShare()
-    await vi.waitFor(() => expect(voice.startScreenShare).toHaveBeenCalledWith(false))
+    await vi.waitFor(() => expect(voice.startScreenShare).toHaveBeenCalledWith(false, DEFAULT_SCREEN_QUALITY))
     expect(useApp.getState().screenPickerOpen).toBe(false)
   })
 
@@ -69,7 +69,7 @@ describe('startScreenShare', () => {
     useApp.setState({ screenPickerOpen: true })
     await startScreenShare('screen:0:0', true)
     expect(bridge.select).toHaveBeenCalledWith('screen:0:0', true)
-    expect(voice.startScreenShare).toHaveBeenCalledWith(true)
+    expect(voice.startScreenShare).toHaveBeenCalledWith(true, DEFAULT_SCREEN_QUALITY)
     expect(useApp.getState()).toMatchObject({ sharing: true, screenPickerOpen: false })
     expect(socket.sent('voice:sharing')).toEqual([[true]])
   })
