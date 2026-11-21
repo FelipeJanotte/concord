@@ -3,8 +3,9 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ScreenShareBridge, ScreenSource } from '@shared/screen'
+import { DEFAULT_SCREEN_QUALITY, type ScreenShareBridge, type ScreenSource } from '@shared/screen'
 import type { User, VoiceState } from '@shared/types'
+import { closeScreenPip } from '@/lib/client'
 import { setSocket } from '@/lib/core'
 import { voice } from '@/lib/voice'
 import { initialState, useApp } from '@/store'
@@ -71,6 +72,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  closeScreenPip()
   setSocket(null)
   vi.restoreAllMocks()
 })
@@ -99,7 +101,7 @@ describe('ScreenPicker', () => {
     await userEvent.click(screen.getByRole('checkbox', { name: /áudio do computador/ }))
     await userEvent.click(screen.getByRole('button', { name: 'Compartilhar' }))
     expect(bridge.select).toHaveBeenCalledWith('screen:1:0', true)
-    expect(voice.startScreenShare).toHaveBeenCalledWith(true)
+    expect(voice.startScreenShare).toHaveBeenCalledWith(true, DEFAULT_SCREEN_QUALITY)
     await vi.waitFor(() => expect(useApp.getState().sharing).toBe(true))
     expect(useApp.getState().screenPickerOpen).toBe(false)
   })
@@ -250,13 +252,34 @@ describe('VoiceGrid', () => {
     expect(screen.queryByText(/^Assistindo:/)).toBeNull()
   })
 
-  it('sair da tela da sala deixa de contar como espectador', async () => {
+  it('sair da tela da sala com tela em destaque abre a miniatura e continua assistindo', async () => {
     useApp.setState({ screens: ['ana'] })
     const { unmount } = render(<VoiceGrid members={members} />)
     await userEvent.click(card('Tela de Ana'))
     serverKnows(['ana'])
     unmount()
+    expect(useApp.getState().pipScreenId).toBe('ana')
+    expect(watchSent()).toEqual([[['ana']]])
+    closeScreenPip()
     expect(watchSent()).toEqual([[['ana']], [[]]])
+  })
+
+  it('sair da tela da sala sem tela em destaque deixa de contar como espectador', async () => {
+    useApp.setState({ screens: ['ana'] })
+    const { unmount } = render(<VoiceGrid members={members} />)
+    await userEvent.click(card('Tela de Ana'))
+    serverKnows(['ana'])
+    await userEvent.click(screen.getByRole('button', { name: 'Parar de assistir' }))
+    serverKnows([])
+    unmount()
+    expect(useApp.getState().pipScreenId).toBeNull()
+    expect(watchSent()).toEqual([[['ana']], [[]]])
+  })
+
+  it('voltar para a sala fecha a miniatura', () => {
+    useApp.setState({ screens: ['ana'], pipScreenId: 'ana' })
+    render(<VoiceGrid members={members} />)
+    expect(useApp.getState().pipScreenId).toBeNull()
   })
 
   const panes = (): string[] => [...document.querySelectorAll<HTMLElement>('[data-screen-pane]')].map((el) => el.dataset.screenPane ?? '')
