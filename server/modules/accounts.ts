@@ -4,13 +4,21 @@
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { AuthConfig } from '../../src/shared/types'
+import type { AuthConfig, ProfileChange } from '../../src/shared/types'
 import { findAccount, GOOGLE_CLIENT_ID, googleLogin, login, register, revokeSession, updateProfile } from '../auth'
 import { guard, users, type ServerModule } from '../context'
-import { AVATAR_DIR, SESSION_SWEEP_INTERVAL_MS } from '../config'
+import { AVATAR_DIR, CUSTOM_STATUS_SWEEP_INTERVAL_MS, SESSION_SWEEP_INTERVAL_MS } from '../config'
 import { clientIp, readJson, sendJson } from '../http'
 import { limiters, pruneAllLimiters, retryText } from '../middleware/rate-limit'
+import { clearExpiredCustomStatuses } from '../repo/accounts'
 import { deleteExpiredSessions } from '../repo/sessions'
+
+async function clearExpiredStatuses(): Promise<void> {
+  const cleared = new Set(await clearExpiredCustomStatuses(Date.now()))
+  for (const u of users.values()) {
+    if (cleared.has(u.accountId)) u.customStatus = null
+  }
+}
 
 export const accountsModule: ServerModule = {
   async http(req, res, path) {
@@ -81,15 +89,12 @@ export const accountsModule: ServerModule = {
         if (!limited.ok) return ack({ ok: false, error: `Muitas alterações seguidas. ${retryText(limited.retryAfterMs)}` })
         const res = await updateProfile(account, payload ?? {})
         if (res.ok) {
-          const { name, tag, avatarUrl } = res.account
-          // Atualiza todas as conexões da conta (o objeto é o mesmo de socket.data.user).
+          const { name, tag, avatarUrl, bio, customStatus } = res.account
+          const change: ProfileChange = { accountId: account.id, name, tag, avatarUrl, bio, customStatus }
           for (const u of users.values()) {
-            if (u.accountId !== account.id) continue
-            u.name = name
-            u.tag = tag
-            u.avatarUrl = avatarUrl
+            if (u.accountId === account.id) Object.assign(u, change)
           }
-          io.emit('user:updated', { accountId: account.id, name, tag, avatarUrl })
+          io.emit('user:updated', change)
         }
         ack(res)
       })
@@ -107,5 +112,6 @@ export const accountsModule: ServerModule = {
     }
     cleanup()
     setInterval(cleanup, SESSION_SWEEP_INTERVAL_MS).unref()
+    setInterval(() => void guard('custom-status:sweep', clearExpiredStatuses), CUSTOM_STATUS_SWEEP_INTERVAL_MS).unref()
   }
 }

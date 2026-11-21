@@ -89,14 +89,16 @@ function Spoiler({ children }: { children: ReactNode }) {
   )
 }
 
-function renderNodes(nodes: MarkdownNode[], me: string | undefined, nameOf: NameOf): ReactNode[] {
-  return nodes.map((node, i) => renderNode(node, i, me, nameOf))
+type TextRenderer = (text: string, key: number) => ReactNode
+
+function renderNodes(nodes: MarkdownNode[], renderText: TextRenderer): ReactNode[] {
+  return nodes.map((node, i) => renderNode(node, i, renderText))
 }
 
-function renderNode(node: MarkdownNode, key: number, me: string | undefined, nameOf: NameOf): ReactNode {
+function renderNode(node: MarkdownNode, key: number, renderText: TextRenderer): ReactNode {
   switch (node.type) {
     case 'text':
-      return <PlainText key={key} text={node.text} me={me} nameOf={nameOf} />
+      return renderText(node.text, key)
     case 'code':
       return (
         <code key={key} className="rounded bg-muted px-1 py-0.5 font-mono text-[0.85em]">
@@ -112,17 +114,17 @@ function renderNode(node: MarkdownNode, key: number, me: string | undefined, nam
     case 'quote':
       return (
         <span key={key} data-quote className="my-0.5 block border-l-4 border-muted-foreground/50 pl-3">
-          {renderNodes(node.children, me, nameOf)}
+          {renderNodes(node.children, renderText)}
         </span>
       )
     case 'bold':
-      return <strong key={key}>{renderNodes(node.children, me, nameOf)}</strong>
+      return <strong key={key}>{renderNodes(node.children, renderText)}</strong>
     case 'italic':
-      return <em key={key}>{renderNodes(node.children, me, nameOf)}</em>
+      return <em key={key}>{renderNodes(node.children, renderText)}</em>
     case 'strike':
-      return <s key={key}>{renderNodes(node.children, me, nameOf)}</s>
+      return <s key={key}>{renderNodes(node.children, renderText)}</s>
     case 'spoiler':
-      return <Spoiler key={key}>{renderNodes(node.children, me, nameOf)}</Spoiler>
+      return <Spoiler key={key}>{renderNodes(node.children, renderText)}</Spoiler>
   }
 }
 
@@ -133,5 +135,9 @@ export function MessageText({ message }: { message: Message }) {
   const nameOf: NameOf = (id) =>
     message.mentions?.find((m) => m.accountId === id)?.name ?? users.find((u) => u.accountId === id)?.name ?? 'alguém'
 
-  return <>{renderNodes(parseMarkdown(message.content), me, nameOf)}</>
+  return <>{renderNodes(parseMarkdown(message.content), (text, key) => <PlainText key={key} text={text} me={me} nameOf={nameOf} />)}</>
+}
+
+export function FormattedText({ text }: { text: string }) {
+  return <>{renderNodes(parseMarkdown(text), withLinks)}</>
 }

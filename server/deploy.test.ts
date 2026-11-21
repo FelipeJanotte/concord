@@ -114,4 +114,12 @@ describe('electron-builder.yml (instalador)', () => {
   it('não recompila dependências nativas (o uiohook-napi já vem compilado; recompilar exige Python)', () => {
     expect(builder).toMatch(/^npmRebuild: false$/m)
   })
+
+  it('tem o ícone do Concord no .exe e no instalador: build/icon.ico com 16 a 256 px', () => {
+    expect(builder).toMatch(/^ {2}buildResources: build$/m)
+    const ico = readFileSync(join(root, 'build/icon.ico'))
+    expect(ico.readUInt16LE(2)).toBe(1)
+    const sizes = Array.from({ length: ico.readUInt16LE(4) }, (_, i) => ico[6 + 16 * i] || 256)
+    expect(sizes).toEqual(expect.arrayContaining([16, 32, 48, 256]))
+  })
 })

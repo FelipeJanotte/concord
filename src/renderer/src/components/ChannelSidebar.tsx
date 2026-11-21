@@ -1,13 +1,18 @@
-import { useState, type DragEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
-import { ChevronDown, HeadphoneOff, Hash, Loader2, Lock, MessageSquare, MicOff, Plus, Settings, Trash2, Volume2, VolumeX } from 'lucide-react'
+import { createContext, useContext, useMemo, useState, type DragEvent, type KeyboardEvent, type MouseEvent } from 'react'
+import { Menu, MenuContent, MenuContextTrigger, MenuItem, MenuSeparator, MenuTrigger } from '@ui-sdk/react/menu'
+import { ChevronDown, FolderPlus, HeadphoneOff, Hash, Loader2, Lock, MessageSquare, MicOff, Pencil, Plus, Settings, Trash2, Volume2, VolumeX } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
-import { canMoveMember, type Channel, type ChannelType, type VoiceState } from '@shared/types'
+import { canMoveMember, type Channel, type ChannelCategory, type ChannelLayout, type VoiceState } from '@shared/types'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { deleteChannel, joinVoice, moveToVoice, notify, openVoiceChat, selectTextChannel } from '@/lib/client'
+import { CATEGORY_DRAG, CHANNEL_DRAG, dragSource, useDropTarget, type DropEdge } from '@/lib/channel-drag'
+import { groupChannels, layoutOf, moveCategory, moveChannel, type CategoryGroup } from '@/lib/channel-layout'
+import { deleteChannel, joinVoice, moveToVoice, notify, openVoiceChat, saveChannelLayout, selectTextChannel } from '@/lib/client'
+import { loadCollapsedCategories, saveCollapsedCategories } from '@/lib/collapsed-categories'
 import { isPrivateChannel, useCan, useCanAdminister } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
+import { CategoryNameDialog, DeleteCategoryDialog } from './CategoryDialogs'
 import { CreateChannelDialog } from './CreateChannelDialog'
 import { ChannelPermissionsDialog } from './settings/ChannelPermissionsDialog'
 import { CommunitySettingsDialog } from './settings/CommunitySettingsDialog'
@@ -19,21 +24,81 @@ import { LivePreview } from './voice/LivePreview'
 import { MusicBotMember } from './voice/MusicPlayer'
 import { UserPanel, VoiceStatusPanel } from './UserPanel'
 
+interface Arrange {
+  enabled: boolean
+  apply: (change: (layout: ChannelLayout) => ChannelLayout) => void
+}
+
+const ArrangeContext = createContext<Arrange>({ enabled: false, apply: () => {} })
+
+interface Slot {
+  categoryId: string | null
+  nextId: string | null
+}
+
+const MENU_ITEM =
+  'flex w-full cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-none data-highlighted:bg-accent data-highlighted:text-accent-foreground [&_svg]:size-4'
+const MENU_CONTENT = 'w-52 rounded-md border border-border bg-popover p-1.5 text-popover-foreground shadow-md'
+
 export function ChannelSidebar() {
   const channels = useApp((s) => s.channels)
-  const [dialog, setDialog] = useState<{ open: boolean; type: ChannelType }>({ open: false, type: 'text' })
-  const [collapsed, setCollapsed] = useState<Record<ChannelType, boolean>>({ text: false, voice: false })
+  const categories = useApp((s) => s.categories)
+  const grouped = useMemo(() => groupChannels(channels, categories), [channels, categories])
+  const [channelDialog, setChannelDialog] = useState<{ open: boolean; categoryId: string | null }>({ open: false, categoryId: null })
+  const [nameDialog, setNameDialog] = useState<{ open: boolean; category?: ChannelCategory }>({ open: false })
+  const [deleting, setDeleting] = useState<ChannelCategory | null>(null)
+  const [collapsed, setCollapsed] = useState(loadCollapsedCategories)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const canManageChannels = useCan('manageChannels')
   const canAdminister = useCanAdminister()
 
-  const textChannels = channels.filter((c) => c.type === 'text')
-  const voiceChannels = channels.filter((c) => c.type === 'voice')
+  const arrange = useMemo<Arrange>(
+    () => ({
+      enabled: canManageChannels,
+      apply: (change) =>
+        void saveChannelLayout(change(layoutOf(grouped))).catch((err: unknown) =>
+          notify(err instanceof Error ? err.message : 'Não foi possível mudar a ordem dos canais')
+        )
+    }),
+    [canManageChannels, grouped]
+  )
+
+  function toggleCategory(categoryId: string): void {
+    const next = collapsed.includes(categoryId) ? collapsed.filter((id) => id !== categoryId) : [...collapsed, categoryId]
+    setCollapsed(next)
+    saveCollapsedCategories(next)
+  }
+
+  const groups = canManageChannels ? grouped.groups : grouped.groups.filter((g) => g.channels.length > 0)
 
   return (
     <aside data-glass="panel" className="flex min-w-0 flex-1 flex-col bg-sidebar">
-      <header className="flex h-12 shrink-0 items-center border-b border-black/25 px-4 font-semibold text-accent-foreground shadow-sm">
+      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-black/25 px-4 font-semibold text-accent-foreground shadow-sm">
         <span className="flex-1">Concord</span>
+        {canManageChannels && (
+          <Menu>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="flex">
+                  <MenuTrigger aria-label="Criar" className="text-muted-foreground hover:text-accent-foreground data-open:text-accent-foreground">
+                    <Plus className="size-4" />
+                  </MenuTrigger>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Criar canal ou categoria</TooltipContent>
+            </Tooltip>
+            <MenuContent align="end" sideOffset={8} data-glass="surface" className={MENU_CONTENT}>
+              <MenuItem onSelect={() => setChannelDialog({ open: true, categoryId: null })} className={MENU_ITEM}>
+                <Hash aria-hidden />
+                Criar canal
+              </MenuItem>
+              <MenuItem onSelect={() => setNameDialog({ open: true })} className={MENU_ITEM}>
+                <FolderPlus aria-hidden />
+                Criar categoria
+              </MenuItem>
+            </MenuContent>
+          </Menu>
+        )}
         {canAdminister && (
           <Tooltip>
             <TooltipTrigger asChild>
@@ -45,92 +110,166 @@ export function ChannelSidebar() {
                 <Settings className="size-4" />
               </button>
             </TooltipTrigger>
-            <TooltipContent>Configurações da comunidade</TooltipContent>
+            <TooltipContent side="bottom">Configurações da comunidade</TooltipContent>
           </Tooltip>
         )}
       </header>
 
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="space-y-4 px-2 py-3">
-          <ChannelSection
-            title="Canais de texto"
-            collapsed={collapsed.text}
-            onToggle={() => setCollapsed((c) => ({ ...c, text: !c.text }))}
-            onAdd={canManageChannels ? () => setDialog({ open: true, type: 'text' }) : undefined}
-          >
-            {textChannels.map((c) => (
-              <TextChannelItem key={c.id} channel={c} />
+      <ArrangeContext.Provider value={arrange}>
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="relative space-y-4 px-2 py-3">
+            <UncategorizedChannels channels={grouped.uncategorized} />
+            {groups.map((group, i) => (
+              <CategorySection
+                key={group.category.id}
+                group={group}
+                nextCategoryId={groups[i + 1]?.category.id ?? null}
+                collapsed={collapsed.includes(group.category.id)}
+                onToggle={() => toggleCategory(group.category.id)}
+                onAddChannel={() => setChannelDialog({ open: true, categoryId: group.category.id })}
+                onRename={() => setNameDialog({ open: true, category: group.category })}
+                onDelete={() => setDeleting(group.category)}
+              />
             ))}
-          </ChannelSection>
-
-          <ChannelSection
-            title="Canais de voz"
-            collapsed={collapsed.voice}
-            onToggle={() => setCollapsed((c) => ({ ...c, voice: !c.voice }))}
-            onAdd={canManageChannels ? () => setDialog({ open: true, type: 'voice' }) : undefined}
-          >
-            {voiceChannels.map((c) => (
-              <VoiceChannelItem key={c.id} channel={c} />
-            ))}
-          </ChannelSection>
-        </div>
-      </ScrollArea>
+          </div>
+        </ScrollArea>
+      </ArrangeContext.Provider>
 
       <VoiceStatusPanel />
       <UserPanel />
 
       <CreateChannelDialog
-        open={dialog.open}
-        defaultType={dialog.type}
-        onOpenChange={(open) => setDialog((d) => ({ ...d, open }))}
+        open={channelDialog.open}
+        defaultType="text"
+        categoryId={channelDialog.categoryId}
+        onOpenChange={(open) => setChannelDialog((d) => ({ ...d, open }))}
       />
+      {canManageChannels && (
+        <>
+          <CategoryNameDialog
+            open={nameDialog.open}
+            category={nameDialog.category}
+            onOpenChange={(open) => setNameDialog((d) => ({ ...d, open }))}
+          />
+          <DeleteCategoryDialog category={deleting} onOpenChange={(open) => !open && setDeleting(null)} />
+        </>
+      )}
       {canAdminister && <CommunitySettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />}
     </aside>
   )
 }
 
-function ChannelSection({
-  title,
-  collapsed,
-  onToggle,
-  onAdd,
-  children
-}: {
-  title: string
-  collapsed: boolean
-  onToggle: () => void
-  /** sem a função (sem permissão de gerenciar canais), o botão + some */
-  onAdd?: () => void
-  children: ReactNode
-}) {
+function DropLine({ edge }: { edge: DropEdge | null }) {
+  if (!edge) return null
+  return <span aria-hidden className={cn('pointer-events-none absolute inset-x-1 h-0.5 rounded-full bg-primary', edge === 'before' ? 'top-0' : 'bottom-0')} />
+}
+
+function ChannelList({ channels, categoryId }: { channels: Channel[]; categoryId: string | null }) {
   return (
-    <section>
-      <div className="group flex items-center pr-1 pb-1">
-        <button
-          onClick={onToggle}
-          className="flex flex-1 items-center gap-0.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase hover:text-accent-foreground"
-        >
-          <ChevronDown className={cn('size-3 transition-transform', collapsed && '-rotate-90')} />
-          {title}
-        </button>
-        {onAdd && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                onClick={onAdd}
-                aria-label="Criar canal"
-                className="text-muted-foreground hover:text-accent-foreground"
-              >
-                <Plus className="size-4" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>Criar canal</TooltipContent>
-          </Tooltip>
-        )}
-      </div>
-      {!collapsed && <div className="space-y-0.5">{children}</div>}
+    <div className="space-y-0.5">
+      {channels.map((c, i) => {
+        const slot = { categoryId, nextId: channels[i + 1]?.id ?? null }
+        return c.type === 'voice' ? <VoiceChannelItem key={c.id} channel={c} slot={slot} /> : <TextChannelItem key={c.id} channel={c} slot={slot} />
+      })}
+    </div>
+  )
+}
+
+function UncategorizedChannels({ channels }: { channels: Channel[] }) {
+  const { enabled, apply } = useContext(ArrangeContext)
+  const drop = useDropTarget(enabled ? [CHANNEL_DRAG] : [], (_kind, id) =>
+    apply((layout) => moveChannel(layout, id, { categoryId: null, beforeId: channels[0]?.id ?? null }))
+  )
+  if (!enabled && channels.length === 0) return null
+  return (
+    <section aria-label="Canais sem categoria" className={channels.length === 0 ? 'absolute inset-x-2 top-0' : undefined}>
+      {enabled && (
+        <div {...drop.props} data-testid="sem-categoria" className={cn('relative', channels.length === 0 ? 'h-3' : 'h-2')}>
+          <DropLine edge={drop.edge} />
+        </div>
+      )}
+      <ChannelList channels={channels} categoryId={null} />
     </section>
   )
+}
+
+interface CategorySectionProps {
+  group: CategoryGroup
+  nextCategoryId: string | null
+  collapsed: boolean
+  onToggle: () => void
+  onAddChannel: () => void
+  onRename: () => void
+  onDelete: () => void
+}
+
+function CategorySection({ group, nextCategoryId, collapsed, onToggle, onAddChannel, onRename, onDelete }: CategorySectionProps) {
+  const { category, channels } = group
+  const { enabled, apply } = useContext(ArrangeContext)
+  const drop = useDropTarget(enabled ? [CATEGORY_DRAG, CHANNEL_DRAG] : [], (kind, id, edge) =>
+    apply((layout) =>
+      kind === CATEGORY_DRAG
+        ? moveCategory(layout, id, edge === 'before' ? category.id : nextCategoryId)
+        : moveChannel(layout, id, { categoryId: category.id, beforeId: channels[0]?.id ?? null })
+    )
+  )
+
+  return (
+    <section aria-label={category.name}>
+      <Menu>
+        <MenuContextTrigger
+          disabled={!enabled}
+          {...dragSource(CATEGORY_DRAG, category.id, enabled)}
+          {...drop.props}
+          className="group relative flex items-center rounded-sm pr-1 pb-1"
+        >
+          <DropLine edge={drop.edge} />
+          <button
+            onClick={onToggle}
+            aria-expanded={!collapsed}
+            className="flex min-w-0 flex-1 items-center gap-0.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase hover:text-accent-foreground"
+          >
+            <ChevronDown className={cn('size-3 shrink-0 transition-transform', collapsed && '-rotate-90')} />
+            <span className="truncate">{category.name}</span>
+          </button>
+          {enabled && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button onClick={onAddChannel} aria-label="Criar canal" className="text-muted-foreground hover:text-accent-foreground">
+                  <Plus className="size-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Criar canal</TooltipContent>
+            </Tooltip>
+          )}
+        </MenuContextTrigger>
+        <MenuContent data-glass="surface" className={MENU_CONTENT}>
+          <MenuItem onSelect={onAddChannel} className={MENU_ITEM}>
+            <Plus aria-hidden />
+            Criar canal
+          </MenuItem>
+          <MenuItem onSelect={onRename} className={MENU_ITEM}>
+            <Pencil aria-hidden />
+            Renomear categoria
+          </MenuItem>
+          <MenuSeparator className="my-1 h-px bg-border" />
+          <MenuItem onSelect={onDelete} className={cn(MENU_ITEM, 'text-destructive data-highlighted:text-destructive')}>
+            <Trash2 aria-hidden />
+            Apagar categoria
+          </MenuItem>
+        </MenuContent>
+      </Menu>
+      {!collapsed && <ChannelList channels={channels} categoryId={category.id} />}
+    </section>
+  )
+}
+
+function useChannelRow(channel: Channel, slot: Slot) {
+  const { enabled, apply } = useContext(ArrangeContext)
+  const drop = useDropTarget(enabled ? [CHANNEL_DRAG] : [], (_kind, id, edge) =>
+    apply((layout) => moveChannel(layout, id, { categoryId: slot.categoryId, beforeId: edge === 'before' ? channel.id : slot.nextId }))
+  )
+  return { rowProps: { ...dragSource(CHANNEL_DRAG, channel.id, enabled), ...drop.props }, edge: drop.edge }
 }
 
 function onActivate(handler: () => void) {
@@ -214,15 +353,18 @@ function DeleteChannelButton({ channel }: { channel: Channel }) {
 const itemBase =
   'group relative flex h-8 cursor-pointer items-center gap-1.5 rounded-md px-2 text-sidebar-foreground outline-none hover:bg-accent/50 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring'
 
-function TextChannelItem({ channel }: { channel: Channel }) {
+function TextChannelItem({ channel, slot }: { channel: Channel; slot: Slot }) {
+  const { rowProps, edge } = useChannelRow(channel, slot)
   const active = useApp((s) => s.view?.kind === 'text' && s.view.channelId === channel.id)
   const unread = useApp((s) => !!s.unread[channel.id])
+  const mentioned = useApp((s) => !!s.mentioned[channel.id])
   const muted = useChannelMuted(channel.id)
 
   return (
     <MuteChannelMenu channelId={channel.id} noun="canal">
       <div
         {...onActivate(() => selectTextChannel(channel.id))}
+        {...rowProps}
         data-muted={muted}
         className={cn(
           itemBase,
@@ -231,9 +373,11 @@ function TextChannelItem({ channel }: { channel: Channel }) {
           muted && !active && 'opacity-50'
         )}
       >
+        <DropLine edge={edge} />
         {unread && !active && <span className="absolute -left-2 h-2 w-1 rounded-r-full bg-accent-foreground" />}
         <Hash className="size-5 shrink-0 opacity-60" />
         <span className="flex-1 truncate text-[15px]">{channel.name}</span>
+        {mentioned && !active && <MentionDot />}
         <PrivateBadge channelId={channel.id} />
         <ChannelActions channel={channel} />
       </div>
@@ -245,7 +389,8 @@ function TextChannelItem({ channel }: { channel: Channel }) {
 const VOICE_USER_DRAG = 'application/x-concord-voice-user'
 const isVoiceUserDrag = (e: DragEvent): boolean => Array.from(e.dataTransfer?.types ?? []).includes(VOICE_USER_DRAG)
 
-function VoiceChannelItem({ channel }: { channel: Channel }) {
+function VoiceChannelItem({ channel, slot }: { channel: Channel; slot: Slot }) {
+  const { rowProps, edge } = useChannelRow(channel, slot)
   const active = useApp((s) => s.view?.kind === 'voice' && s.view.channelId === channel.id)
   const connected = useApp((s) => s.myVoiceChannelId === channel.id)
   const joining = useApp((s) => s.joiningVoice && s.view?.channelId === channel.id)
@@ -254,6 +399,7 @@ function VoiceChannelItem({ channel }: { channel: Channel }) {
   const [dropping, setDropping] = useState(false)
   // chat de texto da sala: mensagem nova sem o painel "Chat" aberto
   const unread = useApp((s) => !!s.unread[channel.id])
+  const mentioned = useApp((s) => !!s.mentioned[channel.id])
   const muted = useChannelMuted(channel.id)
 
   return (
@@ -280,6 +426,7 @@ function VoiceChannelItem({ channel }: { channel: Channel }) {
       <MuteChannelMenu channelId={channel.id} noun="canal">
         <div
           {...onActivate(() => void joinVoice(channel.id))}
+          {...rowProps}
           data-muted={muted}
           className={cn(
             itemBase,
@@ -289,6 +436,7 @@ function VoiceChannelItem({ channel }: { channel: Channel }) {
             muted && !active && !connected && 'opacity-50'
           )}
         >
+          <DropLine edge={edge} />
           {unread && <span className="absolute -left-2 h-2 w-1 rounded-r-full bg-accent-foreground" />}
           {joining ? (
             <Loader2 className="size-5 shrink-0 animate-spin opacity-60" />
@@ -296,6 +444,7 @@ function VoiceChannelItem({ channel }: { channel: Channel }) {
             <Volume2 className={cn('size-5 shrink-0 opacity-60', connected && 'text-success opacity-100')} />
           )}
           <span className="flex-1 truncate text-[15px]">{channel.name}</span>
+          {mentioned && <MentionDot />}
           <PrivateBadge channelId={channel.id} />
           <VoiceChatShortcut channelId={channel.id} unread={unread} />
           <ChannelActions channel={channel} />
@@ -314,6 +463,10 @@ function VoiceChannelItem({ channel }: { channel: Channel }) {
 }
 
 /** Abre o chat de texto da sala sem entrar na voz (sempre à vista com mensagem nova; senão, ao passar o mouse). */
+function MentionDot() {
+  return <span role="img" aria-label="Você foi mencionado" className="size-2 shrink-0 rounded-full bg-destructive" />
+}
+
 function VoiceChatShortcut({ channelId, unread }: { channelId: string; unread: boolean }) {
   return (
     <Tooltip>

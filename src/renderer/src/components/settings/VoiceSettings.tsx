@@ -17,6 +17,9 @@ import {
   setMicGain,
   setOutputVolume,
   setNoiseSuppression,
+  setMicSensitivity,
+  startMicLevelPreview,
+  stopMicLevelPreview,
   setOverlayCorner,
   setOverlayEditing,
   setOverlayEnabled,
@@ -30,6 +33,9 @@ import {
 import type { LevelerTarget } from '@/lib/leveler/level'
 import { shortcutLabel, type OverlayCorner, type OverlayShortcutAction, type OverlaySize } from '@shared/overlay'
 import { MIC_GAIN_MAX, OUTPUT_VOLUME_MAX } from '@/lib/mic-gain'
+import { SENSITIVITY_MAX_DB, SENSITIVITY_MIN_DB } from '@/lib/mic-gate'
+import { Meter, MeterIndicator, MeterTrack } from '@ui-sdk/react/meter'
+import { Slider, SliderControl, SliderThumb, SliderTrack } from '@ui-sdk/react/slider'
 import { useApp } from '@/store'
 import { PushToTalkSettings } from '../voice/PushToTalk'
 import { SettingsHeading } from './SettingsHeading'
@@ -93,6 +99,8 @@ export function VoiceSettings() {
       <VoiceLevelerSettings />
 
       <NoiseSuppression />
+
+      <MicSensitivity />
 
       <PushToTalkSettings />
 
@@ -199,12 +207,10 @@ function VoiceLevelerSettings() {
 
 const NOISE_TEXT = {
   off: 'Desligada: o microfone vai sem filtro.',
-  light: 'Ambiente silencioso: usando o filtro leve.',
-  advanced: 'Ruído detectado: filtro avançado ativo.',
-  'light-fallback': 'Filtro avançado indisponível neste computador: usando o filtro leve.'
+  advanced: 'Filtro de ruído ativo: teclado e barulhos de fundo saem da sua voz.',
+  'light-fallback': 'Filtro de ruído indisponível neste computador: usando o filtro leve.'
 } as const
 
-/** Supressão de ruído automática (B13): só liga/desliga; o modo o app escolhe sozinho. */
 function NoiseSuppression() {
   const enabled = useApp((s) => s.noiseSuppression)
   const mode = useApp((s) => s.noiseMode)
@@ -222,6 +228,59 @@ function NoiseSuppression() {
       </label>
       <p className="pl-6 text-xs text-muted-foreground" aria-live="polite">
         {status}
+      </p>
+    </div>
+  )
+}
+
+const levelPercent = (db: number | null): number =>
+  db === null || !Number.isFinite(db) ? 0 : Math.round(Math.min(SENSITIVITY_MAX_DB, Math.max(SENSITIVITY_MIN_DB, db)) - SENSITIVITY_MIN_DB)
+
+function MicSensitivity() {
+  const sensitivity = useApp((s) => s.micSensitivity)
+  const level = useApp((s) => s.micLevel)
+  useEffect(() => {
+    void startMicLevelPreview()
+    return stopMicLevelPreview
+  }, [])
+  const passes = level !== null && level >= sensitivity
+  return (
+    <div className="space-y-2 border-t border-border pt-4">
+      <p className="text-sm font-medium text-foreground">Sensibilidade do microfone</p>
+      <Slider
+        value={sensitivity}
+        min={SENSITIVITY_MIN_DB}
+        max={SENSITIVITY_MAX_DB}
+        step={1}
+        onValueChange={(value) => setMicSensitivity(value as number)}
+        className="group"
+      >
+        <SliderControl className="relative flex h-6 w-full items-center">
+          <Meter
+            value={levelPercent(level)}
+            min={0}
+            max={SENSITIVITY_MAX_DB - SENSITIVITY_MIN_DB}
+            aria-label="Nível do microfone"
+            className="absolute inset-x-0 top-1/2 -translate-y-1/2"
+          >
+            <MeterTrack className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+              <MeterIndicator className={passes ? 'h-full bg-success' : 'h-full bg-muted-foreground'} />
+            </MeterTrack>
+          </Meter>
+          <SliderTrack className="relative h-2 w-full">
+            <SliderThumb
+              aria-label="Sensibilidade do microfone"
+              className="h-5 w-1.5 rounded-full bg-accent-foreground shadow has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring"
+            />
+          </SliderTrack>
+        </SliderControl>
+      </Slider>
+      <p className="text-xs text-muted-foreground" aria-live="polite">
+        {level === null ? 'Fale para ver até onde o microfone chega.' : passes ? 'Sua voz passa.' : 'Abaixo da linha: o microfone fica cortado.'}
+      </p>
+      <p className="text-xs text-muted-foreground">
+        A barra mostra o volume do seu microfone. Deixe a linha acima do teclado e do som de fundo (vídeo na caixa de
+        som, por exemplo) e abaixo da sua voz: nas pausas, o microfone fica em silêncio.
       </p>
     </div>
   )

@@ -8,6 +8,7 @@ import { cancelRestore, getAuthConfig, login, loginWithGoogle, register, savedSe
 import { randomTag } from '@/lib/image'
 import { useApp } from '@/store'
 import { AvatarPicker } from './AvatarPicker'
+import { ConcordLogo } from './ConcordLogo'
 import { GoogleIcon } from './GoogleIcon'
 
 type Mode = 'login' | 'register'
@@ -107,9 +108,7 @@ export function LoginScreen() {
     <Backdrop>
       <form onSubmit={submit} data-glass="surface" className="w-full max-w-[460px] rounded-lg bg-background p-8 shadow-2xl">
         <div className="mb-6 text-center">
-          <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-2xl bg-primary text-2xl font-bold text-white">
-            C
-          </div>
+          <ConcordLogo className="mx-auto mb-4 size-14" />
           <h1 className="text-2xl font-semibold text-accent-foreground">
             {isRegister ? 'Criar uma conta' : 'Boas-vindas de volta!'}
           </h1>

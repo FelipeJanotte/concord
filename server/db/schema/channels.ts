@@ -1,7 +1,18 @@
 // Canais de texto e voz, e as conversas privadas (dm, v3) com seus membros.
 import { sql } from 'drizzle-orm'
-import { check, index, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
+import { check, index, integer, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
 import { accounts } from './accounts'
+
+export const channelCategories = pgTable(
+  'channel_categories',
+  {
+    id: uuid('id').primaryKey(),
+    name: text('name').notNull(),
+    position: integer('position').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => [check('channel_categories_name_check', sql`char_length(${t.name}) between 1 and 32`)]
+)
 
 export const channels = pgTable(
   'channels',
@@ -10,6 +21,8 @@ export const channels = pgTable(
     name: text('name').notNull(),
     /** 'text' | 'voice' | 'dm' (texto + check em vez de enum: acrescentar um tipo é só trocar o check) */
     type: text('type').notNull(),
+    position: integer('position').notNull().default(0),
+    categoryId: uuid('category_id').references(() => channelCategories.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
   },
   (t) => [

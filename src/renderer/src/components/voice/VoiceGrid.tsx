@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import { HeadphoneOff, MicOff, VolumeX } from 'lucide-react'
 import type { VoiceState } from '@shared/types'
 import { UserAvatar } from '@/components/UserAvatar'
-import { watchScreens } from '@/lib/client'
+import { enterRoomView, leaveRoomView, watchScreens } from '@/lib/client'
 import { featuredScreens, moveScreen, toggleFeatured, watchedScreens } from '@/lib/featured-screens'
 import { bestTileLayout, useElementSize } from '@/lib/tile-layout'
 import { cn } from '@/lib/utils'
@@ -10,7 +10,7 @@ import { useApp } from '@/store'
 import { CameraVideo } from './CameraTile'
 import { MemberContextMenu } from './MemberContextMenu'
 import { ServerMutedIcon } from './ModerationMenu'
-import { LiveBadge, ScreenStage, ScreenTile, type ScreenArrangement } from './ScreenTile'
+import { LiveBadge, ScreenStage, ScreenTile } from './ScreenTile'
 
 const MAX_TILE_WITHOUT_HEIGHT = 320
 
@@ -39,14 +39,21 @@ export function VoiceGrid({ members, fill = true }: { members: VoiceState[]; fil
   const selfId = useApp((s) => s.self?.id)
   const [chosen, setChosen] = useState<string[]>([])
   const [membersHidden, setMembersHidden] = useState(false)
-  const [arrangement, setArrangement] = useState<ScreenArrangement>('side-by-side')
 
   const featured = featuredScreens(screens, chosen)
   if (featured.length !== chosen.length) setChosen(featured)
 
   const watched = watchedScreens(featured, selfId)
-  useEffect(() => watchScreens(watched), [watched.join(' ')])
-  useEffect(() => () => watchScreens([]), [])
+  useEffect(() => watchScreens('room', watched), [watched.join(' ')])
+  const featuredOnLeave = useRef(featured)
+  featuredOnLeave.current = featured
+  useEffect(() => {
+    enterRoomView()
+    return () => {
+      leaveRoomView(featuredOnLeave.current)
+      watchScreens('room', [])
+    }
+  }, [])
 
   const watch = (id: string): void => setChosen([id])
   const watchable = (userId: string): (() => void) | undefined =>
@@ -74,8 +81,6 @@ export function VoiceGrid({ members, fill = true }: { members: VoiceState[]; fil
         screens={screens}
         onToggle={(id) => setChosen(toggleFeatured(featured, id))}
         onMove={(dragged, target) => setChosen(moveScreen(featured, dragged, target))}
-        arrangement={arrangement}
-        onToggleArrangement={() => setArrangement((a) => (a === 'side-by-side' ? 'stacked' : 'side-by-side'))}
         onStopWatching={() => setChosen([])}
         membersHidden={membersHidden}
         onToggleMembers={() => setMembersHidden((h) => !h)}

@@ -17,10 +17,10 @@
  * Tudo por conta, porque a identidade muda a cada conexão.
  *
  * Supressão de ruído automática (B13): `lib/noise/processor.ts` entra como processador do microfone
- * (`setProcessor`) antes de publicar; `setNoiseSuppression(false)` manda o áudio cru.
+ * (`setProcessor`) antes de publicar; `setNoiseSuppression(false)` troca pelo `MicGainProcessor`.
  *
  * Volumes (Configurações de voz): `setMicGain` (0 a 200%) entra no processador do microfone (o de
- * ruído, ou o `MicGainProcessor` com a supressão desligada; em 100% sem supressão, nenhum) e
+ * ruído, ou o `MicGainProcessor` com a supressão desligada; os dois com a sensibilidade) e
  * `setOutputVolume` (0 a 100%) multiplica o volume de cada pessoa e vale para todo áudio da sala.
  */
 import {
@@ -33,15 +33,18 @@ import {
   type LocalAudioTrack,
   type LocalTrackPublication,
   type Participant,
+  type RemoteParticipant,
   type RemoteTrack,
   type RemoteTrackPublication,
   type TrackPublication
 } from 'livekit-client'
 import type { JoinVoiceResult, VoicePermissions } from '@shared/types'
+import { DEFAULT_SCREEN_QUALITY, screenCapture, type ScreenQuality } from '@shared/screen'
 import { permissionsFrom } from './voice-permissions'
 import { loadRnnoiseEngine } from './noise/engine'
 import { AutoNoiseProcessor, type NoiseMode } from './noise/processor'
-import { clampMicGain, clampOutputVolume, MicGainProcessor, type GainControl } from './mic-gain'
+import { clampMicGain, clampOutputVolume, MicGainProcessor, type MicProcessorSettings } from './mic-gain'
+import { clampSensitivity, SENSITIVITY_DEFAULT_DB } from './mic-gate'
 import { AudioClockWatchdog } from './audio-clock'
 import { SpeakingDetector } from './speaking/detector'
 import { VoiceLeveler, type LevelerGains } from './leveler/leveler'
@@ -69,22 +72,29 @@ export const MUSIC_BOT_VOLUME_ID = 'music-bot'
 const volumeIdOf = (participant: Participant | undefined): string | undefined =>
   participant?.attributes?.accountId ?? (participant?.attributes?.bot === 'music' ? MUSIC_BOT_VOLUME_ID : undefined)
 
-const SCREEN_CAPTURE = { resolution: { width: 1920, height: 1080, frameRate: 15 }, contentHint: 'detail' as const }
+
+const isScreenSource = (source: Track.Source): boolean => source === Track.Source.ScreenShare || source === Track.Source.ScreenShareAudio
 
 /** O que o VoiceClient usa de fora; os testes trocam por versões falsas. */
 export interface VoiceDeps {
   createRoom: (opts: { outputDeviceId: string | null }) => Room
   /** `deviceId` null = microfone padrão do sistema; `noiseSuppression` = supressão nativa do WebRTC */
   createMicTrack: (deviceId: string | null, opts?: { noiseSuppression: boolean }) => Promise<LocalAudioTrack>
-  /** processador da supressão automática; avisa o modo atual; `gain` = volume do microfone */
-  createNoiseProcessor: (onMode: (mode: NoiseMode) => void, gain: number) => AutoNoiseProcessor
-  /** só o volume do microfone (supressão desligada) */
-  createGainProcessor: (gain: number) => MicGainProcessor
+  createNoiseProcessor: (onMode: (mode: NoiseMode) => void, settings: MicSettings) => AutoNoiseProcessor
+  createGainProcessor: (settings: MicSettings) => MicGainProcessor
   /** AudioContext a 48 kHz (o RNNoise só trabalha nessa taxa) */
   createAudioContext: () => AudioContext
-  createClockWatchdog: (ctx: AudioContext) => { stop: () => void }
+  createClockWatchdog: (ctx: AudioContext, onStuck: () => Promise<void>) => { stop: () => void }
   listDevices: (kind: MediaDeviceKind) => Promise<MediaDeviceInfo[]>
   createLeveler: () => VoiceLeveler
+}
+
+type MicSettings = Omit<MicProcessorSettings, 'clock'>
+
+const MIC_CLOCK: MicProcessorSettings['clock'] = {
+  now: () => performance.now(),
+  setInterval: (fn, ms) => window.setInterval(fn, ms),
+  clearInterval: (id) => window.clearInterval(id as number)
 }
 
 const defaultDeps: VoiceDeps = {
@@ -100,26 +110,26 @@ const defaultDeps: VoiceDeps = {
       dynacast: true
     }),
   createMicTrack: (deviceId, opts) => createLocalAudioTrack(micCapture(deviceId, opts?.noiseSuppression ?? true)),
-  createGainProcessor: (gain) => new MicGainProcessor(gain),
-  createNoiseProcessor: (onMode, gain) =>
+  createGainProcessor: (settings) => new MicGainProcessor({ ...settings, clock: MIC_CLOCK }),
+  createNoiseProcessor: (onMode, settings) =>
     new AutoNoiseProcessor(
       {
         loadEngine: loadRnnoiseEngine,
-        cores: () => navigator.hardwareConcurrency || 4,
-        now: () => Date.now(),
-        setInterval: (fn, ms) => window.setInterval(fn, ms),
-        clearInterval: (id) => window.clearInterval(id as number)
+        cores: () => navigator.hardwareConcurrency || 4
       },
       onMode,
-      gain
+      { ...settings, clock: MIC_CLOCK }
     ),
   createAudioContext: () => new AudioContext({ sampleRate: 48000 }),
-  createClockWatchdog: (ctx) => {
+  createClockWatchdog: (ctx, onStuck) => {
     const watchdog = new AudioClockWatchdog(ctx, {
       now: () => performance.now(),
       setInterval: (fn, ms) => window.setInterval(fn, ms),
       clearInterval: (id) => window.clearInterval(id as number),
-      onRecover: (rate) => console.warn(`[voz] áudio do microfone rodava a ${rate}x da velocidade; processamento reiniciado`)
+      onRecover: (rate) => {
+        console.warn(`[voz] áudio do microfone rodava a ${rate}x da velocidade; microfone reaberto`)
+        void onStuck()
+      }
     })
     watchdog.start()
     return watchdog
@@ -178,6 +188,9 @@ export class VoiceClient {
   private speakingDetector: SpeakingDetector | null = null
   /** identidade → faixa de vídeo da tela (remota ou a própria, como prévia) */
   private screens = new Map<string, Track>()
+  private sharingScreens = new Set<string>()
+  private screenViews = new Map<string, Set<HTMLVideoElement>>()
+  private watched: string[] = []
   /** câmera ligada de cada conexão da sala (B21), a própria inclusa como prévia */
   private cameras = new Map<string, Track>()
   /** câmera escolhida; null = padrão do sistema */
@@ -213,7 +226,9 @@ export class VoiceClient {
   private clockWatchdog: { stop: () => void } | null = null
   /** volume do microfone (0 a 2) e o processador que o aplica agora (null = microfone sem processador) */
   private micGain = 1
-  private gainControl: GainControl | null = null
+  private micSensitivity = SENSITIVITY_DEFAULT_DB
+  private micProcessor: MicGainProcessor | AutoNoiseProcessor | null = null
+  onMicLevel: ((db: number) => void) | null = null
   /** volume de saída (0 a 1), multiplica o de cada pessoa */
   private outputVolume = 1
   private levelerEnabled = false
@@ -289,10 +304,13 @@ export class VoiceClient {
     this.mic = mic
     this.bindRoom(room)
     try {
-      await room.connect(res.url, res.token, { autoSubscribe: true })
+      await room.connect(res.url, res.token, { autoSubscribe: false })
       this.connecting = null
       // Saiu, trocou de sala ou a conexão com o Concord caiu enquanto conectava: não é sucesso.
       if (this.room !== room) return { micError, cancelled: true, ...permissions }
+      for (const participant of room.remoteParticipants.values()) {
+        for (const pub of participant.trackPublications.values()) this.trackPublished(pub, participant)
+      }
       this.detector().watch(room.localParticipant.identity, () => this.mic?.mediaStreamTrack)
       // O filtro entra antes de publicar: ninguém chega a ouvir o áudio cru.
       if (mic) await this.attachProcessor(mic)
@@ -356,12 +374,14 @@ export class VoiceClient {
     this.publishScreenAudio()
     this.mic?.stop() // o LiveKit destrói o processador junto com a faixa
     this.closeAudioContext()
-    this.gainControl = null
+    this.micProcessor = null
     this.onNoiseModeChange?.(null)
     this.mic = null
     this.measuredSpeakers = []
     if (Object.keys(useApp.getState().speaking).length) useApp.setState({ speaking: {} })
     this.screens.clear()
+    this.sharingScreens.clear()
+    this.watched = []
     this.publishScreens()
     this.cameras.clear()
     this.publishCameras()
@@ -425,7 +445,7 @@ export class VoiceClient {
     if (prev.canSpeak && !next.canSpeak && this.mic) {
       const mic = this.mic
       this.mic = null
-      this.gainControl = null
+      this.micProcessor = null
       await room.localParticipant.unpublishTrack(mic).catch(() => {})
       mic.stop()
     } else if (!prev.canSpeak && next.canSpeak && !this.mic) {
@@ -511,15 +531,25 @@ export class VoiceClient {
     const mic = this.mic
     if (!mic || !this.room) return
     if (enabled) {
+      this.micProcessor = null
       await this.recaptureMic(mic, true)
       await this.attachNoise(mic)
     } else {
       await mic.stopProcessor()
-      this.gainControl = null
+      this.micProcessor = null
       await this.recaptureMic(mic, false)
       this.onNoiseModeChange?.('off')
-      if (this.micGain !== 1) await this.attachGain(mic)
+      await this.attachGain(mic)
     }
+  }
+
+  private async reopenMic(): Promise<void> {
+    const mic = this.mic
+    if (!mic || !this.room) return
+    await mic.stopProcessor()
+    this.micProcessor = null
+    await this.recaptureMic(mic, this.noiseEnabled)
+    await this.attachProcessor(mic)
   }
 
   // ---------- volumes ----------
@@ -527,9 +557,12 @@ export class VoiceClient {
   /** Volume do microfone (0 a 2). Na hora, se estiver numa sala; senão vale para a próxima entrada. */
   async setMicGain(gain: number): Promise<void> {
     this.micGain = clampMicGain(gain)
-    if (this.gainControl) return this.gainControl.setGain(this.micGain)
-    // supressão desligada e microfone cru: só põe um processador quando o volume sai de 100%
-    if (this.mic && this.room && !this.noiseEnabled && this.micGain !== 1) await this.attachGain(this.mic)
+    this.micProcessor?.setGain(this.micGain)
+  }
+
+  setMicSensitivity(db: number): void {
+    this.micSensitivity = clampSensitivity(db)
+    this.micProcessor?.setSensitivity(this.micSensitivity)
   }
 
   /** Volume de saída (0 a 1): todo áudio da sala, junto com o volume de cada pessoa. */
@@ -584,13 +617,13 @@ export class VoiceClient {
   /** Processador do microfone antes de publicar: o de ruído (com o volume) ou só o volume. */
   private async attachProcessor(mic: LocalAudioTrack): Promise<void> {
     if (this.noiseEnabled) await this.attachNoise(mic)
-    else if (this.micGain !== 1) await this.attachGain(mic)
+    else await this.attachGain(mic)
   }
 
   private openAudioContext(): AudioContext {
     if (!this.audioContext) {
       this.audioContext = this.deps.createAudioContext()
-      this.clockWatchdog = this.deps.createClockWatchdog(this.audioContext)
+      this.clockWatchdog = this.deps.createClockWatchdog(this.audioContext, () => this.reopenMic())
     }
     return this.audioContext
   }
@@ -606,11 +639,11 @@ export class VoiceClient {
   private async attachGain(mic: LocalAudioTrack): Promise<void> {
     try {
       await mic.setAudioContext(this.openAudioContext())
-      const processor = this.deps.createGainProcessor(this.micGain)
+      const processor = this.deps.createGainProcessor(this.micSettings())
       await mic.setProcessor(processor)
-      this.gainControl = processor
+      this.micProcessor = processor
     } catch (err) {
-      this.gainControl = null
+      this.micProcessor = null
       console.warn('[voz] não foi possível ajustar o volume do microfone:', err)
     }
   }
@@ -619,14 +652,18 @@ export class VoiceClient {
   private async attachNoise(mic: LocalAudioTrack): Promise<void> {
     try {
       await mic.setAudioContext(this.openAudioContext())
-      const processor = this.deps.createNoiseProcessor((mode) => this.onNoiseModeChange?.(mode), this.micGain)
+      const processor = this.deps.createNoiseProcessor((mode) => this.onNoiseModeChange?.(mode), this.micSettings())
       await mic.setProcessor(processor)
-      this.gainControl = processor
+      this.micProcessor = processor
     } catch (err) {
-      this.gainControl = null
+      this.micProcessor = null
       console.warn('[ruído] não foi possível ligar o filtro automático:', err)
       this.onNoiseModeChange?.('light-fallback')
     }
+  }
+
+  private micSettings(): MicSettings {
+    return { gain: this.micGain, sensitivityDb: this.micSensitivity, onLevel: (db) => this.onMicLevel?.(db) }
   }
 
   private async recaptureMic(mic: LocalAudioTrack, nativeSuppression: boolean): Promise<void> {
@@ -670,10 +707,28 @@ export class VoiceClient {
   // ---------- tela ----------
 
   /** Publica a tela. A fonte (no Electron) já foi escolhida pelo ScreenPicker. */
-  async startScreenShare(audio: boolean): Promise<void> {
+  async startScreenShare(audio: boolean, quality: ScreenQuality = DEFAULT_SCREEN_QUALITY): Promise<void> {
     const room = this.room
     if (!room) throw new Error('Entre numa sala de voz para compartilhar a tela')
-    await room.localParticipant.setScreenShareEnabled(true, { ...SCREEN_CAPTURE, audio, systemAudio: audio ? 'include' : 'exclude' })
+    const { resolution, contentHint, maxBitrate } = screenCapture(quality)
+    await room.localParticipant.setScreenShareEnabled(
+      true,
+      { resolution, contentHint, audio, systemAudio: audio ? 'include' : 'exclude' },
+      { screenShareEncoding: { maxBitrate, maxFramerate: resolution.frameRate } }
+    )
+  }
+
+  async setScreenQuality(quality: ScreenQuality): Promise<void> {
+    const track = this.room?.localParticipant.getTrackPublication(Track.Source.ScreenShare)?.track
+    if (!track) return
+    const { resolution, contentHint, maxBitrate } = screenCapture(quality)
+    track.mediaStreamTrack.contentHint = contentHint
+    await track.mediaStreamTrack.applyConstraints(resolution)
+    const sender = track.sender
+    if (!sender) return
+    const params = sender.getParameters()
+    params.encodings = params.encodings.map((encoding) => ({ ...encoding, maxBitrate, maxFramerate: resolution.frameRate }))
+    await sender.setParameters(params)
   }
 
   async stopScreenShare(): Promise<void> {
@@ -682,10 +737,44 @@ export class VoiceClient {
 
   /** Liga a tela de `userId` num <video>. Devolve a função que desliga. */
   attachScreen(userId: string, el: HTMLVideoElement): () => void {
-    const track = this.screens.get(userId)
-    if (!track) return () => {}
-    track.attach(el)
-    return () => void track.detach(el)
+    const views = this.screenViews.get(userId) ?? new Set<HTMLVideoElement>()
+    this.screenViews.set(userId, views.add(el))
+    this.screens.get(userId)?.attach(el)
+    return () => {
+      views.delete(el)
+      if (views.size === 0) this.screenViews.delete(userId)
+      this.screens.get(userId)?.detach(el)
+    }
+  }
+
+  get watchedScreens(): readonly string[] {
+    return [...this.watched]
+  }
+
+  setWatchedScreens(screenIds: string[]): void {
+    this.watched = [...new Set(screenIds)]
+    for (const participant of this.room?.remoteParticipants.values() ?? []) {
+      for (const pub of participant.trackPublications.values()) {
+        if (isScreenSource(pub.source)) this.applySubscription(pub, participant.identity)
+      }
+    }
+  }
+
+  private trackPublished(pub: RemoteTrackPublication, participant: RemoteParticipant): void {
+    if (pub.source === Track.Source.ScreenShare) this.markSharing(participant.identity, true)
+    this.applySubscription(pub, participant.identity)
+  }
+
+  private applySubscription(pub: RemoteTrackPublication, identity: string): void {
+    const wanted = !isScreenSource(pub.source) || this.watched.includes(identity)
+    if (pub.isDesired !== wanted) pub.setSubscribed(wanted)
+  }
+
+  private markSharing(identity: string, sharing: boolean): void {
+    if (sharing === this.sharingScreens.has(identity)) return
+    if (sharing) this.sharingScreens.add(identity)
+    else this.sharingScreens.delete(identity)
+    this.publishScreens()
   }
 
   screenMediaTrack(userId: string): MediaStreamTrack | undefined {
@@ -718,6 +807,10 @@ export class VoiceClient {
 
   private bindRoom(room: Room): void {
     room
+      .on(RoomEvent.TrackPublished, (pub: RemoteTrackPublication, participant: RemoteParticipant) => this.trackPublished(pub, participant))
+      .on(RoomEvent.TrackUnpublished, (pub: RemoteTrackPublication, participant: RemoteParticipant) => {
+        if (pub.source === Track.Source.ScreenShare) this.markSharing(participant.identity, false)
+      })
       .on(RoomEvent.TrackSubscribed, (track: RemoteTrack, _pub: RemoteTrackPublication, participant: Participant) => {
         if (track.kind === Track.Kind.Video) {
           if (track.source === Track.Source.ScreenShare) this.addScreen(participant.identity, track)
@@ -758,7 +851,10 @@ export class VoiceClient {
         track.detach().forEach((el) => el.remove())
       })
       .on(RoomEvent.LocalTrackPublished, (pub: LocalTrackPublication, participant: Participant) => {
-        if (pub.source === Track.Source.ScreenShare && pub.track) this.addScreen(participant.identity, pub.track)
+        if (pub.source === Track.Source.ScreenShare && pub.track) {
+          this.addScreen(participant.identity, pub.track)
+          this.markSharing(participant.identity, true)
+        }
         if (pub.source === Track.Source.Camera && pub.track) this.addCamera(participant.identity, pub.track)
       })
       // `setCameraEnabled(false)` não despublica: silencia a faixa (a publicação fica). Câmera silenciada = sem câmera
@@ -777,7 +873,8 @@ export class VoiceClient {
         }
         if (pub.source !== Track.Source.ScreenShare) return
         if (pub.track) this.removeScreen(participant.identity, pub.track)
-        else if (this.screens.delete(participant.identity)) this.publishScreens()
+        else this.screens.delete(participant.identity)
+        this.markSharing(participant.identity, false)
         this.onScreenShareEnded?.()
       })
       .on(RoomEvent.ParticipantPermissionsChanged, (_prev: unknown, participant: Participant) => {
@@ -804,13 +901,13 @@ export class VoiceClient {
 
   private addScreen(identity: string, track: Track): void {
     this.screens.set(identity, track)
-    this.publishScreens()
+    for (const el of this.screenViews.get(identity) ?? []) track.attach(el)
   }
 
   private removeScreen(identity: string, track: Track): void {
     if (this.screens.get(identity) !== track) return
     this.screens.delete(identity)
-    this.publishScreens()
+    for (const el of this.screenViews.get(identity) ?? []) track.detach(el)
   }
 
   private addCamera(identity: string, track: Track): void {
@@ -839,7 +936,7 @@ export class VoiceClient {
 
   /** `store.screens` = quem tem tela disponível agora (só muda a store se mudou). */
   private publishScreens(): void {
-    const next = [...this.screens.keys()]
+    const next = [...this.sharingScreens]
     const prev = useApp.getState().screens
     if (prev.length !== next.length || next.some((id, i) => prev[i] !== id)) useApp.setState({ screens: next })
   }

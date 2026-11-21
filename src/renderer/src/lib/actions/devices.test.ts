@@ -1,6 +1,7 @@
 // Dispositivos de áudio e volume (lib/actions/devices.ts): preferências salvas e aplicadas no VoiceClient.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { voice } from '@/lib/voice'
+import { micLevelMonitor } from '@/lib/mic-level'
 import { initialState, useApp } from '@/store'
 import {
   canChooseAudioOutput,
@@ -12,6 +13,9 @@ import {
   setScreenMuted,
   setScreenVolume,
   setMicGain,
+  setMicSensitivity,
+  startMicLevelPreview,
+  stopMicLevelPreview,
   setNoiseSuppression,
   setOutputVolume,
   setSoundboardVolume,
@@ -86,7 +90,7 @@ describe('escolher dispositivo', () => {
     await selectAudioInput('mic-usb')
     await selectAudioOutput('fone')
     expect(useApp.getState()).toMatchObject({ audioInputId: 'mic-usb', audioOutputId: 'fone' })
-    expect(saved()).toEqual({ input: 'mic-usb', output: 'fone', camera: null, volumes: {}, muted: [], sounds: { enabled: true, volume: 0.5 }, noise: true, micGain: 1, outputVolume: 1, leveler: false, levelerTarget: 'medium', soundboardVolume: 1, screenVolumes: {}, screenMuted: [] })
+    expect(saved()).toEqual({ input: 'mic-usb', output: 'fone', camera: null, volumes: {}, muted: [], sounds: { enabled: true, volume: 0.5 }, noise: true, micGain: 1, micSensitivity: -60, outputVolume: 1, leveler: false, levelerTarget: 'medium', soundboardVolume: 1, screenVolumes: {}, screenMuted: [] })
     expect(voice.setInputDevice).toHaveBeenCalledWith('mic-usb')
     expect(voice.setOutputDevice).toHaveBeenCalledWith('fone')
 
@@ -313,6 +317,51 @@ describe('volume do microfone e de saída', () => {
     vi.spyOn(voice, 'setMicGain').mockRejectedValue(new Error('falhou'))
     await setMicGain(1.2)
     expect(useApp.getState().notice?.text).toBe('Não foi possível ajustar o volume do microfone.')
+  })
+})
+
+describe('sensibilidade do microfone', () => {
+  it('começa em -60 dB, salva, corrige o limite e volta igual depois de reabrir', () => {
+    const apply = vi.spyOn(voice, 'setMicSensitivity').mockImplementation(() => {})
+    loadAudioPreferences()
+    expect(useApp.getState().micSensitivity).toBe(-60)
+    expect(apply).toHaveBeenCalledWith(-60)
+    setMicSensitivity(-35)
+    expect(saved()).toMatchObject({ micSensitivity: -35 })
+    expect(apply).toHaveBeenLastCalledWith(-35)
+    useApp.setState({ micSensitivity: -60 })
+    loadAudioPreferences()
+    expect(useApp.getState().micSensitivity).toBe(-35)
+    setMicSensitivity(20)
+    expect(useApp.getState().micSensitivity).toBe(0)
+    storage.setItem('concord:audio', JSON.stringify({ micSensitivity: 'alta' }))
+    loadAudioPreferences()
+    expect(useApp.getState().micSensitivity).toBe(-60)
+  })
+
+  it('o nível medido na sala vai para a store', () => {
+    voice.onMicLevel?.(-42)
+    expect(useApp.getState().micLevel).toBe(-42)
+  })
+
+  it('fora da sala, a prévia abre o microfone escolhido; parar fecha e limpa o nível', async () => {
+    vi.spyOn(voice, 'inRoom', 'get').mockReturnValue(false)
+    const start = vi.spyOn(micLevelMonitor, 'start').mockImplementation(async (_id, onLevel) => onLevel(-50))
+    const stop = vi.spyOn(micLevelMonitor, 'stop').mockImplementation(() => {})
+    useApp.setState({ audioInputId: 'mic-usb' })
+    await startMicLevelPreview()
+    expect(start).toHaveBeenCalledWith('mic-usb', expect.any(Function))
+    expect(useApp.getState().micLevel).toBe(-50)
+    stopMicLevelPreview()
+    expect(stop).toHaveBeenCalled()
+    expect(useApp.getState().micLevel).toBeNull()
+  })
+
+  it('na sala, a prévia não abre outra captura (o nível vem do processador)', async () => {
+    vi.spyOn(voice, 'inRoom', 'get').mockReturnValue(true)
+    const start = vi.spyOn(micLevelMonitor, 'start').mockResolvedValue()
+    await startMicLevelPreview()
+    expect(start).not.toHaveBeenCalled()
   })
 })
 

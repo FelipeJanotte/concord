@@ -1,10 +1,4 @@
-/**
- * Volume do microfone e volume de saída (Configurações de voz). Funções puras de limite e o
- * processador simples do microfone usado quando a supressão de ruído está desligada (com ela
- * ligada, o ganho entra no próprio `AutoNoiseProcessor`).
- *
- *   microfone ─► ganho ─► MediaStreamDestination ─► faixa publicada
- */
+import { MicGate, type MicGateSettings } from './mic-gate'
 import { Track, type AudioProcessorOptions, type TrackProcessor } from 'livekit-client'
 
 /** Volume do microfone: 0 (mudo) a 2 (200%). */
@@ -34,6 +28,10 @@ export interface GainControl {
   setGain(gain: number): void
 }
 
+export interface MicProcessorSettings extends MicGateSettings {
+  gain: number
+}
+
 export class MicGainProcessor implements TrackProcessor<Track.Kind.Audio, AudioProcessorOptions>, GainControl {
   readonly name = 'concord-mic-gain'
   processedTrack?: MediaStreamTrack
@@ -41,8 +39,14 @@ export class MicGainProcessor implements TrackProcessor<Track.Kind.Audio, AudioP
   private ctx: AudioContext | null = null
   private source: MediaStreamAudioSourceNode | null = null
   private gainNode: GainNode | null = null
+  private gate: MicGate | null = null
+  private gain: number
+  private sensitivityDb: number
 
-  constructor(private gain = 1) {}
+  constructor(private readonly settings: MicProcessorSettings) {
+    this.gain = clampMicGain(settings.gain)
+    this.sensitivityDb = settings.sensitivityDb
+  }
 
   async init({ track, audioContext }: AudioProcessorOptions): Promise<void> {
     this.ctx = audioContext
@@ -50,7 +54,8 @@ export class MicGainProcessor implements TrackProcessor<Track.Kind.Audio, AudioP
     const out = createMonoDestination(audioContext)
     const gainNode = audioContext.createGain()
     gainNode.gain.value = this.gain
-    source.connect(gainNode).connect(out)
+    source.connect(gainNode)
+    this.gate = new MicGate(audioContext, gainNode, out, { ...this.settings, sensitivityDb: this.sensitivityDb })
     this.source = source
     this.gainNode = gainNode
     this.processedTrack = out.stream.getAudioTracks()[0]
@@ -62,14 +67,20 @@ export class MicGainProcessor implements TrackProcessor<Track.Kind.Audio, AudioP
   }
 
   async destroy(): Promise<void> {
+    this.gate?.destroy()
     this.source?.disconnect()
     this.gainNode?.disconnect()
-    this.source = this.gainNode = null
+    this.gate = this.source = this.gainNode = null
     this.processedTrack = undefined
   }
 
   setGain(gain: number): void {
     this.gain = clampMicGain(gain)
     if (this.ctx && this.gainNode) this.gainNode.gain.setTargetAtTime(this.gain, this.ctx.currentTime, 0.02)
+  }
+
+  setSensitivity(db: number): void {
+    this.sensitivityDb = db
+    this.gate?.setSensitivity(db)
   }
 }

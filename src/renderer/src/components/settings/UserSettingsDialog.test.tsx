@@ -24,7 +24,9 @@ const account: AccountInfo = {
   avatarUrl: null,
   hasPassword: true,
   hasGoogle: false,
-  tagLocked: true
+  tagLocked: true,
+  bio: '',
+  customStatus: null
 }
 
 let socket: FakeSocket
@@ -55,6 +57,14 @@ const nav = (): HTMLElement => screen.getByRole('navigation', { name: 'Seções 
 const current = (): string | null => within(nav()).getByRole('button', { current: 'page' }).textContent
 
 describe('Configurações', () => {
+  it('mostra a versão do app no fim do menu', () => {
+    vi.stubEnv('VITE_APP_VERSION', '1.2.3')
+    act(() => openSettings())
+    render(<UserSettingsDialog />)
+    expect(within(nav()).getByText('Versão 1.2.3')).toBeTruthy()
+    vi.unstubAllEnvs()
+  })
+
   it('a engrenagem do painel abre em "Minha conta", com as quatro seções no menu', async () => {
     render(
       <TooltipProvider>

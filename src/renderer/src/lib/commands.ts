@@ -17,7 +17,8 @@ export const CHAT_COMMANDS: readonly ChatCommand[] = [
   },
   { name: 'skip', description: 'Pula a música atual' },
   { name: 'stop', description: 'Para a música e limpa a fila' },
-  { name: 'queue', description: 'Mostra a fila de músicas' }
+  { name: 'queue', description: 'Mostra a fila de músicas' },
+  { name: 'shuffle', description: 'Embaralha a ordem da fila' }
 ]
 
 const findCommand = (typed: string): ChatCommand | undefined => CHAT_COMMANDS.find((c) => c.name === typed.toLowerCase())

@@ -28,3 +28,5 @@ class SilentResizeObserver {
 }
 
 globalThis.ResizeObserver ??= SilentResizeObserver
+
+Element.prototype.scrollIntoView ??= function scrollIntoView(): void {}

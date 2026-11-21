@@ -8,6 +8,10 @@ import type { ToolPayload } from './tools'
 
 export const MESSAGE_MAX_LENGTH = 2000
 
+export function messageAuthor({ id, accountId, name, tag, color, avatarUrl }: User): User {
+  return { id, accountId, name, tag, color, avatarUrl }
+}
+
 /** `text` = escrita por alguém; `tool` = resultado de uma ferramenta do grupo (v4, `tool` preenchido). */
 export type MessageKind = 'text' | 'tool' | 'pin'
 /** Quantas mensagens vêm por página do histórico. */
@@ -63,6 +67,22 @@ export interface Message {
   /** contas mencionadas no texto com o nome atual (B19); ausente = nenhuma (o @todos está no próprio texto) */
   mentions?: Mention[]
   pinnedAt?: number
+  embed?: LinkEmbed
+}
+
+export interface LinkEmbed {
+  url: string
+  title?: string
+  description?: string
+  siteName?: string
+  imageUrl?: string
+  music?: boolean
+}
+
+export interface MessageEmbedUpdate {
+  channelId: string
+  messageId: string
+  embed: LinkEmbed | null
 }
 
 /** `message:send`: texto e/ou anexos já enviados por `POST /uploads` (do próprio usuário, ainda não usados). */
@@ -151,6 +171,7 @@ export interface MessageServerEvents {
   'message:edited': (payload: MessageEdited) => void
   typing: (payload: { channelId: string; userId: string; name: string }) => void
   'message:pinned': (payload: MessagePinned) => void
+  'message:embed': (payload: MessageEmbedUpdate) => void
 }
 
 export interface MessageClientEvents {
@@ -162,4 +183,5 @@ export interface MessageClientEvents {
   'message:search': (req: SearchRequest, ack: (res: SearchResult) => void) => void
   'message:pin': (payload: PinMessagePayload, ack: (res: OkResult) => void) => void
   'message:pins': (req: { channelId: string }, ack: (messages: Message[]) => void) => void
+  'message:embed-remove': (payload: { messageId: string }, ack: (res: OkResult) => void) => void
 }

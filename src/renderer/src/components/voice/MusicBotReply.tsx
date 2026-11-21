@@ -1,5 +1,5 @@
 import { Loader2, Music2 } from 'lucide-react'
-import { MUSIC_BOT_NAME, musicFailedText, musicSearchingText, musicTrackLabel, type Message, type MusicBotReply, type MusicTrackSummary } from '@shared/types'
+import { MUSIC_BOT_NAME, musicFailedText, musicSearchingText, musicShuffleText, musicTrackLabel, type Message, type MusicBotReply, type MusicTrackSummary } from '@shared/types'
 import { cn } from '@/lib/utils'
 import { BotBadge, TrackCover } from './MusicPlayer'
 
@@ -39,6 +39,8 @@ function replyView(reply: MusicBotReply): ReplyView {
       return { heading: 'Pulou', track: reply.skipped, note: reply.next ? `Tocando agora: ${musicTrackLabel(reply.next)}` : undefined }
     case 'stop':
       return { heading: 'Parou a música e limpou a fila', track: null }
+    case 'shuffle':
+      return { heading: musicShuffleText(reply.count), track: null }
     case 'searching':
       return { heading: musicSearchingText(reply.query), track: null, searching: true }
     case 'failed':

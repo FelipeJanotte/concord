@@ -32,6 +32,7 @@ function replaceChannels(next: Channel[]): void {
       hasMoreHistory: drop(st.hasMoreHistory),
       loadingOlder: drop(st.loadingOlder),
       unread: drop(st.unread),
+      mentioned: drop(st.mentioned),
       lastRead: drop(st.lastRead),
       readMarker: drop(st.readMarker),
       view: st.view && !keep.has(st.view.channelId) ? firstTextView(next) : st.view
@@ -55,8 +56,8 @@ export function selectTextChannel(channelId: string): void {
   startReading(channelId)
 }
 
-export async function createChannel(name: string, type: ChannelType): Promise<Channel> {
-  const res = await requireSocket().emitWithAck('channel:create', { name, type })
+export async function createChannel(name: string, type: ChannelType, categoryId: string | null = null): Promise<Channel> {
+  const res = await requireSocket().emitWithAck('channel:create', { name, type, categoryId })
   if (!res.ok) throw new Error(res.error)
   return res.channel
 }

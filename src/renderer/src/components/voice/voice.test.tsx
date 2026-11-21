@@ -3,8 +3,9 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ScreenShareBridge, ScreenSource } from '@shared/screen'
+import { DEFAULT_SCREEN_QUALITY, type ScreenShareBridge, type ScreenSource } from '@shared/screen'
 import type { User, VoiceState } from '@shared/types'
+import { closeScreenPip } from '@/lib/client'
 import { setSocket } from '@/lib/core'
 import { voice } from '@/lib/voice'
 import { initialState, useApp } from '@/store'
@@ -29,6 +30,28 @@ const SOURCES: ScreenSource[] = [
   { id: 'window:7:0', name: 'Navegador', kind: 'window', thumbnail: 'data:image/png;base64,AA==', appIcon: 'data:image/png;base64,AA==' }
 ]
 
+/** Simula a área medida da grade (o jsdom não tem layout nem ResizeObserver). */
+function withArea(width: number, height: number): () => void {
+  const observers: Array<() => void> = []
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      constructor(cb: () => void) {
+        observers.push(cb)
+      }
+      observe(): void {}
+      disconnect(): void {}
+    }
+  )
+  const w = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(width)
+  const h = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(height)
+  return () => {
+    w.mockRestore()
+    h.mockRestore()
+    vi.unstubAllGlobals()
+  }
+}
+
 let bridge: ScreenShareBridge & { getSources: ReturnType<typeof vi.fn>; select: ReturnType<typeof vi.fn> }
 let socket: FakeSocket
 
@@ -49,6 +72,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  closeScreenPip()
   setSocket(null)
   vi.restoreAllMocks()
 })
@@ -77,7 +101,7 @@ describe('ScreenPicker', () => {
     await userEvent.click(screen.getByRole('checkbox', { name: /áudio do computador/ }))
     await userEvent.click(screen.getByRole('button', { name: 'Compartilhar' }))
     expect(bridge.select).toHaveBeenCalledWith('screen:1:0', true)
-    expect(voice.startScreenShare).toHaveBeenCalledWith(true)
+    expect(voice.startScreenShare).toHaveBeenCalledWith(true, DEFAULT_SCREEN_QUALITY)
     await vi.waitFor(() => expect(useApp.getState().sharing).toBe(true))
     expect(useApp.getState().screenPickerOpen).toBe(false)
   })
@@ -120,18 +144,16 @@ describe('ScreenPicker', () => {
 })
 
 describe('ScreenTile', () => {
-  it('liga a tela da pessoa no <video>, desliga ao sair e clicar assiste', async () => {
-    const detach = vi.fn()
-    vi.mocked(voice.attachScreen).mockReturnValue(detach)
+  it('é um cartão sem vídeo: quem compartilha, "Ao vivo" e "Assistir tela"; clicar assiste', async () => {
     const onSelect = vi.fn()
-    const { unmount } = render(<ScreenTile userId="ana" onSelect={onSelect} />)
-    const video = screen.getByLabelText('Tela de Ana')
-    expect(voice.attachScreen).toHaveBeenCalledWith('ana', video)
+    const { container } = render(<ScreenTile userId="ana" onSelect={onSelect} />)
+    expect(container.querySelector('video')).toBeNull()
+    expect(voice.attachScreen).not.toHaveBeenCalled()
+    expect(screen.getByText('Tela de Ana')).toBeTruthy()
     expect(screen.getByText('Ao vivo')).toBeTruthy()
+    expect(screen.getByText('Assistir tela')).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: 'Assistir: Tela de Ana' }))
     expect(onSelect).toHaveBeenCalled()
-    unmount()
-    expect(detach).toHaveBeenCalled()
   })
 
   it('a própria tela aparece como "Sua tela"', () => {
@@ -198,6 +220,19 @@ describe('VoiceGrid', () => {
     expect(watchSent()).toEqual([])
   })
 
+  it('só a tela em destaque tem vídeo; parar de assistir volta ao cartão sem vídeo', async () => {
+    useApp.setState({ screens: ['ana', 'bia'] })
+    render(<VoiceGrid members={members} />)
+    expect(document.querySelectorAll('video')).toHaveLength(0)
+    await userEvent.click(card('Tela de Ana'))
+    expect([...document.querySelectorAll('video')].map((v) => v.getAttribute('aria-label'))).toEqual(['Tela de Ana'])
+    expect(voice.attachScreen).toHaveBeenCalledWith('ana', expect.any(HTMLVideoElement))
+    expect(voice.attachScreen).not.toHaveBeenCalledWith('bia', expect.anything())
+    await userEvent.click(screen.getByRole('button', { name: 'Parar de assistir' }))
+    expect(document.querySelectorAll('video')).toHaveLength(0)
+    expect(card('Tela de Ana')).toBeTruthy()
+  })
+
   it('"Parar de assistir" volta para a grade com os cards e avisa o servidor', async () => {
     useApp.setState({ screens: ['ana', 'bia'] })
     render(<VoiceGrid members={members} />)
@@ -217,16 +252,38 @@ describe('VoiceGrid', () => {
     expect(screen.queryByText(/^Assistindo:/)).toBeNull()
   })
 
-  it('sair da tela da sala deixa de contar como espectador', async () => {
+  it('sair da tela da sala com tela em destaque abre a miniatura e continua assistindo', async () => {
     useApp.setState({ screens: ['ana'] })
     const { unmount } = render(<VoiceGrid members={members} />)
     await userEvent.click(card('Tela de Ana'))
     serverKnows(['ana'])
     unmount()
+    expect(useApp.getState().pipScreenId).toBe('ana')
+    expect(watchSent()).toEqual([[['ana']]])
+    closeScreenPip()
     expect(watchSent()).toEqual([[['ana']], [[]]])
   })
 
+  it('sair da tela da sala sem tela em destaque deixa de contar como espectador', async () => {
+    useApp.setState({ screens: ['ana'] })
+    const { unmount } = render(<VoiceGrid members={members} />)
+    await userEvent.click(card('Tela de Ana'))
+    serverKnows(['ana'])
+    await userEvent.click(screen.getByRole('button', { name: 'Parar de assistir' }))
+    serverKnows([])
+    unmount()
+    expect(useApp.getState().pipScreenId).toBeNull()
+    expect(watchSent()).toEqual([[['ana']], [[]]])
+  })
+
+  it('voltar para a sala fecha a miniatura', () => {
+    useApp.setState({ screens: ['ana'], pipScreenId: 'ana' })
+    render(<VoiceGrid members={members} />)
+    expect(useApp.getState().pipScreenId).toBeNull()
+  })
+
   const panes = (): string[] => [...document.querySelectorAll<HTMLElement>('[data-screen-pane]')].map((el) => el.dataset.screenPane ?? '')
+  const arrangement = (): string | undefined => document.querySelector<HTMLElement>('[data-arrangement]')?.dataset.arrangement
   const chip = (name: string): HTMLElement => within(screen.getByRole('group', { name: 'Telas ao vivo' })).getByRole('button', { name })
 
   it('duas telas em destaque ao mesmo tempo, cada uma com o seu vídeo', async () => {
@@ -262,6 +319,7 @@ describe('VoiceGrid', () => {
     await userEvent.click(chip('Tela de Bia'))
     await userEvent.click(chip('Sua tela'))
     expect(panes()).toEqual(['ana', 'bia', 'eu'])
+    expect(arrangement()).toBe('grid')
     const pane = (id: string): HTMLElement => document.querySelector<HTMLElement>(`[data-screen-pane="${id}"]`)!
     expect(pane('ana').draggable).toBe(true)
     fireEvent.dragStart(pane('eu'))
@@ -271,18 +329,48 @@ describe('VoiceGrid', () => {
     expect(stageLabel()).toBe('Assistindo: Sua tela, Tela de Ana e Tela de Bia')
   })
 
-  it('lado a lado ou empilhadas; com uma tela só, sem o botão', async () => {
+  it('lado a lado, empilhadas ou em grade; com uma tela só, sem o botão', async () => {
     useApp.setState({ screens: ['ana', 'bia'] })
     render(<VoiceGrid members={members} />)
     await userEvent.click(card('Tela de Ana'))
     expect(screen.queryByRole('button', { name: 'Empilhar as telas' })).toBeNull()
     await userEvent.click(chip('Tela de Bia'))
-    const arrangement = (): string | undefined => document.querySelector<HTMLElement>('[data-arrangement]')?.dataset.arrangement
     expect(arrangement()).toBe('side-by-side')
     await userEvent.click(screen.getByRole('button', { name: 'Empilhar as telas' }))
     expect(arrangement()).toBe('stacked')
+    await userEvent.click(screen.getByRole('button', { name: 'Pôr as telas em grade' }))
+    expect(arrangement()).toBe('grid')
     await userEvent.click(screen.getByRole('button', { name: 'Pôr as telas lado a lado' }))
     expect(arrangement()).toBe('side-by-side')
+  })
+
+  it('3 ou mais telas em destaque abrem em grade, centralizada e com o tamanho pelo espaço', async () => {
+    const restore = withArea(1200, 500)
+    try {
+      useApp.setState({ screens: ['eu', 'ana', 'bia'] })
+      render(<VoiceGrid members={members} />)
+      await userEvent.click(card('Tela de Ana'))
+      await userEvent.click(chip('Tela de Bia'))
+      expect(arrangement()).toBe('side-by-side')
+      await userEvent.click(chip('Sua tela'))
+      const stage = document.querySelector<HTMLElement>('[data-arrangement]')!
+      expect(stage.dataset.arrangement).toBe('grid')
+      expect(stage.dataset.columns).toBe('2')
+      expect(stage.style.getPropertyValue('--tile-w')).toBe('440px')
+      expect(stage.className).toContain('justify-center')
+    } finally {
+      restore()
+    }
+  })
+
+  it('o arranjo escolhido continua quando chega a 3ª tela', async () => {
+    useApp.setState({ screens: ['eu', 'ana', 'bia'] })
+    render(<VoiceGrid members={members} />)
+    await userEvent.click(card('Tela de Ana'))
+    await userEvent.click(chip('Tela de Bia'))
+    await userEvent.click(screen.getByRole('button', { name: 'Empilhar as telas' }))
+    await userEvent.click(chip('Sua tela'))
+    expect(arrangement()).toBe('stacked')
   })
 
   it('uma das telas em destaque acabou: as outras continuam', async () => {
@@ -403,27 +491,6 @@ describe('VoiceGrid', () => {
 })
 
 describe('grade centralizada com tamanho automático', () => {
-  /** Simula a área medida da grade (o jsdom não tem layout nem ResizeObserver). */
-  function withArea(width: number, height: number): () => void {
-    const observers: Array<() => void> = []
-    vi.stubGlobal(
-      'ResizeObserver',
-      class {
-        constructor(cb: () => void) {
-          observers.push(cb)
-        }
-        observe(): void {}
-        disconnect(): void {}
-      }
-    )
-    const w = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(width)
-    const h = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(height)
-    return () => {
-      w.mockRestore()
-      h.mockRestore()
-      vi.unstubAllGlobals()
-    }
-  }
   const grid = (): HTMLElement => screen.getByText('Ana').closest('[data-tile-grid]') as HTMLElement
 
   it('centraliza e calcula o tamanho dos quadros pelo espaço: 2 pessoas numa área larga = lado a lado, grandes', () => {

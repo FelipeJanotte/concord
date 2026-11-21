@@ -31,6 +31,7 @@ import { createRole, deleteRole, reorderRoles, setMemberRoles, updateRole } from
 import { memberRoleIds, rolesByPosition } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
+import { AuditTab } from './AuditTab'
 import { BansTab } from './BansTab'
 import { RoleDot } from './RoleDot'
 
@@ -38,13 +39,14 @@ export const ROLE_NAME_MAX = 32
 const DEFAULT_COLOR = '#5865f2'
 const ADMIN_WARNING_ID = 'role-administrator-warning'
 
-type Tab = 'roles' | 'members' | 'bans'
+type Tab = 'roles' | 'members' | 'bans' | 'audit'
 
 export function CommunitySettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const access = useApp((s) => s.access)
   const me = useApp((s) => s.self?.accountId)
   const [tab, setTab] = useState<Tab>('roles')
   const seesBans = useApp((s) => !!s.access && !!s.self && can(s.access, s.self.accountId, 'banMembers'))
+  const seesAudit = useApp((s) => !!s.access && !!s.self && hasFullAccess(s.access, s.self.accountId))
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -66,6 +68,11 @@ export function CommunitySettingsDialog({ open, onOpenChange }: { open: boolean;
               Banidos
             </TabButton>
           )}
+          {seesAudit && (
+            <TabButton active={tab === 'audit'} onClick={() => setTab('audit')}>
+              Auditoria
+            </TabButton>
+          )}
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
@@ -75,6 +82,8 @@ export function CommunitySettingsDialog({ open, onOpenChange }: { open: boolean;
             <RolesTab access={access} me={me} />
           ) : tab === 'bans' ? (
             <BansTab />
+          ) : tab === 'audit' ? (
+            <AuditTab />
           ) : (
             <MembersTab access={access} me={me} />
           )}

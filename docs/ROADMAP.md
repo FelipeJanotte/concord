@@ -350,7 +350,28 @@ trocar por índice `pg_trgm` (confirmar que o PGlite tem a extensão). Ban por c
 e-mail; se virar problema, o caminho é convite para entrar (fora desta versão). O ausente pelo sistema precisa de
 teste manual no Windows (o `powerMonitor` não roda no vitest; a regra de quando ficar ausente é pura e testada).
 
-## v9 — App em Tauri/Rust e, depois, servidor em Rust
+## v9 — Tela compartilhada: qualidade, miniatura, assistir opcional e várias telas
+
+Hoje a captura é fixa (1080p a 15 fps em `lib/voice.ts`), a grade da sala já mostra o vídeo da tela antes de alguém
+clicar (`ScreenTile`), não há miniatura fora da sala (só a prévia do `LivePreview`) e o destaque múltiplo
+(`featured-screens.ts`) só arranja lado a lado ou empilhado.
+
+| Task | Dev | O que faz | Arquivos (dono) | Tamanho |
+|---|---|---|---|---|
+| **A21 Qualidade e FPS da tela** ✅ (branch `feat/assistir-tela-opcional`) | A | Pura `screenCapture(preset)` em `src/shared/screen.ts` (720p/1080p/1440p/original × 15/30/60 fps; `contentHint` `detail` até 15 fps, `motion` acima; bitrate por preset). Escolha no `ScreenPicker`, guardada na máquina; trocar com a tela no ar sem parar o compartilhamento. Só cliente, sem evento novo. | `src/shared/screen.ts`, `lib/voice.ts` (captura), `components/voice/ScreenPicker.tsx`, `lib/actions/screen-quality.ts` | pequeno |
+| **A22 Miniatura flutuante da tela** ✅ (branch `feat/assistir-tela-opcional`; o botão "Abrir miniatura" no `ScreenStage` fica com a B30) | A | Janela flutuante dentro do app com a tela de alguém da minha sala quando não estou na `VoiceView`: arrastar pelo cabeçalho, redimensionar pelo canto (16:9, mín. 240 px), posição e tamanho guardados; "Voltar para a sala", trocar de tela e fechar. Abre ao sair da sala com tela em destaque ou por "Abrir miniatura" no `ScreenStage`. | `components/voice/ScreenPip.tsx`, `lib/screen-pip.ts`, `store/screen-pip.ts`, `lib/actions/screen-pip.ts`, `App.tsx` (1 linha) | médio |
+| **B29 Assistir só quando eu escolher** ✅ (`docs/areas/voice.md`; sala com `autoSubscribe: false`) | B | `ScreenTile` na grade vira cartão sem vídeo (quem compartilha, "Ao vivo", "Assistir tela"); a faixa só é assinada (`setSubscribed`) e anexada quando entra no destaque. "Parar de assistir" volta ao cartão. | `components/voice/{ScreenTile,VoiceGrid}.tsx`, `lib/voice.ts` (só assinatura das faixas de tela) | pequeno |
+| **B30 Várias telas em grade** ✅ (`docs/areas/voice.md`; "Abrir miniatura" fica para quando a A22 existir) | B | Arranjo `grid` no `ScreenStage` (padrão com 3+ telas) usando `bestTileLayout`; lado a lado/empilhado continuam como opção; arrastar para reordenar continua. Botão "Abrir miniatura" chamando `openScreenPip` (A22). | `components/voice/ScreenTile.tsx` (`ScreenStage`), `lib/featured-screens.ts` | pequeno |
+
+Ordem: primeiro um PR curto do Dev B com o contrato de quem assiste ✅ (#128) — `watchScreens(origin: 'room' | 'pip', ids)` em
+`lib/actions/screen-watching.ts` emite `voice:watching` com a união das origens, `VoiceClient.setWatchedScreens(ids)`
+e `ScreenVideo` exportado. Depois, em paralelo, A21 → A22 e B29 → B30. `lib/voice.ts` é dos dois: A só na captura,
+B só na assinatura das faixas de tela. `ScreenTile.tsx` é só do Dev B.
+
+**Riscos:** 1440p/60 fps pesa na CPU de quem compartilha e na banda do SFU; se for decidido um teto, vira ADR. A
+miniatura assina a tela fora da `VoiceView`: conferir que fechar a miniatura tira a origem `pip` e para a assinatura.
+
+## v10 — App em Tauri/Rust e, depois, servidor em Rust
 
 Sai o Electron e, na fase 2, o Node (ADRs 0013 e 0014). Só Windows. A tela React não muda.
 

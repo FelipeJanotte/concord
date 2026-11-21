@@ -10,6 +10,8 @@ export interface Channel {
   name: string
   type: ChannelKind
   createdAt: number
+  position?: number
+  categoryId?: string | null
 }
 
 export type CreateChannelResult = { ok: true; channel: Channel } | { ok: false; error: string }
@@ -22,6 +24,6 @@ export interface ChannelServerEvents {
 }
 
 export interface ChannelClientEvents {
-  'channel:create': (payload: { name: string; type: ChannelType }, ack: (res: CreateChannelResult) => void) => void
+  'channel:create': (payload: { name: string; type: ChannelType; categoryId?: string | null },ack: (res: CreateChannelResult) => void) => void
   'channel:delete': (channelId: string) => void
 }

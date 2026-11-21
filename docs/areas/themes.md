@@ -120,10 +120,33 @@ o app desenha a sua com as cores do tema (`bg-rail`; no vidro, transparente sobr
 | `src/main/window-controls.ts` | `titleBarOptions(platform)` (no macOS, semáforo em `{ x: 12, y: 10 }`), `runWindowControl` (maximizar alterna com restaurar; ação desconhecida é ignorada), `watchMaximized` (avisa `window-maximized`) e `setupWindowControls`: IPC `window-control` e `window-maximized-get`, só da janela principal. |
 | `src/preload/index.ts` | `window.api.windowControls`: `buttons`, `run`, `isMaximized`, `onMaximizedChange`. |
 | `src/renderer/src/lib/actions/window.ts` | `windowEnv`, `startWindowControls` (em `main.tsx`; guarda `windowMaximized` em `store/window.ts`) e `runWindowControl`. |
-| `src/renderer/src/components/TitleBar.tsx` | Faixa de 32 px com "Concord", arrastável (`-webkit-app-region: drag`); no Windows/Linux, Minimizar, Maximizar/Restaurar e Fechar no estilo dos botões do app (hover `accent`; fechar em `destructive`). Fica acima dos modais (`z-[60]`). Fora do Electron (web) não aparece. Montada em `App.tsx`, em cima do login e do app. |
+| `src/renderer/src/components/TitleBar.tsx` | Faixa de 32 px com a logo (`ConcordLogo`) e "Concord", arrastável (`-webkit-app-region: drag`); no Windows/Linux, Minimizar, Maximizar/Restaurar e Fechar no estilo dos botões do app (hover `accent`; fechar em `destructive`). Fica acima dos modais (`z-[60]`). Fora do Electron (web) não aparece. Montada em `App.tsx`, em cima do login e do app. |
 
 - Perde o menu de layouts do Windows 11 no maximizar (Win + Z continua). Duplo clique na barra maximiza.
 - Clicável novo na barra precisa de `[-webkit-app-region:no-drag]`, senão o clique vira arrasto.
+
+## Logo
+
+O símbolo do Concord (anel em "C" abraçando um ponto) segue o tema escolhido: não tem cor fixa no app.
+
+| Arquivo | Papel |
+|---|---|
+| `src/renderer/src/lib/theme/derive.ts` | Tokens `logo` (anel) e `logo-core` (ponto). `logo` = cor de destaque ajustada até ter 3:1 (`NON_TEXT`, WCAG 1.4.11) sobre `rail`, `sidebar`, `accent`, `background` e cada cor do gradiente. `logo-core` = `logo` 30% em direção ao branco (tema escuro, ponto mais claro) ou ao preto (tema claro, ponto mais escuro), com o mesmo 3:1. |
+| `src/renderer/src/assets/globals.css` | Valores do tema padrão (`--logo: #7984f5`, `--logo-core: #a1a9f8`) e as utilidades `stroke-logo`/`fill-logo-core`. |
+| `src/renderer/src/components/ConcordLogo.tsx` | SVG 512x512: anel `stroke-logo`, ponto `fill-logo-core`. Decorativo (`aria-hidden`). Quem usa passa só o tamanho (`className`). |
+| `build/icon.ico` | Ícone do `.exe`, do instalador e da janela no app instalado (16 a 256 px). Em desenvolvimento, `src/main/app-icon.ts` passa o mesmo arquivo para a janela (senão aparece o ícone do `electron.exe`). **Cores fixas** da marca (`#6C5CFF` anel, `#9A7BFF` ponto): o Windows lê o arquivo, não o tema. |
+
+Onde aparece: `LoginScreen` (acima do título), `TitleBar` (antes de "Concord") e o botão "Concord" da `UtilityRail`.
+
+- Não ponha a logo sobre a cor de destaque (`bg-primary`): o `primary-foreground` é preto na maioria dos temas e a
+  logo fica toda preta. O botão "Concord" da `UtilityRail` usa `surface="logo"`: ativo ou com o mouse em cima, o
+  fundo vira `accent` (e não `primary`), e a logo mantém as cores. Os tokens garantem 3:1 também sobre `accent`.
+- No `npm run dev` a janela recebe o `build/icon.ico` por `windowIconOptions` (`src/main/app-icon.ts`); no app empacotado não passa nada e o Windows usa o ícone do `concord.exe`.
+- Atualizar o app não troca na hora o ícone do atalho já criado: o Windows guarda os ícones em cache. Se continuar
+  o antigo, reinstalar ou reiniciar o Explorer resolve.
+- Mudou o desenho da logo: atualize o SVG do `ConcordLogo` e gere de novo o `build/icon.ico` com as cores fixas, por
+  exemplo `magick -background none logo.svg -define icon:auto-resize=256,128,64,48,40,32,24,20,16 build/icon.ico`
+  (o teste em `server/deploy.test.ts` confere o arquivo e os tamanhos 16, 32, 48 e 256).
 
 ## "Surpreenda-me"
 
@@ -165,6 +188,7 @@ Seção **Aparência** das Configurações (engrenagem no painel do usuário, `U
 | `src/main/translucency.test.ts` | `supportsTranslucency` (Windows 11 22H2+, 21H2, 10, macOS, Linux) e `applyTranslucency` (acrílico/vibrancy, cor da janela, esquema do `nativeTheme`; sem suporte só o esquema; pedido inválido não mexe). |
 | `src/main/window-controls.test.ts` | `runWindowControl` (minimizar, fechar, maximizar alterna, ação desconhecida ignorada) e `titleBarOptions` por sistema. |
 | `src/renderer/src/components/glass-panels.test.tsx` | (jsdom) barra de úteis, canais, Home e membros marcados como `data-glass="panel"`. |
+| `src/renderer/src/components/ConcordLogo.test.tsx` | (jsdom) logo sem cor fixa (anel `stroke-logo`, ponto `fill-logo-core`), recebe `className`, decorativa. `derive.test.ts`: logo e centro com 3:1 em todos os temas prontos e em 500 aleatórios. |
 | `src/renderer/src/components/TitleBar.test.tsx` | (jsdom) some na web; botões pedem a ação; maximizada vira "Restaurar" (no início e depois); macOS sem botões. |
 | `src/renderer/src/lib/theme/surprise.test.ts` | `hslToHex`; 300 sorteios válidos, legíveis e com fundo da base; as duas bases; nunca o atual e mantém o vidro; `withAlpha`, `glassTheme` (o que fica opaco), camadas (o que flutua é mais opaco que as superfícies) e os temas prontos de vidro. |
 | `server/repo/preferences.test.ts` | Padrão sem registro, gravar só o que mudou, uma conta por vez. |

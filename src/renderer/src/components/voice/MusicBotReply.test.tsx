@@ -99,4 +99,9 @@ describe('resposta do bot de música no chat', () => {
     show([botReply({ action: 'stop' })])
     expect(within(card()).getByText('Parou a música e limpou a fila')).toBeTruthy()
   })
+
+  it('embaralhou: diz quantas músicas foram embaralhadas', () => {
+    show([botReply({ action: 'shuffle', count: 12 })])
+    expect(within(card()).getByText('Embaralhou a fila (12 músicas)')).toBeTruthy()
+  })
 })

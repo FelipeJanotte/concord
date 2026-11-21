@@ -2,6 +2,7 @@ import { io } from 'socket.io-client'
 import type { AuthConfig, AuthResult, LoginRequest, RegisterRequest } from '@shared/types'
 import { initialState } from '@/store'
 import { bindAccountEvents } from './actions/account'
+import { bindCategoryEvents } from './actions/categories'
 import { bindChannelEvents, firstTextView } from './actions/channels'
 import { bindFriendsEvents, loadFriendsAndDms } from './actions/friends'
 import { bindToolsEvents } from './actions/tools'
@@ -15,6 +16,7 @@ import { bindNotificationEvents, stopNotifications } from './actions/notificatio
 import { bindCallsEvents, loadCalls } from './actions/calls'
 import { bindPermissionsEvents } from './actions/permissions'
 import { bindPinsEvents } from './actions/pins'
+import { bindEmbedEvents } from './actions/embeds'
 import { bindPresenceEvents, syncActivityStatus } from './actions/presence'
 import { bindReactionsEvents } from './actions/reactions'
 import { bindReadsEvents, loadReads } from './actions/reads'
@@ -121,9 +123,11 @@ export function connect(url: string, token: string): Promise<void> {
   bindAccountEvents(s)
   bindPresenceEvents(s)
   bindChannelEvents(s)
+  bindCategoryEvents(s)
   bindMessageEvents(s)
   bindReactionsEvents(s)
   bindPinsEvents(s)
+  bindEmbedEvents(s)
   bindReadsEvents(s)
   bindVoiceEvents(s)
   bindLimitEvents(s)
@@ -151,6 +155,7 @@ export function connect(url: string, token: string): Promise<void> {
           self,
           account,
           channels: state.channels,
+          categories: state.categories ?? [],
           users: state.users,
           statuses: state.statuses ?? {},
           voice: state.voice,
@@ -224,10 +229,13 @@ export function disconnect(): void {
 export { notify } from './core'
 export type { AppSocket } from './core'
 export * from './actions/account'
+export * from './actions/audit'
+export * from './actions/categories'
 export * from './actions/channels'
 export * from './actions/messages'
 export * from './actions/reactions'
 export * from './actions/pins'
+export * from './actions/embeds'
 export * from './actions/search'
 export * from './actions/moderation'
 export * from './actions/navigation'
@@ -237,6 +245,8 @@ export * from './actions/uploads'
 export * from './actions/voice'
 export { fetchScreenPreview } from './actions/screen-preview'
 export { watchScreens } from './actions/screen-watching'
+export { chooseScreenQuality } from './actions/screen-quality'
+export { backToRoom, closeScreenPip, enterRoomView, leaveRoomView, openScreenPip } from './actions/screen-pip'
 export * from './actions/devices'
 export * from './actions/friends'
 export * from './actions/tools'
@@ -244,7 +254,7 @@ export * from './actions/preferences'
 export { setDoNotDisturb } from './actions/presence'
 export * from './actions/settings'
 export * from './actions/sounds'
-export { closeMusicQueue, dismissCollection, loadMusicQueue, openMusicQueue, pauseMusic, playMusic, resumeMusic, runMusicCommand, skipMusic, stopMusic, trackDuration } from './actions/music'
+export { closeMusicQueue, dismissCollection, jumpToTrack, loadMusicQueue, openMusicQueue, pauseMusic, playMusic, resumeMusic, runMusicCommand, shuffleMusic, skipMusic, stopMusic, trackDuration } from './actions/music'
 export * from './actions/playlists'
 export * from './actions/overlay'
 export * from './actions/updates'

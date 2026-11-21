@@ -5,6 +5,7 @@ import {
   canPinMessages,
   EVERYONE_TOKEN,
   MESSAGE_MAX_LENGTH,
+  messageAuthor,
   PINS_PER_CHANNEL_MAX,
   SEARCH_QUERY_MAX,
   type ChannelKind,
@@ -31,6 +32,7 @@ import {
   setPinned
 } from '../repo/messages'
 import { isUuid } from '../repo/util'
+import { previewEditedMessage, previewNewMessage } from './embeds'
 import { timeoutRefusal } from './timeouts'
 
 /** Sem a permissão `mentionEveryone`, o `<@todos>` vira texto comum (B19): ninguém é avisado. */
@@ -60,7 +62,7 @@ async function postPinNotice(io: AppServer, user: User, channelId: string, messa
   const notice: Message = {
     id: randomUUID(),
     channelId,
-    author: { ...user },
+    author: messageAuthor(user),
     content: '',
     attachments: [],
     createdAt: Date.now(),
@@ -134,7 +136,7 @@ export const messagesModule: ServerModule = {
           const message: Message = {
             id: randomUUID(),
             channelId: channel.id,
-            author: { ...user },
+            author: messageAuthor(user),
             content: text,
             attachments: [],
             createdAt: Date.now(),
@@ -145,6 +147,7 @@ export const messagesModule: ServerModule = {
           if (!saved) return refuse('Anexos inválidos')
           reply({ ok: true })
           await emitToViewers(io, channel.id, 'message:new', { ...saved, ...(await resolveMentions(text)) }, { forAccount: signMessage })
+          previewNewMessage(io, saved.id, user.accountId, saved.content)
         })
       )
     })
@@ -177,6 +180,7 @@ export const messagesModule: ServerModule = {
           editedAt,
           ...(await resolveMentions(content))
         })
+        previewEditedMessage(io, payload.messageId, user.accountId, meta.content, content)
         ack({ ok: true })
       })
     })

@@ -1,7 +1,9 @@
 // VoiceClient (B2) com Room, microfone e faixas do LiveKit falsos.
+import { MicGainProcessor } from './mic-gain'
 import { DisconnectReason, RoomEvent, Track, type AudioCaptureOptions, type LocalAudioTrack, type Room } from 'livekit-client'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { JoinVoiceResult } from '@shared/types'
+import { DEFAULT_SCREEN_QUALITY } from '@shared/screen'
 import { initialState, useApp } from '@/store'
 import { FakeSocket } from '@/test/fake-socket'
 import { MUSIC_BOT_VOLUME_ID, VoiceClient } from './voice'
@@ -42,9 +44,34 @@ const detector = () => detectors.created[detectors.created.length - 1]
 
 type Listener = (...args: unknown[]) => void
 
+class FakePublication {
+  isDesired = false
+  constructor(readonly source: Track.Source) {}
+  setSubscribed = vi.fn((on: boolean) => {
+    this.isDesired = on
+  })
+}
+
+interface FakeParticipant {
+  identity: string
+  trackPublications: Map<string, FakePublication>
+}
+
+function remote(identity: string, ...sources: Track.Source[]): FakeParticipant {
+  return { identity, trackPublications: new Map(sources.map((source, i) => [`${identity}-${i}`, new FakePublication(source)])) }
+}
+
+const pubOf = (participant: FakeParticipant, source: Track.Source): FakePublication =>
+  [...participant.trackPublications.values()].find((pub) => pub.source === source)!
+
+let inRoomOnConnect: FakeParticipant[] = []
+
 class FakeRoom {
   listeners = new Map<string, Listener[]>()
-  connect = vi.fn(async (_url: string, _token: string, _opts?: unknown) => {})
+  remoteParticipants = new Map<string, FakeParticipant>()
+  connect = vi.fn(async (_url: string, _token: string, _opts?: unknown) => {
+    for (const p of inRoomOnConnect) this.remoteParticipants.set(p.identity, p)
+  })
   disconnect = vi.fn(async () => {})
   startAudio = vi.fn(async () => {})
   switchActiveDevice = vi.fn(async (_kind: string, _id: string) => true)
@@ -54,7 +81,8 @@ class FakeRoom {
     publishTrack: vi.fn(async (_track: unknown, _opts?: unknown) => ({})),
     unpublishTrack: vi.fn(async (_track: unknown) => ({})),
     permissions: { canPublish: true, canPublishSources: [1, 2, 3] } as { canPublish: boolean; canPublishSources: number[] },
-    setScreenShareEnabled: vi.fn(async (_on: boolean, _opts?: unknown) => undefined),
+    setScreenShareEnabled: vi.fn(async (_on: boolean, _opts?: unknown, _publish?: unknown) => undefined),
+    getTrackPublication: vi.fn((_source: Track.Source): unknown => undefined),
     setCameraEnabled: vi.fn(async (_on: boolean, _capture?: unknown, _publish?: unknown) => undefined)
   }
 
@@ -164,6 +192,7 @@ beforeEach(() => {
   socket = new FakeSocket()
   socket.replyTo('voice:join', () => CREDS)
   rooms = []
+  inRoomOnConnect = []
   mic = null
   micError = null
   client = makeClient()
@@ -176,7 +205,7 @@ describe('join', () => {
     expect(await client.join('sala-1')).toEqual({ micError: null, cancelled: false, canSpeak: true, canShare: true, canVideo: true })
     expect(socket.sent('voice:join')).toEqual([[{ channelId: 'sala-1', muted: false, deafened: false }]])
     const room = lastRoom()
-    expect(room.connect).toHaveBeenCalledWith('ws://livekit.test:7880', 'jwt-de-teste', { autoSubscribe: true })
+    expect(room.connect).toHaveBeenCalledWith('ws://livekit.test:7880', 'jwt-de-teste', { autoSubscribe: false })
     expect(room.localParticipant.publishTrack).toHaveBeenCalledWith(mic, { source: Track.Source.Microphone, forceStereo: false })
     expect(room.startAudio).toHaveBeenCalled()
   })
@@ -284,6 +313,102 @@ describe('leave e teardown', () => {
     client.teardown()
     expect(socket.sent('voice:leave')).toHaveLength(0)
     expect(lastRoom().disconnect).toHaveBeenCalled()
+  })
+})
+
+describe('telas que eu assisto', () => {
+  it('guarda as telas que eu assisto, sem repetir', () => {
+    expect(client.watchedScreens).toEqual([])
+    client.setWatchedScreens(['ana', 'bia', 'ana'])
+    expect(client.watchedScreens).toEqual(['ana', 'bia'])
+    client.setWatchedScreens(['bia'])
+    expect(client.watchedScreens).toEqual(['bia'])
+  })
+
+  it('a lista devolvida não muda o que foi guardado', () => {
+    client.setWatchedScreens(['ana'])
+    ;(client.watchedScreens as string[]).push('bia')
+    expect(client.watchedScreens).toEqual(['ana'])
+  })
+
+  it('teardown esquece as telas assistidas', async () => {
+    await client.join('sala-1')
+    client.setWatchedScreens(['ana'])
+    client.teardown()
+    expect(client.watchedScreens).toEqual([])
+  })
+})
+
+describe('assinatura das telas sob demanda (B29)', () => {
+  const SCREEN_SOURCES = [Track.Source.ScreenShare, Track.Source.ScreenShareAudio]
+  const ALL = [Track.Source.Microphone, Track.Source.Camera, ...SCREEN_SOURCES]
+
+  it('quem já estava na sala: microfone e câmera assinados, tela não; a tela aparece como disponível', async () => {
+    const ana = remote('ana', ...ALL)
+    inRoomOnConnect = [ana]
+    await client.join('sala-1')
+    expect(pubOf(ana, Track.Source.Microphone).setSubscribed).toHaveBeenCalledWith(true)
+    expect(pubOf(ana, Track.Source.Camera).setSubscribed).toHaveBeenCalledWith(true)
+    for (const source of SCREEN_SOURCES) expect(pubOf(ana, source).isDesired).toBe(false)
+    expect(useApp.getState().screens).toEqual(['ana'])
+  })
+
+  it('o que é publicado depois: microfone e câmera assinados, tela não', async () => {
+    await client.join('sala-1')
+    const bia = remote('bia', ...ALL)
+    for (const pub of bia.trackPublications.values()) lastRoom().fire(RoomEvent.TrackPublished, pub, bia)
+    expect(pubOf(bia, Track.Source.Microphone).isDesired).toBe(true)
+    expect(pubOf(bia, Track.Source.Camera).isDesired).toBe(true)
+    for (const source of SCREEN_SOURCES) expect(pubOf(bia, source).isDesired).toBe(false)
+    expect(useApp.getState().screens).toEqual(['bia'])
+  })
+
+  it('assistir assina a tela e o áudio da tela só de quem escolhi; parar desassina; microfone e câmera ficam', async () => {
+    const ana = remote('ana', ...ALL)
+    const bia = remote('bia', ...ALL)
+    inRoomOnConnect = [ana, bia]
+    await client.join('sala-1')
+    const micCalls = pubOf(ana, Track.Source.Microphone).setSubscribed.mock.calls.length
+
+    client.setWatchedScreens(['ana'])
+    for (const source of SCREEN_SOURCES) {
+      expect(pubOf(ana, source).isDesired).toBe(true)
+      expect(pubOf(bia, source).isDesired).toBe(false)
+    }
+
+    client.setWatchedScreens([])
+    for (const source of SCREEN_SOURCES) expect(pubOf(ana, source).setSubscribed).toHaveBeenLastCalledWith(false)
+    expect(pubOf(ana, Track.Source.Microphone).setSubscribed.mock.calls).toHaveLength(micCalls)
+    expect(pubOf(ana, Track.Source.Microphone).isDesired).toBe(true)
+    expect(pubOf(ana, Track.Source.Camera).isDesired).toBe(true)
+  })
+
+  it('tela publicada depois por quem eu já assisto entra assinada', async () => {
+    await client.join('sala-1')
+    client.setWatchedScreens(['ana'])
+    const ana = remote('ana', ...SCREEN_SOURCES)
+    for (const pub of ana.trackPublications.values()) lastRoom().fire(RoomEvent.TrackPublished, pub, ana)
+    for (const source of SCREEN_SOURCES) expect(pubOf(ana, source).isDesired).toBe(true)
+  })
+
+  it('o vídeo chega depois de a UI ligar o <video>: liga na hora e desliga ao sair', async () => {
+    await client.join('sala-1')
+    const video = new FakeElement()
+    const detach = client.attachScreen('ana', video as unknown as HTMLVideoElement)
+    const track = new FakeRemoteTrack(Track.Kind.Video, Track.Source.ScreenShare)
+    lastRoom().fire(RoomEvent.TrackSubscribed, track, {}, { identity: 'ana' })
+    expect(track.attachedElements).toEqual([video])
+    detach()
+    expect(track.attachedElements).toEqual([])
+    const next = new FakeRemoteTrack(Track.Kind.Video, Track.Source.ScreenShare)
+    lastRoom().fire(RoomEvent.TrackUnsubscribed, track, {}, { identity: 'ana' })
+    lastRoom().fire(RoomEvent.TrackSubscribed, next, {}, { identity: 'ana' })
+    expect(next.attachedElements).toEqual([])
+  })
+
+  it('fora da sala, escolher telas só guarda a lista', () => {
+    expect(() => client.setWatchedScreens(['ana'])).not.toThrow()
+    expect(client.watchedScreens).toEqual(['ana'])
   })
 })
 
@@ -444,13 +569,45 @@ describe('tela', () => {
     await client.startScreenShare(true)
     expect(lastRoom().localParticipant.setScreenShareEnabled).toHaveBeenCalledWith(
       true,
-      expect.objectContaining({ audio: true, systemAudio: 'include', contentHint: 'detail' })
+      expect.objectContaining({ audio: true, systemAudio: 'include', contentHint: 'detail' }),
+      expect.anything()
     )
     await client.startScreenShare(false)
     expect(lastRoom().localParticipant.setScreenShareEnabled).toHaveBeenLastCalledWith(
       true,
-      expect.objectContaining({ audio: false, systemAudio: 'exclude' })
+      expect.objectContaining({ audio: false, systemAudio: 'exclude' }),
+      expect.anything()
     )
+  })
+
+  it('publica com a resolução, o fps e o bitrate da qualidade escolhida', async () => {
+    await client.join('sala-1')
+    await client.startScreenShare(false, { resolution: '1440p', fps: 60 })
+    expect(lastRoom().localParticipant.setScreenShareEnabled).toHaveBeenCalledWith(
+      true,
+      expect.objectContaining({ resolution: { width: 2560, height: 1440, frameRate: 60 }, contentHint: 'motion' }),
+      { screenShareEncoding: { maxBitrate: 12_000_000, maxFramerate: 60 } }
+    )
+  })
+
+  it('trocar a qualidade com a tela no ar muda a captura e o envio sem republicar', async () => {
+    await client.join('sala-1')
+    const media = { contentHint: 'detail', applyConstraints: vi.fn(async () => {}) }
+    const params = { encodings: [{ maxBitrate: 1, maxFramerate: 1 }] }
+    const sender = { getParameters: vi.fn(() => params), setParameters: vi.fn(async () => {}) }
+    lastRoom().localParticipant.getTrackPublication.mockReturnValue({ track: { mediaStreamTrack: media, sender } })
+    await client.setScreenQuality({ resolution: '720p', fps: 30 })
+    expect(lastRoom().localParticipant.getTrackPublication).toHaveBeenCalledWith(Track.Source.ScreenShare)
+    expect(media.applyConstraints).toHaveBeenCalledWith({ width: 1280, height: 720, frameRate: 30 })
+    expect(media.contentHint).toBe('motion')
+    expect(sender.setParameters).toHaveBeenCalledWith({ encodings: [{ maxBitrate: 2_500_000, maxFramerate: 30 }] })
+    expect(lastRoom().localParticipant.setScreenShareEnabled).not.toHaveBeenCalled()
+  })
+
+  it('trocar a qualidade sem tela no ar não faz nada', async () => {
+    await expect(new VoiceClient().setScreenQuality(DEFAULT_SCREEN_QUALITY)).resolves.toBeUndefined()
+    await client.join('sala-1')
+    await expect(client.setScreenQuality(DEFAULT_SCREEN_QUALITY)).resolves.toBeUndefined()
   })
 
   it('fora da sala não dá para compartilhar', async () => {
@@ -464,14 +621,24 @@ describe('tela', () => {
     await expect(new VoiceClient().stopScreenShare()).resolves.toBeUndefined() // fora da sala: nada
   })
 
-  it('a tela de quem compartilha aparece em store.screens e some quando acaba', async () => {
+  it('a tela de quem compartilha aparece em store.screens ao ser publicada e some ao ser despublicada', async () => {
     await client.join('sala-1')
+    const pub = new FakePublication(Track.Source.ScreenShare)
+    lastRoom().fire(RoomEvent.TrackPublished, pub, participant('ana'))
+    expect(useApp.getState().screens).toEqual(['ana'])
+    lastRoom().fire(RoomEvent.TrackUnpublished, pub, participant('ana'))
+    expect(useApp.getState().screens).toEqual([])
+  })
+
+  it('desassinar a tela tira o vídeo, mas a tela continua disponível', async () => {
+    await client.join('sala-1')
+    lastRoom().fire(RoomEvent.TrackPublished, new FakePublication(Track.Source.ScreenShare), participant('ana'))
     const track = screenTrack()
     lastRoom().fire(RoomEvent.TrackSubscribed, track, {}, participant('ana'))
-    expect(useApp.getState().screens).toEqual(['ana'])
-    expect(track.attachedElements).toHaveLength(0) // vídeo só toca quando a UI liga num <video>
+    expect(track.attachedElements).toHaveLength(0)
     lastRoom().fire(RoomEvent.TrackUnsubscribed, track, {}, participant('ana'))
-    expect(useApp.getState().screens).toEqual([])
+    expect(useApp.getState().screens).toEqual(['ana'])
+    expect(client.screenMediaTrack('ana')).toBeUndefined()
   })
 
   it('vídeo que não é tela (câmera) é ignorado', async () => {
@@ -529,7 +696,7 @@ describe('tela', () => {
     const ended = vi.fn()
     client.onScreenShareEnded = ended
     await client.join('sala-1')
-    lastRoom().fire(RoomEvent.TrackSubscribed, screenTrack(), {}, participant('ana'))
+    lastRoom().fire(RoomEvent.TrackPublished, new FakePublication(Track.Source.ScreenShare), participant('ana'))
     client.leave()
     expect(useApp.getState().screens).toEqual([])
     expect(ended).not.toHaveBeenCalled()
@@ -700,9 +867,9 @@ describe('silenciar alguém só para mim', () => {
 
 describe('supressão de ruído automática (B13)', () => {
   let micOpts: ({ noiseSuppression: boolean } | undefined)[]
-  let processors: { onMode: (m: 'light' | 'advanced' | 'light-fallback') => void }[]
+  let processors: { onMode: (m: 'advanced' | 'light-fallback') => void }[]
   let contexts: { close: ReturnType<typeof vi.fn> }[]
-  let watchdogs: { ctx: unknown; stop: ReturnType<typeof vi.fn> }[]
+  let watchdogs: { ctx: unknown; onStuck: () => Promise<void>; stop: ReturnType<typeof vi.fn> }[]
   let modes: (string | null)[]
 
   function noiseClient(opts: { processorFails?: boolean } = {}): VoiceClient {
@@ -729,8 +896,8 @@ describe('supressão de ruído automática (B13)', () => {
         contexts.push(ctx)
         return ctx as unknown as AudioContext
       },
-      createClockWatchdog: (ctx) => {
-        const w = { ctx, stop: vi.fn() }
+      createClockWatchdog: (ctx, onStuck) => {
+        const w = { ctx, onStuck, stop: vi.fn() }
         watchdogs.push(w)
         return w
       },
@@ -792,6 +959,17 @@ describe('supressão de ruído automática (B13)', () => {
     expect(watchdogs).toHaveLength(1)
   })
 
+  it('o vigia achando o áudio preso refaz o microfone como desligar e ligar a supressão', async () => {
+    const c = noiseClient()
+    await c.join('sala-1')
+    await watchdogs[0].onStuck()
+    expect(mic!.stopProcessor).toHaveBeenCalledTimes(1)
+    expect(mic!.restartTrack).toHaveBeenCalledTimes(1)
+    expect(mic!.nativeSuppression).toBe(true)
+    expect(mic!.setProcessor).toHaveBeenLastCalledWith(processors[1])
+    expect(contexts).toHaveLength(1)
+  })
+
   it('se o filtro não liga, entra mesmo assim com a supressão nativa', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const c = noiseClient({ processorFails: true })
@@ -801,12 +979,13 @@ describe('supressão de ruído automática (B13)', () => {
     warn.mockRestore()
   })
 
-  it('desligado antes de entrar: microfone cru (sem nativa e sem processador)', async () => {
+  it('desligado antes de entrar: sem nativa e sem RNNoise, só o processador de volume e sensibilidade', async () => {
     const c = noiseClient()
     await c.setNoiseSuppression(false)
     await c.join('sala-1')
     expect(micOpts).toEqual([{ noiseSuppression: false }])
-    expect(mic!.setProcessor).not.toHaveBeenCalled()
+    expect(processors).toHaveLength(0)
+    expect(mic!.setProcessor.mock.calls[0][0]).toBeInstanceOf(MicGainProcessor)
   })
 
   it('desligar dentro da sala reabre a captura sem a nativa (o Chromium ignora applyConstraints); ligar devolve', async () => {
@@ -818,7 +997,8 @@ describe('supressão de ruído automática (B13)', () => {
     expect(modes.at(-1)).toBe('off')
     await c.setNoiseSuppression(true)
     expect(mic!.nativeSuppression).toBe(true)
-    expect(mic!.setProcessor).toHaveBeenCalledTimes(2)
+    expect(mic!.setProcessor).toHaveBeenCalledTimes(3)
+    expect(mic!.setProcessor).toHaveBeenLastCalledWith(processors[1])
   })
 
   it('entrou com a supressão desligada e liga na sala: a captura ganha a nativa', async () => {
@@ -827,7 +1007,7 @@ describe('supressão de ruído automática (B13)', () => {
     await c.join('sala-1')
     await c.setNoiseSuppression(true)
     expect(mic!.nativeSuppression).toBe(true)
-    expect(mic!.setProcessor).toHaveBeenCalledTimes(1)
+    expect(mic!.setProcessor).toHaveBeenLastCalledWith(processors[0])
   })
 
   it('reabrir a captura mantém o microfone escolhido e a captura de voz', async () => {
@@ -1208,8 +1388,9 @@ describe('pressione para falar (B20)', () => {
 describe('volume do microfone e de saída', () => {
   const micOf = (accountId: string) => ({ identity: 'sock-' + accountId, attributes: { accountId } })
   type FakeGainProc = { gain: number; setGain: ReturnType<typeof vi.fn> }
-  let noiseProcs: FakeGainProc[]
-  let gainProcs: FakeGainProc[]
+  type FakeMicProc = FakeGainProc & { sensitivityDb: number; onLevel: (db: number) => void; setSensitivity: ReturnType<typeof vi.fn> }
+  let noiseProcs: FakeMicProc[]
+  let gainProcs: FakeMicProc[]
 
   function volumeClient(): VoiceClient {
     noiseProcs = []
@@ -1226,13 +1407,13 @@ describe('volume do microfone e de saída', () => {
       },
       createAudioContext: () => ({ close: vi.fn(async () => {}) }) as unknown as AudioContext,
       createClockWatchdog: () => ({ stop: vi.fn() }),
-      createNoiseProcessor: (_onMode, gain) => {
-        const p = { gain, setGain: vi.fn() }
+      createNoiseProcessor: (_onMode, { gain, sensitivityDb, onLevel }) => {
+        const p = { gain, sensitivityDb, onLevel, setGain: vi.fn(), setSensitivity: vi.fn() }
         noiseProcs.push(p)
         return p as never
       },
-      createGainProcessor: (gain) => {
-        const p = { gain, setGain: vi.fn() }
+      createGainProcessor: ({ gain, sensitivityDb, onLevel }) => {
+        const p = { gain, sensitivityDb, onLevel, setGain: vi.fn(), setSensitivity: vi.fn() }
         gainProcs.push(p)
         return p as never
       }
@@ -1251,18 +1432,52 @@ describe('volume do microfone e de saída', () => {
     expect(noiseProcs[0].setGain).toHaveBeenLastCalledWith(0.5)
   })
 
-  it('supressão desligada em 100%: microfone cru; mudar o volume dentro da sala põe o processador de volume', async () => {
+  it('supressão desligada: o processador do microfone (volume e sensibilidade) entra mesmo em 100%', async () => {
     const c = volumeClient()
     await c.setNoiseSuppression(false)
     await c.join('sala-1')
-    expect(mic!.setProcessor).not.toHaveBeenCalled()
-    await c.setMicGain(1.8)
     expect(gainProcs).toHaveLength(1)
-    expect(gainProcs[0].gain).toBe(1.8)
     expect(mic!.setProcessor).toHaveBeenCalledWith(gainProcs[0])
-    await c.setMicGain(1)
-    expect(gainProcs[0].setGain).toHaveBeenLastCalledWith(1)
+    await c.setMicGain(1.8)
+    expect(gainProcs[0].setGain).toHaveBeenLastCalledWith(1.8)
     expect(gainProcs).toHaveLength(1)
+  })
+
+  it('sensibilidade: vale ao entrar, muda na hora e o nível medido chega em onMicLevel', async () => {
+    const c = volumeClient()
+    const levels: number[] = []
+    c.onMicLevel = (db) => levels.push(db)
+    c.setMicSensitivity(-45)
+    await c.setNoiseSuppression(false)
+    await c.join('sala-1')
+    expect(gainProcs[0].sensitivityDb).toBe(-45)
+    c.setMicSensitivity(-200)
+    expect(gainProcs[0].setSensitivity).toHaveBeenLastCalledWith(-100)
+    gainProcs[0].onLevel(-33)
+    expect(levels).toEqual([-33])
+  })
+
+  it('com a supressão ligada, a sensibilidade vai no processador de ruído (ao entrar, na hora e o nível)', async () => {
+    const c = volumeClient()
+    const levels: number[] = []
+    c.onMicLevel = (db) => levels.push(db)
+    c.setMicSensitivity(-45)
+    await c.join('sala-1')
+    expect(noiseProcs[0].sensitivityDb).toBe(-45)
+    c.setMicSensitivity(-30)
+    expect(noiseProcs[0].setSensitivity).toHaveBeenLastCalledWith(-30)
+    noiseProcs[0].onLevel(-25)
+    expect(levels).toEqual([-25])
+  })
+
+  it('trocar a supressão na sala leva a sensibilidade para o processador novo', async () => {
+    const c = volumeClient()
+    await c.setNoiseSuppression(false)
+    await c.join('sala-1')
+    await c.setNoiseSuppression(true)
+    c.setMicSensitivity(-30)
+    expect(gainProcs[0].setSensitivity).not.toHaveBeenCalled()
+    expect(noiseProcs[0].setSensitivity).toHaveBeenLastCalledWith(-30)
   })
 
   it('supressão desligada com volume ajustado: o processador de volume entra antes de publicar', async () => {

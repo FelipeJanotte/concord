@@ -9,7 +9,7 @@
  *   aparece, inclusive cada cor do gradiente; o texto sobre a cor de destaque é branco ou preto, o que ler melhor.
  */
 import type { ThemeBase, ThemeConfig } from '@shared/types'
-import { average, contrast, ensureContrast, mix, readableOn } from './color'
+import { average, contrast, ensureContrast, mix, NON_TEXT, readableOn } from './color'
 
 /** Tokens de cor que o tema controla (os nomes das variáveis CSS, sem `--`). */
 export const THEME_TOKENS = [
@@ -37,7 +37,9 @@ export const THEME_TOKENS = [
   'panel',
   'composer',
   'success',
-  'idle'
+  'idle',
+  'logo',
+  'logo-core'
 ] as const
 
 export type ThemeToken = (typeof THEME_TOKENS)[number]
@@ -51,7 +53,7 @@ export interface DerivedTheme {
   colorScheme: 'dark' | 'light'
 }
 
-type Palette = Omit<Record<ThemeToken, string>, 'primary' | 'primary-foreground' | 'ring'>
+type Palette = Omit<Record<ThemeToken, string>, 'primary' | 'primary-foreground' | 'ring' | 'logo' | 'logo-core'>
 
 /** A paleta escura de hoje (igual a `assets/globals.css`). */
 const DARK: Palette = {
@@ -125,6 +127,8 @@ const TINT: Partial<Record<ThemeToken, number>> = {
 /** Quanto o gradiente aparece no fundo principal com intensidade 100. */
 const GRADIENT_STRENGTH = 0.55
 
+const LOGO_CORE_SHIFT = 0.3
+
 /**
  * Contraste mínimo entre uma superfície e o extremo do texto (branco no escuro, preto no claro). Com 7:1 sobra
  * espaço para o texto normal e o secundário (que é mais apagado) passarem de 4,5:1.
@@ -172,6 +176,10 @@ export function deriveTokens(theme: ThemeConfig): DerivedTheme {
   t.primary = theme.accent
   t.ring = theme.accent
   t['primary-foreground'] = readableOn(theme.accent)
+
+  const logoSurfaces = [t.rail, t.sidebar, t.accent, ...chatSurfaces]
+  t.logo = ensureContrast(theme.accent, logoSurfaces, toward, NON_TEXT)
+  t['logo-core'] = ensureContrast(mix(t.logo, toward, LOGO_CORE_SHIFT), logoSurfaces, toward, NON_TEXT)
 
   const gradient =
     gradientStops.length === 0

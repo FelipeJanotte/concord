@@ -18,6 +18,7 @@ import { ToolsSidebar } from '@/components/tools/ToolsSidebar'
 import { ToolView } from '@/components/tools/ToolView'
 import { UpdateBanner } from '@/components/UpdateBanner'
 import { VoiceView } from '@/components/VoiceView'
+import { ScreenPip } from '@/components/voice/ScreenPip'
 import { MusicQueueDialog } from '@/components/voice/MusicQueueDialog'
 import { SIDE_PANELS } from '@/lib/side-width'
 import { useApp } from '@/store'
@@ -36,6 +37,7 @@ export default function App() {
         <div className="min-h-0 flex-1">{self ? <MainLayout /> : <LoginScreen />}</div>
       </div>
       {self && <IncomingCall />}
+      {self && <ScreenPip />}
       {self && <MusicQueueDialog />}
       <Toast />
     </TooltipProvider>

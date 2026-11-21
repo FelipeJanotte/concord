@@ -1,7 +1,7 @@
 // Ações e listeners do app (lib/actions/*) atualizando a store.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Channel, Message, User } from '@shared/types'
-import { bindAccountEvents, resolveAvatarUrl, updateProfile } from '@/lib/actions/account'
+import { bindAccountEvents, resolveAvatarUrl, setCustomStatus, updateProfile } from '@/lib/actions/account'
 import { bindChannelEvents, createChannel, deleteChannel, firstTextView, selectTextChannel } from '@/lib/actions/channels'
 import { bindMessageEvents, loadHistory, loadOlderMessages, notifyTyping, SEND_TIMEOUT_MS, sendMessage } from '@/lib/actions/messages'
 import { bindPresenceEvents } from '@/lib/actions/presence'
@@ -97,18 +97,50 @@ describe('conta', () => {
     const otherTab = user('eu-2', 'acc-eu', 'Eu')
     useApp.setState({
       users: [me, otherTab, user('b')],
-      account: { ...me, id: 'acc-eu', email: 'eu@x.com', hasPassword: true, hasGoogle: false, tagLocked: true }
+      account: { ...me, id: 'acc-eu', email: 'eu@x.com', hasPassword: true, hasGoogle: false, tagLocked: true, bio: '', customStatus: null }
     })
-    socket.receive('user:updated', { accountId: 'acc-eu', name: 'Novo', tag: 'eu', avatarUrl: '/avatars/acc-eu?v=1' })
+    const status = { emoji: '🎮', text: 'jogando', expiresAt: null }
+    socket.receive('user:updated', { accountId: 'acc-eu', name: 'Novo', tag: 'eu', avatarUrl: '/avatars/acc-eu?v=1', bio: 'oi', customStatus: status })
     const st = useApp.getState()
     expect(st.users.filter((u) => u.name === 'Novo').map((u) => u.id)).toEqual(['eu', 'eu-2'])
+    expect(st.users.find((u) => u.id === 'eu')).toMatchObject({ bio: 'oi', customStatus: status })
     expect(st.users.find((u) => u.id === 'b')?.name).toBe('Pessoa b')
-    expect(st.self?.name).toBe('Novo')
-    expect(st.account).toMatchObject({ name: 'Novo', avatarUrl: '/avatars/acc-eu?v=1', email: 'eu@x.com' })
+    expect(st.self).toMatchObject({ name: 'Novo', bio: 'oi', customStatus: status })
+    expect(st.account).toMatchObject({ name: 'Novo', avatarUrl: '/avatars/acc-eu?v=1', email: 'eu@x.com', bio: 'oi', customStatus: status })
+  })
+
+  it('user:updated também atualiza a pessoa na lista de amigos e nas conversas', () => {
+    const friend = { id: 'acc-b', name: 'Bia', tag: 'b', color: '#5865f2', avatarUrl: null }
+    const other = { ...friend, id: 'acc-c', name: 'Caio' }
+    useApp.setState({
+      friends: [
+        { account: friend, status: 'friend', since: 0, online: true },
+        { account: other, status: 'friend', since: 0, online: false }
+      ],
+      dms: [{ channel: { id: 'dm-1', name: 'dm', type: 'dm', createdAt: 0 }, other: friend }]
+    })
+    const status = { text: 'almoçando', expiresAt: null }
+    socket.receive('user:updated', { accountId: 'acc-b', name: 'Bia Nova', tag: 'b', avatarUrl: null, bio: 'bio', customStatus: status })
+    const st = useApp.getState()
+    expect(st.friends[0].account).toEqual({ ...friend, name: 'Bia Nova', bio: 'bio', customStatus: status })
+    expect(st.friends[1].account).toEqual(other)
+    expect(st.dms[0].other).toEqual({ ...friend, name: 'Bia Nova', bio: 'bio', customStatus: status })
+  })
+
+  it('setCustomStatus manda só o status no account:update e guarda a conta', async () => {
+    const account = { ...me, id: 'acc-eu', email: 'e@x.com', hasPassword: true, hasGoogle: false, tagLocked: true, bio: '', customStatus: null }
+    const status = { emoji: '☕', expiresAt: null }
+    socket.replyTo('account:update', () => ({ ok: true, account: { ...account, customStatus: status } }))
+    await setCustomStatus(status)
+    expect(socket.sent('account:update')[0][0]).toEqual({ customStatus: status })
+    expect(useApp.getState().account?.customStatus).toEqual(status)
+
+    socket.replyTo('account:update', () => ({ ok: false, error: 'Emoji inválido' }))
+    await expect(setCustomStatus(null)).rejects.toThrow('Emoji inválido')
   })
 
   it('updateProfile grava a conta ou lança o erro do servidor', async () => {
-    const account = { ...me, id: 'acc-eu', email: 'e@x.com', hasPassword: true, hasGoogle: false, tagLocked: true }
+    const account = { ...me, id: 'acc-eu', email: 'e@x.com', hasPassword: true, hasGoogle: false, tagLocked: true, bio: '', customStatus: null }
     socket.replyTo('account:update', () => ({ ok: true, account: { ...account, name: 'Outro' } }))
     await updateProfile({ name: 'Outro' })
     expect(useApp.getState().account?.name).toBe('Outro')

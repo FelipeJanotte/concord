@@ -1,3 +1,4 @@
+import { SENSITIVITY_DEFAULT_DB } from '@/lib/mic-gate'
 // Dispositivos de áudio e volume por pessoa (B4). Preferências desta máquina (salvas no localStorage).
 import type { LevelerTarget } from '@/lib/leveler/level'
 import type { LevelerGains } from '@/lib/leveler/leveler'
@@ -27,7 +28,9 @@ export interface DevicesState {
   /** supressão de ruído automática ligada (B13); desligada = microfone cru */
   noiseSuppression: boolean
   /** o que a supressão está fazendo agora; 'off' = desligada; null = fora de sala */
-  noiseMode: 'off' | 'light' | 'advanced' | 'light-fallback' | null
+  noiseMode: 'off' | 'advanced' | 'light-fallback' | null
+  micSensitivity: number
+  micLevel: number | null
   voiceLeveler: boolean
   voiceLevelerTarget: LevelerTarget
   levelerGains: LevelerGains
@@ -48,6 +51,8 @@ export const devicesInitial: DevicesState = {
   soundboardVolume: 1,
   noiseSuppression: true,
   noiseMode: null,
+  micSensitivity: SENSITIVITY_DEFAULT_DB,
+  micLevel: null,
   voiceLeveler: false,
   voiceLevelerTarget: 'medium',
   levelerGains: {}

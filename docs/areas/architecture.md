@@ -45,7 +45,7 @@ cadastro/login (antes de existir socket) e **Socket.IO** para o resto. Detalhes 
 
 ## Modelo de dados (`src/shared/types/`)
 
-- `Channel { id, name, type: 'text' | 'voice', createdAt }`
+- `Channel { id, name, type: 'text' | 'voice', createdAt, position?, categoryId? }` (`position`/`categoryId`: ordem e categoria dos canais da comunidade; `ChannelCategory { id, name, position }`; `docs/areas/home.md`, "Categorias e ordem dos canais")
 - `User { id, accountId, name, tag, color, avatarUrl }`: `id` é o `socket.id` (presença/voz); `accountId` identifica a conta. A pessoa aparece como `nome#tag`. A tag (1 a 5 letras/números) é **única entre todas as contas e imutável**: é o que diferencia pessoas com o mesmo nome. Exceção: conta criada pelo Google recebe tag provisória (`tagLocked: false`) e escolhe a definitiva uma única vez.
 - `AccountInfo`: dados da própria conta (e-mail, `hasPassword`, `hasGoogle`, `tagLocked`), recebidos só pelo dono no `hello`.
 - `Message { id, channelId, author: User, content, attachments, createdAt, kind?, tool?, editedAt?, replyTo? }` (`editedAt` = editada, A15; `replyTo` = resumo da mensagem respondida, B18; `reactions` = reações, A16; `mentions` = contas mencionadas com o nome atual, B19 (no texto: `<@id>`/`<@todos>`); `pinnedAt` = fixada, B27; `docs/areas/messages.md`) (`kind: 'tool'` = resultado de ferramenta da v4, com `tool` tipado; `kind: 'pin'` = aviso "Fulano fixou uma mensagem", B27; ausente = texto): o banco guarda `author_id` (conta) e o histórico junta com a conta, então mostra nome/foto **atuais**. Em `message:new`, `author.id` é o socket de quem enviou; no histórico é o id da conta. Identifique a pessoa sempre por `author.accountId`.
@@ -75,16 +75,18 @@ Anexos: o app envia o arquivo por HTTP (`POST /uploads`, corpo = bytes, `Authori
 manda os ids no `message:send`. `GET /files/<id>/<nome>` serve só anexos já publicados: PNG/JPEG/GIF/WebP
 confirmados pelos bytes vão inline, o resto como download `octet-stream` (HTML/SVG nunca rodam). Anexo solto
 há mais de 1 h é apagado; apagar o canal apaga os arquivos. Permissão por canal no download entra na v2.
+Prévia de link: `GET /embeds/<messageId>?a=&e=&s=` serve a imagem da prévia que o servidor baixou
+(`DATA_DIR/embeds/<messageId>`), com o mesmo link assinado dos anexos e só para quem vê o canal (`docs/areas/messages.md`).
 
 PostgreSQL via Drizzle. `client.ts` abre `DATABASE_URL` com `pg`; sem ela, abre o **PGlite** (Postgres em
 WebAssembly) em `DATA_DIR/pgdata`. Mesmo schema e mesmas migrations nos dois, aplicadas no boot (`server/index.ts`
-abre o banco antes do `listen` e roda o `init` dos módulos). Tabelas: `accounts`, `sessions`, `channels`,
+abre o banco antes do `listen` e roda o `init` dos módulos). Tabelas: `accounts`, `sessions`, `channels` (com `position` e `category_id`), `channel_categories`,
 `messages`, `attachments` (bytes no `FileStorage`, `DATA_DIR/uploads/<id>`), `server_mutes` (silêncio pelo servidor, B6; o módulo de voz carrega no `init`), `saved_playlists` (playlists da comunidade, A17; `saved_by` em cascata com a conta), `channel_reads` (última mensagem lida por conta e canal, A18; em cascata com a conta e o canal). O banco garante
 unicidade (e-mail, `lower(tag)`, Google id, `type + lower(name)` do canal), tamanhos (`check`) e apaga em cascata
 (canal → mensagens; conta → sessões; conta apagada deixa a mensagem com a cópia `author_*`). `seed.ts` cria os
 canais padrão ou importa o `db.json` antigo quando o banco está vazio.
 - `VoiceState { userId, channelId, muted, deafened, sharing, serverMuted?, watching? }`: quem está em qual sala de voz; `watching` (telas que a pessoa assiste) só vem para quem está na mesma sala.
-- `ServerState { channels, users, voice, access, statuses }`: snapshot enviado no `hello`; `statuses[accountId]` é `online | idle | dnd` de cada conta online (`docs/areas/presence.md`).
+- `ServerState { channels, categories?, users, voice, access, statuses }`: snapshot enviado no `hello`; `statuses[accountId]` é `online | idle | dnd` de cada conta online (`docs/areas/presence.md`).
 
 ## Eventos
 
@@ -100,19 +102,24 @@ Cliente → servidor (`ClientToServerEvents`):
 |---|---|---|---|
 | `hello` | — | `{ self, account, state }` | registra a conexão da conta (vinda do token); broadcast `user:joined`; `state.statuses` e `presence:status` na primeira janela da conta |
 | `presence:set-status` | `'online' | 'idle'` | — | atividade desta conexão (ausente pelo sistema, B28); a conta fica `idle` só com todas as conexões paradas; `LIMITS.presence`; `presence:status` para todos quando muda — `docs/areas/presence.md` |
-| `account:update` | `ProfileUpdate { name, tag?, avatar? }` | `ProfileUpdateResult` | troca nome/foto (o id só se `tagLocked` for false); `user:updated` para todos |
-| `channel:create` | `{ name, type }` | `CreateChannelResult` | normaliza o nome (texto: minúsculo e com hífens, até 32 caracteres), bloqueia duplicado e mais de 100 canais; `channel:created` para todos |
+| `account:update` | `ProfileUpdate { name?, tag?, avatar?, bio?, customStatus? }` (ausente = manter) | `ProfileUpdateResult` | troca nome/foto/bio/status personalizado (o id só se `tagLocked` for false); `LIMITS.profile`; `user:updated` (`ProfileChange`) para todos — `docs/areas/accounts.md` |
+| `channel:create` | `{ name, type, categoryId? }` | `CreateChannelResult` | normaliza o nome (texto: minúsculo e com hífens, até 32 caracteres), bloqueia duplicado e mais de 100 canais; entra no fim da ordem (na categoria, se vier; inexistente é recusada); `channel:created` para todos |
 | `channel:delete` | `channelId` | — | apaga o canal e as mensagens, tira todo mundo da sala de voz; `channel:deleted` + `voice:state` |
+| `category:create` / `category:rename` / `category:delete` | `{ name }` / `{ categoryId, name }` / `{ categoryId }` | `CategoryResult` / `CategoryResult` / `OkResult` | categorias de canais: `manageChannels`, nome 1–32, até 50, `LIMITS.channelLayout`; apagar deixa os canais sem categoria; `channels:layout` para todos — `docs/areas/home.md` |
+| `channel:layout` | `{ categories: string[], channels: { id, categoryId }[] }` | `OkResult` | ordem inteira depois de arrastar: `manageChannels`, cada categoria e canal da comunidade uma vez (senão "A lista de canais mudou. Tente de novo."), grava numa transação, último vence; `channels:layout { categories, channels: { id, categoryId, position }[] }` por conexão, só com os canais que ela vê |
 | `message:history` | `{ channelId, before?, after?, around? }` | `{ messages, hasMore, hasNewer? }` | página de 50 (sem cursor = mais recentes; `around` = 25 antes + a mensagem e 24 depois; `after` = as seguintes; B26) |
 | `message:search` | `{ query, channelId?, authorId?, before? }` | `SearchResult` (`{ ok, messages, hasMore }`) | busca (B26): até 25 por página, mais novas primeiro, só canais e DMs que a conta vê; `ILIKE` com `%`/`_` escapados; `LIMITS.search` — `docs/areas/messages.md` |
 | `message:pin` | `{ messageId, on }` | `OkResult` | fixar/desafixar (B27): `manageMessages` (em DM qualquer um dos dois), até 50 por canal, `LIMITS.pin`; `message:pinned { channelId, messageId, pinnedAt }` para quem vê o canal e, ao fixar, `message:new` com o aviso `kind: 'pin'` |
 | `message:pins` | `{ channelId }` | `Message[]` | fixadas do canal (a fixada mais recente primeiro); sem `view` = lista vazia (B27) |
+| `message:embed-remove` | `{ messageId }` | `OkResult` | tira a prévia de link da mensagem: só o autor (sem `view` = "Mensagem não encontrada"); `message:embed { channelId, messageId, embed: null }` para quem vê o canal — `docs/areas/messages.md` ("Prévia de links") |
 | `message:send` (com anexos) | `{ channelId, content, attachmentIds? }` | `OkResult` | até 10 anexos já enviados por `POST /uploads`, do próprio autor e não usados; tudo ou nada (senão volta "Anexos inválidos"); texto pode ser vazio se houver anexo |
 | `sound:list` | — | `Sound[]` | coleção de efeitos sonoros (links assinados para quem pede) — `docs/areas/sounds.md` |
 | `sound:play` | `{ channelId, soundId }` | `SoundResult` | exige estar na sala e `speak`; `sound:played` só para quem está nela; não toca por cima do próprio som anterior |
 | `sound:delete` | `soundId` | `SoundResult` | o autor ou `manageMessages`; `sound:deleted` para todos |
 | `music:play` | `{ channelId, query, textChannelId? }` | `MusicPlayResult` (`added`) | bot de música (A11): `query` é link (faixa/álbum/playlist do Spotify, vídeo/playlist do YouTube) ou texto (busca no YouTube); quem está na sala com `view`+`connect`, até 15 min por faixa e 100 na fila (playlist entra até encher) (`LIMITS.music`); `music:state` para quem vê a sala. Com `textChannelId` (o chat de onde veio o comando; exige `view`+`send` nele), posta **antes da busca** o comando da pessoa e o bot em "procurando" (`kind: 'tool'`, `tool: 'music'`, `action: 'searching'`) por `message:new` para quem vê esse chat; depois da busca a mesma mensagem vira a resposta ou o erro (`failed`) por `message:edited { channelId, messageId, content, tool }`; erro depois de postar volta com `posted: true` — `docs/areas/music.md` |
 | `music:skip` / `music:stop` | `{ channelId, textChannelId? }` (o id em texto do app 0.1.16 ainda vale) | `MusicResult` | pular a faixa / esvaziar a fila e tirar o bot (mesmas regras do `music:play`, inclusive as mensagens no chat com `textChannelId`) |
+| `music:shuffle` | `{ channelId, textChannelId? }` | `MusicResult` | embaralhar só a fila (pelo menos 2; a que toca segue); com `textChannelId` posta `/shuffle` e a resposta do bot |
+| `music:jump` | `{ channelId, trackId }` | `MusicResult` | tocar uma música da fila na hora, tirando as anteriores; não posta no chat |
 | `music:pause` / `music:resume` | `{ channelId, textChannelId? }` | `MusicResult` | pausar/retomar a sala toda (A17; mesmas regras de sala e `LIMITS.music`; não postam no chat); `music:state` leva `paused` e `elapsedMs` |
 | `playlist:list` | — | `PlaylistListResult` | playlists e álbuns salvos da comunidade (A17, `docs/areas/music.md`) |
 | `playlist:create` | `{ name, url }` | `PlaylistSaveResult` | só link de playlist/álbum do Spotify ou YouTube (url canônica); nome 1–60, único; `LIMITS.playlist`; `playlist:created` para todos |
@@ -147,6 +154,7 @@ Cliente → servidor (`ClientToServerEvents`):
 | `moderation:bans` | — | `BansResult` (`{ ok, bans: CommunityBan[] }`) | `banMembers`; lista das Configurações da comunidade → Banidos |
 | `moderation:timeout` | `{ accountId, minutes }` | `OkResult` | `canTimeoutMember` (`timeoutMembers`); 0 tira, 1 a 10080 (7 dias) põe; grava em `server_timeouts`, `moderation:timeout-changed` para todos; sem mensagem, reação e fala até o prazo |
 | `moderation:timeouts` | — | `MemberTimeout[]` | castigos valendo (o app carrega depois do `hello`) |
+| `audit:list` | `AuditFilter { before?, actorId?, action? }` | `AuditListResult` (`{ ok, entries: AuditEntry[], hasMore }`) | registro de auditoria: só a dona ou quem tem Administrador (`hasFullAccess`); página de 50, mais novas primeiro, `before` = id da última entrada; filtro inválido → "Filtro inválido". Sem push: a tela pede ao abrir, filtrar e paginar — `docs/areas/moderation.md` |
 | `call:invite` | `channelId` (conversa) | `CallResult` | membro, sem bloqueio, um por conversa e por pessoa; `call:updated` (`ringing`) para as duas contas; `missed` depois de `CALL_RING_MS` — `docs/areas/calls.md` |
 | `call:accept` / `call:decline` / `call:cancel` / `call:end` | `channelId` | `CallResult` / `OkResult` | atender (`active`), recusar, cancelar, desligar; o fim manda `call:ended` e tira os dois da sala da conversa |
 | `call:list` | — | `CallInfo[]` | chamadas em andamento das minhas conversas (o app pede depois do `hello`) |
@@ -156,11 +164,11 @@ Cliente → servidor (`ClientToServerEvents`):
 | `channel:read` | `{ channelId, messageId }` | `ChannelReadResult` | só avança (mensagem mais antiga não volta o ponto); `view` no canal, mensagem do mesmo canal, `LIMITS.read`; quando avança, `channel:read-sync` (`{ channelId, messageId }`) para as **outras** conexões da mesma conta |
 | `message:delete` | `{ messageId }` | `OkResult` | o autor ou `manageMessages` (em DM só o autor); apaga os anexos; `message:deleted` para quem vê o canal |
 
-Servidor → cliente (`ServerToClientEvents`): `channel:created`, `channel:deleted`, `user:joined`, `user:left`,
+Servidor → cliente (`ServerToClientEvents`): `channel:created`, `channel:deleted`, `channels:layout` (categorias e ordem, por conexão, sem canal privado que ela não vê), `user:joined`, `user:left`,
 `presence:status` (`{ accountId, status }`, para todos: online, ausente ou Não perturbe, B28),
-`user:updated` (por `accountId`), `message:new`, `voice:state` (sempre a **lista completa** das salas que a pessoa
+`user:updated` (`ProfileChange`: `{ accountId, name, tag, avatarUrl, bio, customStatus }`, para todos), `message:new`, `voice:state` (sempre a **lista completa** das salas que a pessoa
 vê), `typing`, `rate:limited`, `access:updated` e `channels:visible` (v2), `sound:created`, `sound:deleted` e
-`sound:played` (soundboard; o último só para a sala), `music:state` (bot de música: tocando agora, fila, `paused` e `elapsedMs`, para quem vê a sala), `playlist:created` e `playlist:deleted` (playlists salvas, para todos), `preferences:updated` e `channel:read-sync` (outras janelas da mesma conta), `friend:updated`, `friend:removed` e `friend:presence` (amizades; online só para amigos), `poll:updated` (enquete: contagens novas, para quem vê o canal), `tools:moved` (só para a conexão levada à sala do time), `dm:created` (conversa nova, para a outra pessoa e as minhas outras janelas), `message:deleted` e `message:pinned` (para quem vê o canal) , `moderation:kicked` (só para a conexão expulsa da voz), `moderation:moved` (só para a conexão movida para outra sala), `moderation:removed` (só para as conexões da conta expulsa/banida da comunidade, logo antes de cair) e `moderation:timeout-changed` (castigo posto, tirado ou vencido, para todos), `call:updated` e `call:ended` (chamadas privadas, para as duas contas; o fim chega antes do `voice:state`).
+`sound:played` (soundboard; o último só para a sala), `music:state` (bot de música: tocando agora, fila, `paused` e `elapsedMs`, para quem vê a sala), `playlist:created` e `playlist:deleted` (playlists salvas, para todos), `preferences:updated` e `channel:read-sync` (outras janelas da mesma conta), `friend:updated`, `friend:removed` e `friend:presence` (amizades; online só para amigos), `poll:updated` (enquete: contagens novas, para quem vê o canal), `tools:moved` (só para a conexão levada à sala do time), `dm:created` (conversa nova, para a outra pessoa e as minhas outras janelas), `message:deleted`, `message:pinned` e `message:embed` (prévia de link pronta, trocada ou removida: `{ channelId, messageId, embed: LinkEmbed | null }`, imagem assinada por conta; para quem vê o canal) , `moderation:kicked` (só para a conexão expulsa da voz), `moderation:moved` (só para a conexão movida para outra sala), `moderation:removed` (só para as conexões da conta expulsa/banida da comunidade, logo antes de cair) e `moderation:timeout-changed` (castigo posto, tirado ou vencido, para todos), `call:updated` e `call:ended` (chamadas privadas, para as duas contas; o fim chega antes do `voice:state`).
 
 ## Estado do renderer (`store/`)
 

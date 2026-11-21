@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { AlertDialog, AlertDialogBackdrop, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogTitle, AlertDialogTrigger } from '@ui-sdk/react/alert-dialog'
 import { Button } from '@ui-sdk/react/button'
 import { Drawer, DrawerBackdrop, DrawerClose, DrawerContent, DrawerDescription, DrawerTitle, DrawerTrigger } from '@ui-sdk/react/drawer'
-import { Disc3, Library, ListMusic, Loader2, Play, Trash2, X } from 'lucide-react'
+import { Disc3, ListMusic, Loader2, Play, Trash2, X } from 'lucide-react'
 import type { SavedPlaylist } from '@shared/types'
 import { deletePlaylist, loadPlaylists, playMusic } from '@/lib/client'
 import { useCan } from '@/lib/permissions'
@@ -25,8 +25,12 @@ export function PlaylistsDrawer({ channelId }: { channelId: string | null }) {
 
   return (
     <Drawer side="right" open={open} onOpenChange={changeOpen}>
-      <DrawerTrigger aria-label="Playlists" title="Playlists da comunidade" className={cn(ICON_BUTTON, 'size-9 data-open:bg-foreground/10 data-open:text-accent-foreground [&_svg]:size-5')}>
-        <Library aria-hidden />
+      <DrawerTrigger
+        title="Playlists da comunidade"
+        className="flex h-[3.25rem] shrink-0 items-center gap-2 rounded-xl border border-border bg-composer px-4 text-sm font-semibold text-accent-foreground shadow-sm transition-colors hover:bg-foreground/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none data-open:border-primary/60 data-open:text-primary"
+      >
+        <ListMusic aria-hidden className="size-5" />
+        Playlists
       </DrawerTrigger>
       <DrawerBackdrop className="bg-background/60" />
       <DrawerContent data-glass="surface" className="flex h-full w-[min(400px,92vw)] flex-col border-l border-border bg-popover text-popover-foreground shadow-2xl">

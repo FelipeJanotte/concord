@@ -1,5 +1,5 @@
 // Canais de texto e voz (as conversas privadas, tipo dm, ficam em repo/dms.ts).
-import { and, asc, count, eq, ne, sql } from 'drizzle-orm'
+import { and, asc, count, eq, max, ne, sql } from 'drizzle-orm'
 import type { Channel, ChannelKind, ChannelType } from '../../src/shared/types'
 import { db, uniqueViolation } from '../db/client'
 import { channels } from '../db/schema'
@@ -11,12 +11,18 @@ const toChannel = (row: Row): Channel => ({
   id: row.id,
   name: row.name,
   type: row.type as ChannelKind,
-  createdAt: row.createdAt.getTime()
+  createdAt: row.createdAt.getTime(),
+  position: row.position,
+  categoryId: row.categoryId
 })
 
 /** Canais da comunidade (sem as conversas privadas). */
 export async function listChannels(): Promise<Channel[]> {
-  const rows = await db().select().from(channels).where(ne(channels.type, 'dm')).orderBy(asc(channels.createdAt), asc(channels.id))
+  const rows = await db()
+    .select()
+    .from(channels)
+    .where(ne(channels.type, 'dm'))
+    .orderBy(asc(channels.position), asc(channels.createdAt), asc(channels.id))
   return rows.map(toChannel)
 }
 
@@ -44,11 +50,14 @@ export async function channelNameExists(type: ChannelType, name: string): Promis
 }
 
 /** Lança `DuplicateError('name')` se já houver canal com o nome no mesmo tipo (garantido pelo banco). */
-export async function insertChannel(channel: Channel): Promise<void> {
+export async function insertChannel(channel: Channel): Promise<Channel> {
   try {
+    const [last] = await db().select({ position: max(channels.position) }).from(channels).where(ne(channels.type, 'dm'))
+    const placed: Channel = { ...channel, position: (last?.position ?? -1) + 1, categoryId: channel.categoryId ?? null }
     await db()
       .insert(channels)
-      .values({ ...channel, createdAt: new Date(channel.createdAt) })
+      .values({ ...placed, createdAt: new Date(channel.createdAt) })
+    return placed
   } catch (err) {
     if (uniqueViolation(err) !== null) throw new DuplicateError('name')
     throw err

@@ -190,7 +190,7 @@ describe('backup automático (PGlite)', () => {
   let server: TestServer
 
   beforeAll(async () => {
-    server = await TestServer.start({ env: { BACKUP_INTERVAL_MS: '600', BACKUP_KEEP: '2' } })
+    server = await TestServer.start({ pglite: true, env: { BACKUP_INTERVAL_MS: '600', BACKUP_KEEP: '2' } })
   })
 
   afterAll(async () => {

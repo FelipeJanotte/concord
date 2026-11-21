@@ -76,9 +76,23 @@ em `lib/actions/voice.ts` (reexportados por `lib/client.ts`). A API pública (`j
 clica na sala ─► createLocalAudioTrack(echoCancellation/noiseSuppression/autoGainControl)
                  (falhou? entra só para ouvir e devolve micError)
               ─► emitWithAck('voice:join', {channelId, muted, deafened}) ─► { url, token }
-              ─► new Room(...).connect(url, token, { autoSubscribe: true })
+              ─► new Room(...).connect(url, token, { autoSubscribe: false })
+              ─► assina as faixas de quem já está na sala (menos tela; ver "Assinatura sob demanda")
               ─► publishTrack(mic, { source: Microphone })  +  room.startAudio()
 ```
+
+- **Assinatura sob demanda (B29):** a sala conecta com `autoSubscribe: false` e o `VoiceClient` decide o que assinar,
+  publicação por publicação (`RemoteTrackPublication.setSubscribed`, em `applySubscription`): tudo que **não** é tela
+  (microfone, câmera, bot de música) é assinado sempre; tela (`ScreenShare`) e áudio da tela (`ScreenShareAudio`)
+  só quando o id de conexão de quem compartilha está em `watchedScreens`. Vale em três momentos: logo depois do
+  `connect` (percorre `room.remoteParticipants`, porque o LiveKit não repassa `TrackPublished` de quem já estava na
+  sala antes de conectar), a cada `RoomEvent.TrackPublished` (quem entra depois ou publica depois) e a cada
+  `setWatchedScreens` (só as publicações de tela; microfone e câmera não recebem chamada nova). Só chama
+  `setSubscribed` quando `pub.isDesired` difere do desejado.
+  Por que `autoSubscribe: false` e não `true` + desassinar a tela no `TrackPublished`: com `true` o servidor já
+  assina e manda vídeo antes do app desassinar (pico de banda a cada tela nova), e quem já estava compartilhando ao
+  entrar chegaria assinado. O custo é ter de assinar o resto à mão: esquecer um caminho deixaria alguém mudo, por isso
+  os testes cobrem quem já estava, quem publica depois e a troca da lista.
 
 - **Áudio dos outros:** `TrackSubscribed` (só `Track.Kind.Audio`; vídeo/tela fica para a B3) → `track.attach()`
   cria o `<audio>`; `TrackUnsubscribed` → `detach()` + `remove()`.
@@ -184,17 +198,25 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
   última listagem; a escolha vale para **um** `getDisplayMedia` e expira em 15 s. Áudio = `'loopback'` (só Windows;
   `window.api.screen.canShareAudio`). O loopback captura **todo** o áudio do PC, inclusive a voz dos outros que o
   Concord toca: quem assiste pode ouvir eco. Por isso o áudio vem desmarcado.
-- **Captura:** 1080p a 15 fps, `contentHint: 'detail'` (texto legível). O token já libera `screen_share` e
-  `screen_share_audio`.
-- **Receber:** `TrackSubscribed` de vídeo com `source === ScreenShare` entra em `store.screens` (ids de conexão);
-  a própria tela entra como prévia via `LocalTrackPublished`. O áudio da tela (`ScreenShareAudio`) toca como os
+- **Captura:** escolhida pela pessoa (A21, ver "Qualidade e FPS da tela" abaixo); padrão 1080p a 15 fps com
+  `contentHint: 'detail'` (texto legível). O token já libera `screen_share` e `screen_share_audio`.
+- **Receber:** `store.screens` (ids de conexão) = quem tem tela **publicada**, assinada ou não (B29): entra no
+  `TrackPublished` com `source === ScreenShare` (ou na varredura depois do `connect`) e sai no `TrackUnpublished`; a
+  própria tela entra como prévia via `LocalTrackPublished`. A faixa (`TrackSubscribed`) só chega para as telas
+  assistidas e fica no mapa interno `screens`; desassinar (`TrackUnsubscribed`) tira a faixa, mas a tela continua em
+  `store.screens`. O áudio da tela (`ScreenShareAudio`) toca como os
   outros áudios (respeita deafen e o volume de saída), mas com **volume próprio por pessoa**, separado da voz dela
-  (ver "Volume do áudio da tela" abaixo). O `ScreenVideo` (em `ScreenTile.tsx`) liga a faixa num `<video muted>` com `attachScreen(userId, el)` (de `@/lib/client`).
+  (ver "Volume do áudio da tela" abaixo). O `ScreenVideo` (exportado de `ScreenTile.tsx` para a miniatura da A22 reusar) liga a faixa num `<video muted>` com `attachScreen(userId, el)` (de `@/lib/client`). Como a assinatura vem depois do
+  clique, o `<video>` monta antes da faixa chegar: `attachScreen` guarda o elemento (`screenViews`) e o `VoiceClient`
+  liga a faixa nele quando ela chega (e desliga quando é desassinada); a função devolvida tira o elemento.
 - **Parar:** botão de novo (`stopScreenShare`) ou pelo sistema (janela fechada): `LocalTrackUnpublished` chama
   `voice.onScreenShareEnded`, que desliga `sharing` e avisa o servidor uma vez só.
 - **Assistir é opcional** (`components/voice/VoiceGrid.tsx` + `ScreenTile.tsx` + `lib/featured-screens.ts`): ninguém
-  entra assistindo sozinho. Quando alguém compartilha, os outros veem na grade um card da tela (`ScreenTile`: o
-  vídeo, "Ao vivo" e "Tela de Ana") e no quadro da pessoa o botão "Assistir". Clicar assiste: a tela vai para o
+  entra assistindo sozinho. Quando alguém compartilha, os outros veem na grade um card da tela (`ScreenTile`, B29:
+  **sem vídeo**, botão do ui-sdk com o avatar de quem compartilha, "Tela de Ana", "Ao vivo" e "Assistir tela"; nome
+  acessível "Assistir: Tela de Ana") e no quadro da pessoa o botão "Assistir". Só o `ScreenPane` do destaque tem
+  `<video>`: a faixa é assinada quando a tela entra no destaque e desassinada quando sai ("Parar de assistir", tirar
+  pelo seletor ou sair da tela da sala), voltando ao card. Clicar assiste: a tela vai para o
   destaque (`ScreenStage`) e a pessoa passa a contar como espectadora. Podem ficar **várias telas em destaque ao
   mesmo tempo**. `featuredScreens(telas, escolhidas)` devolve as escolhidas que ainda estão ao vivo, em ordem (sem
   escolha: `[]`, nem a própria); o `VoiceGrid` corrige `chosen` quando uma delas acaba, então a tela que volta não
@@ -208,9 +230,19 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
   - A **própria tela** também tem card ("Sua tela"): clicar abre a prévia no destaque, mas ela não conta como
     espectador e nunca vai para o destaque sozinha.
   - **Organizar** (com 2 ou mais em destaque): arrastar uma tela sobre outra muda a ordem (HTML5 drag and drop; o id
-    arrastado fica num `ref` do `ScreenStage`, sem `dataTransfer`) e o botão "Empilhar as telas"/"Pôr as telas lado
-    a lado" (`Rows2`/`Columns2`, `data-arrangement` = `side-by-side`|`stacked`) alterna lado a lado e empilhadas.
-    Cada tela mostra o nome embaixo. Ordem e arranjo são locais do `VoiceGrid` (não salvos).
+    arrastado fica num `ref` do `ScreenStage`, sem `dataTransfer`; vale em qualquer arranjo, grade incluída) e um botão
+    só alterna o arranjo em ciclo lado a lado → empilhadas → grade (`nextArrangement`), com o nome e o ícone do
+    **próximo**: "Empilhar as telas" (`Rows2`), "Pôr as telas em grade" (`LayoutGrid`), "Pôr as telas lado a lado"
+    (`Columns2`); `data-arrangement` = `side-by-side`|`stacked`|`grid`.
+  - **Arranjo padrão** (B30, `defaultArrangement`/`stageArrangement` em `lib/featured-screens.ts`): sem escolha da
+    pessoa, 1–2 telas ficam lado a lado e **3 ou mais em grade**; depois que ela escolhe pelo botão, a escolha vale
+    mesmo quando entra ou sai tela. Na **grade** (`StageArea` no `ScreenTile.tsx`) as telas ficam centralizadas
+    (`justify-center` + `align-content: safe center`), em 16:9, com colunas e largura de `bestTileLayout` sobre a área
+    medida por `useElementSize` (espaço de 4 px; `data-columns` e `--tile-w`); sem espaço, rola na vertical.
+    Cada tela mostra o nome embaixo. A ordem é local do `VoiceGrid` e o arranjo, do `ScreenStage` (não salvos;
+    parar de assistir volta ao padrão).
+  - **Pendente (B30):** o botão "Abrir miniatura" na barra do `ScreenStage`, chamando `openScreenPip` (de
+    `@/lib/client`, já existe com a A22).
   - Embaixo, a fileira "Membros da chamada" (`role="group"`), **centralizada**, com os cards das
     telas que não estão em destaque (`ScreenTile`, clicar = assistir **só** essa) e os participantes. A centralização usa `ml-auto` no primeiro e
     `mr-auto` no último filho (não `justify-center`, que cortaria o começo quando a fileira rola de lado).
@@ -228,13 +260,26 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
   - A escolha é estado local do `VoiceGrid` (não salva): ao trocar de sala ou sair da tela da sala, para de assistir.
 - **Quem está assistindo** (como os espectadores de uma transmissão no Discord):
   ```
-  VoiceGrid: watchedScreens(featured, eu) muda ─► watchScreens(lista) (lib/actions/screen-watching.ts)
-    ─► só envia se for diferente do `watching` que o servidor já mandou para mim ─► emit('voice:watching', ids)
+  VoiceGrid: watchedScreens(featured, eu) muda ─► watchScreens('room', lista) (lib/actions/screen-watching.ts)
+  miniatura (A22)                               ─► watchScreens('pip', lista)
+    ─► guarda a lista da origem ─► união das origens (sem repetir; sala primeiro, na ordem de cada lista)
+    ─► voice.setWatchedScreens(união) (VoiceClient)
+    ─► só envia se for diferente do `watching` que o servidor já mandou para mim ─► emit('voice:watching', união)
   servidor: valida, guarda por conexão ─► emitVoice ─► voice:state com `watching` em cada VoiceState da MINHA sala
   quem compartilha: screenViewers(voice, eu) ─► ScreenViewers "Assistindo: Ana e Bia" (avatares + nomes)
   ```
   - **Conta** como espectador: só as telas **em destaque** de outras pessoas (`watchedScreens` tira a própria).
-    Grade, cards e miniaturas não contam. Desmontar o `VoiceGrid` (sair da tela da sala) manda `[]`.
+    Grade, cards e miniaturas da faixa não contam. Desmontar o `VoiceGrid` (sair da tela da sala) zera a origem `room`.
+  - **Origens** (`watchScreens(origin: WatchOrigin, ids)`, `WatchOrigin = 'room' | 'pip'`): a sala (`VoiceGrid`) e a
+    miniatura flutuante (A22) informam cada uma as suas telas; o servidor recebe a **união**. Tirar uma origem
+    (lista vazia) mantém as telas da outra. O estado das origens mora no módulo `screen-watching.ts` (não na store:
+    nenhuma tela desenha a partir dele) e é zerado sempre que `myVoiceChannelId` muda (sair, cair ou trocar de sala;
+    `useApp.subscribe` no próprio módulo), junto com `voice.setWatchedScreens([])`: nada da sala anterior vai para a
+    nova. Fora da sala não guarda nem envia nada.
+  - **`VoiceClient.setWatchedScreens(ids)`** (`lib/voice.ts`): guarda, sem repetir, os ids de conexão das telas que
+    eu assisto, lidos em `voice.watchedScreens` (cópia); `teardown` esquece. Na sala, assina a tela e o áudio da tela
+    de quem entrou na lista e desassina de quem saiu (B29, ver "Assinatura sob demanda" em "Cliente"). Fora da sala só
+    guarda. O `watchScreens` chama com a união mesmo quando não reenvia o `voice:watching` (o servidor já tinha a lista).
   - **Contrato** (`src/shared/types/voice.ts`): `voice:watching (screenIds: string[])` (cliente → servidor) e o
     campo opcional `VoiceState.watching?: string[]` (ids de conexão das telas que aquela pessoa assiste).
     `MAX_WATCHED_SCREENS = 25`.
@@ -250,9 +295,10 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
   - **Tela:** `components/voice/ScreenViewers.tsx` (olho + até 3 avatares + "Assistindo: Ana e Bia" ou "Ninguém
     assistindo") aparece na barra do `ScreenStage` quando a **própria** tela está em destaque e no painel "Voz
     conectada" (`VoiceStatusPanel` em `UserPanel.tsx`) enquanto compartilho.
-  - **Banda:** o vídeo da tela continua assinado no LiveKit assim que chega (o card mostra o vídeo ao vivo). Só
-    assinar depois do clique exigiria trocar o card por uma imagem (a prévia do "ao vivo") e mexer na assinatura
-    em `lib/voice.ts`: próximo passo, não feito.
+  - **Banda (B29):** só as telas assistidas (sala ou miniatura, a união das origens) são assinadas no LiveKit; o card
+    da grade não baixa vídeo nem áudio da tela. O controle de volume da tela (`store.screenAudio`) só aparece depois
+    que o áudio da tela assinado chega. A própria tela não passa por assinatura (é local) e a prévia do "ao vivo"
+    (`LivePreview`) vem do servidor (`voice:preview-get`), então nenhuma das duas muda.
   - **Problema conhecido:** se a conexão cair e voltar com a mesma tela em destaque, o servidor esqueceu a lista e
     o app só reenvia quando ela mudar (tirar e pôr a tela de novo resolve).
 - **Grade centralizada com tamanho automático** (`TileGrid` em `VoiceGrid.tsx` + `lib/tile-layout.ts`): os quadros
@@ -275,22 +321,77 @@ botão "Compartilhar a tela" (VoiceView) ─► toggleScreenShare()
   "volume do áudio da tela"), `lib/actions/devices.test.ts` (bloco "volume do áudio da tela": guardar por conta,
   salvar e reabrir),
   `lib/actions/screen.test.ts` (botão, seletor, erros, aviso único ao servidor), `components/voice/voice.test.tsx`
-  (jsdom: bloco "áudio da tela em destaque"; seletor, card, ninguém entra assistindo, clicar no card assiste e avisa o servidor, própria prévia sem
+  (jsdom: bloco "áudio da tela em destaque"; seletor, card sem `<video>` com "Assistir tela", só o destaque tem vídeo e
+  parar volta ao card, ninguém entra assistindo, clicar no card assiste e avisa o servidor, própria prévia sem
   contar, "Parar de assistir", tirar a última pelo seletor, sair da tela da sala, tela assistida que acaba e volta,
-  quem assiste a minha tela na barra, duas telas em destaque, arrastar para reordenar, lado a lado/empilhadas,
+  quem assiste a minha tela na barra, duas telas em destaque, arrastar para reordenar, lado a lado/empilhadas/grade, 3+ telas
+  abrem em grade com o tamanho medido, arranjo escolhido que continua com a 3ª tela,
   "Assistir" no quadro, esconder/mostrar membros, tela cheia do quadro com botão/duplo clique e a recusa, grade
   centralizada com o tamanho medido), `components/voice-panel.test.tsx` (espectadores no "Voz conectada"),
-  `lib/actions/screen-watching.test.ts` (envia só quando muda, fora da sala não envia),
-  `lib/featured-screens.test.ts` (escolha, pôr/tirar, reordenar, `watchedScreens`, `screenViewers`),
+  `lib/actions/screen-watching.test.ts` (envia só quando muda, fora da sala não envia, união das origens `room`/`pip`,
+  `pip` sozinha, tirar uma origem mantém a outra, união para o `VoiceClient`, trocar/sair da sala zera as origens),
+  `lib/voice.test.ts` (bloco "telas que eu assisto": `setWatchedScreens` sem repetir, cópia, `teardown` esquece;
+  bloco "assinatura das telas sob demanda (B29)": quem já estava, publicado depois, assistir/parar assina e desassina
+  só a tela e o áudio da tela, microfone e câmera intactos, `<video>` montado antes da faixa; `connect` com
+  `autoSubscribe: false` no bloco "join"; bloco "tela": publicada/despublicada e desassinar mantém disponível),
+  `lib/featured-screens.test.ts` (escolha, pôr/tirar, reordenar, `watchedScreens`, `screenViewers`, arranjo padrão e ciclo),
   `lib/tile-layout.test.ts` (colunas e tamanho, limites, sem altura, gente demais), `src/main/permissions.test.ts`
   e `server/tests/voice.test.ts` (`voice:sharing` e o bloco `voice:watching`: só a sala recebe, validação, lista
   igual, parar de compartilhar, sair/desconectar, trocar de sala e o limite real com `RATE_LIMIT_MULTIPLIER=1`).
-  À mão: três janelas (A, B, C) na mesma sala com o LiveKit rodando. A compartilha: B e C veem o card, sem
-  destaque, e A vê "Ninguém assistindo" no "Voz conectada". B clica no card: A vê "Assistindo: B" (barra do
+  À mão: três janelas (A, B, C) na mesma sala com o LiveKit rodando. A compartilha: B e C veem o card (sem vídeo;
+  em `chrome://webrtc-internals`/DevTools de B não há faixa de vídeo recebida até clicar), sem destaque, e A vê "Ninguém assistindo" no "Voz conectada". B clica no card: A vê "Assistindo: B" (barra do
   destaque ao abrir a própria prévia e "Voz conectada"); C clica também: "Assistindo: B e C". B usa "Parar de
   assistir": volta à grade e A vê só C. A abre a própria prévia: não conta. C sai da sala: some da lista. A para de
   compartilhar e volta: ninguém assistindo. Com duas telas: destaque pelo seletor, arrastar, empilhar, tela cheia
   (botão, duplo clique, Esc) e o "ao vivo" some ao parar.
+
+### Qualidade e FPS da tela (A21)
+
+Quem compartilha escolhe a resolução (720p, 1080p, 1440p, Original) e a taxa de quadros (15, 30, 60 fps). Só
+cliente, sem evento novo.
+
+| Peça | Arquivo |
+|---|---|
+| `screenCapture(quality)` (pura: tamanho, `contentHint`, bitrate), `parseScreenQuality`, `DEFAULT_SCREEN_QUALITY` | `src/shared/screen.ts` |
+| Escolha guardada na máquina (`concord:screen-quality`), `chooseScreenQuality`, `store.screenQuality` | `lib/actions/screen-quality.ts`, `store/voice.ts` |
+| Publicar e trocar no ar (`startScreenShare(audio, quality)`, `setScreenQuality`) | `lib/voice.ts` |
+| Seletores "Resolução" e "Taxa de quadros" | `components/voice/ScreenQualitySelect.tsx` (no `ScreenPicker` e no "Voz conectada" enquanto compartilha) |
+
+- **Regras:** até 15 fps usa `contentHint: 'detail'` (texto nítido); acima, `'motion'` (fluidez). "Original" pede
+  até 3840×2160 (o LiveKit usa 1080p quando a resolução não vem, por isso há um teto). Bitrate (bps) por resolução
+  × fps: 720p 1,5M/2,5M/4M; 1080p 2,5M/4M/6M; 1440p 4M/7M/12M; Original 6M/10M/16M. Sem simulcast (`screenShareEncoding`).
+- **Trocar no ar:** `setScreenQuality` pega a publicação `ScreenShare` local, muda o `contentHint`, chama
+  `applyConstraints` na faixa e `sender.setParameters` (bitrate e fps). Não republica: quem assiste não perde a tela.
+- **Riscos:** 1440p/60 e Original pesam na CPU de quem compartilha e na banda do SFU. Sem teto por enquanto; se for
+  preciso, vira ADR. `applyConstraints` pode entregar menos que o pedido (a fonte é menor ou a GPU não acompanha).
+- **Testes:** `src/shared/screen.test.ts`, `lib/actions/screen-quality.test.ts`, bloco "tela" de `lib/voice.test.ts`
+  (publica com a qualidade, troca sem republicar, sem tela não faz nada), `components/voice/ScreenQualitySelect.test.tsx`.
+  À mão: compartilhar em 720p/60 e olhar em `chrome://webrtc-internals` de quem assiste (`frameWidth`, `framesPerSecond`);
+  trocar para 1080p/15 no "Voz conectada" sem a tela piscar para os outros.
+
+### Miniatura flutuante da tela (A22)
+
+Janela flutuante dentro do app com a tela de alguém da minha sala enquanto não estou na tela da sala.
+
+| Peça | Arquivo |
+|---|---|
+| Posição e tamanho (puras: 16:9 + cabeçalho de 36 px, mínimo 240 px, dentro da janela; guardados em `concord:screen-pip`) | `lib/screen-pip.ts` |
+| `pipScreenId` | `store/screen-pip.ts` |
+| `openScreenPip`, `closeScreenPip`, `leaveRoomView`, `enterRoomView`, `backToRoom` | `lib/actions/screen-pip.ts` |
+| Janela (arrastar pelo cabeçalho, redimensionar pelo canto, trocar de tela, voltar, fechar) | `components/voice/ScreenPip.tsx`, montada em `App.tsx` |
+
+- **Abrir:** ao sair da tela da sala (o `VoiceGrid` desmonta) com tela em destaque, abre a primeira do destaque.
+  `openScreenPip(id)` só abre com a pessoa numa sala e a tela existindo. Entrar de novo na sala (`VoiceGrid` monta)
+  fecha a miniatura. Vale também para a chamada privada (o `CallPanel` usa o `VoiceGrid`).
+- **Assistir:** a miniatura informa a origem `pip` (`watchScreens('pip', [id])`); fechar zera a origem. Ao sair da
+  sala, a miniatura abre **antes** de zerar a origem `room`, para o servidor não receber um "não assisto nada" no meio.
+- **Fecha sozinha:** quando a tela acaba (sai de `store.screens`) ou a pessoa sai/troca de sala.
+- **"Voltar para a sala":** botão ou duplo clique no vídeo: abre a sala de voz da comunidade ou a conversa (DM).
+- **Testes:** `lib/screen-pip.test.ts`, `lib/actions/screen-pip.test.ts`, `components/voice/ScreenPip.test.tsx` e o
+  bloco `VoiceGrid` de `components/voice/voice.test.tsx` (sair com destaque abre e continua assistindo, sem destaque
+  para, voltar fecha). À mão: assistir a uma tela, ir para um canal de texto: a miniatura aparece no canto inferior
+  direito; arrastar, redimensionar, reabrir o app (volta no mesmo lugar), "Trocar de tela" com duas telas e a tela
+  que acaba fechando a miniatura.
 
 ## Prévia do "ao vivo"
 
@@ -437,7 +538,7 @@ duas barras laterais), como no Discord:
 - **Silenciar alguém:** também por conta. O volume aplicado vira 0, mas o valor ajustado continua em `userVolumes`;
   ao tirar o silêncio, volta ao que era. Mexer no volume enquanto silenciado só guarda o valor. Não afeta os outros:
   é só no meu app (para silenciar para todos, B6 "silenciar pelo servidor").
-- **Preferências desta máquina:** `localStorage` `concord:audio` = `{ input, output, camera, volumes, muted, sounds, noise, micGain, outputVolume, leveler, levelerTarget, soundboardVolume, screenVolumes, screenMuted }` (`screenVolumes` = `{ accountId: 0–1 }`, só os abaixo de 100%; `screenMuted` = lista de contas), lido ao carregar o
+- **Preferências desta máquina:** `localStorage` `concord:audio` = `{ input, output, camera, volumes, muted, sounds, noise, micGain, micSensitivity, outputVolume, leveler, levelerTarget, soundboardVolume, screenVolumes, screenMuted }` (`screenVolumes` = `{ accountId: 0–1 }`, só os abaixo de 100%; `screenMuted` = lista de contas), lido ao carregar o
   app (`loadAudioPreferences`) e de novo depois do `disconnect()` (sair da conta não apaga). Dados inválidos ou
   armazenamento bloqueado: volta aos padrões sem quebrar.
 - **Lista:** `Room.getLocalDevices(kind, false)` (não pede permissão só para listar). Os apelidos do Windows
@@ -459,16 +560,15 @@ Dois controles em Configurações de voz (`VolumeSettings` em `settings/VoiceSet
 
 | Peça | Papel |
 |---|---|
-| `lib/mic-gain.ts` | `clampMicGain` (0 a `MIC_GAIN_MAX` = 2), `clampOutputVolume` (0 a 1; inválido volta a 1), interface `GainControl` e `MicGainProcessor` (processador do `livekit-client`: microfone → `GainNode` → faixa publicada). |
+| `lib/mic-gain.ts` | `clampMicGain` (0 a `MIC_GAIN_MAX` = 2), `clampOutputVolume` (0 a 1; inválido volta a 1), interface `GainControl` e `MicGainProcessor` (processador do `livekit-client` com a supressão desligada: microfone → volume → portão da sensibilidade → faixa publicada; ver "Sensibilidade do microfone"). |
 | `lib/noise/processor.ts` | O `AutoNoiseProcessor` ganhou um `GainNode` "volume" entre seco/molhado e a saída, e `setGain`. |
 | `lib/voice.ts` | `setMicGain(0–2)` e `setOutputVolume(0–1)`; `attachProcessor` escolhe o processador antes de publicar; `gainControl` é quem aplica o volume agora. |
 | `lib/actions/devices.ts` + `store/devices.ts` | `micGain`/`outputVolume` (padrão 1), `setMicGain`, `setOutputVolume`, carregados em `loadAudioPreferences`. |
 
 - **Microfone (0–200%):** com a supressão de ruído ligada, o volume vai no próprio processador de ruído (não há dois
-  processadores: o `livekit-client` aceita só um por faixa). Com ela desligada e em 100%, o microfone vai **cru, sem
-  processador** (como antes); ao sair de 100% dentro da sala entra o `MicGainProcessor` e fica até sair da sala.
-  Desligar a supressão dentro da sala troca o de ruído pelo de volume (se o volume não está em 100%). Fora da sala só
-  guarda o valor. A mudança é suave (`setTargetAtTime`), sem estalo. Quem escuta recebe o áudio já com o volume.
+  processadores: o `livekit-client` aceita só um por faixa). Com ela desligada, o `MicGainProcessor` entra **sempre**
+  (mesmo em 100%), porque ele também faz o corte da sensibilidade. Desligar a supressão dentro da sala troca o de
+  ruído por ele. Fora da sala só guarda o valor. A mudança é suave (`setTargetAtTime`), sem estalo. Quem escuta recebe o áudio já com o volume.
   O `autoGainControl` do WebRTC continua ligado: ele age antes, este volume multiplica depois.
 - **Saída (0–100%):** multiplica o volume de cada pessoa (`applyVolume` = pessoa × saída) e vale também para o áudio
   das telas, os efeitos sonoros (`sounds.ts`) e os sons de entrar/sair (`voice-sounds.ts`, inclusive o "Testar").
@@ -481,6 +581,33 @@ Dois controles em Configurações de voz (`VolumeSettings` em `settings/VoiceSet
   (controles, "Voltar para 100%", "Testar" com o volume de saída), `sounds.test.ts` e `voice-sounds.test.ts`.
   À mão: numa sala com outra janela, subir o microfone para 200% e baixar para 0% (o outro ouve mudar na hora, com e
   sem a supressão de ruído); baixar a saída e conferir voz, tela e efeitos sonoros.
+
+## Sensibilidade do microfone
+
+Um slider em Configurações de voz (`MicSensitivity` em
+`settings/VoiceSettings.tsx`) escolhe a partir de que volume o microfone abre (portão de ruído, como a sensibilidade
+do Discord). Por trás do slider, uma barra (`Meter` do ui-sdk) mostra o volume do microfone ao vivo: verde quando
+passa da linha, cinza quando fica cortado. Vale **com e sem** a supressão de ruído: com ela, o corte vem depois do
+RNNoise e cuida do que ele não tira (voz de vídeo na caixa de som), deixando o microfone em silêncio nas pausas.
+**Só cliente:** nenhum evento novo; salvo em `concord:audio` como `micSensitivity`.
+
+| Peça | Papel |
+|---|---|
+| `lib/mic-gate.ts` | Puras: `clampSensitivity` (-100 a 0 dB; inválido volta a **-60**, o padrão) e `nextGate` (abre com nível ≥ linha; fecha só depois de `GATE_HOLD_MS` = 300 ms abaixo, para não cortar o fim da palavra). |
+| `lib/mic-gate.ts` | `MicGate`: põe um `GainNode` (portão) e um analisador depois do volume do processador; a cada 50 ms mede o nível (`rmsDb` de `lib/leveler/level.ts`), avisa `onLevel` e abre/fecha o portão (abre em ~5 ms, fecha em ~50 ms, sem estalo). `setSensitivity` muda na hora. Começa fechado. |
+| `lib/mic-gain.ts`, `lib/noise/processor.ts` | Os dois processadores do microfone montam um `MicGate` no fim da cadeia (`MicProcessorSettings`: `gain`, `sensitivityDb`, `onLevel`, `clock`) e repassam `setSensitivity`. Com o RNNoise, o nível medido já é o da voz limpa. |
+| `lib/mic-level.ts` | `MicLevelMonitor` (`micLevelMonitor`): fora da sala, abre o microfone escolhido só para medir o nível enquanto o slider está na tela; `stop` fecha captura e AudioContext (e solta uma captura que chegar depois do `stop`). |
+| `lib/voice.ts` | `setMicSensitivity(db)` e `onMicLevel` (nível vindo do processador na sala); `micProcessor` é o processador atual (de ruído ou de volume), que recebe volume e sensibilidade. |
+| `lib/actions/devices.ts` + `store/devices.ts` | `micSensitivity`, `micLevel` (dBFS ou `null`), `setMicSensitivity`, `startMicLevelPreview` (fora da sala liga o monitor; na sala o nível já vem do processador) e `stopMicLevelPreview` (ao desmontar o slider). |
+
+- **Linha e barra na mesma escala:** as duas vão de -100 a 0 dBFS; a barra é `nível + 100` (0 a 100).
+- **Fora da sala** a medição é do microfone sem o RNNoise e sem o volume do microfone; na sala, depois dos dois. Com
+  a supressão ligada, o teclado aparece mais alto na barra fora da sala do que vai chegar de fato.
+- **Testes:** `lib/mic-gate.test.ts`, `lib/mic-gain.test.ts` (bloco "com sensibilidade"), `lib/mic-level.test.ts`,
+  `lib/voice.test.ts` (sensibilidade com e sem supressão, ao entrar, na hora, `onMicLevel`, trocar a supressão na sala), `lib/noise/noise.test.ts` (bloco "com sensibilidade"), `lib/actions/devices.test.ts`
+  e `components/settings/VoiceSettings.test.tsx` (slider, barra, frases, para o monitor ao fechar). **À mão:** desligar
+  a supressão, falar e digitar olhando a barra; numa sala com outra janela, conferir que o teclado abaixo da linha não
+  chega e o começo das frases não some.
 
 ## Equalizador automático de vozes
 
@@ -550,20 +677,25 @@ Um som curto quando alguém **entra** na sala de voz em que estou (duas notas su
 
 ## Supressão de ruído automática (B13)
 
-Tira teclado, ventilador e ruído de fundo do microfone **antes de enviar**, sem a pessoa escolher nada. Roda no app
+Tira teclado, ventilador, som de vídeo vazando e ruído de fundo do microfone **antes de enviar**, sem a pessoa escolher nada. Roda no app
 de quem fala (processador da faixa do microfone no `livekit-client`); quem ouve recebe limpo. Um único interruptor
 ("Supressão de ruído automática", ligado por padrão, salvo em `concord:audio` como `noise`) desliga tudo: microfone cru.
 
 | Peça | Papel |
 |---|---|
-| `lib/noise/decide.ts` | `NoiseDecider` (função pura): ruído de fundo = percentil 20% do nível dos últimos 4 s (a fala é alta e intermitente; o fundo fica nos valores baixos). Fundo acima de **-50 dBFS por 2 s** liga o avançado; abaixo de **-58 dBFS por 10 s** desliga. O vão entre os dois evita ficar trocando. |
-| `lib/noise/processor.ts` | `AutoNoiseProcessor` (`TrackProcessor` do LiveKit): microfone → seco + (RNNoise → molhado) → faixa publicada, e um analisador que mede o nível a cada 250 ms. A troca de modo é um crossfade (sem estalo, sem republicar). Não mexe na captura: a supressão nativa continua como o microfone foi aberto (ver "Supressão nativa só muda reabrindo a captura"). |
+| `lib/noise/processor.ts` | `AutoNoiseProcessor` (`TrackProcessor` do LiveKit): microfone → seco + (RNNoise → molhado) → volume → portão da sensibilidade (`MicGate`) → faixa publicada. Com o RNNoise carregado, fica no molhado **o tempo todo**; se ele falha no meio, crossfade para o seco (sem estalo, sem republicar). Não mexe na captura: a supressão nativa continua como o microfone foi aberto (ver "Supressão nativa só muda reabrindo a captura"). |
 | `lib/noise/engine.ts` | Motor: **RNNoise** (MIT) de `@sapphi-red/web-noise-suppressor`, WASM + AudioWorklet, carregado com `import()` só quando o filtro liga. Os arquivos (`rnnoise*.wasm`, worklet) vão empacotados pelo Vite (`?url`). O WASM é baixado uma vez e o worklet é registrado uma vez por AudioContext. |
 | `lib/voice.ts` | `setNoiseSuppression(on)`, `onNoiseModeChange`. Antes de publicar o microfone: `mic.setAudioContext(ctx48k)` + `mic.setProcessor(...)` (um AudioContext a 48 kHz **novo a cada entrada na sala**, fechado no `teardown`, com o vigia do relógio). Ligar/desligar na sala: `stopProcessor`/`setProcessor` + `mic.restartTrack(micCapture(...))`, que reabre a captura com a nativa ligada ou desligada, no mesmo microfone escolhido (o mesmo AudioContext continua). |
-| `lib/audio-clock.ts` | `AudioClockWatchdog`: a cada 2 s (`CLOCK_CHECK_MS`) compara o `currentTime` do AudioContext com o relógio real; abaixo de 0,9x (`MIN_CLOCK_RATE`) em 2 medições seguidas, `suspend()` + `resume()` e o log `[voz] áudio do microfone rodava a Nx...`. Contexto suspenso de propósito não conta. Ver "Voz robotizada" abaixo. |
-| `store/devices.ts` | `noiseSuppression` e `noiseMode` (`'light' \| 'advanced' \| 'light-fallback' \| 'off' \| null`), mostrado como frase em Configurações de voz. |
+| `lib/audio-clock.ts` | `AudioClockWatchdog`: a cada 2 s (`CLOCK_CHECK_MS`) compara o `currentTime` do AudioContext com o relógio real; abaixo de 0,9x (`MIN_CLOCK_RATE`) em 2 medições seguidas, `suspend()` + `resume()`, o log `[voz] áudio do microfone rodava a Nx...; microfone reaberto` e o `VoiceClient` refaz o microfone (`reopenMic`: `stopProcessor` + `restartTrack` + processador novo, o mesmo que desligar e ligar a supressão). Contexto suspenso de propósito não conta. Ver "Voz robotizada" abaixo. |
+| `store/devices.ts` | `noiseSuppression` e `noiseMode` (`'advanced' \| 'light-fallback' \| 'off' \| null`), mostrado como frase em Configurações de voz. |
 
-- **Modos:** `light` = só a nativa do WebRTC (ambiente silencioso); `advanced` = RNNoise; `light-fallback` = o avançado
+- **Por que sempre ligado (antes era automático):** o modo automático (`NoiseDecider`, removido) só ligava o RNNoise
+  com ruído de fundo **constante** acima de -50 dBFS por 2 s, medido pelo percentil 20% do nível. Teclado e áudio de
+  vídeo são intermitentes: não subiam esse fundo, e o microfone ficava só com a nativa, que deixa passar os dois. Com a
+  supressão ligada, o RNNoise processa tudo. Custo: o worklet roda o tempo todo (antes também rodava, só ficava em
+  espera). Voz de vídeo vazando é voz: o RNNoise não tira; contra isso valem o cancelamento de eco (fone/caixa) e a
+  sensibilidade (corta nas pausas).
+- **Modos:** `advanced` = RNNoise (+ a nativa); `light-fallback` = o RNNoise
   não está disponível (não carregou, erro no AudioWorklet, PC com menos de 3 núcleos, ou o `setProcessor` falhou);
   `off` = desligada pela pessoa; `null` = fora de sala.
 - **Nunca derruba a voz:** qualquer falha do filtro cai para a supressão nativa e a pessoa entra/continua falando; só
@@ -584,7 +716,7 @@ de quem fala (processador da faixa do microfone no `livekit-client`); quem ouve 
   (destruir e recriar o RNNoise no mesmo contexto não destrava); um contexto novo anda a 1x e `suspend()` + `resume()`
   destrava na hora. Cadeia sem AudioWorklet (só o ganho), no mesmo pico, nunca travou. Duas defesas em `lib/voice.ts`:
   o **vigia** (`AudioClockWatchdog`, destrava sozinho em ~4 s) e um **AudioContext novo a cada entrada** (sair e
-  entrar recomeça o áudio). Antes o contexto era criado uma vez e reaproveitado entre salas.
+  entrar recomeça o áudio). Antes o contexto era criado uma vez e reaproveitado entre salas. **Ainda robotizava às vezes** (relato depois do vigia): desligar e ligar a "Supressão de ruído" curava na hora, sem contexto novo; essa troca faz `stopProcessor` + nova captura (`restartTrack`) + processador novo. Por isso o vigia, depois de destravar o relógio, também refaz o microfone desse jeito (`reopenMic` em `lib/voice.ts`; teste "o vigia achando o áudio preso..." em `voice.test.ts`). Não confirmado: se a voz robotizar **sem** o log `[voz] áudio do microfone rodava...` no console, o travamento não reduz o `currentTime` e o vigia não o vê; mande o console (F12, filtro `[voz]`/`[ruído]`) da hora do sintoma.
 - **Supressão nativa só muda reabrindo a captura:** no Electron 37 (Chromium 138), `applyConstraints({ noiseSuppression })`
   numa faixa de microfone aberta **resolve sem erro e não muda nada** (`getSettings().noiseSuppression` continua igual e o
   nível medido também). Antes, desligar a supressão dentro da sala deixava a nativa ligada (não era "microfone cru"), e
@@ -601,18 +733,17 @@ de quem fala (processador da faixa do microfone no `livekit-client`); quem ouve 
   branco -35 → -40 (ruído branco é o ponto fraco do RNNoise); tom puro passa intacto. Com microfone falso
   (`--use-fake-device-for-media-stream --use-file-for-fake-audio-capture=<wav>`) tocando ruído rosa: a 40 dBFS cru, o
   analisador (que mede **depois** da nativa, porque a faixa já sai processada do `getUserMedia`) vê -45,5 dBFS e o
-  avançado liga; a -45 dBFS cru, vê -50,8 e fica no leve (a nativa tira só ~5 dB desse ruído). Ou seja, o RNNoise entra
-  com ruído de fundo a partir de ~-45 dBFS no microfone; abaixo disso fica só a nativa. Se ventilador mais baixo passar,
-  a proposta é baixar `noisyDb` (ex.: -55) medindo antes com o mesmo roteiro.
+  avançado ligava; a -45 dBFS cru, via -50,8 e ficava no leve (a nativa tira só ~5 dB desse ruído). Essa medição é a
+  origem da troca para o RNNoise sempre ligado.
 - **Núcleos:** o avançado exige 3 ou mais (`navigator.hardwareConcurrency`); qualquer dual-core com hyper-threading já
   informa 4.
 - **CSP:** `script-src` ganhou `'wasm-unsafe-eval'` (necessário para compilar WebAssembly; não libera `eval` de JS).
 - **Trocar de motor:** outra função com a assinatura de `NoiseEngineLoader` (ex.: o GTCRN do mesmo pacote, ou
   DeepFilterNet3). O resto não muda.
-- **Testes:** `lib/noise/noise.test.ts` (decisor: silêncio, ventilador, fala sobre silêncio × sobre ruído, histerese,
-  barulho curto; processador com Web Audio falso: crossfade, motor que falha, PC fraco, erro no worklet, destroy),
+- **Testes:** `lib/noise/noise.test.ts` (processador com Web Audio falso: RNNoise ligado desde o início, motor que
+  falha, PC fraco, erro no worklet, destroy, mono),
   `lib/voice.test.ts` (bloco B13: filtro antes de publicar, contexto novo a cada entrada e fechado ao sair, vigia ligado
-  e desligado, falha → entra com a nativa, desligado = cru, ligar/desligar dentro da sala reabrindo a captura (o
+  e desligado, falha → entra com a nativa, desligado = sem nativa e sem RNNoise (só o processador de volume e sensibilidade), ligar/desligar dentro da sala reabrindo a captura (o
   microfone falso, como o Chromium, ignora `applyConstraints`), mesmo microfone escolhido ao reabrir, microfone que não
   reabre, sair), `lib/actions/devices.test.ts`,
   `lib/audio-clock.test.ts` (vigia: relógio em dia, preso a 2/3, medição lenta isolada, recomeça depois de destravar,
@@ -628,7 +759,7 @@ da chamada**. Fora de chamada os botões somem. Só Windows (`BrowserWindow.setT
 | Peça | Papel |
 |---|---|
 | `src/shared/thumbar.ts` | Contrato: `ThumbarAction` (`mute`, `deafen`, `leave`), `ThumbarButton` (`action`, `tooltip`, `icon` em data URL PNG), `ThumbarBridge`, `THUMBAR_ICON_SIZE` (32 px) e `THUMBAR_TOOLTIP_MAX` (64). |
-| `src/main/thumbar.ts` | `cleanThumbarButtons` (só ações conhecidas, sem repetir, ícone PNG, dica cortada) e `setupThumbar` (IPC `thumbar-buttons` → `setThumbarButtons`; clique manda `thumbar-click` com a ação). O ícone vira `nativeImage` com `scaleFactor` 2 (32 px desenhados = 16 px lógicos, nítido em tela de alta densidade). Fora do Windows não faz nada. |
+| `src/main/thumbar.ts` | `cleanThumbarButtons` (só ações conhecidas, sem repetir, ícone PNG, dica cortada) e `setupThumbar` (IPC `thumbar-buttons` → `setThumbarButtons`; clique manda `thumbar-click` com a ação). O ícone vira `nativeImage` com `scaleFactor` 2 (32 px desenhados = 16 px lógicos, nítido em tela de alta densidade). Fora do Windows não faz nada. Com a janela ainda escondida (ela nasce com `show: false` e o app manda `[]` ao iniciar), guarda só a última lista e aplica no evento `show`: chamar `setThumbarButtons` antes de a janela aparecer devolve `true`, mas o Windows nunca mais mostra os botões dessa janela. |
 | `src/preload/index.ts` | `window.api.thumbar`: `setButtons`, `onClick`. |
 | `lib/thumbar-icons.tsx` | Ícones desenhados no app: o ícone do lucide (`Mic`, `MicOff`, `Headphones`, `HeadphoneOff`, `PhoneOff`) vira SVG (`renderToStaticMarkup`) e depois PNG num canvas. Ligado em branco; desligado e sair na cor do token `--destructive` (mesma do selo das notificações). |
 | `lib/actions/thumbar.ts` | `startThumbar` (chamado em `main.tsx`): acompanha a store e manda os botões só quando microfone/áudio/estar em chamada mudam; clique chama `toggleMute`, `toggleDeafen` e `leaveVoice` (as mesmas ações dos botões do `UserPanel`). |

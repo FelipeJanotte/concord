@@ -38,11 +38,14 @@ O conteúdo de cada seção continua documentado na área dela (links abaixo); a
   (ou seção de doc) na área dela.
 - A seção **Windows** só entra no menu quando o processo principal diz que o iniciar com o Windows é suportado
   (`openAtLogin !== null`); sem isso, `openSettings('windows')` cai na primeira seção.
+- **Versão do app** no fim do menu (canto inferior esquerdo): "Versão X.Y.Z", vinda de `import.meta.env.VITE_APP_VERSION`,
+  que o `electron.vite.config.ts` preenche com a `version` do `package.json` no build (vale no instalador e na versão web).
+  Nos testes, `vi.stubEnv('VITE_APP_VERSION', ...)`.
 
 ## Testes
 
 - `components/settings/UserSettingsDialog.test.tsx`: engrenagem abre em "Minha conta" com as quatro seções (sem a ponte, a seção Windows não aparece), trocar de
-  seção, `openDeviceSettings` abre em "Voz e vídeo", Esc fecha e zera, altura limitada e rolagem, Salvar só com
+  seção, `openDeviceSettings` abre em "Voz e vídeo", Esc fecha e zera, altura limitada e rolagem, versão no fim do menu, Salvar só com
   mudança (continua aberta), conta nova do Google sem o menu.
 - Cada seção tem os testes da sua área: `settings/VoiceSettings.test.tsx`, `settings/appearance/appearance.test.tsx`
   (inclui "o tema vai uma vez ao sair da seção" e chegar pela engrenagem), `settings/NotificationSettings.test.tsx`,

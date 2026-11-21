@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import '@/test/ui-sdk-dom'
 // Configurações → "Voz e vídeo" (B4 e seguintes): dispositivos, volumes, ruído, sons e sobreposição.
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -6,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { User, VoiceState } from '@shared/types'
 import { chimes } from '@/lib/actions/voice-sounds'
 import { voice } from '@/lib/voice'
+import { micLevelMonitor } from '@/lib/mic-level'
 import { initialState, useApp } from '@/store'
 import { VoiceSettings } from './VoiceSettings'
 
@@ -155,14 +157,49 @@ describe('VoiceSettings', () => {
     expect(toggle.checked).toBe(true)
     expect(screen.getByText('Começa a funcionar quando você entrar numa sala de voz.')).toBeTruthy()
     act(() => useApp.setState({ noiseMode: 'advanced' }))
-    expect(screen.getByText('Ruído detectado: filtro avançado ativo.')).toBeTruthy()
-    act(() => useApp.setState({ noiseMode: 'light' }))
-    expect(screen.getByText('Ambiente silencioso: usando o filtro leve.')).toBeTruthy()
+    expect(screen.getByText('Filtro de ruído ativo: teclado e barulhos de fundo saem da sua voz.')).toBeTruthy()
     act(() => useApp.setState({ noiseMode: 'light-fallback' }))
     expect(screen.getByText(/indisponível neste computador/)).toBeTruthy()
     await userEvent.click(toggle)
     expect(apply).toHaveBeenCalledWith(false)
     expect(screen.getByText('Desligada: o microfone vai sem filtro.')).toBeTruthy()
+  })
+})
+
+describe('sensibilidade do microfone', () => {
+  beforeEach(() => {
+    vi.spyOn(voice, 'setNoiseSuppression').mockResolvedValue()
+    vi.spyOn(voice, 'inRoom', 'get').mockReturnValue(false)
+  })
+
+  it('aparece também com a supressão ligada', async () => {
+    vi.spyOn(micLevelMonitor, 'start').mockResolvedValue()
+    await openDialog()
+    expect(screen.getByRole('slider', { name: 'Sensibilidade do microfone' })).toBeTruthy()
+  })
+
+  it('slider de -100 a 0 dB que ajusta na hora e mostra até onde o microfone chega', async () => {
+    const apply = vi.spyOn(voice, 'setMicSensitivity').mockImplementation(() => {})
+    const start = vi.spyOn(micLevelMonitor, 'start').mockResolvedValue()
+    const stop = vi.spyOn(micLevelMonitor, 'stop').mockImplementation(() => {})
+    useApp.setState({ noiseSuppression: false })
+    await openDialog()
+    const slider = screen.getByRole('slider', { name: 'Sensibilidade do microfone' }) as HTMLInputElement
+    expect([slider.min, slider.max, slider.value]).toEqual(['-100', '0', '-60'])
+    expect(start).toHaveBeenCalled()
+    fireEvent.change(slider, { target: { value: '-40' } })
+    expect(apply).toHaveBeenLastCalledWith(-40)
+    expect(useApp.getState().micSensitivity).toBe(-40)
+
+    act(() => useApp.setState({ micLevel: -30 }))
+    const meter = screen.getByRole('meter', { name: 'Nível do microfone' })
+    expect(meter.getAttribute('aria-valuenow')).toBe('70')
+    expect(screen.getByText('Sua voz passa.')).toBeTruthy()
+    act(() => useApp.setState({ micLevel: -70 }))
+    expect(screen.getByText('Abaixo da linha: o microfone fica cortado.')).toBeTruthy()
+
+    cleanup()
+    expect(stop).toHaveBeenCalled()
   })
 })
 

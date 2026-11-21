@@ -69,7 +69,7 @@ describe('backup e restauração', { timeout: 60_000 }, () => {
     const backups = join(dir, 'backups')
     await openDatabase({ kind: 'pglite', dir: pgdata })
     const channel = { id: randomUUID(), name: 'salvo-no-backup', type: 'text' as const, createdAt: Date.now() }
-    await insertChannel(channel)
+    const placed = await insertChannel(channel)
     const file = await backupPglite(backups, 7)
     expect(file && existsSync(file)).toBe(true)
     expect(readdirSync(backups).some((f) => f.endsWith('.part'))).toBe(false)
@@ -83,7 +83,7 @@ describe('backup e restauração', { timeout: 60_000 }, () => {
     expect(existsSync(saved!)).toBe(true)
 
     await openDatabase({ kind: 'pglite', dir: pgdata })
-    expect(await findChannel(channel.id)).toEqual(channel)
+    expect(await findChannel(channel.id)).toEqual(placed)
     const names = (await (await import('../repo/channels')).listChannels()).map((c) => c.name)
     expect(names).toContain('salvo-no-backup')
     expect(names).not.toContain('depois')

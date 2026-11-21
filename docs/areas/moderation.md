@@ -173,14 +173,14 @@ Silenciar exige que a pessoa esteja numa sala que eu vejo; **tirar** o silêncio
   (anterior à v0.1.1), também ignora: o servidor responde `ok` para quem moveu e nada acontece, sem erro em nenhuma
   das telas.
 - O silêncio pelo servidor fica no banco (`server_mutes`) e vale até alguém tirar, mesmo depois de reiniciar o servidor.
-  O `muted_by` é guardado para um futuro log de moderação; ainda não aparece na tela.
+  Quem silenciou aparece no registro de auditoria (abaixo).
 - Ban por conta e e-mail: outra conta com outro e-mail entra (não há ban por IP, ADR 0011). Trocar o e-mail da conta
   não escapa (a conta continua banida), mas o e-mail novo pode ser usado num cadastro novo.
 - Castigo: o fim depende de um `setTimeout` no processo; se o servidor estiver fora no prazo, o castigo sai no boot.
   A hora do aviso do servidor segue o `TZ` do processo (em Docker, defina `TZ=America/Sao_Paulo`); o composer usa a
   hora local do app.
-- `banned_by`/`timed_out_by` ficam guardados para um futuro log de moderação; não aparecem na tela.
-- Apagar não tem "desfazer" nem registro de quem apagou (log de moderação fica para depois).
+- Quem baniu, castigou ou apagou a mensagem de outra pessoa aparece no registro de auditoria (abaixo).
+- Apagar não tem "desfazer".
 
 ## Testes
 
@@ -217,3 +217,86 @@ de voz.". Com B numa sala, arrastar B para outra sala na barra lateral (ou "Move
 | "Você foi banido desta comunidade" no login | Há linha em `community_bans` com a conta ou o e-mail. Tire pela aba Banidos (ou apague a linha). |
 | Castigo não acabou na hora | O fim é um `setTimeout` do servidor; confira `server_timeouts.until`. Hora estranha no aviso: `TZ` do servidor. |
 | Mensagem apagada continua na tela de alguém | Essa conexão não vê o canal agora ou estava sem histórico carregado (ao carregar, ela já não vem). |
+
+## Registro de auditoria
+
+Quem administra vê quem fez o quê na comunidade: moderação, cargos, regras de canal e canais. Serve para
+responder "quem baniu fulano?" ou "quem apagou o canal?" sem depender de alguém lembrar.
+
+### Arquivos
+
+| Arquivo | Papel |
+|---|---|
+| `src/shared/types/audit.ts` | Contrato: `AuditDetailsByAction` (ação → formato do `details`), `AuditAction` (union das chaves), `AUDIT_ACTIONS`, `isAuditAction`, `auditTargetType` (ação → `account`/`role`/`channel`), `AuditRecord`, `AuditEntry`, `AuditPerson`, `AuditFilter`, `AuditListResult`, `AUDIT_PAGE_SIZE` (50) e `AuditClientEvents`. |
+| `server/db/schema/audit.ts` | Tabela `audit_log`: `id` (uuid), `actor_account_id`, `action`, `target_type`, `target_id` (pode ser null), `details` (jsonb), `created_at` (índice). Sem chave estrangeira para `accounts`: o histórico fica mesmo se a conta for apagada. |
+| `server/repo/audit.ts` | `recordAudit({ actorId, action, targetId, details })` (o `target_type` sai da ação) e `listAudit({ before?, actorId?, action?, limit })`: mais novas primeiro (`created_at`, `id`), `limit + 1` para saber o `hasMore`, junta o nome e o id atuais de quem fez e do alvo (quando o alvo é conta). Id inválido = lista vazia. |
+| `server/modules/audit.ts` | Handler `audit:list`: confere `hasFullAccess` e valida o filtro. |
+| `server/modules/{moderation,permissions,channels}.ts` | Uma chamada `recordAudit` em cada handler auditado, **depois** da ação dar certo e antes do ack. |
+| `src/renderer/src/lib/audit.ts` | Puras: `auditSentence(entry)` (frase em pt-BR), `AUDIT_ACTION_LABELS` (rótulos do filtro) e `durationText(minutos)`. |
+| `src/renderer/src/lib/actions/audit.ts` | `loadAudit(filtro)`: devolve `{ entries, hasMore }` ou lança o erro do servidor. Sem estado na store (a aba guarda a página). |
+| `src/renderer/src/components/settings/AuditTab.tsx` | Aba "Auditoria" das Configurações da comunidade: filtros Pessoa e Ação (`Select` do ui-sdk, com limpar), lista com a frase e a hora, "Carregar mais". |
+
+### O que é gravado
+
+| Ação (`AuditAction`) | Handler | Alvo | `details` |
+|---|---|---|---|
+| `voice-kick` | `moderation:voice-kick` | conta | `{ channelName }` (sala de onde saiu) |
+| `voice-move` | `moderation:voice-move` | conta | `{ channelName }` (sala de destino) |
+| `voice-mute` / `voice-unmute` | `moderation:voice-mute` (`muted` true/false) | conta | `{}` |
+| `kick` | `moderation:kick` | conta | `{}` |
+| `ban` / `unban` | `moderation:ban` / `moderation:unban` | conta | `{ reason }` / `{}` |
+| `timeout` / `timeout-clear` | `moderation:timeout` (`minutes` > 0 / 0) | conta | `{ minutes }` / `{}` |
+| `message-delete` | `message:delete` **só** quando quem apaga não é o autor | conta do autor | `{ messageId, channel: { name, type } }` |
+| `role-create` / `role-update` / `role-delete` | `role:*` | cargo | `{ name }` (nome depois da mudança) |
+| `member-roles` | `member:set-roles` | conta | `{ added, removed }` (nomes dos cargos) |
+| `channel-overrides` | `channel:set-overrides` | canal | `{ name, type }` |
+| `channel-create` / `channel-delete` | `channel:create` / `channel:delete` | canal | `{ name, type }` |
+| `channel-layout` | `channel:layout` (arrastar na barra lateral) | — | `{}` |
+| `category-create` / `category-delete` | `category:create` / `category:delete` (`server/modules/categories.ts`) | categoria | `{ name }` |
+| `category-rename` | `category:rename` | categoria | `{ name, previousName }` |
+
+Não entram: `role:reorder`, o fim automático do castigo no prazo (não tem quem fez), apagar a própria mensagem.
+Nome de cargo e de canal vai no `details` (podem ser apagados depois); nome de pessoa vem da conta na hora de listar
+(mostra o nome atual).
+
+### Contrato
+
+| Evento | Payload | Ack |
+|---|---|---|
+| `audit:list` | `{ before?, actorId?, action? }` | `{ ok: true, entries, hasMore }` ou `{ ok: false, error }` |
+
+- `before` = id da última entrada da página anterior. Página de 50.
+- Não é tempo real: não há evento de push. A aba pede ao abrir, ao trocar um filtro e no "Carregar mais".
+
+### Regras
+
+- Só a dona ou quem tem um cargo com **Administrador** (`hasFullAccess`, mesma regra no servidor e na tela). Os
+  outros recebem "Você não pode ver o registro de auditoria" e não veem a aba.
+- O servidor valida o filtro: `before`/`actorId` têm de ser texto e `action` uma `AuditAction`; senão "Filtro inválido".
+- Grava só quando a ação deu certo (toda recusa volta antes do `recordAudit`).
+- Sem regra em `LIMITS`: é só leitura e só para administradores.
+
+### Na tela
+
+Configurações da comunidade → "Auditoria": cada linha é a frase ("Dona baniu Ana (motivo: spam)", "Dona criou o canal
+#geral", "Mod pôs Ana de castigo por 10 minutos", "Dona deu Mod e tirou VIP de Ana") e a data/hora. "Pessoa" lista
+quem está online mais quem já apareceu na lista; "Ação" lista todas as ações. Conta apagada aparece como "Conta apagada".
+
+### Como testar
+
+| Arquivo | Cobre |
+|---|---|
+| `server/tests/audit.test.ts` | Servidor real + LiveKit falso: cada ação auditada grava quem, alvo e `details`; ação recusada não grava; autor apagando a própria não grava; só dona/Administrador listam; filtro por ação, filtro inválido; páginas de 50 sem repetir. |
+| `src/renderer/src/lib/audit.test.ts` | Frase de cada ação (inclusive variações: sala x canal, com/sem motivo, cargos dados/tirados), conta apagada, todo `AuditAction` com rótulo, `durationText`. |
+| `src/renderer/src/lib/actions/audit.test.ts` | `loadAudit` manda o filtro e devolve a página; erro vira exceção. |
+| `src/renderer/src/components/settings/AuditTab.test.tsx` | Aba só para dona/Administrador, lista com hora, "Carregar mais" com `before`, filtros Ação e Pessoa recomeçam a lista, erro do servidor. |
+
+À mão: como a dona, bana alguém e crie um canal; abra Configurações da comunidade → Auditoria e veja as duas linhas.
+
+### Depuração
+
+| Sintoma | Causa e solução |
+|---|---|
+| Aba "Auditoria" não aparece | A conta não é a dona nem tem cargo com Administrador. |
+| Ação feita e não aparece | Ela não está na tabela "O que é gravado", ou foi recusada. Confira `select * from audit_log order by created_at desc`. |
+| Nome antigo de cargo/canal | Esperado: o nome é o da hora da ação (`details`). O nome de pessoa é o atual. |

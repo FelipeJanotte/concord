@@ -8,10 +8,13 @@ import { voice } from '../voice'
 import { openSettings } from './settings'
 import { clampMicGain, clampOutputVolume } from '../mic-gain'
 import { clampLevelerTarget, type LevelerTarget } from '../leveler/level'
+import { clampSensitivity } from '../mic-gate'
+import { micLevelMonitor } from '../mic-level'
 
 // O que a supressão de ruído está fazendo agora (aparece em Configurações de voz).
 voice.onNoiseModeChange = (mode) => set({ noiseMode: mode })
 voice.onLevelerGains = (gains) => set({ levelerGains: gains })
+voice.onMicLevel = (db) => set({ micLevel: db })
 
 const STORAGE_KEY = 'concord:audio'
 
@@ -34,6 +37,7 @@ interface SavedAudio {
   noise: boolean
   /** volume do microfone (0 a 2) */
   micGain: number
+  micSensitivity: number
   /** volume de saída (0 a 1) */
   outputVolume: number
   leveler: boolean
@@ -74,6 +78,7 @@ function readSaved(): SavedAudio {
     sounds: { enabled: true, volume: 0.5 },
     noise: true,
     micGain: 1,
+    micSensitivity: clampSensitivity(undefined),
     outputVolume: 1,
     leveler: false,
     levelerTarget: 'medium',
@@ -100,6 +105,7 @@ function readSaved(): SavedAudio {
       },
       noise: typeof data.noise === 'boolean' ? data.noise : empty.noise,
       micGain: clampMicGain(data.micGain),
+      micSensitivity: clampSensitivity(data.micSensitivity),
       outputVolume: clampOutputVolume(data.outputVolume),
       leveler: data.leveler === true,
       levelerTarget: clampLevelerTarget(data.levelerTarget),
@@ -123,6 +129,7 @@ function save(): void {
     voiceSoundsVolume,
     noiseSuppression,
     micGain,
+    micSensitivity,
     outputVolume,
     voiceLeveler,
     voiceLevelerTarget,
@@ -142,6 +149,7 @@ function save(): void {
         sounds: { enabled: voiceSoundsEnabled, volume: voiceSoundsVolume },
         noise: noiseSuppression,
         micGain,
+        micSensitivity,
         outputVolume,
         leveler: voiceLeveler,
         levelerTarget: voiceLevelerTarget,
@@ -170,6 +178,7 @@ export function loadAudioPreferences(): void {
     voiceSoundsVolume: saved.sounds.volume,
     noiseSuppression: saved.noise,
     micGain: saved.micGain,
+    micSensitivity: saved.micSensitivity,
     outputVolume: saved.outputVolume,
     voiceLeveler: saved.leveler,
     voiceLevelerTarget: saved.levelerTarget,
@@ -179,6 +188,7 @@ export function loadAudioPreferences(): void {
   voice.setLeveler(saved.leveler)
   void voice.setNoiseSuppression(saved.noise)
   void voice.setMicGain(saved.micGain)
+  voice.setMicSensitivity(saved.micSensitivity)
   voice.setOutputVolume(saved.outputVolume)
   void voice.setInputDevice(saved.input)
   void voice.setOutputDevice(saved.output)
@@ -307,6 +317,23 @@ export async function setMicGain(gain: number): Promise<void> {
     console.error('[voz] não foi possível ajustar o volume do microfone:', err)
     notify('Não foi possível ajustar o volume do microfone.')
   }
+}
+
+export function setMicSensitivity(db: number): void {
+  const v = clampSensitivity(db)
+  set({ micSensitivity: v })
+  save()
+  voice.setMicSensitivity(v)
+}
+
+export async function startMicLevelPreview(): Promise<void> {
+  if (voice.inRoom) return
+  await micLevelMonitor.start(get().audioInputId, (db) => set({ micLevel: db }))
+}
+
+export function stopMicLevelPreview(): void {
+  micLevelMonitor.stop()
+  set({ micLevel: null })
 }
 
 /** Volume de saída (0 a 1): voz de todos, áudio da tela, efeitos sonoros e sons da sala. */

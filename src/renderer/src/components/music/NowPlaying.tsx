@@ -48,19 +48,21 @@ export function NowPlaying({ state, track }: NowPlayingProps) {
         />
         <div className="flex min-w-0 flex-1 flex-col gap-4">
           <div className="min-w-0">
-            <p className="flex items-center gap-2 text-xs font-semibold tracking-widest text-primary uppercase">
-              <PlayingBars paused={state.paused} />
-              {state.paused ? 'Pausada' : 'Tocando agora'}
-            </p>
-            <h2 className="mt-2 line-clamp-2 text-2xl leading-tight font-bold text-accent-foreground sm:text-3xl" title={track.title}>
-              {track.title}
-            </h2>
+            <div className="flex items-center gap-4">
+              <h2 className="min-w-0 flex-1 truncate text-2xl leading-tight font-bold text-accent-foreground sm:text-3xl" title={track.title}>
+                {track.title}
+              </h2>
+              <p className="flex shrink-0 items-center gap-2 text-xs font-semibold tracking-widest text-primary uppercase">
+                <PlayingBars paused={state.paused} />
+                {state.paused ? 'Pausada' : 'Tocando agora'}
+              </p>
+            </div>
             <p className="mt-1 truncate text-sm text-foreground/80">{track.artists.join(', ')}</p>
             <p className="mt-1 truncate text-xs text-muted-foreground">pedida por {track.requestedBy.name}</p>
           </div>
           <PlaybackProgress state={state} track={track} />
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <PlaybackControls channelId={state.channelId} paused={state.paused} />
+            <PlaybackControls channelId={state.channelId} paused={state.paused} canShuffle={state.queue.length >= 2} />
             <MusicVolumeSlider className="w-28" />
           </div>
         </div>

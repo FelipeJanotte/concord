@@ -113,6 +113,13 @@
       "when": 1795057186149,
       "tag": "0015_v8",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1795133921228,
+      "tag": "0016_auditoria_previa_categorias_status",
+      "breakpoints": true
     }
   ]
 }

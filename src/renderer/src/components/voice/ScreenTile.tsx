@@ -1,13 +1,15 @@
-import { useEffect, useRef, type DragEvent } from 'react'
-import { Columns2, EyeOff, Maximize2, Minimize2, Rows2, Users, UserX } from 'lucide-react'
+import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type ReactNode } from 'react'
+import { Button } from '@ui-sdk/react/button'
+import { Columns2, EyeOff, LayoutGrid, Maximize2, Minimize2, Rows2, Users, UserX } from 'lucide-react'
+import { UserAvatar } from '@/components/UserAvatar'
 import { attachScreen } from '@/lib/client'
+import { nextArrangement, stageArrangement, type ScreenArrangement } from '@/lib/featured-screens'
 import { useFullscreen } from '@/lib/fullscreen'
+import { bestTileLayout, useElementSize } from '@/lib/tile-layout'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
 import { ScreenAudioControl } from './ScreenAudioControl'
 import { ScreenViewers } from './ScreenViewers'
-
-export type ScreenArrangement = 'side-by-side' | 'stacked'
 
 export function LiveBadge({ className }: { className?: string }) {
   return (
@@ -35,7 +37,7 @@ function useScreenLabels(userIds: string[]): string {
   return listFormat.format(userIds.map((id) => screenLabel(id, selfId, users.find((u) => u.id === id)?.name)))
 }
 
-function ScreenVideo({ userId, label, onDoubleClick }: { userId: string; label: string; onDoubleClick?: () => void }) {
+export function ScreenVideo({ userId, label, onDoubleClick }: { userId: string; label: string; onDoubleClick?: () => void }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   useEffect(() => {
     const el = videoRef.current
@@ -47,23 +49,19 @@ function ScreenVideo({ userId, label, onDoubleClick }: { userId: string; label: 
 
 export function ScreenTile({ userId, onSelect }: { userId: string; onSelect: () => void }) {
   const label = useScreenLabel(userId)
+  const user = useApp((s) => s.users.find((u) => u.id === userId))
   return (
-    <button
-      type="button"
+    <Button
       onClick={onSelect}
       aria-label={`Assistir: ${label}`}
       title={`Assistir: ${label}`}
-      className="group relative flex aspect-video items-center justify-center overflow-hidden rounded-lg bg-black ring-2 ring-transparent hover:ring-primary focus-visible:ring-primary"
+      className="group relative flex aspect-video flex-col items-center justify-center gap-1.5 overflow-hidden rounded-lg bg-background p-2 ring-2 ring-transparent hover:ring-primary focus-visible:ring-primary focus-visible:outline-none"
     >
-      <ScreenVideo userId={userId} label={label} />
-      <span className="absolute bottom-2 left-2 flex max-w-[calc(100%-1rem)] items-center gap-1.5 rounded-md bg-black/60 px-2 py-0.5 text-sm text-white">
-        <LiveBadge />
-        <span className="truncate">{label}</span>
-      </span>
-      <span className="absolute inset-0 flex items-center justify-center bg-black/40 text-sm font-semibold text-white opacity-0 transition-opacity group-hover:opacity-100">
-        Assistir
-      </span>
-    </button>
+      <LiveBadge className="absolute top-2 right-2" />
+      {user && <UserAvatar user={user} size="lg" />}
+      <span className="max-w-full truncate text-sm font-medium text-foreground">{label}</span>
+      <span className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground group-hover:opacity-90">Assistir tela</span>
+    </Button>
   )
 }
 
@@ -127,8 +125,6 @@ interface StageProps {
   screens: string[]
   onToggle: (userId: string) => void
   onMove: (dragged: string, target: string) => void
-  arrangement: ScreenArrangement
-  onToggleArrangement: () => void
   onStopWatching: () => void
   membersHidden?: boolean
   onToggleMembers?: () => void
@@ -136,14 +132,46 @@ interface StageProps {
 
 const toolbarButton = 'rounded-md p-1.5 hover:bg-white/15 [&_svg]:size-4'
 
-export function ScreenStage({ featured, screens, onToggle, onMove, arrangement, onToggleArrangement, onStopWatching, membersHidden = false, onToggleMembers }: StageProps) {
+const ARRANGEMENT_ACTION: Record<ScreenArrangement, { label: string; icon: ReactNode }> = {
+  'side-by-side': { label: 'Pôr as telas lado a lado', icon: <Columns2 /> },
+  stacked: { label: 'Empilhar as telas', icon: <Rows2 /> },
+  grid: { label: 'Pôr as telas em grade', icon: <LayoutGrid /> }
+}
+
+const GRID_GAP = 4
+
+function StageArea({ arrangement, count, children }: { arrangement: ScreenArrangement; count: number; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const { width, height } = useElementSize(ref)
+  const grid = arrangement === 'grid'
+  const layout = grid && width > 0 ? bestTileLayout(count, width, height > 0 ? height : Infinity, { gap: GRID_GAP }) : null
+  return (
+    <div
+      ref={ref}
+      data-arrangement={arrangement}
+      data-columns={layout?.columns}
+      style={layout ? ({ '--tile-w': `${layout.width}px` } as CSSProperties) : undefined}
+      className={cn(
+        'flex min-h-0 flex-1 gap-1',
+        arrangement === 'stacked' && 'flex-col',
+        grid && 'flex-wrap justify-center overflow-y-auto [align-content:safe_center] [&>*]:aspect-video [&>*]:w-[var(--tile-w,320px)] [&>*]:max-w-full [&>*]:flex-none'
+      )}
+    >
+      {children}
+    </div>
+  )
+}
+
+export function ScreenStage({ featured, screens, onToggle, onMove, onStopWatching, membersHidden = false, onToggleMembers }: StageProps) {
   const ref = useRef<HTMLDivElement>(null)
   const dragged = useRef<string | null>(null)
   const { active, toggle } = useFullscreen(ref)
   const label = useScreenLabels(featured)
   const selfId = useApp((s) => s.self?.id)
   const several = featured.length > 1
-  const arrangementLabel = arrangement === 'side-by-side' ? 'Empilhar as telas' : 'Pôr as telas lado a lado'
+  const [chosenArrangement, setChosenArrangement] = useState<ScreenArrangement | null>(null)
+  const arrangement = stageArrangement(featured.length, chosenArrangement)
+  const next = ARRANGEMENT_ACTION[nextArrangement(arrangement)]
 
   return (
     <div ref={ref} data-fullscreen={active || undefined} className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg bg-black">
@@ -165,8 +193,14 @@ export function ScreenStage({ featured, screens, onToggle, onMove, arrangement, 
             <ScreenAudioControl key={id} userId={id} />
           ))}
           {several && (
-            <button type="button" onClick={onToggleArrangement} title={arrangementLabel} aria-label={arrangementLabel} className={toolbarButton}>
-              {arrangement === 'side-by-side' ? <Rows2 /> : <Columns2 />}
+            <button
+              type="button"
+              onClick={() => setChosenArrangement(nextArrangement(arrangement))}
+              title={next.label}
+              aria-label={next.label}
+              className={toolbarButton}
+            >
+              {next.icon}
             </button>
           )}
           {!active && onToggleMembers && (
@@ -197,7 +231,7 @@ export function ScreenStage({ featured, screens, onToggle, onMove, arrangement, 
           </button>
         </div>
       </div>
-      <div data-arrangement={arrangement} className={cn('flex min-h-0 flex-1 gap-1', arrangement === 'stacked' && 'flex-col')}>
+      <StageArea arrangement={arrangement} count={featured.length}>
         {featured.map((id) => (
           <ScreenPane
             key={id}
@@ -213,7 +247,7 @@ export function ScreenStage({ featured, screens, onToggle, onMove, arrangement, 
             onDoubleClick={toggle}
           />
         ))}
-      </div>
+      </StageArea>
     </div>
   )
 }

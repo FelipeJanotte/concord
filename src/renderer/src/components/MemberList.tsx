@@ -5,6 +5,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { rolesByPosition, topRole, useNameColor } from '@/lib/permissions'
 import { useApp } from '@/store'
 import { usePresence } from '@/lib/presence'
+import { CustomStatusText } from './CustomStatusText'
 import { StatusDot, UserAvatar } from './UserAvatar'
 import { MemberContextMenu } from './voice/MemberContextMenu'
 
@@ -70,9 +71,12 @@ function MemberItem({ user }: { user: User }) {
           <UserAvatar user={user} />
           <StatusDot status={status} className="border-sidebar" />
         </div>
-        <span className="flex-1 truncate font-medium" style={{ color }} title={`${user.name}#${user.tag}`}>
-          {user.name}
-          {isSelf && <span className="ml-1 text-xs font-normal text-muted-foreground">(você)</span>}
+        <span className="flex min-w-0 flex-1 flex-col leading-tight">
+          <span className="truncate font-medium" style={{ color }} title={`${user.name}#${user.tag}`}>
+            {user.name}
+            {isSelf && <span className="ml-1 text-xs font-normal text-muted-foreground">(você)</span>}
+          </span>
+          <CustomStatusText status={user.customStatus} />
         </span>
         {inVoice && <Volume2 className="size-4 text-muted-foreground" />}
       </div>

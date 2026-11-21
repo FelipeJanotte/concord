@@ -19,6 +19,7 @@ import { DEFAULT_CHANNELS, ensureInitialData, importLegacyJson } from '../db/see
 import { openTestDatabase } from '../tests/database'
 import {
   avatarUrl,
+  clearExpiredCustomStatuses,
   findAccount,
   findAccountByEmail,
   findAccountByGoogleId,
@@ -29,7 +30,7 @@ import {
 import { channelNameExists, countChannels, deleteChannel, findChannel, insertChannel, listChannels } from './channels'
 import { insertMessage, listMessages } from './messages'
 import { deleteExpiredSessions, deleteSession, findValidSession, insertSession } from './sessions'
-import type { Account } from './types'
+import type { Account, NewAccount } from './types'
 import { DuplicateError } from './util'
 
 let cleanup: () => Promise<void>
@@ -43,7 +44,7 @@ afterAll(async () => {
 })
 
 let n = 0
-function newAccount(over: Partial<Account> = {}): Account {
+function newAccount(over: Partial<NewAccount> = {}): NewAccount {
   n++
   return {
     id: randomUUID(),
@@ -117,6 +118,29 @@ describe('contas', () => {
     await expect(updateAccount(a.id, { tag: b.tag })).rejects.toEqual(new DuplicateError('tag'))
   })
 
+  it('conta nova começa sem bio e sem status; updateAccount grava os dois', async () => {
+    const a = await insertAccount(newAccount())
+    expect(a).toMatchObject({ bio: '', customStatus: null })
+    const status = { emoji: '🎮', text: 'jogando', expiresAt: null }
+    expect(await updateAccount(a.id, { bio: 'oi', customStatus: status })).toEqual({ ...a, bio: 'oi', customStatus: status })
+    expect(await findAccount(a.id)).toMatchObject({ bio: 'oi', customStatus: status })
+  })
+
+  it('clearExpiredCustomStatuses limpa só os status vencidos e devolve de quem', async () => {
+    const now = Date.now()
+    const iso = (ms: number): string => new Date(now + ms).toISOString()
+    const expired = await insertAccount(newAccount({ customStatus: { text: 'foi', expiresAt: iso(-1000) } }))
+    const future = await insertAccount(newAccount({ customStatus: { text: 'vale', expiresAt: iso(60_000) } }))
+    const forever = await insertAccount(newAccount({ customStatus: { emoji: '☕', expiresAt: null } }))
+
+    expect(await clearExpiredCustomStatuses(now)).toContain(expired.id)
+
+    expect((await findAccount(expired.id))?.customStatus).toBeNull()
+    expect((await findAccount(future.id))?.customStatus).toEqual(future.customStatus)
+    expect((await findAccount(forever.id))?.customStatus).toEqual(forever.customStatus)
+    expect(await clearExpiredCustomStatuses(now)).not.toContain(expired.id)
+  })
+
   it('avatarUrl inclui a versão (para não usar a foto velha do cache)', () => {
     expect(avatarUrl({ id: 'x', avatarType: null, avatarVersion: 3 })).toBeNull()
     expect(avatarUrl({ id: 'x', avatarType: 'image/png', avatarVersion: 3 })).toBe('/avatars/x?v=3')
@@ -154,14 +178,16 @@ describe('sessões', () => {
 })
 
 describe('canais', () => {
-  it('insere, encontra (com e sem tipo) e lista em ordem de criação', async () => {
+  it('insere no fim da ordem, encontra (com e sem tipo) e lista pela posição', async () => {
     const t0 = Date.now()
     const a = { id: randomUUID(), name: 'ordem-a', type: 'text' as const, createdAt: t0 + 10_000 }
     const b = { id: randomUUID(), name: 'ordem-b', type: 'voice' as const, createdAt: t0 + 20_000 }
-    await insertChannel(b)
-    await insertChannel(a)
-    expect(await findChannel(a.id)).toEqual(a)
-    expect(await findChannel(a.id, 'text')).toEqual(a)
+    const placedA = await insertChannel(a)
+    const placedB = await insertChannel(b)
+    expect(placedB.position).toBe(placedA.position! + 1)
+    expect(placedA).toEqual({ ...a, categoryId: null, position: placedA.position })
+    expect(await findChannel(a.id)).toEqual(placedA)
+    expect(await findChannel(a.id, 'text')).toEqual(placedA)
     expect(await findChannel(a.id, 'voice')).toBeUndefined()
     expect(await findChannel('x')).toBeUndefined()
     const ids = (await listChannels()).map((c) => c.id)
@@ -176,7 +202,7 @@ describe('canais', () => {
     await expect(
       insertChannel({ id: randomUUID(), name: name.toUpperCase(), type: 'text', createdAt: Date.now() })
     ).rejects.toEqual(new DuplicateError('name'))
-    await expect(insertChannel({ id: randomUUID(), name, type: 'voice', createdAt: Date.now() })).resolves.toBeUndefined()
+    await expect(insertChannel({ id: randomUUID(), name, type: 'voice', createdAt: Date.now() })).resolves.toMatchObject({ name, type: 'voice' })
   })
 
   it('o banco recusa tipo inválido e nome vazio ou longo', async () => {
