@@ -185,6 +185,7 @@ export class VoiceClient {
   private speakingDetector: SpeakingDetector | null = null
   /** identidade → faixa de vídeo da tela (remota ou a própria, como prévia) */
   private screens = new Map<string, Track>()
+  private watched: string[] = []
   /** câmera ligada de cada conexão da sala (B21), a própria inclusa como prévia */
   private cameras = new Map<string, Track>()
   /** câmera escolhida; null = padrão do sistema */
@@ -371,6 +372,7 @@ export class VoiceClient {
     this.measuredSpeakers = []
     if (Object.keys(useApp.getState().speaking).length) useApp.setState({ speaking: {} })
     this.screens.clear()
+    this.watched = []
     this.publishScreens()
     this.cameras.clear()
     this.publishCameras()
@@ -712,6 +714,14 @@ export class VoiceClient {
     if (!track) return () => {}
     track.attach(el)
     return () => void track.detach(el)
+  }
+
+  get watchedScreens(): readonly string[] {
+    return [...this.watched]
+  }
+
+  setWatchedScreens(screenIds: string[]): void {
+    this.watched = [...new Set(screenIds)]
   }
 
   screenMediaTrack(userId: string): MediaStreamTrack | undefined {

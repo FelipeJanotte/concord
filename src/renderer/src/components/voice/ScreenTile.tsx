@@ -35,7 +35,7 @@ function useScreenLabels(userIds: string[]): string {
   return listFormat.format(userIds.map((id) => screenLabel(id, selfId, users.find((u) => u.id === id)?.name)))
 }
 
-function ScreenVideo({ userId, label, onDoubleClick }: { userId: string; label: string; onDoubleClick?: () => void }) {
+export function ScreenVideo({ userId, label, onDoubleClick }: { userId: string; label: string; onDoubleClick?: () => void }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   useEffect(() => {
     const el = videoRef.current

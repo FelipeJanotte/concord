@@ -288,6 +288,29 @@ describe('leave e teardown', () => {
   })
 })
 
+describe('telas que eu assisto', () => {
+  it('guarda as telas que eu assisto, sem repetir', () => {
+    expect(client.watchedScreens).toEqual([])
+    client.setWatchedScreens(['ana', 'bia', 'ana'])
+    expect(client.watchedScreens).toEqual(['ana', 'bia'])
+    client.setWatchedScreens(['bia'])
+    expect(client.watchedScreens).toEqual(['bia'])
+  })
+
+  it('a lista devolvida não muda o que foi guardado', () => {
+    client.setWatchedScreens(['ana'])
+    ;(client.watchedScreens as string[]).push('bia')
+    expect(client.watchedScreens).toEqual(['ana'])
+  })
+
+  it('teardown esquece as telas assistidas', async () => {
+    await client.join('sala-1')
+    client.setWatchedScreens(['ana'])
+    client.teardown()
+    expect(client.watchedScreens).toEqual([])
+  })
+})
+
 describe('áudio, mute e deafen', () => {
   it('toca o áudio de quem chega e ignora vídeo', async () => {
     await client.join('sala-1')
