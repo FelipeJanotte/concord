@@ -39,6 +39,7 @@ import {
   type TrackPublication
 } from 'livekit-client'
 import type { JoinVoiceResult, VoicePermissions } from '@shared/types'
+import { DEFAULT_SCREEN_QUALITY, screenCapture, type ScreenQuality } from '@shared/screen'
 import { permissionsFrom } from './voice-permissions'
 import { loadRnnoiseEngine } from './noise/engine'
 import { AutoNoiseProcessor, type NoiseMode } from './noise/processor'
@@ -71,7 +72,6 @@ export const MUSIC_BOT_VOLUME_ID = 'music-bot'
 const volumeIdOf = (participant: Participant | undefined): string | undefined =>
   participant?.attributes?.accountId ?? (participant?.attributes?.bot === 'music' ? MUSIC_BOT_VOLUME_ID : undefined)
 
-const SCREEN_CAPTURE = { resolution: { width: 1920, height: 1080, frameRate: 15 }, contentHint: 'detail' as const }
 
 const isScreenSource = (source: Track.Source): boolean => source === Track.Source.ScreenShare || source === Track.Source.ScreenShareAudio
 
@@ -707,10 +707,28 @@ export class VoiceClient {
   // ---------- tela ----------
 
   /** Publica a tela. A fonte (no Electron) já foi escolhida pelo ScreenPicker. */
-  async startScreenShare(audio: boolean): Promise<void> {
+  async startScreenShare(audio: boolean, quality: ScreenQuality = DEFAULT_SCREEN_QUALITY): Promise<void> {
     const room = this.room
     if (!room) throw new Error('Entre numa sala de voz para compartilhar a tela')
-    await room.localParticipant.setScreenShareEnabled(true, { ...SCREEN_CAPTURE, audio, systemAudio: audio ? 'include' : 'exclude' })
+    const { resolution, contentHint, maxBitrate } = screenCapture(quality)
+    await room.localParticipant.setScreenShareEnabled(
+      true,
+      { resolution, contentHint, audio, systemAudio: audio ? 'include' : 'exclude' },
+      { screenShareEncoding: { maxBitrate, maxFramerate: resolution.frameRate } }
+    )
+  }
+
+  async setScreenQuality(quality: ScreenQuality): Promise<void> {
+    const track = this.room?.localParticipant.getTrackPublication(Track.Source.ScreenShare)?.track
+    if (!track) return
+    const { resolution, contentHint, maxBitrate } = screenCapture(quality)
+    track.mediaStreamTrack.contentHint = contentHint
+    await track.mediaStreamTrack.applyConstraints(resolution)
+    const sender = track.sender
+    if (!sender) return
+    const params = sender.getParameters()
+    params.encodings = params.encodings.map((encoding) => ({ ...encoding, maxBitrate, maxFramerate: resolution.frameRate }))
+    await sender.setParameters(params)
   }
 
   async stopScreenShare(): Promise<void> {

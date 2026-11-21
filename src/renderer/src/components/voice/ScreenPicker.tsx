@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { canShareSystemAudio, closeScreenPicker, startScreenShare } from '@/lib/client'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
+import { ScreenQualitySelect } from './ScreenQualitySelect'
 
 type Kind = ScreenSource['kind']
 
@@ -98,6 +99,8 @@ export function ScreenPicker() {
             </div>
           )}
         </div>
+
+        <ScreenQualitySelect className="sm:max-w-sm" />
 
         <DialogFooter className="items-center sm:justify-between">
           {audioAvailable ? (

@@ -3,6 +3,7 @@ import { MicGainProcessor } from './mic-gain'
 import { DisconnectReason, RoomEvent, Track, type AudioCaptureOptions, type LocalAudioTrack, type Room } from 'livekit-client'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { JoinVoiceResult } from '@shared/types'
+import { DEFAULT_SCREEN_QUALITY } from '@shared/screen'
 import { initialState, useApp } from '@/store'
 import { FakeSocket } from '@/test/fake-socket'
 import { MUSIC_BOT_VOLUME_ID, VoiceClient } from './voice'
@@ -80,7 +81,8 @@ class FakeRoom {
     publishTrack: vi.fn(async (_track: unknown, _opts?: unknown) => ({})),
     unpublishTrack: vi.fn(async (_track: unknown) => ({})),
     permissions: { canPublish: true, canPublishSources: [1, 2, 3] } as { canPublish: boolean; canPublishSources: number[] },
-    setScreenShareEnabled: vi.fn(async (_on: boolean, _opts?: unknown) => undefined),
+    setScreenShareEnabled: vi.fn(async (_on: boolean, _opts?: unknown, _publish?: unknown) => undefined),
+    getTrackPublication: vi.fn((_source: Track.Source): unknown => undefined),
     setCameraEnabled: vi.fn(async (_on: boolean, _capture?: unknown, _publish?: unknown) => undefined)
   }
 
@@ -567,13 +569,45 @@ describe('tela', () => {
     await client.startScreenShare(true)
     expect(lastRoom().localParticipant.setScreenShareEnabled).toHaveBeenCalledWith(
       true,
-      expect.objectContaining({ audio: true, systemAudio: 'include', contentHint: 'detail' })
+      expect.objectContaining({ audio: true, systemAudio: 'include', contentHint: 'detail' }),
+      expect.anything()
     )
     await client.startScreenShare(false)
     expect(lastRoom().localParticipant.setScreenShareEnabled).toHaveBeenLastCalledWith(
       true,
-      expect.objectContaining({ audio: false, systemAudio: 'exclude' })
+      expect.objectContaining({ audio: false, systemAudio: 'exclude' }),
+      expect.anything()
     )
+  })
+
+  it('publica com a resolução, o fps e o bitrate da qualidade escolhida', async () => {
+    await client.join('sala-1')
+    await client.startScreenShare(false, { resolution: '1440p', fps: 60 })
+    expect(lastRoom().localParticipant.setScreenShareEnabled).toHaveBeenCalledWith(
+      true,
+      expect.objectContaining({ resolution: { width: 2560, height: 1440, frameRate: 60 }, contentHint: 'motion' }),
+      { screenShareEncoding: { maxBitrate: 12_000_000, maxFramerate: 60 } }
+    )
+  })
+
+  it('trocar a qualidade com a tela no ar muda a captura e o envio sem republicar', async () => {
+    await client.join('sala-1')
+    const media = { contentHint: 'detail', applyConstraints: vi.fn(async () => {}) }
+    const params = { encodings: [{ maxBitrate: 1, maxFramerate: 1 }] }
+    const sender = { getParameters: vi.fn(() => params), setParameters: vi.fn(async () => {}) }
+    lastRoom().localParticipant.getTrackPublication.mockReturnValue({ track: { mediaStreamTrack: media, sender } })
+    await client.setScreenQuality({ resolution: '720p', fps: 30 })
+    expect(lastRoom().localParticipant.getTrackPublication).toHaveBeenCalledWith(Track.Source.ScreenShare)
+    expect(media.applyConstraints).toHaveBeenCalledWith({ width: 1280, height: 720, frameRate: 30 })
+    expect(media.contentHint).toBe('motion')
+    expect(sender.setParameters).toHaveBeenCalledWith({ encodings: [{ maxBitrate: 2_500_000, maxFramerate: 30 }] })
+    expect(lastRoom().localParticipant.setScreenShareEnabled).not.toHaveBeenCalled()
+  })
+
+  it('trocar a qualidade sem tela no ar não faz nada', async () => {
+    await expect(new VoiceClient().setScreenQuality(DEFAULT_SCREEN_QUALITY)).resolves.toBeUndefined()
+    await client.join('sala-1')
+    await expect(client.setScreenQuality(DEFAULT_SCREEN_QUALITY)).resolves.toBeUndefined()
   })
 
   it('fora da sala não dá para compartilhar', async () => {

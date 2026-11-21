@@ -14,6 +14,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 import { StatusDot, UserAvatar } from './UserAvatar'
 import { ScreenPicker } from './voice/ScreenPicker'
 import { ScreenViewers } from './voice/ScreenViewers'
+import { ScreenQualitySelect } from './voice/ScreenQualitySelect'
 import { SoundboardPopover } from './voice/Soundboard'
 
 /**
@@ -72,6 +73,7 @@ export function VoiceStatusPanel() {
           </PanelButton>
         </SoundboardPopover>
       </div>
+      {sharing && <ScreenQualitySelect />}
       {sharing && selfId && <ScreenViewers userId={selfId} className="text-muted-foreground" />}
     </div>
   )

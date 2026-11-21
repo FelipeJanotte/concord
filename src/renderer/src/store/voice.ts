@@ -1,5 +1,6 @@
 // Salas de voz.
 import type { VoiceState } from '@shared/types'
+import { DEFAULT_SCREEN_QUALITY, type ScreenQuality } from '@shared/screen'
 
 export interface VoiceSliceState {
   /** quem está em qual sala (lista completa vinda do servidor) */
@@ -13,6 +14,7 @@ export interface VoiceSliceState {
   speaking: Record<string, boolean>
   /** estou compartilhando a tela */
   sharing: boolean
+  screenQuality: ScreenQuality
   /** quem tem tela disponível para assistir na sala atual (ids de conexão; inclui a própria, como prévia) */
   screens: string[]
   screenAudio: string[]
@@ -39,6 +41,7 @@ export const voiceInitial: VoiceSliceState = {
   noMic: false,
   speaking: {},
   sharing: false,
+  screenQuality: DEFAULT_SCREEN_QUALITY,
   screens: [],
   screenAudio: [],
   cameraOn: false,

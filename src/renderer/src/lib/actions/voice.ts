@@ -220,7 +220,7 @@ export async function startScreenShare(sourceId: string | null, audio: boolean):
   try {
     const bridge = screenBridge()
     if (bridge && sourceId) await bridge.select(sourceId, audio && bridge.canShareAudio)
-    await voice.startScreenShare(audio)
+    await voice.startScreenShare(audio, get().screenQuality)
     setSharing(true)
   } catch (err) {
     // Cancelou o seletor do navegador: não é erro.
