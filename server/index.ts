@@ -38,6 +38,7 @@ import { reactionsModule } from './modules/reactions'
 import { readsModule } from './modules/reads'
 import { uploadsModule } from './modules/uploads'
 import { playlistsModule } from './modules/playlists'
+import { pokemonModule } from './modules/pokemon'
 import { soundsModule } from './modules/sounds'
 import { pollsModule } from './modules/polls'
 import { timeoutsModule } from './modules/timeouts'
@@ -65,6 +66,7 @@ const modules: ServerModule[] = [
   callsModule,
   soundsModule,
   playlistsModule,
+  pokemonModule,
   musicModule,
   preferencesModule,
   friendsModule,

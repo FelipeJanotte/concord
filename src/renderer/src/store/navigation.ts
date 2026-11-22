@@ -1,4 +1,4 @@
-export type Section = 'community' | 'home' | 'tool' | 'music'
+export type Section = 'community' | 'home' | 'tool' | 'music' | 'pokemon'
 
 export type HomeView = { kind: 'friends' } | { kind: 'dm'; channelId: string }
 

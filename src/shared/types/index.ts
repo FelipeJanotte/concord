@@ -18,6 +18,7 @@ import type { ModerationClientEvents, ModerationServerEvents } from './moderatio
 import type { MusicClientEvents, MusicServerEvents } from './music'
 import type { PermissionsClientEvents, PermissionsServerEvents } from './permissions'
 import type { PlaylistsClientEvents, PlaylistsServerEvents } from './playlists'
+import type { PokemonClientEvents, PokemonServerEvents } from './pokemon'
 import type { PreferencesClientEvents, PreferencesServerEvents } from './preferences'
 import type { PresenceClientEvents, PresenceServerEvents } from './presence'
 import type { ReactionsClientEvents, ReactionsServerEvents } from './reactions'
@@ -41,6 +42,7 @@ export * from './moderation'
 export * from './music'
 export * from './permissions'
 export * from './playlists'
+export * from './pokemon'
 export * from './preferences'
 export * from './presence'
 export * from './reactions'
@@ -63,6 +65,7 @@ export interface ServerToClientEvents
     MusicServerEvents,
     PermissionsServerEvents,
     PlaylistsServerEvents,
+    PokemonServerEvents,
     PreferencesServerEvents,
     PresenceServerEvents,
     ReactionsServerEvents,
@@ -84,6 +87,7 @@ export interface ClientToServerEvents
     MusicClientEvents,
     PermissionsClientEvents,
     PlaylistsClientEvents,
+    PokemonClientEvents,
     PreferencesClientEvents,
     PresenceClientEvents,
     ReactionsClientEvents,
