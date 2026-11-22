@@ -23,6 +23,7 @@ import { bindReadsEvents, loadReads } from './actions/reads'
 import { bindSoundsEvents, loadSounds } from './actions/sounds'
 import { bindMusicEvents } from './actions/music'
 import { bindPlaylistsEvents } from './actions/playlists'
+import { bindPokemonEvents } from './actions/pokemon'
 import { bindVoiceEvents, OUT_OF_VOICE } from './actions/voice'
 import { clearAllDrafts } from './actions/uploads'
 import { loadAudioPreferences } from './actions/devices'
@@ -140,6 +141,7 @@ export function connect(url: string, token: string): Promise<void> {
   bindSoundsEvents(s)
   bindMusicEvents(s)
   bindPlaylistsEvents(s)
+  bindPokemonEvents(s)
   bindNotificationEvents(s)
 
   return new Promise((resolve, reject) => {
@@ -264,3 +266,4 @@ export { choosePttKey, setPttSounds, setPushToTalk } from './actions/push-to-tal
 export * from './actions/notifications'
 export { previewVoiceSound } from './actions/voice-sounds'
 export { resolveServerUrl } from './core'
+export { battleAction, buyListing, buyPokemonItem, cancelListing, chooseStarter, depositPokemon, enterCenter, evolvePokemon, holdPokemonItem, huntPokemon, leaveBattle, loadDex, loadListings, openPokemonScreen, sellOnMarket, setAutoSettings, setPokemonMoves, showPokemon, travelTo, walk, withdrawPokemon } from './actions/pokemon'

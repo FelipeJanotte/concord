@@ -3,10 +3,11 @@ import { LayoutGrid, MessageCircle, Music } from 'lucide-react'
 import { ConcordLogo } from '@/components/ConcordLogo'
 import { Separator } from '@/components/ui/separator'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { showCommunity, showHome, showMusic, showTools } from '@/lib/client'
+import { showCommunity, showHome, showMusic, showPokemon, showTools } from '@/lib/client'
 import { communityUnread, homeBadge } from '@/lib/home'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store'
+import { PokeballIcon } from '@/components/pokemon/PokeballIcon'
 import { UpdateCheckButton, UpdateRailSlot } from './UpdateButton'
 
 export function UtilityRail() {
@@ -43,6 +44,9 @@ export function UtilityRail() {
       </RailButton>
       <RailButton label="Música" active={section === 'music'} onClick={showMusic}>
         <Music className="size-6" />
+      </RailButton>
+      <RailButton label="Pokémon" active={section === 'pokemon'} onClick={showPokemon}>
+        <PokeballIcon className="size-6" />
       </RailButton>
       <UpdateCheckButton />
     </nav>

@@ -9,6 +9,7 @@ import { FriendsView } from '@/components/friends/FriendsView'
 import { HomeSidebar } from '@/components/home/HomeSidebar'
 import { LoginScreen } from '@/components/LoginScreen'
 import { MusicView } from '@/components/music/MusicView'
+import { PokemonView } from '@/components/pokemon/PokemonView'
 import { MemberList } from '@/components/MemberList'
 import { ResizableSide } from '@/components/ResizableSide'
 import { UtilityRail } from '@/components/rail/UtilityRail'
@@ -61,14 +62,18 @@ function MainLayout() {
       )}
       <div data-glass="stage" className="flex min-h-0 flex-1 overflow-hidden select-none">
         <UtilityRail />
-        <ResizableSide panel={SIDE_PANELS.navigation} edge="right" label="Redimensionar a barra lateral">
-          {section === 'home' ? <HomeSidebar /> : section === 'tool' ? <ToolsSidebar /> : <ChannelSidebar />}
-        </ResizableSide>
+        {section !== 'pokemon' && (
+          <ResizableSide panel={SIDE_PANELS.navigation} edge="right" label="Redimensionar a barra lateral">
+            {section === 'home' ? <HomeSidebar /> : section === 'tool' ? <ToolsSidebar /> : <ChannelSidebar />}
+          </ResizableSide>
+        )}
         <main data-glass="panel" className="flex min-w-0 flex-1 flex-col bg-background">
           {section === 'tool' ? (
             <ToolView />
           ) : section === 'music' ? (
             <MusicView />
+          ) : section === 'pokemon' ? (
+            <PokemonView />
           ) : section === 'home' ? (
             homeView.kind === 'dm' ? (
               <ChatView key={homeView.channelId} channelId={homeView.channelId} />
