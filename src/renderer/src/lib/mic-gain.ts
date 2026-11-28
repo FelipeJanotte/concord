@@ -3,14 +3,17 @@ import { Track, type AudioProcessorOptions, type TrackProcessor } from 'livekit-
 
 /** Volume do microfone: 0 (mudo) a 2 (200%). */
 export const MIC_GAIN_MAX = 2
-/** Volume de saída: 0 a 1 (o elemento de áudio não passa de 100%). */
+/** Volume de saída: 0 a 1. */
 export const OUTPUT_VOLUME_MAX = 1
+/** Volume da voz de uma pessoa ou do bot de música: 0 a 2 (200%). */
+export const USER_VOLUME_MAX = 2
 
 const clamp = (v: unknown, max: number, fallback: number): number =>
   typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(0, v)) : fallback
 
 export const clampMicGain = (v: unknown): number => clamp(v, MIC_GAIN_MAX, 1)
 export const clampOutputVolume = (v: unknown): number => clamp(v, OUTPUT_VOLUME_MAX, 1)
+export const clampUserVolume = (v: unknown): number => clamp(v, USER_VOLUME_MAX, 1)
 
 export function forceMono(node: AudioNode): void {
   node.channelCount = 1

@@ -69,9 +69,9 @@ describe('loadAudioPreferences', () => {
     loadAudioPreferences()
     expect(useApp.getState()).toMatchObject({ audioInputId: null, audioOutputId: null, userVolumes: {} })
 
-    storage.setItem('concord:audio', JSON.stringify({ input: 42, output: '', volumes: { a: 'alto', b: 7, c: -1, d: 0.5 } }))
+    storage.setItem('concord:audio', JSON.stringify({ input: 42, output: '', volumes: { a: 'alto', b: 7, c: -1, d: 0.5, e: 1.5, f: 2.01 } }))
     loadAudioPreferences()
-    expect(useApp.getState()).toMatchObject({ audioInputId: null, audioOutputId: null, userVolumes: { d: 0.5 } })
+    expect(useApp.getState()).toMatchObject({ audioInputId: null, audioOutputId: null, userVolumes: { d: 0.5, e: 1.5 } })
   })
 
   it('sem localStorage (bloqueado), começa com os padrões', () => {
@@ -127,9 +127,18 @@ describe('volume por pessoa', () => {
     expect(useApp.getState().userVolumes).toEqual({})
   })
 
-  it('corrige valores fora de 0–1', () => {
+  it('aceita de 0 a 200%, inclusive valores quebrados como 137%', () => {
+    setUserVolume('acc-ana', 1.37)
+    expect(useApp.getState().userVolumes).toEqual({ 'acc-ana': 1.37 })
+    expect(saved()).toMatchObject({ volumes: { 'acc-ana': 1.37 } })
+    expect(voice.setUserVolume).toHaveBeenLastCalledWith('acc-ana', 1.37)
+    setUserVolume('acc-ana', 2)
+    expect(useApp.getState().userVolumes).toEqual({ 'acc-ana': 2 })
+  })
+
+  it('corrige valores fora de 0–2', () => {
     setUserVolume('acc-ana', 3)
-    expect(useApp.getState().userVolumes).toEqual({})
+    expect(useApp.getState().userVolumes).toEqual({ 'acc-ana': 2 })
     setUserVolume('acc-ana', -2)
     expect(useApp.getState().userVolumes).toEqual({ 'acc-ana': 0 })
   })

@@ -95,9 +95,10 @@ clica na sala ─► createLocalAudioTrack(echoCancellation/noiseSuppression/aut
   os testes cobrem quem já estava, quem publica depois e a troca da lista.
 
 - **Áudio dos outros:** `TrackSubscribed` (só `Track.Kind.Audio`; vídeo/tela fica para a B3) → `track.attach()`
-  cria o `<audio>`; `TrackUnsubscribed` → `detach()` + `remove()`.
+  cria o `<audio>`, que fica mudo: com `webAudioMix: true` na `Room` o som sai pelo `AudioContext` do LiveKit (um
+  `GainNode` por faixa, que deixa o volume passar de 100%; ADR 0018). `TrackUnsubscribed` → `detach()` + `remove()`.
 - **Mute:** `mic.mute()` / `unmute()` (o LiveKit para de enviar e avisa os outros).
-- **Deafen:** `muted` em todos os `<audio>` anexados, inclusive os de quem chega depois. Na UI, deafen também
+- **Deafen:** `setVolume(0)` em todas as faixas de áudio (`applyVolume`), inclusive as de quem chega depois. Na UI, deafen também
   silencia o microfone (`applyAudio` em `lib/actions/voice.ts`).
 - O estado de mute/deafen vai para o servidor em `voice:join` (inicial) e `voice:update`; todos recebem por
   `voice:state`, que mostra os ícones vermelhos.
@@ -506,7 +507,7 @@ duas barras laterais), como no Discord:
 - **Botão direito sobre uma pessoa** (`components/voice/MemberContextMenu.tsx`, shadcn `ui/context-menu`), no tile
   da sala de voz (`VoiceGrid`) e na lista embaixo do canal na barra lateral (`ChannelSidebar`):
   1. nome#tag;
-  2. **Volume** (controle de 0 a 100%; as setas do teclado mexem nele, não no menu);
+  2. **Volume** (controle de 0 a 200%, de 1 em 1%; as setas do teclado mexem nele, não no menu);
   3. **Silenciar** (só para mim; o menu fica aberto para dar para ajustar o volume na mesma vez);
   4. **Ver perfil** (`components/UserProfileDialog.tsx`: avatar, nome#tag, online e sala de voz em que está).
   Em si mesmo, só "Ver perfil". Quem eu silenciei ganha um ícone de alto-falante cortado no tile e na barra lateral.
@@ -515,7 +516,7 @@ duas barras laterais), como no Discord:
 
 | Peça | Papel |
 |---|---|
-| `lib/voice.ts` | `listDevices(kind)`, `setInputDevice(id)`, `setOutputDevice(id)`, `setUserVolume(accountId, 0–1)`, `setUserMuted(accountId, bool)`, `setScreenVolume(accountId, 0–1)`, `setScreenMuted(accountId, bool)` (áudio da tela da pessoa). `null` = padrão do sistema. `applyVolume(track)` decide pela faixa: voz = volume/silêncio da pessoa; áudio da tela = volume/silêncio da tela; × volume de saída; o equalizador só mexe na voz. |
+| `lib/voice.ts` | `listDevices(kind)`, `setInputDevice(id)`, `setOutputDevice(id)`, `setUserVolume(accountId, 0–2)`, `setUserMuted(accountId, bool)`, `setScreenVolume(accountId, 0–1)`, `setScreenMuted(accountId, bool)` (áudio da tela da pessoa). `null` = padrão do sistema. `applyVolume(track)` decide pela faixa: voz = volume/silêncio da pessoa; áudio da tela = volume/silêncio da tela; × volume de saída; deafen = 0; com o equalizador a faixa fica em 0 e o volume vai para o ganho dele. |
 | `lib/actions/devices.ts` | `listAudioDevices`, `selectAudioInput`, `selectAudioOutput`, `setUserVolume`, `setUserMuted`, `setScreenVolume`, `setScreenMuted`, `openDeviceSettings` (abre as Configurações em "Voz e vídeo"), `canChooseAudioOutput`, `loadAudioPreferences`. |
 | `store/devices.ts` | `audioInputId`, `audioOutputId`, `userVolumes[accountId]`, `userMuted[accountId]`, `screenVolumes[accountId]`, `screenMuted[accountId]`. |
 | `store/voice.ts` | `screenAudio`: ids de conexão com áudio na tela agora (só quem tem, controle do `ScreenAudioControl`). |
@@ -528,8 +529,10 @@ duas barras laterais), como no Discord:
 - **Volume por pessoa:** guardado por **conta** (o token traz `attributes.accountId`; a identidade muda a cada
   conexão). Aplicado com `RemoteAudioTrack.setVolume` ao receber o microfone da pessoa e na hora ao mexer no
   controle. Só o microfone; o áudio da tela tem volume e silêncio próprios (`screenVolumes`/`screenMuted`, mesmas
-  regras, controle na barra do `ScreenStage`). Vai de 0 a 100%: passar de 100% exigiria `webAudioMix`, que
-  mixa o áudio pela Web Audio e quebraria o deafen (feito com `muted` nos `<audio>`).
+  regras, controle na barra do `ScreenStage`, 0–100%). Vai de **0 a 200%, de 1 em 1%** (`USER_VOLUME_MAX = 2` e
+  `clampUserVolume` em `lib/mic-gain.ts`, usados pela ação, pelo `VoiceClient` e pelos dois controles). Passa de
+  100% porque o `webAudioMix` troca o `<audio>` por um `GainNode` (ADR 0018). O valor aplicado é volume × saída;
+  acima de 100% pode saturar (clipar) quem já fala alto.
 - **Bot de música:** entra no mesmo caminho com a chave fixa `MUSIC_BOT_VOLUME_ID` (`'music-bot'`, em `lib/voice.ts`):
   o participante sem `accountId` e com `attributes.bot === 'music'` (token de `server/music/livekit-publisher.ts`)
   tem o microfone guardado em `voices` com essa chave (`volumeIdOf`). Volume e silenciar valem para o bot de qualquer
@@ -538,7 +541,7 @@ duas barras laterais), como no Discord:
 - **Silenciar alguém:** também por conta. O volume aplicado vira 0, mas o valor ajustado continua em `userVolumes`;
   ao tirar o silêncio, volta ao que era. Mexer no volume enquanto silenciado só guarda o valor. Não afeta os outros:
   é só no meu app (para silenciar para todos, B6 "silenciar pelo servidor").
-- **Preferências desta máquina:** `localStorage` `concord:audio` = `{ input, output, camera, volumes, muted, sounds, noise, micGain, micSensitivity, outputVolume, leveler, levelerTarget, soundboardVolume, screenVolumes, screenMuted }` (`screenVolumes` = `{ accountId: 0–1 }`, só os abaixo de 100%; `screenMuted` = lista de contas), lido ao carregar o
+- **Preferências desta máquina:** `localStorage` `concord:audio` = `{ input, output, camera, volumes, muted, sounds, noise, micGain, micSensitivity, outputVolume, leveler, levelerTarget, soundboardVolume, screenVolumes, screenMuted }` (`volumes` = `{ accountId: 0–2 }` e `screenVolumes` = `{ accountId: 0–1 }`, só os diferentes de 100%; `screenMuted` = lista de contas), lido ao carregar o
   app (`loadAudioPreferences`) e de novo depois do `disconnect()` (sair da conta não apaga). Dados inválidos ou
   armazenamento bloqueado: volta aos padrões sem quebrar.
 - **Lista:** `Room.getLocalDevices(kind, false)` (não pede permissão só para listar). Os apelidos do Windows
@@ -572,7 +575,7 @@ Dois controles em Configurações de voz (`VolumeSettings` em `settings/VoiceSet
   O `autoGainControl` do WebRTC continua ligado: ele age antes, este volume multiplica depois.
 - **Saída (0–100%):** multiplica o volume de cada pessoa (`applyVolume` = pessoa × saída) e vale também para o áudio
   das telas, os efeitos sonoros (`sounds.ts`) e os sons de entrar/sair (`voice-sounds.ts`, inclusive o "Testar").
-  Não passa de 100% pelo mesmo motivo do volume por pessoa (`webAudioMix` quebraria o deafen). O toque de chamada
+  Fica em 0–100%; o `webAudioMix` permitiria mais (ADR 0018). O toque de chamada
   (`Ringer`) não é afetado, para não perder uma ligação com o volume baixo.
 - **Testes:** `lib/mic-gain.test.ts` (limites, ligação dos nós, `setGain`, `destroy`), `lib/noise/noise.test.ts` (nó de
   volume no processador de ruído), `lib/voice.test.ts` (bloco "volume do microfone e de saída": com/sem supressão,
@@ -628,7 +631,7 @@ própria: `docs/decisions/0004-equalizador-no-ouvinte.md`.
 **Fluxo:**
 
 ```
-elemento <audio> do LiveKit (mudo: só faz o Chrome entregar o áudio WebRTC)
+faixa no LiveKit com setVolume(0) (o Chrome ainda precisa dela anexada para entregar o áudio WebRTC)
 faixa ─► MediaStreamSource ─► Analyser (mede) ─► Gain (automático × volume pedido) ─► destination
 volume pedido = deafen ? 0 : silenciado ? 0 : volume da pessoa × volume de saída
 ```
@@ -637,9 +640,9 @@ volume pedido = deafen ? 0 : silenciado ? 0 : volume da pessoa × volume de saí
   Abaixa em cerca de 1 s e sobe em cerca de 3 s (abaixar rápido evita susto; subir devagar evita "bombear" o
   ruído). Ganho de 0,25 a 3 (−75% a +200%). Cada mudança aplicada com `setTargetAtTime` (sem estalo). O ganho é
   medido antes do volume da pessoa: baixar alguém no botão direito continua valendo por cima do equalizador.
-- **Ligar/desligar dentro da sala** troca na hora as faixas de caminho; ao desligar, o elemento volta a tocar com
+- **Ligar/desligar dentro da sala** troca na hora as faixas de caminho; ao desligar, a faixa volta a tocar com
   `setVolume` como antes. Sair da sala desmonta o `VoiceLeveler` (fecha o `AudioContext`); a próxima sala cria outro.
-- **Deafen** no caminho do equalizador zera o ganho (o elemento já está mudo). **Saída escolhida** (B4) vai para o
+- **Deafen** no caminho do equalizador zera o ganho (a faixa no LiveKit já está em 0). **Saída escolhida** (B4) vai para o
   `AudioContext.setSinkId`, como no `ChimePlayer`.
 - **Aviso do ganho:** `onGainsChange` só dispara quando o ganho arredondado (passos de 5%) muda; contas em 100% não
   aparecem no mapa.

@@ -2,6 +2,7 @@ import { Slider, SliderControl, SliderIndicator, SliderThumb, SliderTrack } from
 import { Volume2, VolumeX } from 'lucide-react'
 import { setUserVolume } from '@/lib/client'
 import { cn } from '@/lib/utils'
+import { USER_VOLUME_MAX } from '@/lib/mic-gain'
 import { MUSIC_BOT_VOLUME_ID } from '@/lib/voice'
 import { useApp } from '@/store'
 
@@ -16,8 +17,8 @@ export function MusicVolumeSlider({ className }: { className: string }) {
       <Slider
         value={percent}
         min={0}
-        max={100}
-        step={5}
+        max={USER_VOLUME_MAX * 100}
+        step={1}
         onValueChange={(value) => setUserVolume(MUSIC_BOT_VOLUME_ID, (value as number) / 100)}
         className={cn('group', className)}
       >

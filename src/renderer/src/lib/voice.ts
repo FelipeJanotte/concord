@@ -43,7 +43,7 @@ import { DEFAULT_SCREEN_QUALITY, screenCapture, type ScreenQuality } from '@shar
 import { permissionsFrom } from './voice-permissions'
 import { loadRnnoiseEngine } from './noise/engine'
 import { AutoNoiseProcessor, type NoiseMode } from './noise/processor'
-import { clampMicGain, clampOutputVolume, MicGainProcessor, type MicProcessorSettings } from './mic-gain'
+import { clampMicGain, clampOutputVolume, clampUserVolume, MicGainProcessor, type MicProcessorSettings } from './mic-gain'
 import { clampSensitivity, SENSITIVITY_DEFAULT_DB } from './mic-gate'
 import { AudioClockWatchdog } from './audio-clock'
 import { SpeakingDetector } from './speaking/detector'
@@ -71,6 +71,9 @@ export const MUSIC_BOT_VOLUME_ID = 'music-bot'
 
 const volumeIdOf = (participant: Participant | undefined): string | undefined =>
   participant?.attributes?.accountId ?? (participant?.attributes?.bot === 'music' ? MUSIC_BOT_VOLUME_ID : undefined)
+
+const setTrackVolume = (track: RemoteTrack, volume: number): void =>
+  (track as RemoteTrack & { setVolume?: (v: number) => void }).setVolume?.(volume)
 
 
 const isScreenSource = (source: Track.Source): boolean => source === Track.Source.ScreenShare || source === Track.Source.ScreenShareAudio
@@ -103,6 +106,7 @@ const defaultDeps: VoiceDeps = {
       audioCaptureDefaults: AUDIO_CAPTURE,
       // Saída escolhida (B4): vale para todo áudio que chegar nesta sala.
       audioOutput: outputDeviceId ? { deviceId: outputDeviceId } : undefined,
+      webAudioMix: true,
       // DTX economiza banda no silêncio; RED deixa o áudio mais resistente a perda de pacotes.
       publishDefaults: { dtx: true, red: true },
       // Para a tela (B3): só recebe a resolução que está sendo exibida.
@@ -410,8 +414,7 @@ export class VoiceClient {
 
   setDeafened(deafened: boolean): void {
     this.deafened = deafened
-    for (const track of this.remoteAudio) this.muteElements(track)
-    for (const track of this.leveled) this.applyVolume(track)
+    for (const track of this.remoteAudio) this.applyVolume(track)
     this.publishSpeaking()
   }
 
@@ -490,9 +493,9 @@ export class VoiceClient {
     if (this.room) await this.room.switchActiveDevice('audiooutput', deviceId ?? 'default')
   }
 
-  /** Volume da voz de uma pessoa (0 a 1), por conta. */
+  /** Volume da voz de uma pessoa (0 a 2), por conta. */
   setUserVolume(accountId: string, volume: number): void {
-    const v = Math.min(1, Math.max(0, Number.isFinite(volume) ? volume : 1))
+    const v = clampUserVolume(volume)
     if (v === 1) this.volumes.delete(accountId)
     else this.volumes.set(accountId, v)
     for (const [track, owner] of this.voices) if (owner === accountId) this.applyVolume(track)
@@ -592,8 +595,8 @@ export class VoiceClient {
       this.leveler = leveler
     }
     this.leveled.add(track)
-    this.muteElements(track)
     this.leveler.add(track, accountId, track.mediaStreamTrack, this.volumeOf(accountId))
+    setTrackVolume(track, 0)
   }
 
   private destroyLeveler(): void {
@@ -602,16 +605,8 @@ export class VoiceClient {
     this.leveler = null
     const tracks = [...this.leveled]
     this.leveled.clear()
-    for (const track of tracks) {
-      this.muteElements(track)
-      this.applyVolume(track)
-    }
+    for (const track of tracks) this.applyVolume(track)
     this.onLevelerGains?.({})
-  }
-
-  private muteElements(track: RemoteTrack): void {
-    const muted = this.deafened || this.leveled.has(track)
-    track.attachedElements.forEach((el) => (el.muted = muted))
   }
 
   /** Processador do microfone antes de publicar: o de ruído (com o volume) ou só o volume. */
@@ -688,8 +683,7 @@ export class VoiceClient {
   private applyVolume(track: RemoteTrack): void {
     const voiceOwner = this.voices.get(track)
     if (voiceOwner !== undefined && this.leveled.has(track)) return this.leveler?.setVolume(track, this.volumeOf(voiceOwner))
-    const volume = this.ownVolumeOf(track, voiceOwner) * this.outputVolume
-    ;(track as RemoteTrack & { setVolume?: (v: number) => void }).setVolume?.(volume)
+    setTrackVolume(track, this.deafened ? 0 : this.ownVolumeOf(track, voiceOwner) * this.outputVolume)
   }
 
   private ownVolumeOf(track: RemoteTrack, voiceOwner: string | undefined): number {
@@ -819,8 +813,7 @@ export class VoiceClient {
           return
         }
         // Áudio: microfone e áudio da tela de cada um.
-        const el = track.attach()
-        el.muted = this.deafened
+        track.attach()
         this.remoteAudio.add(track)
         if (track.source === Track.Source.Microphone && participant) {
           this.detector().watch(participant.identity, () => track.mediaStreamTrack)

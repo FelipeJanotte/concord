@@ -68,9 +68,9 @@ describe('na sala de voz', () => {
   it('o volume ajusta e mostra a porcentagem', () => {
     render(<VoiceGrid members={members()} />)
     const menu = openMenuOn(screen.getByText('Ana'))
-    fireEvent.change(within(menu).getByRole('slider', { name: 'Volume de Ana' }), { target: { value: '40' } })
-    expect(voice.setUserVolume).toHaveBeenCalledWith('acc-ana', 0.4)
-    expect(within(menu).getByText('40%')).toBeTruthy()
+    fireEvent.change(within(menu).getByRole('slider', { name: 'Volume de Ana' }), { target: { value: '137' } })
+    expect(voice.setUserVolume).toHaveBeenCalledWith('acc-ana', 1.37)
+    expect(within(menu).getByText('137%')).toBeTruthy()
   })
 
   it('silenciar mantém o menu aberto, guarda o volume e mostra o ícone no tile', async () => {
@@ -166,9 +166,9 @@ describe('bot de música na barra lateral', () => {
       </TooltipProvider>
     )
     const menu = openMenuOn(screen.getByTestId('music-bot'))
-    fireEvent.change(within(menu).getByRole('slider', { name: 'Volume de Música' }), { target: { value: '30' } })
-    expect(voice.setUserVolume).toHaveBeenCalledWith(MUSIC_BOT_VOLUME_ID, 0.3)
-    expect(useApp.getState().userVolumes).toEqual({ [MUSIC_BOT_VOLUME_ID]: 0.3 })
+    fireEvent.change(within(menu).getByRole('slider', { name: 'Volume de Música' }), { target: { value: '183' } })
+    expect(voice.setUserVolume).toHaveBeenCalledWith(MUSIC_BOT_VOLUME_ID, 1.83)
+    expect(useApp.getState().userVolumes).toEqual({ [MUSIC_BOT_VOLUME_ID]: 1.83 })
     await userEvent.click(within(menu).getByRole('menuitemcheckbox', { name: /Silenciar/ }))
     expect(voice.setUserMuted).toHaveBeenCalledWith(MUSIC_BOT_VOLUME_ID, true)
     const open = screen.getByRole('menu')

@@ -26,6 +26,7 @@ import { ModerationItems } from './ModerationMenu'
 import { messageAccount, notify, sendFriendRequest, setMemberRoles, setUserMuted, setUserVolume } from '@/lib/client'
 import { memberRoleIds, rolesByPosition } from '@/lib/permissions'
 import { MUSIC_BOT_VOLUME_ID } from '@/lib/voice'
+import { USER_VOLUME_MAX } from '@/lib/mic-gain'
 import { useApp } from '@/store'
 
 export function MemberContextMenu({ userId, children }: { userId: string; children: ReactNode }) {
@@ -95,8 +96,8 @@ function VolumeControl({ accountId, name }: { accountId: string; name: string })
       <input
         type="range"
         min={0}
-        max={100}
-        step={5}
+        max={USER_VOLUME_MAX * 100}
+        step={1}
         value={pct}
         aria-label={`Volume de ${name}`}
         onChange={(e) => setUserVolume(accountId, Number(e.target.value) / 100)}
