@@ -445,13 +445,13 @@ describe('áudio, mute e deafen', () => {
     const before = new FakeRemoteTrack()
     lastRoom().fire(RoomEvent.TrackSubscribed, before)
     client.setDeafened(true)
-    expect(before.attachedElements[0].muted).toBe(true)
+    expect(before.setVolume).toHaveBeenLastCalledWith(0)
     const after = new FakeRemoteTrack()
     lastRoom().fire(RoomEvent.TrackSubscribed, after)
-    expect(after.attachedElements[0].muted).toBe(true)
+    expect(after.setVolume).toHaveBeenLastCalledWith(0)
     client.setDeafened(false)
-    expect(before.attachedElements[0].muted).toBe(false)
-    expect(after.attachedElements[0].muted).toBe(false)
+    expect(before.setVolume).toHaveBeenLastCalledWith(1)
+    expect(after.setVolume).toHaveBeenLastCalledWith(1)
   })
 })
 
@@ -652,7 +652,7 @@ describe('tela', () => {
     const screenAudio = new FakeRemoteTrack(Track.Kind.Audio, Track.Source.ScreenShareAudio)
     lastRoom().fire(RoomEvent.TrackSubscribed, screenAudio, {}, participant('ana'))
     client.setDeafened(true)
-    expect(screenAudio.attachedElements[0].muted).toBe(true)
+    expect(screenAudio.setVolume).toHaveBeenLastCalledWith(0)
   })
 
   it('attachScreen liga a tela num <video> e devolve quem desliga', async () => {
@@ -792,12 +792,23 @@ describe('dispositivos e volume (B4)', () => {
     expect(ana.setVolume).toHaveBeenLastCalledWith(1)
   })
 
-  it('volume fora de 0–1 ou inválido é corrigido', async () => {
+  it('volume acima de 100% vale até 200%, multiplicado pela saída', async () => {
+    client.setOutputVolume(0.5)
+    await client.join('sala-1')
+    const ana = new FakeRemoteTrack(Track.Kind.Audio, Track.Source.Microphone)
+    lastRoom().fire(RoomEvent.TrackSubscribed, ana, {}, micOf('acc-ana'))
+    client.setUserVolume('acc-ana', 1.38)
+    expect(ana.setVolume).toHaveBeenLastCalledWith(0.69)
+    client.setUserVolume('acc-ana', 2)
+    expect(ana.setVolume).toHaveBeenLastCalledWith(1)
+  })
+
+  it('volume fora de 0–2 ou inválido é corrigido', async () => {
     await client.join('sala-1')
     const ana = new FakeRemoteTrack(Track.Kind.Audio, Track.Source.Microphone)
     lastRoom().fire(RoomEvent.TrackSubscribed, ana, {}, micOf('acc-ana'))
     client.setUserVolume('acc-ana', 5)
-    expect(ana.setVolume).toHaveBeenLastCalledWith(1)
+    expect(ana.setVolume).toHaveBeenLastCalledWith(2)
     client.setUserVolume('acc-ana', -1)
     expect(ana.setVolume).toHaveBeenLastCalledWith(0)
     client.setUserVolume('acc-ana', Number.NaN)
@@ -1685,19 +1696,18 @@ describe('equalizador automático', () => {
     await c.join('sala-1')
     const ana = subscribe('acc-ana')
     expect(levelers).toHaveLength(0)
-    expect(ana.attachedElements[0].muted).toBe(false)
+    expect(ana.setVolume).toHaveBeenLastCalledWith(1)
     expect(ana.setVolume).toHaveBeenLastCalledWith(1)
   })
 
-  it('ligado: o microfone de cada um vai para o equalizador com o elemento mudo e o volume combinado', async () => {
+  it('ligado: o microfone de cada um vai para o equalizador com a faixa muda e o volume combinado', async () => {
     const c = levelerClient()
     c.setLeveler(true)
     c.setUserVolume('acc-ana', 0.5)
     c.setOutputVolume(0.8)
     await c.join('sala-1')
     const ana = subscribe('acc-ana')
-    expect(ana.attachedElements[0].muted).toBe(true)
-    expect(ana.setVolume).not.toHaveBeenCalled()
+    expect(ana.setVolume).toHaveBeenLastCalledWith(0)
     expect(leveler().voices.get(ana)).toEqual({ accountId: 'acc-ana', track: ana.mediaStreamTrack, volume: 0.4 })
     c.setUserMuted('acc-ana', true)
     expect(leveler().voices.get(ana)!.volume).toBe(0)
@@ -1709,10 +1719,10 @@ describe('equalizador automático', () => {
     await c.join('sala-1')
     const tela = subscribe('acc-ana', Track.Source.ScreenShareAudio)
     expect(leveler()?.voices.size ?? 0).toBe(0)
-    expect(tela.attachedElements[0].muted).toBe(false)
+    expect(tela.setVolume).toHaveBeenLastCalledWith(1)
   })
 
-  it('ensurdecer zera pelo equalizador e o elemento continua mudo ao voltar', async () => {
+  it('ensurdecer zera pelo equalizador e a faixa continua muda ao voltar', async () => {
     const c = levelerClient()
     c.setLeveler(true)
     await c.join('sala-1')
@@ -1721,7 +1731,7 @@ describe('equalizador automático', () => {
     expect(leveler().voices.get(ana)!.volume).toBe(0)
     c.setDeafened(false)
     expect(leveler().voices.get(ana)!.volume).toBe(1)
-    expect(ana.attachedElements[0].muted).toBe(true)
+    expect(ana.setVolume).toHaveBeenLastCalledWith(0)
     c.setDeafened(true)
     const bia = subscribe('acc-bia')
     expect(leveler().voices.get(bia)!.volume).toBe(0)
@@ -1733,21 +1743,21 @@ describe('equalizador automático', () => {
     const ana = subscribe('acc-ana')
     c.setLeveler(true)
     expect(leveler().voices.has(ana)).toBe(true)
-    expect(ana.attachedElements[0].muted).toBe(true)
+    expect(ana.setVolume).toHaveBeenLastCalledWith(0)
     c.setLeveler(false)
     expect(leveler().destroyed).toBe(1)
-    expect(ana.attachedElements[0].muted).toBe(false)
+    expect(ana.setVolume).toHaveBeenLastCalledWith(1)
     expect(ana.setVolume).toHaveBeenLastCalledWith(1)
   })
 
-  it('desligar ensurdecido deixa o elemento mudo', async () => {
+  it('desligar ensurdecido deixa a faixa muda', async () => {
     const c = levelerClient()
     c.setLeveler(true)
     await c.join('sala-1')
     const ana = subscribe('acc-ana')
     c.setDeafened(true)
     c.setLeveler(false)
-    expect(ana.attachedElements[0].muted).toBe(true)
+    expect(ana.setVolume).toHaveBeenLastCalledWith(0)
   })
 
   it('quem sai deixa o equalizador; sair da sala desmonta tudo', async () => {

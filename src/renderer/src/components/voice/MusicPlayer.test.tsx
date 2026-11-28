@@ -126,8 +126,8 @@ describe('MusicPlayer', () => {
     fireEvent.contextMenu(screen.getByTestId('music-bot'))
     const menuSlider = within(screen.getByRole('menu')).getByRole('slider', { name: 'Volume de Música' }) as HTMLInputElement
     expect(menuSlider.value).toBe('30')
-    fireEvent.change(menuSlider, { target: { value: '70' } })
-    expect(playerSlider.value).toBe('70')
+    fireEvent.change(menuSlider, { target: { value: '200' } })
+    expect(playerSlider.value).toBe('200')
   })
 
   it('quem só olha a sala não vê o volume (não está ouvindo)', async () => {

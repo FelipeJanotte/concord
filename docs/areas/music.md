@@ -298,7 +298,7 @@ Botão "Música" na barra de úteis (`UtilityRail`, `showMusic`) põe `section: 
 - `MusicPlayer` na `VoiceView` **entre os membros da chamada (grade/palco) e as ações da sala** (indicador de sons,
   dica do pressione para falar e a fileira de botões redondos): fora da área que rola, sempre visível. Pede
   `music:queue` ao abrir. "Ver a fila" para todos; pular, parar e o volume só para quem está na sala.
-- **Volume no player:** slider compacto "Volume da música" que chama o mesmo `setUserVolume(MUSIC_BOT_VOLUME_ID, …)` e lê
+- **Volume no player:** slider compacto "Volume da música" (0 a 200%, de 1 em 1%) que chama o mesmo `setUserVolume(MUSIC_BOT_VOLUME_ID, …)` e lê
   o mesmo `userVolumes[MUSIC_BOT_VOLUME_ID]` do botão direito no bot; mudar num reflete no outro e fica salvo em
   `concord:audio`. Silenciado pelo menu mostra o alto-falante cortado (o slider não silencia).
 - **Ocultar:** botão "Ocultar o player" troca o cartão por uma barra fina "Tocando: título" com "Mostrar o player".
@@ -314,7 +314,7 @@ Botão "Música" na barra de úteis (`UtilityRail`, `showMusic`) põe `section: 
   ou perfil); silenciado mostra o alto-falante cortado. O bot não entra na grade da sala (não está no `voice:state`).
 - **Volume do bot:** chave fixa `MUSIC_BOT_VOLUME_ID` (`'music-bot'`) no mesmo `setUserVolume`/`setUserMuted` das
   pessoas; o `VoiceClient` reconhece a faixa do bot por `attributes.bot === 'music'`. Vale para o bot de todas as salas e
-  fica salvo em `concord:audio` (`docs/areas/voice.md`).
+  fica salvo em `concord:audio`. Vai de 0 a 200% (`USER_VOLUME_MAX`), igual ao de uma pessoa (`docs/areas/voice.md`).
 
 ## Testes
 

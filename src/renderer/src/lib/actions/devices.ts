@@ -6,7 +6,7 @@
 import { get, notify, set } from '../core'
 import { voice } from '../voice'
 import { openSettings } from './settings'
-import { clampMicGain, clampOutputVolume } from '../mic-gain'
+import { clampMicGain, clampOutputVolume, clampUserVolume, USER_VOLUME_MAX } from '../mic-gain'
 import { clampLevelerTarget, type LevelerTarget } from '../leveler/level'
 import { clampSensitivity } from '../mic-gate'
 import { micLevelMonitor } from '../mic-level'
@@ -47,11 +47,11 @@ interface SavedAudio {
   screenMuted: string[]
 }
 
-function readVolumes(raw: unknown): Record<string, number> {
+function readVolumes(raw: unknown, max: number): Record<string, number> {
   const volumes: Record<string, number> = {}
   if (!raw || typeof raw !== 'object') return volumes
   for (const [id, v] of Object.entries(raw)) {
-    if (typeof v === 'number' && v >= 0 && v < 1) volumes[id] = v
+    if (typeof v === 'number' && v >= 0 && v <= max && v !== 1) volumes[id] = v
   }
   return volumes
 }
@@ -94,7 +94,7 @@ function readSaved(): SavedAudio {
       input: typeof data.input === 'string' && data.input ? data.input : null,
       output: typeof data.output === 'string' && data.output ? data.output : null,
       camera: typeof data.camera === 'string' && data.camera ? data.camera : null,
-      volumes: readVolumes(data.volumes),
+      volumes: readVolumes(data.volumes, USER_VOLUME_MAX),
       muted: readIds(data.muted),
       sounds: {
         enabled: typeof data.sounds?.enabled === 'boolean' ? data.sounds.enabled : empty.sounds.enabled,
@@ -110,7 +110,7 @@ function readSaved(): SavedAudio {
       leveler: data.leveler === true,
       levelerTarget: clampLevelerTarget(data.levelerTarget),
       soundboardVolume: clampOutputVolume(data.soundboardVolume),
-      screenVolumes: readVolumes(data.screenVolumes),
+      screenVolumes: readVolumes(data.screenVolumes, 1),
       screenMuted: readIds(data.screenMuted)
     }
   } catch {
@@ -258,9 +258,9 @@ export async function selectAudioOutput(deviceId: string | null): Promise<void> 
   }
 }
 
-/** Volume da voz de uma pessoa (0 a 1), lembrado por conta. */
+/** Volume da voz de uma pessoa (0 a 2), lembrado por conta. */
 export function setUserVolume(accountId: string, volume: number): void {
-  const v = clampVolume(volume)
+  const v = clampUserVolume(volume)
   set((st) => {
     const userVolumes = { ...st.userVolumes }
     if (v === 1) delete userVolumes[accountId]
